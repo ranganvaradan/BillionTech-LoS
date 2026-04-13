@@ -14,17 +14,25 @@ import {
   LogOut,
   ChevronLeft,
   ChevronRight,
+  Kanban,
+  Users,
+  Link2,
+  UserCircle,
 } from 'lucide-react';
 import { useState } from 'react';
 
 const NAV_ITEMS = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/applications', label: 'Applications', icon: FileText },
+  { href: '/kanban', label: 'Pipeline', icon: Kanban },
   { href: '/kyc', label: 'KYC Management', icon: Shield },
   { href: '/workflows', label: 'Workflows', icon: GitBranch },
   { href: '/transactions', label: 'Transactions', icon: CreditCard },
   { href: '/notifications', label: 'Notifications', icon: Bell },
   { href: '/reports', label: 'Reports', icon: BarChart3 },
+  { href: '/admin/users', label: 'User Management', icon: Users },
+  { href: '/admin/aggregators', label: 'Aggregators', icon: Link2 },
+  { href: '/portal', label: 'Customer Portal', icon: UserCircle },
 ];
 
 export default function Sidebar() {

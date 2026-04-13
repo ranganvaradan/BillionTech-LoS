@@ -25,4 +25,7 @@ public class LoanAccountSummary {
     private BigDecimal nextEmiAmount;
     private LocalDate lastPaymentDate;
     private int dpd;
+    private boolean npaFlag;
+    private String npaCategory;
+    private LocalDate npaDate;
 }

@@ -43,6 +43,17 @@ public class Document {
 
     private UUID uploadedBy;
 
+    @Column
+    @Builder.Default
+    private int versionNumber = 1;
+
+    @Column
+    private UUID previousVersionId;
+
+    @Column
+    @Builder.Default
+    private boolean isLatest = true;
+
     @CreationTimestamp
     @Column(updatable = false)
     private Instant createdAt;

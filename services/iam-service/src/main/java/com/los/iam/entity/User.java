@@ -74,4 +74,12 @@ public class User {
     private Instant updatedAt;
 
     private Instant lastLoginAt;
+
+    private Instant passwordChangedAt;
+
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(name = "user_password_history", joinColumns = @JoinColumn(name = "user_id"))
+    @Column(name = "password_hash")
+    @Builder.Default
+    private java.util.List<String> passwordHistory = new java.util.ArrayList<>();
 }

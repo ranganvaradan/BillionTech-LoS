@@ -12,5 +12,11 @@ public interface DocumentRepository extends JpaRepository<Document, UUID> {
 
     List<Document> findByApplicationIdOrderByCreatedAtDesc(UUID applicationId);
 
+    List<Document> findByApplicationIdAndIsLatestTrueOrderByCreatedAtDesc(UUID applicationId);
+
+    List<Document> findByApplicationIdAndDocumentTypeOrderByVersionNumberDesc(UUID applicationId, String documentType);
+
     long countByApplicationId(UUID applicationId);
+
+    long countByApplicationIdAndIsLatestTrue(UUID applicationId);
 }

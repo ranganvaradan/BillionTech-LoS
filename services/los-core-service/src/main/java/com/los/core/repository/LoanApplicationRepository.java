@@ -29,4 +29,10 @@ public interface LoanApplicationRepository extends JpaRepository<LoanApplication
     java.util.List<Object[]> countByStatusGrouped();
 
     long countByStatus(ApplicationStatus status);
+
+    long countByStatusAndCreatedAtBefore(ApplicationStatus status, java.time.Instant before);
+
+    java.util.List<LoanApplication> findByEscalatedFalseAndSlaDeadlineBefore(java.time.Instant deadline);
+
+    java.util.List<LoanApplication> findByStatusIn(java.util.List<ApplicationStatus> statuses);
 }

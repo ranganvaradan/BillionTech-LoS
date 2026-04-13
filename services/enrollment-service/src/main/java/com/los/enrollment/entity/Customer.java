@@ -47,6 +47,18 @@ public class Customer {
     @Column(length = 45)
     private String consentIpAddress;
 
+    @Column(length = 200)
+    private String consentDeviceId;
+
+    @Column(length = 100)
+    private String consentOtpSessionId;
+
+    @Column(length = 10, unique = true)
+    private String panNumber;
+
+    @Column(length = 12, unique = true)
+    private String aadhaarHash;
+
     @CreationTimestamp
     @Column(updatable = false)
     private Instant createdAt;

@@ -39,4 +39,20 @@ public class AuditService {
     public Page<AuditEvent> getAuditTrail(UUID applicationId, Pageable pageable) {
         return auditEventRepository.findByApplicationIdOrderByCreatedAtDesc(applicationId, pageable);
     }
+
+    /**
+     * Simplified audit log — for events that don't need full previous/new state tracking.
+     */
+    @Async
+    public void logEvent(UUID applicationId, String eventType, Map<String, Object> details) {
+        AuditEvent event = AuditEvent.builder()
+                .applicationId(applicationId)
+                .eventType(eventType)
+                .action(eventType)
+                .newState(details)
+                .description(details.toString())
+                .build();
+        auditEventRepository.save(event);
+        log.debug("Audit event logged: {} for application {}", eventType, applicationId);
+    }
 }

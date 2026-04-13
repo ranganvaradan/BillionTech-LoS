@@ -200,6 +200,98 @@ public class LmsService {
     }
 
     /**
+     * Update NPA flag for a loan account based on DPD (BR-11.4).
+     * SMA-0: 1-30 days, SMA-1: 31-60 days, SMA-2: 61-90 days, NPA: >90 days.
+     */
+    public Map<String, Object> updateNpaStatus(String applicationNumber, int currentDpd) {
+        LoanAccountSummary summary = accounts.get(applicationNumber);
+        if (summary == null) {
+            return Map.of("status", "NOT_FOUND", "applicationNumber", applicationNumber);
+        }
+
+        summary.setDpd(currentDpd);
+        String previousStatus = summary.getLoanStatus();
+
+        if (currentDpd > 90) {
+            summary.setNpaFlag(true);
+            summary.setNpaCategory("NPA");
+            summary.setNpaDate(LocalDate.now());
+            summary.setLoanStatus("NPA");
+        } else if (currentDpd > 60) {
+            summary.setNpaFlag(false);
+            summary.setNpaCategory("SMA-2");
+            summary.setLoanStatus("SMA-2");
+        } else if (currentDpd > 30) {
+            summary.setNpaFlag(false);
+            summary.setNpaCategory("SMA-1");
+            summary.setLoanStatus("SMA-1");
+        } else if (currentDpd > 0) {
+            summary.setNpaFlag(false);
+            summary.setNpaCategory("SMA-0");
+            summary.setLoanStatus("SMA-0");
+        } else {
+            summary.setNpaFlag(false);
+            summary.setNpaCategory("STANDARD");
+            summary.setLoanStatus("ACTIVE");
+        }
+
+        log.info("NPA status updated for {}: DPD={}, category={}, previousStatus={}",
+                applicationNumber, currentDpd, summary.getNpaCategory(), previousStatus);
+
+        return Map.of(
+                "applicationNumber", applicationNumber,
+                "dpd", currentDpd,
+                "npaFlag", summary.isNpaFlag(),
+                "npaCategory", summary.getNpaCategory(),
+                "loanStatus", summary.getLoanStatus(),
+                "previousStatus", previousStatus
+        );
+    }
+
+    /**
+     * Get collection summary — overdue accounts, DPD buckets, NPA portfolio.
+     */
+    public Map<String, Object> getCollectionSummary() {
+        List<LoanAccountSummary> allAccounts = new ArrayList<>(accounts.values());
+
+        long totalAccounts = allAccounts.size();
+        long overdueAccounts = allAccounts.stream().filter(a -> a.getDpd() > 0).count();
+        long npaAccounts = allAccounts.stream().filter(LoanAccountSummary::isNpaFlag).count();
+
+        BigDecimal totalOverdue = allAccounts.stream()
+                .filter(a -> a.getDpd() > 0)
+                .map(LoanAccountSummary::getOverdueAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        BigDecimal totalOutstanding = allAccounts.stream()
+                .map(LoanAccountSummary::getOutstandingPrincipal)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // DPD bucket analysis
+        long sma0 = allAccounts.stream().filter(a -> a.getDpd() > 0 && a.getDpd() <= 30).count();
+        long sma1 = allAccounts.stream().filter(a -> a.getDpd() > 30 && a.getDpd() <= 60).count();
+        long sma2 = allAccounts.stream().filter(a -> a.getDpd() > 60 && a.getDpd() <= 90).count();
+        long npa = allAccounts.stream().filter(a -> a.getDpd() > 90).count();
+
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("totalAccounts", totalAccounts);
+        summary.put("overdueAccounts", overdueAccounts);
+        summary.put("npaAccounts", npaAccounts);
+        summary.put("totalOverdueAmount", totalOverdue);
+        summary.put("totalOutstandingAmount", totalOutstanding);
+        summary.put("collectionEfficiency", totalAccounts > 0
+                ? (totalAccounts - overdueAccounts) * 100.0 / totalAccounts : 100.0);
+        summary.put("dpdBuckets", Map.of(
+                "SMA-0 (1-30)", sma0,
+                "SMA-1 (31-60)", sma1,
+                "SMA-2 (61-90)", sma2,
+                "NPA (>90)", npa
+        ));
+
+        return summary;
+    }
+
+    /**
      * Generate amortization schedule using reducing balance method.
      */
     private List<RepaymentScheduleEntry> generateRepaymentSchedule(

@@ -75,6 +75,15 @@ public class LoanApplication {
 
     private UUID assignedTo;
 
+    private Instant slaDeadline;
+
+    private Instant currentStepStartedAt;
+
+    @Builder.Default
+    private boolean escalated = false;
+
+    private Instant escalatedAt;
+
     @CreationTimestamp
     @Column(updatable = false)
     private Instant createdAt;

@@ -58,4 +58,18 @@ public class LmsAdapterController {
     public ResponseEntity<List<LoanAccountSummary>> getAllAccounts() {
         return ResponseEntity.ok(lmsService.getAllAccounts());
     }
+
+    @PostMapping("/npa/{applicationNumber}")
+    @Operation(summary = "Update NPA status based on DPD (BR-11.4)")
+    public ResponseEntity<Map<String, Object>> updateNpaStatus(
+            @PathVariable String applicationNumber,
+            @RequestParam int currentDpd) {
+        return ResponseEntity.ok(lmsService.updateNpaStatus(applicationNumber, currentDpd));
+    }
+
+    @GetMapping("/collection-summary")
+    @Operation(summary = "Get collection summary with DPD buckets and NPA metrics")
+    public ResponseEntity<Map<String, Object>> getCollectionSummary() {
+        return ResponseEntity.ok(lmsService.getCollectionSummary());
+    }
 }

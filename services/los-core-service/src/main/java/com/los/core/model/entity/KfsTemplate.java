@@ -4,21 +4,21 @@ import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.annotations.UpdateTimestamp;
 import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 @Entity
-@Table(name = "workflow_configs")
+@Table(name = "kfs_templates")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class WorkflowConfig {
+public class KfsTemplate {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -27,38 +27,35 @@ public class WorkflowConfig {
     @Column(nullable = false, length = 100)
     private String name;
 
-    @Column(nullable = false, length = 30)
-    private String borrowerType;
-
     @Column(nullable = false, length = 50)
     private String loanProduct;
 
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(columnDefinition = "jsonb", nullable = false)
-    private List<Map<String, Object>> steps;
+    @Column(nullable = false, length = 20)
+    private String version;
 
-    @Column(nullable = false)
+    @Column(columnDefinition = "text", nullable = false)
+    private String templateContent;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private Map<String, Object> defaultCharges;
+
+    @Column(length = 500)
+    private String grievanceOfficerDetails;
+
+    @Column(length = 500)
+    private String lspDetails;
+
+    @Column(length = 500)
+    private String rbiCircularRef;
+
     @Builder.Default
     private boolean active = true;
-
-    @Column
-    private int version;
-
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(columnDefinition = "jsonb")
-    private Map<String, Integer> slaHoursPerStep;
-
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(columnDefinition = "jsonb")
-    private List<String> escalationEmails;
-
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(columnDefinition = "jsonb")
-    private List<Map<String, Object>> conditionalRules;
 
     @CreationTimestamp
     @Column(updatable = false)
     private Instant createdAt;
 
+    @UpdateTimestamp
     private Instant updatedAt;
 }

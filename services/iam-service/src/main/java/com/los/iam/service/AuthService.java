@@ -42,6 +42,7 @@ public class AuthService {
     private final LoginAuditRepository loginAuditRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
+    private final PasswordPolicyService passwordPolicyService;
 
     private static final int MAX_FAILED_ATTEMPTS = 5;
     private static final long LOCK_DURATION_MINUTES = 15;
@@ -192,7 +193,25 @@ public class AuthService {
             throw new RuntimeException("Current password is incorrect");
         }
 
+        // Enforce password policy
+        java.util.List<String> violations = passwordPolicyService.validate(request.getNewPassword(), user.getUsername());
+        if (!violations.isEmpty()) {
+            throw new RuntimeException("Password policy violations: " + String.join("; ", violations));
+        }
+
+        // Check password history (last 5 passwords)
+        if (passwordPolicyService.isInHistory(request.getNewPassword(), user.getPasswordHistory(), passwordEncoder)) {
+            throw new RuntimeException("Cannot reuse any of the last 5 passwords");
+        }
+
+        // Save current password to history (keep last 5)
+        user.getPasswordHistory().add(0, user.getPasswordHash());
+        if (user.getPasswordHistory().size() > 5) {
+            user.setPasswordHistory(user.getPasswordHistory().subList(0, 5));
+        }
+
         user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
+        user.setPasswordChangedAt(Instant.now());
         userRepository.save(user);
         refreshTokenRepository.revokeAllByUserId(userId);
         log.info("Password changed for user: {}", user.getUsername());
