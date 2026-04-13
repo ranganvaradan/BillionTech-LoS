@@ -17,19 +17,7 @@ apiClient.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   return config;
 });
 
-apiClient.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401 && typeof window !== 'undefined') {
-      // Clear tokens on 401 but don't force-redirect — let the calling code
-      // handle the error gracefully (e.g. show mock data on the dashboard).
-      // AuthGuard will redirect to /login on the next navigation.
-      localStorage.removeItem('los_token');
-      localStorage.removeItem('los_refresh_token');
-      localStorage.removeItem('los_user');
-    }
-    return Promise.reject(error);
-  }
-);
+// No 401 interceptor — pages handle API errors gracefully with mock data fallback.
+// Tokens are only cleared on explicit logout (Header/Sidebar logout buttons).
 
 export default apiClient;
