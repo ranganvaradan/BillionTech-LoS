@@ -1,0 +1,111 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      discovery:
+        locator:
+          enabled: true
+          lower-case-service-id: true
+      routes:
+        # IAM Service
+        - id: iam-auth
+          uri: lb://iam-service
+          predicates:
+            - Path=/api/v1/auth/**
+        - id: iam-users
+          uri: lb://iam-service
+          predicates:
+            - Path=/api/v1/users/**
+
+        # Enrollment Service
+        - id: enrollment
+          uri: lb://enrollment-service
+          predicates:
+            - Path=/api/v1/enrollment/**
+
+        # LOS Core Service
+        - id: los-applications
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/applications/**
+        - id: los-kyc
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/kyc/**
+        - id: los-workflows
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/workflows/**
+        - id: los-integrations
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/integrations/**
+        - id: los-transactions
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/transactions/**
+        - id: los-documents
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/documents/**
+        - id: los-reports
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/reports/**
+        - id: los-webhooks
+          uri: lb://los-core-service
+          predicates:
+            - Path=/webhook/**
+
+        # Notification Service
+        - id: notifications
+          uri: lb://notification-service
+          predicates:
+            - Path=/api/v1/notifications/**
+
+        # LMS Adapter
+        - id: lms
+          uri: lb://lms-adapter-service
+          predicates:
+            - Path=/api/v1/lms/**
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:los_redis_2026}
+
+los:
+  jwt:
+    secret: ${JWT_SECRET:ThisIsADevelopmentSecretKeyThatMustBeAtLeast256BitsLongForHS256Algorithm2026}
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://${EUREKA_HOST:localhost}:${EUREKA_PORT:8761}/eureka/
+  instance:
+    prefer-ip-address: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,gateway
+  endpoint:
+    health:
+      show-details: always
+    gateway:
+      enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+logging:
+  level:
+    com.los.gateway: DEBUG
+    org.springframework.cloud.gateway: INFO
