@@ -1,0 +1,23 @@
+package com.los.core.model.enums;
+
+public enum KycStepType {
+    MOBILE_OTP,
+    EMAIL_OTP,
+    AADHAAR_OTP,
+    PAN_VERIFY,
+    GSTIN_VERIFY,
+    VOTER_ID_VERIFY,
+    DL_VERIFY,
+    BANK_PENNY_DROP,
+    FACE_MATCH,
+    LIVENESS,
+    VIDEO_KYC,
+    UDYAM_VERIFY,
+    CIN_MCA21,
+    AML_SCREENING,
+    CKYC_DOWNLOAD,
+    CKYC_UPLOAD,
+    BUREAU_PULL,
+    ESIGN_KFS,
+    ESIGN_AGREEMENT
+}
