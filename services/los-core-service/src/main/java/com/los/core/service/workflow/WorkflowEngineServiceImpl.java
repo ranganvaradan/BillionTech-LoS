@@ -13,6 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -99,6 +100,114 @@ public class WorkflowEngineServiceImpl implements IWorkflowEngineService {
         config.setActive(false);
         workflowRepository.save(config);
         log.info("Workflow deactivated: {}", config.getName());
+    }
+
+    /**
+     * BR-6.2: Identify parallel step groups for concurrent execution.
+     * Steps within a parallel group can be executed simultaneously.
+     */
+    public Map<String, Object> getParallelExecutionPlan(UUID workflowId) {
+        WorkflowConfig config = workflowRepository.findById(workflowId)
+                .orElseThrow(() -> new ResourceNotFoundException("Workflow not found: " + workflowId));
+
+        List<Map<String, Object>> steps = config.getSteps();
+        List<Map<String, Object>> parallelGroups = config.getParallelGroups();
+
+        List<Map<String, Object>> executionPlan = new java.util.ArrayList<>();
+        int phase = 1;
+
+        if (parallelGroups != null && !parallelGroups.isEmpty()) {
+            // Build execution phases from parallel groups
+            java.util.Set<String> parallelStepNames = new java.util.HashSet<>();
+            for (Map<String, Object> group : parallelGroups) {
+                @SuppressWarnings("unchecked")
+                List<String> groupSteps = (List<String>) group.get("steps");
+                if (groupSteps != null) {
+                    Map<String, Object> parallelPhase = new java.util.LinkedHashMap<>();
+                    parallelPhase.put("phase", phase++);
+                    parallelPhase.put("type", "PARALLEL");
+                    parallelPhase.put("groupName", group.get("group"));
+                    parallelPhase.put("steps", groupSteps);
+                    parallelPhase.put("description", "Execute " + groupSteps.size() + " steps concurrently");
+                    executionPlan.add(parallelPhase);
+                    parallelStepNames.addAll(groupSteps);
+                }
+            }
+
+            // Add remaining sequential steps
+            for (Map<String, Object> step : steps) {
+                String stepType = (String) step.get("stepType");
+                if (stepType != null && !parallelStepNames.contains(stepType)) {
+                    Map<String, Object> sequentialPhase = new java.util.LinkedHashMap<>();
+                    sequentialPhase.put("phase", phase++);
+                    sequentialPhase.put("type", "SEQUENTIAL");
+                    sequentialPhase.put("steps", List.of(stepType));
+                    sequentialPhase.put("description", "Execute sequentially");
+                    executionPlan.add(sequentialPhase);
+                }
+            }
+        } else {
+            // Default: auto-detect parallelizable steps
+            // KYC verification steps can run in parallel; document/credit steps are sequential
+            List<String> kycSteps = new java.util.ArrayList<>();
+            List<String> otherSteps = new java.util.ArrayList<>();
+
+            for (Map<String, Object> step : steps) {
+                String stepType = (String) step.get("stepType");
+                if (stepType != null && isKycVerificationStep(stepType)) {
+                    kycSteps.add(stepType);
+                } else if (stepType != null) {
+                    otherSteps.add(stepType);
+                }
+            }
+
+            if (!kycSteps.isEmpty()) {
+                Map<String, Object> kycPhase = new java.util.LinkedHashMap<>();
+                kycPhase.put("phase", phase++);
+                kycPhase.put("type", "PARALLEL");
+                kycPhase.put("groupName", "AUTO_KYC_PARALLEL");
+                kycPhase.put("steps", kycSteps);
+                kycPhase.put("description", "Auto-detected: " + kycSteps.size() + " KYC steps can run in parallel");
+                executionPlan.add(kycPhase);
+            }
+
+            for (String step : otherSteps) {
+                Map<String, Object> seqPhase = new java.util.LinkedHashMap<>();
+                seqPhase.put("phase", phase++);
+                seqPhase.put("type", "SEQUENTIAL");
+                seqPhase.put("steps", List.of(step));
+                seqPhase.put("description", "Execute sequentially");
+                executionPlan.add(seqPhase);
+            }
+        }
+
+        return Map.of(
+                "workflowId", workflowId.toString(),
+                "workflowName", config.getName(),
+                "totalSteps", steps.size(),
+                "totalPhases", executionPlan.size(),
+                "executionPlan", executionPlan,
+                "estimatedTimeSavingPercent", calculateTimeSaving(executionPlan, steps.size())
+        );
+    }
+
+    private boolean isKycVerificationStep(String stepType) {
+        return stepType.contains("VERIFY") || stepType.contains("OTP")
+                || stepType.equals("GSTIN_VERIFY") || stepType.equals("PAN_VERIFY")
+                || stepType.equals("AADHAAR_OTP") || stepType.equals("BANK_PENNY_DROP")
+                || stepType.equals("UDYAM_VERIFY") || stepType.equals("CIN_MCA21");
+    }
+
+    private int calculateTimeSaving(List<Map<String, Object>> plan, int totalSteps) {
+        long parallelStepCount = plan.stream()
+                .filter(p -> "PARALLEL".equals(p.get("type")))
+                .mapToLong(p -> {
+                    @SuppressWarnings("unchecked")
+                    List<String> steps2 = (List<String>) p.get("steps");
+                    return steps2 != null ? steps2.size() - 1 : 0;
+                })
+                .sum();
+        return totalSteps > 0 ? (int) (parallelStepCount * 100 / totalSteps) : 0;
     }
 
     private WorkflowConfigResponse toResponse(WorkflowConfig config) {

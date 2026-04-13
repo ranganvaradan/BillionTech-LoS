@@ -87,4 +87,25 @@ public class NotificationController {
     public ResponseEntity<NotificationLog> resend(@PathVariable UUID id) {
         return ResponseEntity.ok(notificationService.resend(id));
     }
+
+    @PostMapping("/bulk-overdue")
+    @Operation(summary = "BR-10.7: Send bulk SMS overdue reminders")
+    public ResponseEntity<Map<String, Object>> sendBulkOverdue(
+            @RequestBody java.util.List<Map<String, Object>> overdueAccounts) {
+        return ResponseEntity.ok(notificationService.sendBulkOverdueReminders(overdueAccounts));
+    }
+
+    @PostMapping("/in-app")
+    @Operation(summary = "BR-10.4: Create in-app notification")
+    public ResponseEntity<NotificationLog> createInApp(@RequestBody Map<String, String> body) {
+        UUID applicationId = body.containsKey("applicationId") ? UUID.fromString(body.get("applicationId")) : null;
+        return ResponseEntity.ok(notificationService.createInAppNotification(
+                applicationId, body.get("userId"), body.get("title"), body.get("message")));
+    }
+
+    @GetMapping("/in-app/{userId}")
+    @Operation(summary = "BR-10.4: Get in-app notifications for a user")
+    public ResponseEntity<java.util.List<NotificationLog>> getInAppNotifications(@PathVariable String userId) {
+        return ResponseEntity.ok(notificationService.getInAppNotifications(userId));
+    }
 }

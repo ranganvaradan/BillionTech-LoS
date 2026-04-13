@@ -18,6 +18,9 @@ import {
   Users,
   Link2,
   UserCircle,
+  Handshake,
+  Key,
+  Building2,
 } from 'lucide-react';
 import { useState } from 'react';
 
@@ -28,10 +31,13 @@ const NAV_ITEMS = [
   { href: '/kyc', label: 'KYC Management', icon: Shield },
   { href: '/workflows', label: 'Workflows', icon: GitBranch },
   { href: '/transactions', label: 'Transactions', icon: CreditCard },
+  { href: '/co-lending', label: 'Co-Lending', icon: Handshake },
+  { href: '/collateral', label: 'Collateral', icon: Building2 },
   { href: '/notifications', label: 'Notifications', icon: Bell },
   { href: '/reports', label: 'Reports', icon: BarChart3 },
   { href: '/admin/users', label: 'User Management', icon: Users },
   { href: '/admin/aggregators', label: 'Aggregators', icon: Link2 },
+  { href: '/admin/api-keys', label: 'API Keys', icon: Key },
   { href: '/portal', label: 'Customer Portal', icon: UserCircle },
 ];
 

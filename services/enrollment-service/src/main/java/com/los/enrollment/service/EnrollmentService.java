@@ -11,8 +11,13 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.los.enrollment.dto.request.AssistedRegisterRequest;
+import com.los.enrollment.dto.request.EmailOtpRequest;
+
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
@@ -25,6 +30,7 @@ public class EnrollmentService {
     private final StringRedisTemplate redisTemplate;
 
     private static final String OTP_PREFIX = "otp:mobile:";
+    private static final String EMAIL_OTP_PREFIX = "otp:email:";
     private static final Duration OTP_TTL = Duration.ofMinutes(5);
     private static final int OTP_LENGTH = 6;
 
@@ -103,6 +109,96 @@ public class EnrollmentService {
     private String generateOtp() {
         int otp = ThreadLocalRandom.current().nextInt(100000, 1000000);
         return String.valueOf(otp);
+    }
+
+    /**
+     * BR-1.4: RM-initiated assisted registration.
+     */
+    @Transactional
+    public CustomerResponse assistedRegister(AssistedRegisterRequest request) {
+        if (customerRepository.existsByMobile(request.getMobile())) {
+            Customer existing = customerRepository.findByMobile(request.getMobile()).orElseThrow();
+            return toResponse(existing);
+        }
+
+        Customer customer = Customer.builder()
+                .fullName(request.getFullName())
+                .mobile(request.getMobile())
+                .email(request.getEmail())
+                .build();
+
+        customer = customerRepository.save(customer);
+        log.info("Assisted registration by RM {} for customer: {} (mobile: {}, channel: {})",
+                request.getRmUserId(), customer.getId(), request.getMobile(), request.getChannel());
+
+        sendOtp(request.getMobile());
+        return toResponse(customer);
+    }
+
+    /**
+     * BR-1.5: Send email OTP.
+     */
+    public void sendEmailOtp(String email) {
+        String otp = generateOtp();
+        redisTemplate.opsForValue().set(EMAIL_OTP_PREFIX + email, otp, OTP_TTL);
+        log.info("Email OTP generated for: {} (OTP: {} — would be sent via email in production)", email, otp);
+    }
+
+    /**
+     * BR-1.5: Verify email OTP.
+     */
+    @Transactional
+    public CustomerResponse verifyEmailOtp(EmailOtpRequest request) {
+        String storedOtp = redisTemplate.opsForValue().get(EMAIL_OTP_PREFIX + request.getEmail());
+        if (storedOtp == null) {
+            throw new RuntimeException("Email OTP expired or not found. Request a new OTP.");
+        }
+        if (!storedOtp.equals(request.getOtp())) {
+            throw new RuntimeException("Invalid email OTP");
+        }
+
+        redisTemplate.delete(EMAIL_OTP_PREFIX + request.getEmail());
+
+        Customer customer = customerRepository.findByEmail(request.getEmail())
+                .orElseThrow(() -> new RuntimeException("Customer not found for email: " + request.getEmail()));
+
+        customer.setEmailVerified(true);
+        customer = customerRepository.save(customer);
+        log.info("Email verified for customer: {}", customer.getId());
+
+        return toResponse(customer);
+    }
+
+    /**
+     * BR-1.7: DigiLocker integration — initiate document fetch.
+     */
+    public Map<String, Object> initiateDigiLocker(UUID customerId) {
+        log.info("Initiating DigiLocker document fetch for customer: {}", customerId);
+        // In production, this would redirect to DigiLocker OAuth flow
+        return Map.of(
+                "customerId", customerId.toString(),
+                "status", "INITIATED",
+                "redirectUrl", "https://digilocker.gov.in/oauth/authorize?client_id=LOS_APP&redirect_uri=...",
+                "message", "Redirect customer to DigiLocker for document consent"
+        );
+    }
+
+    /**
+     * BR-1.7: DigiLocker callback — process fetched documents.
+     */
+    public Map<String, Object> processDigiLockerCallback(UUID customerId, String authorizationCode) {
+        log.info("DigiLocker callback received for customer: {} with code: {}", customerId, authorizationCode);
+        // In production, exchange code for access token, fetch documents
+        return Map.of(
+                "customerId", customerId.toString(),
+                "status", "DOCUMENTS_FETCHED",
+                "documents", List.of(
+                        Map.of("type", "AADHAAR", "issuerId", "UIDAI", "status", "VERIFIED"),
+                        Map.of("type", "PAN", "issuerId", "INCOMETAX", "status", "VERIFIED"),
+                        Map.of("type", "DRIVING_LICENSE", "issuerId", "PARIVAHAN", "status", "AVAILABLE")
+                ),
+                "message", "Documents fetched from DigiLocker successfully"
+        );
     }
 
     private CustomerResponse toResponse(Customer customer) {

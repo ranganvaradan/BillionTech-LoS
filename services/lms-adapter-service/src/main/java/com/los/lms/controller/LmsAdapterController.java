@@ -72,4 +72,24 @@ public class LmsAdapterController {
     public ResponseEntity<Map<String, Object>> getCollectionSummary() {
         return ResponseEntity.ok(lmsService.getCollectionSummary());
     }
+
+    @PostMapping("/prepayment/{applicationNumber}")
+    @Operation(summary = "BR-11.5: Process prepayment (partial or foreclosure)")
+    public ResponseEntity<Map<String, Object>> processPrepayment(
+            @PathVariable String applicationNumber,
+            @RequestParam java.math.BigDecimal amount,
+            @RequestParam(defaultValue = "PARTIAL") String type) {
+        return ResponseEntity.ok(lmsService.processPrepayment(applicationNumber, amount, type));
+    }
+
+    @PostMapping("/tranche/{applicationNumber}")
+    @Operation(summary = "BR-9.7: Multi-tranche disbursement")
+    public ResponseEntity<Map<String, Object>> trancheDisbursement(
+            @PathVariable String applicationNumber,
+            @RequestParam java.math.BigDecimal trancheAmount,
+            @RequestParam int trancheNumber,
+            @RequestParam int totalTranches) {
+        return ResponseEntity.ok(lmsService.processTrancheDisbursement(
+                applicationNumber, trancheAmount, trancheNumber, totalTranches));
+    }
 }

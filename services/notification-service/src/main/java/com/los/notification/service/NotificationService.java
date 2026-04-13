@@ -181,6 +181,89 @@ public class NotificationService {
         return notificationLogRepository.save(notifLog);
     }
 
+    /**
+     * BR-10.7: Bulk SMS for overdue reminders.
+     */
+    @Transactional
+    public Map<String, Object> sendBulkOverdueReminders(List<Map<String, Object>> overdueAccounts) {
+        int sent = 0;
+        int failed = 0;
+        List<String> errors = new java.util.ArrayList<>();
+
+        for (Map<String, Object> account : overdueAccounts) {
+            String mobile = (String) account.get("mobile");
+            String customerName = (String) account.getOrDefault("customerName", "Customer");
+            String applicationNumber = (String) account.getOrDefault("applicationNumber", "N/A");
+            Object overdueAmountObj = account.getOrDefault("overdueAmount", "0");
+            Object dpdObj = account.getOrDefault("dpd", 0);
+
+            if (mobile == null || mobile.isBlank()) {
+                errors.add(applicationNumber + ": no mobile number");
+                failed++;
+                continue;
+            }
+
+            try {
+                Map<String, Object> data = Map.of(
+                        "customerName", customerName,
+                        "applicationNumber", applicationNumber,
+                        "overdueAmount", overdueAmountObj.toString(),
+                        "dpd", dpdObj.toString()
+                );
+
+                NotificationEvent event = new NotificationEvent();
+                event.setChannel("SMS");
+                event.setRecipient(mobile);
+                event.setTemplateCode("OVERDUE_REMINDER");
+                event.setEventType("OVERDUE_REMINDER");
+                event.setTemplateData(data);
+
+                sendNotification(event);
+                sent++;
+            } catch (Exception e) {
+                errors.add(applicationNumber + ": " + e.getMessage());
+                failed++;
+            }
+        }
+
+        log.info("Bulk overdue reminders: {} sent, {} failed out of {}", sent, failed, overdueAccounts.size());
+
+        return Map.of(
+                "totalRequested", overdueAccounts.size(),
+                "sent", sent,
+                "failed", failed,
+                "errors", errors
+        );
+    }
+
+    /**
+     * BR-10.4: In-app notification — store for dashboard polling.
+     * In production, would use WebSocket/SSE push. Here we store and expose via REST.
+     */
+    @Transactional
+    public NotificationLog createInAppNotification(UUID applicationId, String userId,
+                                                     String title, String message) {
+        NotificationLog notifLog = NotificationLog.builder()
+                .channel("IN_APP")
+                .recipient(userId)
+                .templateCode("IN_APP_ALERT")
+                .eventType("IN_APP")
+                .applicationId(applicationId)
+                .templateData(Map.of("title", title, "message", message))
+                .status("DELIVERED")
+                .sentAt(Instant.now())
+                .build();
+
+        return notificationLogRepository.save(notifLog);
+    }
+
+    /**
+     * BR-10.4: Get unread in-app notifications for a user.
+     */
+    public List<NotificationLog> getInAppNotifications(String userId) {
+        return notificationLogRepository.findByChannelAndRecipientOrderByCreatedAtDesc("IN_APP", userId);
+    }
+
     private void publishToQueue(String channel, String recipient, String templateCode,
                                  String eventType, UUID applicationId, Map<String, Object> data) {
         NotificationEvent event = new NotificationEvent();

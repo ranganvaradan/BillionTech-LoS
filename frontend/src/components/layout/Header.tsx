@@ -1,12 +1,36 @@
 'use client';
 
-import { Bell, Search, User, LogOut } from 'lucide-react';
+import { Bell, Search, User, LogOut, Moon, Sun } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 export default function Header() {
   const router = useRouter();
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [darkMode, setDarkMode] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('los_dark_mode');
+      if (saved === 'true') {
+        setDarkMode(true);
+        document.documentElement.classList.add('dark');
+      }
+    }
+  }, []);
+
+  const toggleDarkMode = () => {
+    const next = !darkMode;
+    setDarkMode(next);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('los_dark_mode', String(next));
+      if (next) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    }
+  };
 
   const handleLogout = () => {
     if (typeof window !== 'undefined') {
@@ -30,6 +54,15 @@ export default function Header() {
 
       {/* Right side */}
       <div className="flex items-center gap-4">
+        {/* Dark mode toggle (BR-12.10) */}
+        <button
+          onClick={toggleDarkMode}
+          className="p-2 text-slate-500 hover:text-slate-700 transition-colors"
+          title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+        >
+          {darkMode ? <Sun size={18} /> : <Moon size={18} />}
+        </button>
+
         {/* Notifications */}
         <button className="relative p-2 text-slate-500 hover:text-slate-700 transition-colors">
           <Bell size={18} />

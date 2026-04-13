@@ -292,6 +292,94 @@ public class LmsService {
     }
 
     /**
+     * BR-11.5: Process prepayment — partial or full.
+     */
+    public Map<String, Object> processPrepayment(String applicationNumber, BigDecimal prepaymentAmount,
+                                                   String prepaymentType) {
+        LoanAccountSummary summary = accounts.get(applicationNumber);
+        if (summary == null) {
+            return Map.of("status", "NOT_FOUND", "applicationNumber", applicationNumber);
+        }
+
+        BigDecimal outstanding = summary.getOutstandingPrincipal();
+        boolean isFullPrepayment = "FULL".equalsIgnoreCase(prepaymentType)
+                || prepaymentAmount.compareTo(outstanding) >= 0;
+
+        BigDecimal foreclosureCharges = BigDecimal.ZERO;
+        if (isFullPrepayment) {
+            // Foreclosure charges: 2% of outstanding for fixed rate, 0 for floating
+            foreclosureCharges = outstanding.multiply(new BigDecimal("0.02"))
+                    .setScale(2, RoundingMode.HALF_UP);
+            summary.setOutstandingPrincipal(BigDecimal.ZERO);
+            summary.setLoanStatus("CLOSED");
+            summary.setNextEmiDate(null);
+            summary.setNextEmiAmount(BigDecimal.ZERO);
+        } else {
+            summary.setOutstandingPrincipal(outstanding.subtract(prepaymentAmount));
+            // Recalculate EMI based on reduced principal
+            int remainingEmis = summary.getTotalEmis() - summary.getPaidEmis();
+            if (remainingEmis > 0) {
+                LoanHandoverRequest handover = handovers.get(applicationNumber);
+                BigDecimal rate = handover != null ? handover.getInterestRate() : new BigDecimal("12.5");
+                List<RepaymentScheduleEntry> newSchedule = generateRepaymentSchedule(
+                        summary.getOutstandingPrincipal(), rate, remainingEmis);
+                schedules.put(applicationNumber, newSchedule);
+                if (!newSchedule.isEmpty()) {
+                    summary.setNextEmiAmount(newSchedule.get(0).getEmiAmount());
+                }
+            }
+        }
+
+        summary.setTotalPaid(summary.getTotalPaid().add(prepaymentAmount));
+
+        log.info("Prepayment processed for {}: type={}, amount={}, remaining={}",
+                applicationNumber, isFullPrepayment ? "FORECLOSURE" : "PARTIAL",
+                prepaymentAmount, summary.getOutstandingPrincipal());
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("applicationNumber", applicationNumber);
+        result.put("prepaymentType", isFullPrepayment ? "FORECLOSURE" : "PARTIAL");
+        result.put("prepaymentAmount", prepaymentAmount);
+        result.put("foreclosureCharges", foreclosureCharges);
+        result.put("totalPayable", isFullPrepayment ? prepaymentAmount.add(foreclosureCharges) : prepaymentAmount);
+        result.put("remainingOutstanding", summary.getOutstandingPrincipal());
+        result.put("newEmiAmount", summary.getNextEmiAmount());
+        result.put("loanStatus", summary.getLoanStatus());
+        result.put("status", "PROCESSED");
+        return result;
+    }
+
+    /**
+     * BR-9.7: Multi-tranche disbursement — disburse in multiple tranches.
+     */
+    public Map<String, Object> processTrancheDisbursement(String applicationNumber, BigDecimal trancheAmount,
+                                                            int trancheNumber, int totalTranches) {
+        LoanAccountSummary summary = accounts.get(applicationNumber);
+        if (summary == null) {
+            return Map.of("status", "NOT_FOUND", "applicationNumber", applicationNumber);
+        }
+
+        BigDecimal previouslyDisbursed = summary.getDisbursedAmount();
+        BigDecimal newDisbursed = previouslyDisbursed.add(trancheAmount);
+        summary.setDisbursedAmount(newDisbursed);
+        summary.setOutstandingPrincipal(summary.getOutstandingPrincipal().add(trancheAmount));
+
+        log.info("Tranche disbursement for {}: tranche {}/{}, amount={}, totalDisbursed={}",
+                applicationNumber, trancheNumber, totalTranches, trancheAmount, newDisbursed);
+
+        return Map.of(
+                "applicationNumber", applicationNumber,
+                "trancheNumber", trancheNumber,
+                "totalTranches", totalTranches,
+                "trancheAmount", trancheAmount,
+                "totalDisbursed", newDisbursed,
+                "sanctionedAmount", summary.getSanctionedAmount(),
+                "remainingToDisburse", summary.getSanctionedAmount().subtract(newDisbursed),
+                "status", trancheNumber >= totalTranches ? "FULLY_DISBURSED" : "PARTIALLY_DISBURSED"
+        );
+    }
+
+    /**
      * Generate amortization schedule using reducing balance method.
      */
     private List<RepaymentScheduleEntry> generateRepaymentSchedule(

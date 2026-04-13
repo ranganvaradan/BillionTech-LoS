@@ -4,6 +4,7 @@ import com.los.core.model.dto.request.WorkflowConfigRequest;
 import com.los.core.model.dto.response.WorkflowConfigResponse;
 import com.los.core.model.enums.BorrowerType;
 import com.los.core.service.workflow.IWorkflowEngineService;
+import com.los.core.service.workflow.WorkflowEngineServiceImpl;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -13,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -22,6 +24,7 @@ import java.util.UUID;
 public class WorkflowController {
 
     private final IWorkflowEngineService workflowEngineService;
+    private final WorkflowEngineServiceImpl workflowEngineImpl;
 
     @PostMapping
     @Operation(summary = "Create a new workflow configuration")
@@ -63,5 +66,11 @@ public class WorkflowController {
     public ResponseEntity<Void> deactivate(@PathVariable UUID workflowId) {
         workflowEngineService.deactivateWorkflow(workflowId);
         return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/{workflowId}/parallel-plan")
+    @Operation(summary = "BR-6.2: Get parallel execution plan for a workflow")
+    public ResponseEntity<Map<String, Object>> getParallelPlan(@PathVariable UUID workflowId) {
+        return ResponseEntity.ok(workflowEngineImpl.getParallelExecutionPlan(workflowId));
     }
 }

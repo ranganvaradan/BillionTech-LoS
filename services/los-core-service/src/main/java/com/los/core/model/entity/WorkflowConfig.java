@@ -56,6 +56,14 @@ public class WorkflowConfig {
     @Column(columnDefinition = "jsonb")
     private List<Map<String, Object>> conditionalRules;
 
+    /**
+     * BR-6.2: Parallel step groups — steps within a group execute concurrently.
+     * Example: [{"group": "KYC_PARALLEL", "steps": ["AADHAAR_OTP", "PAN_VERIFY", "GSTIN_VERIFY"]}]
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private List<Map<String, Object>> parallelGroups;
+
     @CreationTimestamp
     @Column(updatable = false)
     private Instant createdAt;

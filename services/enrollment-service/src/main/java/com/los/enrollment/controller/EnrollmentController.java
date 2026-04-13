@@ -1,5 +1,7 @@
 package com.los.enrollment.controller;
 
+import com.los.enrollment.dto.request.AssistedRegisterRequest;
+import com.los.enrollment.dto.request.EmailOtpRequest;
 import com.los.enrollment.dto.request.OtpVerifyRequest;
 import com.los.enrollment.dto.request.RegisterRequest;
 import com.los.enrollment.dto.response.CustomerResponse;
@@ -55,5 +57,39 @@ public class EnrollmentController {
     @Operation(summary = "Get customer by ID")
     public ResponseEntity<CustomerResponse> getCustomer(@PathVariable UUID customerId) {
         return ResponseEntity.ok(enrollmentService.getCustomer(customerId));
+    }
+
+    @PostMapping("/assisted-register")
+    @Operation(summary = "BR-1.4: RM-initiated assisted registration")
+    public ResponseEntity<CustomerResponse> assistedRegister(
+            @Valid @RequestBody AssistedRegisterRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(enrollmentService.assistedRegister(request));
+    }
+
+    @PostMapping("/email-otp/send")
+    @Operation(summary = "BR-1.5: Send email OTP")
+    public ResponseEntity<Map<String, String>> sendEmailOtp(@RequestBody Map<String, String> body) {
+        enrollmentService.sendEmailOtp(body.get("email"));
+        return ResponseEntity.ok(Map.of("message", "Email OTP sent successfully"));
+    }
+
+    @PostMapping("/email-otp/verify")
+    @Operation(summary = "BR-1.5: Verify email OTP")
+    public ResponseEntity<CustomerResponse> verifyEmailOtp(@Valid @RequestBody EmailOtpRequest request) {
+        return ResponseEntity.ok(enrollmentService.verifyEmailOtp(request));
+    }
+
+    @PostMapping("/{customerId}/digilocker/initiate")
+    @Operation(summary = "BR-1.7: Initiate DigiLocker document fetch")
+    public ResponseEntity<Map<String, Object>> initiateDigiLocker(@PathVariable UUID customerId) {
+        return ResponseEntity.ok(enrollmentService.initiateDigiLocker(customerId));
+    }
+
+    @PostMapping("/{customerId}/digilocker/callback")
+    @Operation(summary = "BR-1.7: Process DigiLocker callback")
+    public ResponseEntity<Map<String, Object>> processDigiLockerCallback(
+            @PathVariable UUID customerId,
+            @RequestParam String authorizationCode) {
+        return ResponseEntity.ok(enrollmentService.processDigiLockerCallback(customerId, authorizationCode));
     }
 }

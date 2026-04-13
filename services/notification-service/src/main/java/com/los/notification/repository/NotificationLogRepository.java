@@ -18,5 +18,7 @@ public interface NotificationLogRepository extends JpaRepository<NotificationLog
 
     List<NotificationLog> findByStatusAndRetryCountLessThan(String status, int maxRetry);
 
+    List<NotificationLog> findByChannelAndRecipientOrderByCreatedAtDesc(String channel, String recipient);
+
     long countByStatus(String status);
 }
