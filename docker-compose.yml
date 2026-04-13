@@ -76,7 +76,9 @@ services:
 
   # ─── Backend Services ──────────────────────────────────
   discovery-service:
-    build: ./services/discovery-service
+    build:
+      context: .
+      dockerfile: services/discovery-service/Dockerfile
     container_name: los-discovery
     ports:
       - "8761:8761"
@@ -90,7 +92,9 @@ services:
       start_period: 30s
 
   api-gateway:
-    build: ./services/api-gateway
+    build:
+      context: .
+      dockerfile: services/api-gateway/Dockerfile
     container_name: los-gateway
     ports:
       - "8080:8080"
@@ -105,7 +109,9 @@ services:
         condition: service_healthy
 
   iam-service:
-    build: ./services/iam-service
+    build:
+      context: .
+      dockerfile: services/iam-service/Dockerfile
     container_name: los-iam
     ports:
       - "8081:8081"
@@ -125,7 +131,9 @@ services:
         condition: service_healthy
 
   enrollment-service:
-    build: ./services/enrollment-service
+    build:
+      context: .
+      dockerfile: services/enrollment-service/Dockerfile
     container_name: los-enrollment
     ports:
       - "8082:8082"
@@ -143,7 +151,9 @@ services:
         condition: service_healthy
 
   los-core-service:
-    build: ./services/los-core-service
+    build:
+      context: .
+      dockerfile: services/los-core-service/Dockerfile
     container_name: los-core
     ports:
       - "8083:8083"
@@ -167,7 +177,9 @@ services:
         condition: service_healthy
 
   notification-service:
-    build: ./services/notification-service
+    build:
+      context: .
+      dockerfile: services/notification-service/Dockerfile
     container_name: los-notification
     ports:
       - "8084:8084"
@@ -188,7 +200,9 @@ services:
         condition: service_healthy
 
   lms-adapter-service:
-    build: ./services/lms-adapter-service
+    build:
+      context: .
+      dockerfile: services/lms-adapter-service/Dockerfile
     container_name: los-lms
     ports:
       - "8085:8085"
@@ -208,7 +222,7 @@ services:
     build: ./frontend
     container_name: los-frontend
     ports:
-      - "3000:3000"
+      - "3007:3000"
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8080
     depends_on:
