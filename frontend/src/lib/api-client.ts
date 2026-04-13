@@ -24,6 +24,8 @@ apiClient.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401 && typeof window !== 'undefined') {
       localStorage.removeItem('los_token');
+      localStorage.removeItem('los_refresh_token');
+      localStorage.removeItem('los_user');
       window.location.href = '/login';
     }
     return Promise.reject(error);

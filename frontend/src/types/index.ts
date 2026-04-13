@@ -167,10 +167,22 @@ export interface LoginRequest {
   password: string;
 }
 
-export interface LoginResponse {
-  token: string;
-  refreshToken: string;
+export interface LoginUser {
+  id: string;
   username: string;
+  email: string;
+  firstName: string;
+  lastName: string;
   roles: string[];
+  enabled: boolean;
+  twoFactorEnabled: boolean;
+}
+
+export interface LoginResponse {
+  accessToken: string;
+  refreshToken: string;
+  expiresIn: number;
+  tokenType: string;
+  user: LoginUser;
   requiresTwoFactor?: boolean;
 }

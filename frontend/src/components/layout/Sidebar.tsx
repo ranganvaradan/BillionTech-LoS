@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   LayoutDashboard,
   FileText,
@@ -86,13 +86,30 @@ export default function Sidebar() {
         })}
       </nav>
 
-      {/* Collapse Toggle */}
-      <button
-        onClick={() => setCollapsed(!collapsed)}
-        className="flex items-center justify-center py-3 border-t border-white/10 text-slate-400 hover:text-white transition-colors"
-      >
-        {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-      </button>
+      {/* Logout + Collapse */}
+      <div className="border-t border-white/10">
+        <button
+          onClick={() => {
+            localStorage.removeItem('los_token');
+            localStorage.removeItem('los_refresh_token');
+            localStorage.removeItem('los_user');
+            window.location.href = '/login';
+          }}
+          className={`flex items-center gap-3 w-full px-3 py-2.5 text-sm text-slate-400 hover:bg-red-500/20 hover:text-red-300 transition-colors ${
+            collapsed ? 'justify-center' : ''
+          }`}
+          title={collapsed ? 'Logout' : undefined}
+        >
+          <LogOut size={18} className="shrink-0" />
+          {!collapsed && <span>Logout</span>}
+        </button>
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          className="flex items-center justify-center w-full py-3 text-slate-400 hover:text-white transition-colors"
+        >
+          {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+        </button>
+      </div>
     </aside>
   );
 }

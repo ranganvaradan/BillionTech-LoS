@@ -22,11 +22,17 @@ export default function LoginPage() {
     try {
       const result = await authApi.login({ username, password });
       if (result.requiresTwoFactor) {
-        setTempToken(result.token);
+        setTempToken(result.accessToken);
         setShow2FA(true);
       } else {
-        localStorage.setItem('los_token', result.token);
-        localStorage.setItem('los_user', JSON.stringify({ username: result.username, roles: result.roles }));
+        localStorage.setItem('los_token', result.accessToken);
+        localStorage.setItem('los_refresh_token', result.refreshToken);
+        localStorage.setItem('los_user', JSON.stringify({
+          username: result.user.username,
+          roles: result.user.roles,
+          firstName: result.user.firstName,
+          lastName: result.user.lastName,
+        }));
         router.push('/dashboard');
       }
     } catch (err: unknown) {
@@ -44,8 +50,14 @@ export default function LoginPage() {
 
     try {
       const result = await authApi.verify2fa(tempToken, totpCode);
-      localStorage.setItem('los_token', result.token);
-      localStorage.setItem('los_user', JSON.stringify({ username: result.username, roles: result.roles }));
+      localStorage.setItem('los_token', result.accessToken);
+      localStorage.setItem('los_refresh_token', result.refreshToken);
+      localStorage.setItem('los_user', JSON.stringify({
+        username: result.user.username,
+        roles: result.user.roles,
+        firstName: result.user.firstName,
+        lastName: result.user.lastName,
+      }));
       router.push('/dashboard');
     } catch {
       setError('Invalid 2FA code. Please try again.');
