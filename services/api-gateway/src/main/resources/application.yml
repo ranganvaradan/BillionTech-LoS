@@ -10,6 +10,13 @@ spring:
         locator:
           enabled: true
           lower-case-service-id: true
+      default-filters:
+        - DedupeResponseHeader=Access-Control-Allow-Credentials Access-Control-Allow-Origin
+        - AddResponseHeader=X-Content-Type-Options, nosniff
+        - AddResponseHeader=X-Frame-Options, DENY
+        - AddResponseHeader=X-XSS-Protection, 1; mode=block
+        - AddResponseHeader=Strict-Transport-Security, max-age=31536000; includeSubDomains
+        - AddResponseHeader=Cache-Control, no-store
       routes:
         # IAM Service
         - id: iam-auth

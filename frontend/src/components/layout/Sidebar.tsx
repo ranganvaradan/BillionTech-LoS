@@ -10,6 +10,7 @@ import {
   CreditCard,
   GitBranch,
   Bell,
+  BarChart3,
   LogOut,
   ChevronLeft,
   ChevronRight,
@@ -22,6 +23,8 @@ const NAV_ITEMS = [
   { href: '/kyc', label: 'KYC Management', icon: Shield },
   { href: '/workflows', label: 'Workflows', icon: GitBranch },
   { href: '/transactions', label: 'Transactions', icon: CreditCard },
+  { href: '/notifications', label: 'Notifications', icon: Bell },
+  { href: '/reports', label: 'Reports', icon: BarChart3 },
 ];
 
 export default function Sidebar() {
