@@ -7,7 +7,7 @@ VALUES (
     'a0000000-0000-0000-0000-000000000001',
     'admin',
     'admin@los.local',
-    '$2a$12$LJ3m4ys3uz0KGHjBHMjuku1jSIzWJqMCNEbgP8bqJB3kXtCp1Wwbm',
+    '$2a$12$EfxlHSPTBZzpLhBlz8jfCuDglgOMDVLWfIMf0rKaM6pSxxH/NDJyq',
     'System',
     'Admin',
     TRUE
