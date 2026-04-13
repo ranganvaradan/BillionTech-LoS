@@ -1,5 +1,5 @@
 # ─── Stage 1: Build ─────────────────────────────────────
-FROM eclipse-temurin:21-jdk-alpine AS builder
+FROM maven:3.9-eclipse-temurin-21-alpine AS builder
 WORKDIR /build
 
 # Copy parent POM and all module POMs first (for dependency caching)
@@ -11,9 +11,6 @@ COPY services/enrollment-service/pom.xml ./services/enrollment-service/pom.xml
 COPY services/los-core-service/pom.xml ./services/los-core-service/pom.xml
 COPY services/notification-service/pom.xml ./services/notification-service/pom.xml
 COPY services/lms-adapter-service/pom.xml ./services/lms-adapter-service/pom.xml
-
-# Install Maven (Alpine doesn't have it)
-RUN apk add --no-cache maven
 
 # Download dependencies (cached if POMs don't change)
 RUN mvn dependency:go-offline -pl services/discovery-service -am -q 2>/dev/null || true

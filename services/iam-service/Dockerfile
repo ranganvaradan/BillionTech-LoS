@@ -1,5 +1,5 @@
 # ─── Stage 1: Build ─────────────────────────────────────
-FROM eclipse-temurin:21-jdk-alpine AS builder
+FROM maven:3.9-eclipse-temurin-21-alpine AS builder
 WORKDIR /build
 
 COPY pom.xml ./pom.xml
@@ -11,7 +11,6 @@ COPY services/los-core-service/pom.xml ./services/los-core-service/pom.xml
 COPY services/notification-service/pom.xml ./services/notification-service/pom.xml
 COPY services/lms-adapter-service/pom.xml ./services/lms-adapter-service/pom.xml
 
-RUN apk add --no-cache maven
 RUN mvn dependency:go-offline -pl services/iam-service -am -q 2>/dev/null || true
 
 COPY services/discovery-service/src ./services/discovery-service/src
