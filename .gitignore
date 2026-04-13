@@ -22,6 +22,7 @@ Thumbs.db
 # Environment
 .env
 *.log
+logs/
 
 # Node (for future UI)
 node_modules/

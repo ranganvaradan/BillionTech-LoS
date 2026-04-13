@@ -27,6 +27,10 @@ spring:
           uri: lb://iam-service
           predicates:
             - Path=/api/v1/users/**
+        - id: iam-security
+          uri: lb://iam-service
+          predicates:
+            - Path=/api/v1/security/sessions/**,/api/v1/security/api-keys/**,/api/v1/security/ip-whitelist/**
 
         # Enrollment Service
         - id: enrollment
@@ -63,6 +67,62 @@ spring:
           uri: lb://los-core-service
           predicates:
             - Path=/api/v1/reports/**
+        - id: los-credit
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/credit/**
+        - id: los-credit-enhanced
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/credit-enhanced/**
+        - id: los-credit-rules
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/credit-rules/**
+        - id: los-audit
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/audit/**
+        - id: los-kfs
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/kfs/**
+        - id: los-aa
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/aa/**
+        - id: los-nach
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/nach/**
+        - id: los-esign
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/esign/**
+        - id: los-tat
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/tat/**
+        - id: los-core-security
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/security/pii/**
+        - id: los-co-lending
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/co-lending/**
+        - id: los-collateral
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/collateral/**
+        - id: los-ocr
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/ocr/**
+        - id: los-partners
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/partners/**
         - id: los-webhooks
           uri: lb://los-core-service
           predicates:

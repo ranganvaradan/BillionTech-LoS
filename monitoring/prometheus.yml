@@ -1,0 +1,38 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'discovery-service'
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['discovery-service:8761']
+
+  - job_name: 'api-gateway'
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['api-gateway:8080']
+
+  - job_name: 'iam-service'
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['iam-service:8081']
+
+  - job_name: 'enrollment-service'
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['enrollment-service:8082']
+
+  - job_name: 'los-core-service'
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['los-core-service:8083']
+
+  - job_name: 'notification-service'
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['notification-service:8084']
+
+  - job_name: 'lms-adapter-service'
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ['lms-adapter-service:8085']
