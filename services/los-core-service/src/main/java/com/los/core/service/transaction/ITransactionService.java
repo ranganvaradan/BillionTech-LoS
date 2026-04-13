@@ -10,9 +10,9 @@ import java.util.UUID;
 
 public interface ITransactionService {
 
-    TransactionResponse triggerDisbursement(UUID applicationId, Map<String, Object> disbursementInfo);
+    TransactionResponse triggerDisbursement(UUID applicationId, BigDecimal amount, Map<String, Object> metadata);
 
-    TransactionResponse recordRepayment(UUID applicationId, BigDecimal amount, String referenceNo, Map<String, Object> meta);
+    TransactionResponse recordRepayment(UUID applicationId, BigDecimal amount, String utrNumber, Map<String, Object> metadata);
 
     Page<TransactionResponse> getTransactionHistory(UUID applicationId, Pageable pageable);
 

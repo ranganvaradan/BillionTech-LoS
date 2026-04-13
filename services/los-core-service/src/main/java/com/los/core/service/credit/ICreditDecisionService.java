@@ -1,6 +1,7 @@
 package com.los.core.service.credit;
 
-import java.util.Map;
+import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
 
 public interface ICreditDecisionService {
@@ -9,10 +10,11 @@ public interface ICreditDecisionService {
 
     record CreditDecisionResult(
             String decision,
-            String scoreTier,
+            int riskScore,
             int creditScore,
-            double foir,
-            Map<String, Object> ruleResults,
-            String remarks
+            List<String> reasons,
+            List<String> conditions,
+            BigDecimal requestedAmount,
+            BigDecimal recommendedRate
     ) {}
 }

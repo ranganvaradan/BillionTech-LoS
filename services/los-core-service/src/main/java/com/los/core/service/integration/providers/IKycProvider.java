@@ -13,10 +13,9 @@ public interface IKycProvider {
     String getProviderName();
 
     record KycVerificationResult(
-            boolean verified,
+            boolean success,
             double confidenceScore,
             Map<String, Object> parsedData,
-            String rawResponse,
             String transactionId,
             String errorMessage
     ) {}

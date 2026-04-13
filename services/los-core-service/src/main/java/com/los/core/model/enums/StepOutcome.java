@@ -1,9 +1,9 @@
 package com.los.core.model.enums;
 
 public enum StepOutcome {
-    PASS,
-    FAIL,
     PENDING,
+    SUCCESS,
+    FAILURE,
     MANUAL_REVIEW,
     SKIPPED,
     ERROR

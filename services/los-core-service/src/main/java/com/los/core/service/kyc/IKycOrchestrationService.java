@@ -13,7 +13,7 @@ public interface IKycOrchestrationService {
 
     List<KycStepResultResponse> getStepResults(UUID applicationId);
 
-    KycStepResultResponse overrideStep(UUID applicationId, UUID stepResultId, String overrideReason, UUID overrideBy);
+    KycStepResultResponse overrideStep(UUID stepResultId, String reason, UUID overrideBy);
 
-    void executeWorkflow(UUID applicationId);
+    List<KycStepResultResponse> executeWorkflow(UUID applicationId, Map<String, Object> payload);
 }
