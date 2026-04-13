@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 
 const PUBLIC_PATHS = ['/login', '/portal'];
@@ -10,7 +10,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [authorized, setAuthorized] = useState(false);
 
-  useEffect(() => {
+  const checkAuth = useCallback(() => {
     const token = localStorage.getItem('los_token');
     const isPublic = PUBLIC_PATHS.some((p) => pathname.startsWith(p));
 
@@ -26,6 +26,19 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
     setAuthorized(true);
   }, [pathname, router]);
+
+  useEffect(() => {
+    checkAuth();
+
+    // Re-check auth when window regains focus (detects token cleared by 401 interceptor)
+    window.addEventListener('focus', checkAuth);
+    // Listen for storage changes from other tabs
+    window.addEventListener('storage', checkAuth);
+    return () => {
+      window.removeEventListener('focus', checkAuth);
+      window.removeEventListener('storage', checkAuth);
+    };
+  }, [checkAuth]);
 
   // Always render public paths immediately
   if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {

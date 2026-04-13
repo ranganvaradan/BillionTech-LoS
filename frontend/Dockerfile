@@ -3,6 +3,7 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci
 COPY . .
+ENV API_BACKEND_URL=http://api-gateway:8080
 RUN npm run build
 
 FROM node:20-alpine AS runner

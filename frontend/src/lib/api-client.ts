@@ -1,9 +1,7 @@
 import axios, { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
-
+// API calls use relative URLs — proxied through Next.js rewrites to the gateway
 const apiClient: AxiosInstance = axios.create({
-  baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -23,10 +21,12 @@ apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401 && typeof window !== 'undefined') {
+      // Clear tokens on 401 but don't force-redirect — let the calling code
+      // handle the error gracefully (e.g. show mock data on the dashboard).
+      // AuthGuard will redirect to /login on the next navigation.
       localStorage.removeItem('los_token');
       localStorage.removeItem('los_refresh_token');
       localStorage.removeItem('los_user');
-      window.location.href = '/login';
     }
     return Promise.reject(error);
   }

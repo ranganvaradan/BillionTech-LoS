@@ -223,8 +223,6 @@ services:
     container_name: los-frontend
     ports:
       - "3007:3000"
-    environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8080
     depends_on:
       - api-gateway
 
