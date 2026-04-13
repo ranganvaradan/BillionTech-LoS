@@ -1,0 +1,81 @@
+'use client';
+
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import {
+  LayoutDashboard,
+  FileText,
+  Shield,
+  Settings,
+  CreditCard,
+  GitBranch,
+  Bell,
+  LogOut,
+  ChevronLeft,
+  ChevronRight,
+} from 'lucide-react';
+import { useState } from 'react';
+
+const NAV_ITEMS = [
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/applications', label: 'Applications', icon: FileText },
+  { href: '/kyc', label: 'KYC Management', icon: Shield },
+  { href: '/workflows', label: 'Workflows', icon: GitBranch },
+  { href: '/transactions', label: 'Transactions', icon: CreditCard },
+];
+
+export default function Sidebar() {
+  const pathname = usePathname();
+  const [collapsed, setCollapsed] = useState(false);
+
+  return (
+    <aside
+      className={`flex flex-col bg-sidebar-bg text-sidebar-text transition-all duration-300 ${
+        collapsed ? 'w-16' : 'w-60'
+      }`}
+    >
+      {/* Logo */}
+      <div className="flex items-center gap-3 px-4 py-5 border-b border-white/10">
+        <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-white font-bold text-sm shrink-0">
+          LOS
+        </div>
+        {!collapsed && (
+          <span className="text-sm font-semibold tracking-wide whitespace-nowrap">
+            BillionTech LOS
+          </span>
+        )}
+      </div>
+
+      {/* Navigation */}
+      <nav className="flex-1 py-4 space-y-1 px-2">
+        {NAV_ITEMS.map((item) => {
+          const isActive = pathname.startsWith(item.href);
+          const Icon = item.icon;
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                isActive
+                  ? 'bg-primary text-white'
+                  : 'text-slate-300 hover:bg-white/10 hover:text-white'
+              }`}
+              title={collapsed ? item.label : undefined}
+            >
+              <Icon size={18} className="shrink-0" />
+              {!collapsed && <span>{item.label}</span>}
+            </Link>
+          );
+        })}
+      </nav>
+
+      {/* Collapse Toggle */}
+      <button
+        onClick={() => setCollapsed(!collapsed)}
+        className="flex items-center justify-center py-3 border-t border-white/10 text-slate-400 hover:text-white transition-colors"
+      >
+        {collapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+      </button>
+    </aside>
+  );
+}
