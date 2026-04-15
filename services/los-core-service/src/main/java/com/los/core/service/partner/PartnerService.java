@@ -86,8 +86,7 @@ public class PartnerService {
                         Map.of("method", "POST", "path", "/webhooks/register", "description", "Register webhook")
                 ),
                 "testCredentials", Map.of(
-                        "apiKey", "sandbox-test-key-12345",
-                        "apiSecret", "sandbox-test-secret-67890"
+                        "message", "Use POST /api/v1/partners/sandbox/api-key to generate sandbox credentials"
                 ),
                 "rateLimits", Map.of(
                         "requestsPerMinute", 60,

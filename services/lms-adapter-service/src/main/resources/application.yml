@@ -26,4 +26,4 @@ springdoc:
 
 logging:
   level:
-    com.los.lms: DEBUG
+    com.los.lms: ${LOG_LEVEL:INFO}

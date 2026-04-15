@@ -32,6 +32,8 @@ spring:
       password: ${REDIS_PASSWORD:los_redis_2026}
 
 los:
+  cors:
+    allowed-origins: ${LOS_CORS_ORIGINS:http://localhost:3000,http://localhost:3007}
   jwt:
     secret: ${JWT_SECRET:ThisIsADevelopmentSecretKeyThatMustBeAtLeast256BitsLongForHS256Algorithm2026}
     access-token-expiry: ${JWT_ACCESS_TOKEN_EXPIRY:900000}
@@ -65,5 +67,5 @@ springdoc:
 
 logging:
   level:
-    com.los.iam: DEBUG
+    com.los.iam: ${LOG_LEVEL:INFO}
     org.springframework.security: INFO

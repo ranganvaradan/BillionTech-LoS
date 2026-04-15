@@ -46,4 +46,4 @@ springdoc:
 
 logging:
   level:
-    com.los.notification: DEBUG
+    com.los.notification: ${LOG_LEVEL:INFO}
