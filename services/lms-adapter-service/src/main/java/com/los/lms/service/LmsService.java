@@ -450,7 +450,7 @@ public class LmsService {
         }
 
         LmsAccountSummary summary = summaryOpt.get();
-        BigDecimal outstanding = summary.getOutstandingPrincipal();
+        BigDecimal outstanding = summary.getOutstandingPrincipal() != null ? summary.getOutstandingPrincipal() : BigDecimal.ZERO;
         boolean isFullPrepayment = "FULL".equalsIgnoreCase(prepaymentType)
                 || prepaymentAmount.compareTo(outstanding) >= 0;
 
@@ -474,7 +474,7 @@ public class LmsService {
             summary.setNextEmiAmount(BigDecimal.ZERO);
         } else {
             summary.setOutstandingPrincipal(outstanding.subtract(prepaymentAmount));
-            int remainingEmis = summary.getTotalEmis() - summary.getPaidEmis();
+            int remainingEmis = (summary.getTotalEmis() != null ? summary.getTotalEmis() : 0) - (summary.getPaidEmis() != null ? summary.getPaidEmis() : 0);
             if (remainingEmis > 0) {
                 Optional<LmsLoanHandover> handoverOpt = handoverRepository.findByApplicationNumber(applicationNumber);
                 BigDecimal rate = handoverOpt.map(LmsLoanHandover::getInterestRate).orElse(new BigDecimal("12.5"));
@@ -486,7 +486,7 @@ public class LmsService {
             }
         }
 
-        summary.setTotalPaid(summary.getTotalPaid().add(prepaymentAmount));
+        summary.setTotalPaid((summary.getTotalPaid() != null ? summary.getTotalPaid() : BigDecimal.ZERO).add(prepaymentAmount));
         summaryRepository.save(summary);
 
         log.info("Prepayment processed for {}: type={}, amount={}, remaining={}",
@@ -518,10 +518,10 @@ public class LmsService {
         }
 
         LmsAccountSummary summary = summaryOpt.get();
-        BigDecimal previouslyDisbursed = summary.getDisbursedAmount();
+        BigDecimal previouslyDisbursed = summary.getDisbursedAmount() != null ? summary.getDisbursedAmount() : BigDecimal.ZERO;
         BigDecimal newDisbursed = previouslyDisbursed.add(trancheAmount);
         summary.setDisbursedAmount(newDisbursed);
-        summary.setOutstandingPrincipal(summary.getOutstandingPrincipal().add(trancheAmount));
+        summary.setOutstandingPrincipal((summary.getOutstandingPrincipal() != null ? summary.getOutstandingPrincipal() : BigDecimal.ZERO).add(trancheAmount));
         summaryRepository.save(summary);
 
         log.info("Tranche disbursement for {}: tranche {}/{}, amount={}, totalDisbursed={}",
@@ -533,8 +533,8 @@ public class LmsService {
                 "totalTranches", totalTranches,
                 "trancheAmount", trancheAmount,
                 "totalDisbursed", newDisbursed,
-                "sanctionedAmount", summary.getSanctionedAmount(),
-                "remainingToDisburse", summary.getSanctionedAmount().subtract(newDisbursed),
+                "sanctionedAmount", summary.getSanctionedAmount() != null ? summary.getSanctionedAmount() : BigDecimal.ZERO,
+                "remainingToDisburse", (summary.getSanctionedAmount() != null ? summary.getSanctionedAmount() : BigDecimal.ZERO).subtract(newDisbursed),
                 "status", trancheNumber >= totalTranches ? "FULLY_DISBURSED" : "PARTIALLY_DISBURSED"
         );
     }
