@@ -81,7 +81,7 @@ public class EncoreHttpClient {
             HttpResponse<String> response = httpClient.send(requestBuilder.build(),
                     HttpResponse.BodyHandlers.ofString());
 
-            log.info("[Encore] Response: HTTP {} — {}", response.statusCode(),
+            log.debug("[Encore] Response: HTTP {} — {}", response.statusCode(),
                     response.body().substring(0, Math.min(response.body().length(), 200)));
 
             if (response.statusCode() >= 200 && response.statusCode() < 300) {
@@ -138,7 +138,7 @@ public class EncoreHttpClient {
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
-            log.info("[Encore] Response: HTTP {} — {}", response.statusCode(),
+            log.debug("[Encore] Response: HTTP {} — {}", response.statusCode(),
                     response.body().substring(0, Math.min(response.body().length(), 200)));
 
             if (response.statusCode() >= 200 && response.statusCode() < 300) {

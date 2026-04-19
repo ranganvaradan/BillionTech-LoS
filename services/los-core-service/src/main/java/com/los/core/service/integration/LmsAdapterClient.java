@@ -1,6 +1,7 @@
 package com.los.core.service.integration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -29,6 +30,16 @@ public class LmsAdapterClient {
     @Value("${los.integration.lms-adapter.base-url:http://lms-adapter-service:8085}")
     private String lmsAdapterBaseUrl;
 
+    /** Shared, thread-safe HttpClient — created once and reused for all requests. */
+    private HttpClient httpClient;
+
+    @PostConstruct
+    void init() {
+        this.httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(10))
+                .build();
+    }
+
     /**
      * Hand over a disbursed loan to LMS for servicing.
      * Calls POST /api/v1/lms/handover on the lms-adapter-service.
@@ -56,10 +67,6 @@ public class LmsAdapterClient {
 
             String jsonBody = objectMapper.writeValueAsString(requestBody);
 
-            HttpClient client = HttpClient.newBuilder()
-                    .connectTimeout(Duration.ofSeconds(10))
-                    .build();
-
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(lmsAdapterBaseUrl + "/api/v1/lms/handover"))
                     .timeout(Duration.ofSeconds(30))
@@ -69,7 +76,7 @@ public class LmsAdapterClient {
 
             log.info("[LMS Client] Handover request for application: {}", applicationNumber);
 
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() >= 200 && response.statusCode() < 300) {
                 @SuppressWarnings("unchecked")
@@ -94,10 +101,6 @@ public class LmsAdapterClient {
      */
     public Map<String, Object> getAccountSummary(String applicationNumber) {
         try {
-            HttpClient client = HttpClient.newBuilder()
-                    .connectTimeout(Duration.ofSeconds(10))
-                    .build();
-
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(lmsAdapterBaseUrl + "/api/v1/lms/status/" + applicationNumber))
                     .timeout(Duration.ofSeconds(15))
@@ -105,7 +108,7 @@ public class LmsAdapterClient {
                     .GET()
                     .build();
 
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
             if (response.statusCode() == 200) {
                 @SuppressWarnings("unchecked")
