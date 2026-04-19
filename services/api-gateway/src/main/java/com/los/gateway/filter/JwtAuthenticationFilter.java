@@ -39,6 +39,16 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
             "/v3/api-docs"
     );
 
+    @jakarta.annotation.PostConstruct
+    void init() {
+        if (jwtSecret == null || jwtSecret.isBlank()) {
+            log.error("JWT secret is NULL or blank — all authenticated requests will fail. "
+                    + "Set JWT_SECRET environment variable or los.jwt.secret property.");
+        } else {
+            log.info("JWT filter initialized — secret length: {} chars", jwtSecret.length());
+        }
+    }
+
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         // Always allow CORS preflight requests
@@ -77,7 +87,10 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
 
             return chain.filter(exchange.mutate().request(mutatedRequest).build());
         } catch (Exception e) {
-            log.warn("JWT validation failed: {}", e.getMessage());
+            log.warn("JWT validation failed [{}]: {} | token-prefix: {}",
+                    e.getClass().getSimpleName(),
+                    e.getMessage(),
+                    token.length() > 20 ? token.substring(0, 20) + "..." : token);
             exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
             return exchange.getResponse().setComplete();
         }

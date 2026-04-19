@@ -79,43 +79,45 @@ public class LmsService {
         LocalDate firstEmiDate = LocalDate.now().plusMonths(1).withDayOfMonth(5);
         BigDecimal emiAmount = schedule.isEmpty() ? BigDecimal.ZERO : schedule.get(0).getEmiAmount();
 
-        // Step 3: Persist handover to database
-        LmsLoanHandover handover = LmsLoanHandover.builder()
-                .applicationNumber(request.getApplicationNumber())
-                .borrowerName(request.getBorrowerName())
-                .productCode(request.getProductCode())
-                .sanctionedAmount(request.getSanctionedAmount())
-                .interestRate(request.getInterestRate())
-                .tenureMonths(request.getTenureMonths())
-                .encoreAccountId(encoreAccountId)
-                .encoreTransactionId(encoreTransactionId)
-                .lmsReferenceId(lmsRef)
-                .handoverStatus(status)
-                .disbursementDate(LocalDate.now())
-                .firstEmiDate(firstEmiDate)
-                .emiAmount(emiAmount)
-                .errorMessage(errorMessage)
-                .build();
+        // Step 3: Persist handover to database (upsert — idempotent on retry)
+        LmsLoanHandover handover = handoverRepository.findByApplicationNumber(request.getApplicationNumber())
+                .orElse(LmsLoanHandover.builder()
+                        .applicationNumber(request.getApplicationNumber())
+                        .build());
+        handover.setBorrowerName(request.getBorrowerName());
+        handover.setProductCode(request.getProductCode());
+        handover.setSanctionedAmount(request.getSanctionedAmount());
+        handover.setInterestRate(request.getInterestRate());
+        handover.setTenureMonths(request.getTenureMonths());
+        handover.setEncoreAccountId(encoreAccountId);
+        handover.setEncoreTransactionId(encoreTransactionId);
+        handover.setLmsReferenceId(lmsRef);
+        handover.setHandoverStatus(status);
+        handover.setDisbursementDate(LocalDate.now());
+        handover.setFirstEmiDate(firstEmiDate);
+        handover.setEmiAmount(emiAmount);
+        handover.setErrorMessage(errorMessage);
         handoverRepository.save(handover);
 
-        // Step 4: Persist account summary to database
-        LmsAccountSummary summaryEntity = LmsAccountSummary.builder()
-                .applicationNumber(request.getApplicationNumber())
-                .encoreAccountId(encoreAccountId)
-                .loanStatus("ACTIVE")
-                .sanctionedAmount(request.getSanctionedAmount())
-                .disbursedAmount(request.getSanctionedAmount())
-                .outstandingPrincipal(request.getSanctionedAmount())
-                .totalPaid(BigDecimal.ZERO)
-                .overdueAmount(BigDecimal.ZERO)
-                .totalEmis(request.getTenureMonths())
-                .paidEmis(0)
-                .overdueEmis(0)
-                .nextEmiDate(firstEmiDate)
-                .nextEmiAmount(emiAmount)
-                .dpd(0)
-                .lastSyncedAt(Instant.now())
-                .build();
+        // Step 4: Persist account summary to database (upsert — idempotent on retry)
+        LmsAccountSummary summaryEntity = summaryRepository.findByApplicationNumber(request.getApplicationNumber())
+                .orElse(LmsAccountSummary.builder()
+                        .applicationNumber(request.getApplicationNumber())
+                        .build());
+        summaryEntity.setEncoreAccountId(encoreAccountId);
+        summaryEntity.setLoanStatus("ACTIVE");
+        summaryEntity.setSanctionedAmount(request.getSanctionedAmount());
+        summaryEntity.setDisbursedAmount(request.getSanctionedAmount());
+        summaryEntity.setOutstandingPrincipal(request.getSanctionedAmount());
+        summaryEntity.setTotalPaid(BigDecimal.ZERO);
+        summaryEntity.setOverdueAmount(BigDecimal.ZERO);
+        summaryEntity.setTotalEmis(request.getTenureMonths());
+        summaryEntity.setPaidEmis(0);
+        summaryEntity.setOverdueEmis(0);
+        summaryEntity.setNextEmiDate(firstEmiDate);
+        summaryEntity.setNextEmiAmount(emiAmount);
+        summaryEntity.setDpd(0);
+        summaryEntity.setLastSyncedAt(Instant.now());
         summaryRepository.save(summaryEntity);
 
         log.info("Loan handed over to LMS: {} -> {} (encore={})",
@@ -318,8 +320,12 @@ public class LmsService {
             summary.setPaidEmis((summary.getPaidEmis() != null ? summary.getPaidEmis() : 0) + 1);
             summary.setTotalPaid((summary.getTotalPaid() != null ? summary.getTotalPaid() : BigDecimal.ZERO).add(callback.getPaidAmount()));
             BigDecimal principalReduction = callback.getPrincipalComponent() != null
-                    ? callback.getPrincipalComponent() : BigDecimal.ZERO;
+                    ? callback.getPrincipalComponent() : callback.getPaidAmount();
             if (principalReduction.compareTo(BigDecimal.ZERO) > 0) {
+                if (callback.getPrincipalComponent() == null) {
+                    log.warn("No principalComponent provided for {} — falling back to full paidAmount for principal reduction. "
+                            + "Callers should provide principalComponent for accurate tracking.", callback.getApplicationNumber());
+                }
                 summary.setOutstandingPrincipal(
                         (summary.getOutstandingPrincipal() != null ? summary.getOutstandingPrincipal() : BigDecimal.ZERO).subtract(principalReduction));
             }
