@@ -531,6 +531,10 @@ public class LoanApplicationFlowService {
                 // Auto-complete eSign (in real flow, this comes from webhook callback)
                 String txnId = (String) esignResult.getOrDefault("transactionId", "");
                 completeESign(applicationId, txnId);
+            } else {
+                flowResult.put("stoppedAt", "ESIGN");
+                flowResult.put("reason", "eSign initiation failed");
+                return flowResult;
             }
 
             // Step 7: Disburse + LMS
