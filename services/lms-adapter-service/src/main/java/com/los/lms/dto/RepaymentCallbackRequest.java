@@ -18,6 +18,8 @@ public class RepaymentCallbackRequest {
     private String applicationNumber;
     private int installmentNumber;
     private BigDecimal paidAmount;
+    private BigDecimal principalComponent;
+    private BigDecimal interestComponent;
     private LocalDate paymentDate;
     private String paymentMode;
     private String utrNumber;

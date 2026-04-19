@@ -162,7 +162,7 @@ public class EncoreHttpClient {
      */
     private String buildBasicAuthHeader() {
         String credentials = encoreProperties.getApiUsername() + ":" + encoreProperties.getApiPassword();
-        return "Basic " + Base64.getEncoder().encodeToString(credentials.getBytes());
+        return "Basic " + Base64.getEncoder().encodeToString(credentials.getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
 
     /**

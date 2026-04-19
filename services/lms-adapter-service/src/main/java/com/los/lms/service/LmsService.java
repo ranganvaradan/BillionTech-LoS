@@ -301,6 +301,8 @@ public class LmsService {
                 .installmentNumber(callback.getInstallmentNumber())
                 .repaymentType("SCHEDULED")
                 .amount(callback.getPaidAmount())
+                .principalComponent(callback.getPrincipalComponent())
+                .interestComponent(callback.getInterestComponent())
                 .paymentDate(callback.getPaymentDate())
                 .paymentMode(callback.getPaymentMode())
                 .utrNumber(callback.getUtrNumber())
@@ -309,13 +311,16 @@ public class LmsService {
         repaymentRepository.save(entity);
 
         // Update account summary in DB
+        // Only subtract the principal component from outstanding principal (not the full EMI which includes interest)
         Optional<LmsAccountSummary> summaryOpt = summaryRepository.findByApplicationNumber(callback.getApplicationNumber());
         if (summaryOpt.isPresent()) {
             LmsAccountSummary summary = summaryOpt.get();
             summary.setPaidEmis((summary.getPaidEmis() != null ? summary.getPaidEmis() : 0) + 1);
             summary.setTotalPaid((summary.getTotalPaid() != null ? summary.getTotalPaid() : BigDecimal.ZERO).add(callback.getPaidAmount()));
+            BigDecimal principalReduction = callback.getPrincipalComponent() != null
+                    ? callback.getPrincipalComponent() : callback.getPaidAmount();
             summary.setOutstandingPrincipal(
-                    (summary.getOutstandingPrincipal() != null ? summary.getOutstandingPrincipal() : BigDecimal.ZERO).subtract(callback.getPaidAmount()));
+                    (summary.getOutstandingPrincipal() != null ? summary.getOutstandingPrincipal() : BigDecimal.ZERO).subtract(principalReduction));
             summary.setLastPaymentDate(callback.getPaymentDate());
             if (summary.getNextEmiDate() != null) {
                 summary.setNextEmiDate(summary.getNextEmiDate().plusMonths(1));
