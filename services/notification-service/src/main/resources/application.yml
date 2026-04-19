@@ -24,6 +24,20 @@ spring:
     port: ${RABBITMQ_PORT:5672}
     username: ${RABBITMQ_USER:los_rabbit}
     password: ${RABBITMQ_PASSWORD:los_rabbit_2026}
+  mail:
+    host: ${SMTP_HOST:smtp.gmail.com}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enabled: true
+          connectiontimeout: 10000
+          timeout: 10000
+          writetimeout: 10000
 
 eureka:
   client:
@@ -77,19 +91,3 @@ los:
         phone-number-id: ${WHATSAPP_PHONE_NUMBER_ID:}
         access-token: ${WHATSAPP_ACCESS_TOKEN:}
         base-url: ${WHATSAPP_BASE_URL:https://graph.facebook.com/v18.0}
-
-spring:
-  mail:
-    host: ${SMTP_HOST:smtp.gmail.com}
-    port: ${SMTP_PORT:587}
-    username: ${SMTP_USERNAME:}
-    password: ${SMTP_PASSWORD:}
-    properties:
-      mail:
-        smtp:
-          auth: true
-          starttls:
-            enabled: true
-          connectiontimeout: 10000
-          timeout: 10000
-          writetimeout: 10000

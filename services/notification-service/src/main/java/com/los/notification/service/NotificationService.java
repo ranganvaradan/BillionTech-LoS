@@ -34,6 +34,35 @@ public class NotificationService {
 
     private static final int MAX_RETRY_COUNT = 3;
 
+    /**
+     * Properly escape a string for embedding in JSON.
+     * Handles backslash, double-quote, newline, carriage return, tab, and other control characters.
+     */
+    private static String escapeJson(String value) {
+        if (value == null) return "";
+        StringBuilder sb = new StringBuilder(value.length() + 16);
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            switch (c) {
+                case '\\' -> sb.append("\\\\");
+                case '"' -> sb.append("\\\"");
+                case '\n' -> sb.append("\\n");
+                case '\r' -> sb.append("\\r");
+                case '\t' -> sb.append("\\t");
+                case '\b' -> sb.append("\\b");
+                case '\f' -> sb.append("\\f");
+                default -> {
+                    if (c < 0x20) {
+                        sb.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        sb.append(c);
+                    }
+                }
+            }
+        }
+        return sb.toString();
+    }
+
     private final NotificationLogRepository notificationLogRepository;
     private final NotificationTemplateEngine templateEngine;
     private final RabbitTemplate rabbitTemplate;
@@ -330,7 +359,7 @@ public class NotificationService {
                     "{\"sender\":\"%s\",\"route\":\"%s\",\"country\":\"91\"," +
                     "\"sms\":[{\"message\":\"%s\",\"to\":[\"%s\"]}]}",
                     config.getSenderId(), config.getRoute(),
-                    body.replace("\"", "\\\""), recipient);
+                    escapeJson(body), recipient);
 
             HttpClient client = HttpClient.newBuilder()
                     .connectTimeout(Duration.ofSeconds(10))
@@ -467,8 +496,8 @@ public class NotificationService {
                     "\"content\":[{\"type\":\"text/html\",\"value\":\"%s\"}]}",
                     recipient,
                     config.getFromAddress(), config.getFromName(),
-                    subject != null ? subject.replace("\"", "\\\"") : "LOS Notification",
-                    body.replace("\"", "\\\"").replace("\n", "\\n"));
+                    subject != null ? escapeJson(subject) : "LOS Notification",
+                    escapeJson(body));
 
             HttpClient client = HttpClient.newBuilder()
                     .connectTimeout(Duration.ofSeconds(10))
@@ -517,7 +546,7 @@ public class NotificationService {
             String payload = String.format(
                     "{\"messaging_product\":\"whatsapp\",\"to\":\"%s\"," +
                     "\"type\":\"text\",\"text\":{\"body\":\"%s\"}}",
-                    recipient, body.replace("\"", "\\\""));
+                    recipient, escapeJson(body));
 
             HttpClient client = HttpClient.newBuilder()
                     .connectTimeout(Duration.ofSeconds(10))
