@@ -281,6 +281,21 @@ public class EncoreLmsService {
                         scheduleEntry.put("principalRate", entry.path("part2").asDouble());
                         scheduleEntry.put("penalInterestRate", entry.path("part3").asDouble());
                         scheduleEntry.put("balance", entry.path("amount2").asText());
+
+                        // Compute principal and interest monetary amounts from installment
+                        // amount1 = total installment, part1 = interest rate %, part2 = principal rate %
+                        double installment = entry.path("amount1").asDouble(0);
+                        double interestRatePct = entry.path("part1").asDouble(0);
+                        double principalRatePct = entry.path("part2").asDouble(0);
+                        double totalRatePct = interestRatePct + principalRatePct;
+                        if (totalRatePct > 0 && installment > 0) {
+                            scheduleEntry.put("interestAmount", installment * interestRatePct / totalRatePct);
+                            scheduleEntry.put("principalAmount", installment * principalRatePct / totalRatePct);
+                        } else {
+                            scheduleEntry.put("interestAmount", 0.0);
+                            scheduleEntry.put("principalAmount", installment);
+                        }
+
                         schedules.add(scheduleEntry);
                     }
                 }

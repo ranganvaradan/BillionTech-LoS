@@ -22,6 +22,8 @@ import com.los.core.service.kfs.KfsService;
 import com.los.core.service.kyc.IKycOrchestrationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -55,6 +57,14 @@ public class LoanApplicationFlowService {
     private final KfsPdfGenerationService kfsPdfGenerationService;
     private final LmsAdapterClient lmsAdapterClient;
     private final AuditService auditService;
+
+    /**
+     * Self-injected proxy reference so that executeFullFlow() calls step methods
+     * through the Spring AOP proxy, preserving @Transactional boundaries.
+     */
+    @Lazy
+    @Autowired
+    private LoanApplicationFlowService self;
 
     // ========================== STEP 1: SUBMIT ==========================
 
@@ -482,13 +492,13 @@ public class LoanApplicationFlowService {
         String currentStep = "SUBMIT";
 
         try {
-            // Step 1: Submit
-            ApplicationResponse submitted = submitApplication(applicationId);
+            // Step 1: Submit (via proxy for @Transactional)
+            ApplicationResponse submitted = self.submitApplication(applicationId);
             flowResult.put("step1_submit", Map.of("status", submitted.getStatus().name(), "success", true));
 
             // Step 2: KYC Workflow
             currentStep = "KYC";
-            Map<String, Object> kycResult = runKycWorkflow(applicationId, kycPayload);
+            Map<String, Object> kycResult = self.runKycWorkflow(applicationId, kycPayload);
             flowResult.put("step2_kyc", kycResult);
 
             boolean kycPassed = (boolean) kycResult.getOrDefault("allPassed", false);
@@ -500,12 +510,12 @@ public class LoanApplicationFlowService {
 
             // Step 3: Bureau Pull
             currentStep = "BUREAU";
-            Map<String, Object> bureauResult = pullBureauReport(applicationId);
+            Map<String, Object> bureauResult = self.pullBureauReport(applicationId);
             flowResult.put("step3_bureau", bureauResult);
 
             // Step 4: Underwriting + Credit Decision
             currentStep = "UNDERWRITING";
-            Map<String, Object> underwriteResult = underwriteApplication(applicationId);
+            Map<String, Object> underwriteResult = self.underwriteApplication(applicationId);
             flowResult.put("step4_underwriting", underwriteResult);
 
             String decision = (String) underwriteResult.getOrDefault("decision", "");
@@ -517,19 +527,19 @@ public class LoanApplicationFlowService {
 
             // Step 5: Sanction + KFS
             currentStep = "SANCTION";
-            Map<String, Object> sanctionResult = sanctionApplication(applicationId, sanctionParams);
+            Map<String, Object> sanctionResult = self.sanctionApplication(applicationId, sanctionParams);
             flowResult.put("step5_sanction", sanctionResult);
 
             // Step 6: eSign
             currentStep = "ESIGN";
-            Map<String, Object> esignResult = initiateESign(applicationId, signerInfo);
+            Map<String, Object> esignResult = self.initiateESign(applicationId, signerInfo);
             flowResult.put("step6_esign", esignResult);
 
             boolean esignSuccess = (boolean) esignResult.getOrDefault("esignSuccess", false);
             if (esignSuccess) {
                 // Auto-complete eSign (in real flow, this comes from webhook callback)
                 String txnId = (String) esignResult.getOrDefault("transactionId", "");
-                completeESign(applicationId, txnId);
+                self.completeESign(applicationId, txnId);
             } else {
                 flowResult.put("stoppedAt", "ESIGN");
                 flowResult.put("reason", "eSign initiation failed");
@@ -538,7 +548,7 @@ public class LoanApplicationFlowService {
 
             // Step 7: Disburse + LMS
             currentStep = "DISBURSE";
-            Map<String, Object> disburseResult = disburseAndHandoverToLms(applicationId);
+            Map<String, Object> disburseResult = self.disburseAndHandoverToLms(applicationId);
             flowResult.put("step7_disburse", disburseResult);
 
             flowResult.put("flowComplete", true);

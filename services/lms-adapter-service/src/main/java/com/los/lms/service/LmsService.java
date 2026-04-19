@@ -221,8 +221,8 @@ public class LmsService {
                                     .installmentNumber(((Number) e.getOrDefault("sequenceNum", 0)).intValue())
                                     .dueDate(LocalDate.parse(String.valueOf(e.getOrDefault("valueDateStr", LocalDate.now().toString()))))
                                     .emiAmount(instAmount)
-                                    .principalComponent(new BigDecimal(String.valueOf(e.getOrDefault("principalRate", "0"))))
-                                    .interestComponent(new BigDecimal(String.valueOf(e.getOrDefault("normalInterestRate", "0"))))
+                                    .principalComponent(new BigDecimal(String.valueOf(e.getOrDefault("principalAmount", "0"))))
+                                    .interestComponent(new BigDecimal(String.valueOf(e.getOrDefault("interestAmount", "0"))))
                                     .outstandingPrincipal(new BigDecimal(String.valueOf(e.getOrDefault("balance", "0"))))
                                     .status("FROM_ENCORE")
                                     .build();
