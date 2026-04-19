@@ -3,6 +3,7 @@ package com.los.lms.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.los.lms.config.EncoreProperties;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -29,6 +30,16 @@ public class EncoreHttpClient {
 
     private final EncoreProperties encoreProperties;
     private final ObjectMapper objectMapper;
+
+    /** Shared, thread-safe HttpClient — created once and reused for all requests. */
+    private HttpClient httpClient;
+
+    @PostConstruct
+    void init() {
+        this.httpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofMillis(encoreProperties.getConnectTimeoutMs()))
+                .build();
+    }
 
     /**
      * POST to Encore API with JSON body.
@@ -65,13 +76,9 @@ public class EncoreHttpClient {
                 requestBuilder.POST(HttpRequest.BodyPublishers.noBody());
             }
 
-            HttpClient client = HttpClient.newBuilder()
-                    .connectTimeout(Duration.ofMillis(encoreProperties.getConnectTimeoutMs()))
-                    .build();
-
             log.info("[Encore] POST {} — params: {}", apiPath, queryParams);
 
-            HttpResponse<String> response = client.send(requestBuilder.build(),
+            HttpResponse<String> response = httpClient.send(requestBuilder.build(),
                     HttpResponse.BodyHandlers.ofString());
 
             log.info("[Encore] Response: HTTP {} — {}", response.statusCode(),
@@ -127,13 +134,9 @@ public class EncoreHttpClient {
                     .GET()
                     .build();
 
-            HttpClient client = HttpClient.newBuilder()
-                    .connectTimeout(Duration.ofMillis(encoreProperties.getConnectTimeoutMs()))
-                    .build();
-
             log.info("[Encore] GET {} — params: {}", apiPath, queryParams);
 
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
 
             log.info("[Encore] Response: HTTP {} — {}", response.statusCode(),
                     response.body().substring(0, Math.min(response.body().length(), 200)));

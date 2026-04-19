@@ -459,6 +459,15 @@ public class NotificationService {
      */
     private void deliverEmailSmtp(String recipient, String subject, String body,
                                     NotificationProperties.EmailProperties config) {
+        // Fall back to simulation if SMTP credentials are not configured
+        if (mailSender instanceof org.springframework.mail.javamail.JavaMailSenderImpl impl) {
+            String user = impl.getUsername();
+            if (user == null || user.isBlank()) {
+                log.info("[EMAIL-SIM] SMTP credentials not configured — simulated email to {} — Subject: {}",
+                        recipient, subject);
+                return;
+            }
+        }
         try {
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
