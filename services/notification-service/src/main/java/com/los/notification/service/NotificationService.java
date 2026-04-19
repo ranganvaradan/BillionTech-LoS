@@ -358,8 +358,8 @@ public class NotificationService {
             String payload = String.format(
                     "{\"sender\":\"%s\",\"route\":\"%s\",\"country\":\"91\"," +
                     "\"sms\":[{\"message\":\"%s\",\"to\":[\"%s\"]}]}",
-                    config.getSenderId(), config.getRoute(),
-                    escapeJson(body), recipient);
+                    escapeJson(config.getSenderId()), escapeJson(config.getRoute()),
+                    escapeJson(body), escapeJson(recipient));
 
             HttpClient client = HttpClient.newBuilder()
                     .connectTimeout(Duration.ofSeconds(10))
@@ -555,7 +555,7 @@ public class NotificationService {
             String payload = String.format(
                     "{\"messaging_product\":\"whatsapp\",\"to\":\"%s\"," +
                     "\"type\":\"text\",\"text\":{\"body\":\"%s\"}}",
-                    recipient, escapeJson(body));
+                    escapeJson(recipient), escapeJson(body));
 
             HttpClient client = HttpClient.newBuilder()
                     .connectTimeout(Duration.ofSeconds(10))

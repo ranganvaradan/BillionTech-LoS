@@ -47,9 +47,9 @@ public class LmsAdapterClient {
                     Map.entry("borrowerName", borrowerName != null ? borrowerName : ""),
                     Map.entry("borrowerType", borrowerType),
                     Map.entry("loanProduct", loanProduct),
-                    Map.entry("sanctionedAmount", sanctionedAmount),
-                    Map.entry("interestRate", interestRate),
-                    Map.entry("tenureMonths", tenureMonths),
+                    Map.entry("sanctionedAmount", sanctionedAmount != null ? sanctionedAmount : BigDecimal.ZERO),
+                    Map.entry("interestRate", interestRate != null ? interestRate : BigDecimal.ZERO),
+                    Map.entry("tenureMonths", tenureMonths != null ? tenureMonths : 0),
                     Map.entry("emiAmount", emiAmount != null ? emiAmount : BigDecimal.ZERO),
                     Map.entry("borrowerDetails", borrowerDetails != null ? borrowerDetails : Map.of())
             );
