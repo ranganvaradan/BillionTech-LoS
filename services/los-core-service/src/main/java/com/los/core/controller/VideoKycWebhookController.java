@@ -141,8 +141,15 @@ public class VideoKycWebhookController {
 
         boolean livenessDetected = Boolean.parseBoolean(
                 String.valueOf(result.getOrDefault("live", "false")));
-        double confidence = result.containsKey("confidence") ?
-                ((Number) result.get("confidence")).doubleValue() : 0.0;
+        double confidence = 0.0;
+        if (result.containsKey("confidence")) {
+            Object confObj = result.get("confidence");
+            if (confObj instanceof Number) {
+                confidence = ((Number) confObj).doubleValue();
+            } else if (confObj != null) {
+                try { confidence = Double.parseDouble(String.valueOf(confObj)); } catch (NumberFormatException ignored) {}
+            }
+        }
 
         log.info("[VKYC Webhook] Liveness — txnId={}, live={}, confidence={}",
                 transactionId, livenessDetected, confidence);

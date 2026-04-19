@@ -166,7 +166,9 @@ public class EncoreHttpClient {
      * Check if Encore is configured (credentials are set).
      */
     public boolean isConfigured() {
-        return encoreProperties.getApiUsername() != null
+        return encoreProperties.getBaseUrl() != null
+                && !encoreProperties.getBaseUrl().isBlank()
+                && encoreProperties.getApiUsername() != null
                 && !encoreProperties.getApiUsername().isBlank()
                 && encoreProperties.getApiPassword() != null
                 && !encoreProperties.getApiPassword().isBlank();

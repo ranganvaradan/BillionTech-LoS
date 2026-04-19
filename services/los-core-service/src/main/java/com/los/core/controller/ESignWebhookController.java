@@ -1,6 +1,7 @@
 package com.los.core.controller;
 
 import com.los.core.service.audit.AuditService;
+import com.los.core.service.loan.LoanApplicationFlowService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -23,6 +24,7 @@ import java.util.UUID;
 public class ESignWebhookController {
 
     private final AuditService auditService;
+    private final LoanApplicationFlowService flowService;
 
     @PostMapping("/webhook/kfs")
     @Operation(summary = "Webhook callback for KFS eSign completion")
@@ -33,18 +35,32 @@ public class ESignWebhookController {
 
         log.info("eSign webhook received — KFS: txnId={}, status={}, appId={}", transactionId, status, applicationId);
 
+        boolean transitioned = false;
         if (!applicationId.isEmpty()) {
             try {
-                auditService.logEvent(UUID.fromString(applicationId), "ESIGN_WEBHOOK_KFS",
+                UUID appId = UUID.fromString(applicationId);
+                auditService.logEvent(appId, "ESIGN_WEBHOOK_KFS",
                         Map.of("transactionId", transactionId, "status", status));
+
+                // On successful signing, transition application to DISBURSEMENT_PENDING
+                if ("completed".equalsIgnoreCase(status) || "success".equalsIgnoreCase(status)) {
+                    try {
+                        flowService.completeESign(appId, transactionId);
+                        transitioned = true;
+                        log.info("eSign KFS webhook: Application {} transitioned to DISBURSEMENT_PENDING", applicationId);
+                    } catch (Exception ex) {
+                        log.warn("Could not transition application {} on KFS eSign: {}", applicationId, ex.getMessage());
+                    }
+                }
             } catch (Exception e) {
-                log.warn("Could not log audit event for eSign webhook", e);
+                log.warn("Could not process eSign KFS webhook for appId={}: {}", applicationId, e.getMessage());
             }
         }
 
         return ResponseEntity.ok(Map.of(
                 "received", true,
                 "transactionId", transactionId,
+                "transitioned", transitioned,
                 "status", "PROCESSED"
         ));
     }
@@ -58,18 +74,31 @@ public class ESignWebhookController {
 
         log.info("eSign webhook received — Agreement: txnId={}, status={}, appId={}", transactionId, status, applicationId);
 
+        boolean transitioned = false;
         if (!applicationId.isEmpty()) {
             try {
-                auditService.logEvent(UUID.fromString(applicationId), "ESIGN_WEBHOOK_AGREEMENT",
+                UUID appId = UUID.fromString(applicationId);
+                auditService.logEvent(appId, "ESIGN_WEBHOOK_AGREEMENT",
                         Map.of("transactionId", transactionId, "status", status));
+
+                if ("completed".equalsIgnoreCase(status) || "success".equalsIgnoreCase(status)) {
+                    try {
+                        flowService.completeESign(appId, transactionId);
+                        transitioned = true;
+                        log.info("eSign Agreement webhook: Application {} transitioned to DISBURSEMENT_PENDING", applicationId);
+                    } catch (Exception ex) {
+                        log.warn("Could not transition application {} on Agreement eSign: {}", applicationId, ex.getMessage());
+                    }
+                }
             } catch (Exception e) {
-                log.warn("Could not log audit event for eSign webhook", e);
+                log.warn("Could not process eSign Agreement webhook for appId={}: {}", applicationId, e.getMessage());
             }
         }
 
         return ResponseEntity.ok(Map.of(
                 "received", true,
                 "transactionId", transactionId,
+                "transitioned", transitioned,
                 "status", "PROCESSED"
         ));
     }

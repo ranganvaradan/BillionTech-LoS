@@ -45,6 +45,10 @@ los:
     bucket-signed-docs: los-signed-docs
 
   integration:
+    # LMS Adapter Service URL (for loan handover to Encore)
+    lms-adapter:
+      base-url: ${LMS_ADAPTER_URL:http://lms-adapter-service:8085}
+
     # Karza KYC Provider (PAN, Aadhaar, GSTIN, DL, Voter ID, Bank Verification)
     karza:
       base-url: ${KARZA_BASE_URL:https://api.karza.in}

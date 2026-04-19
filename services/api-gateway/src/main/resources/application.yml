@@ -141,6 +141,14 @@ spring:
           uri: lb://los-core-service
           predicates:
             - Path=/webhook/**
+        - id: los-flow
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/flow/**
+        - id: los-vkyc
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/vkyc/**
 
         # Notification Service
         - id: notifications
