@@ -298,6 +298,7 @@ public class LmsService {
                 .applicationNumber(callback.getApplicationNumber())
                 .encoreAccountId(encoreAccountId)
                 .transactionId(encoreTxnId)
+                .installmentNumber(callback.getInstallmentNumber())
                 .repaymentType("SCHEDULED")
                 .amount(callback.getPaidAmount())
                 .paymentDate(callback.getPaymentDate())
@@ -342,10 +343,12 @@ public class LmsService {
                 repaymentRepository.findByApplicationNumberOrderByCreatedAtDesc(applicationNumber);
         return callbacks.stream().map(cb -> RepaymentCallbackRequest.builder()
                 .applicationNumber(cb.getApplicationNumber())
+                .installmentNumber(cb.getInstallmentNumber() != null ? cb.getInstallmentNumber() : 0)
                 .paidAmount(cb.getAmount())
                 .paymentDate(cb.getPaymentDate())
                 .paymentMode(cb.getPaymentMode())
                 .utrNumber(cb.getUtrNumber())
+                .status(cb.getStatus())
                 .build()).toList();
     }
 
@@ -554,6 +557,23 @@ public class LmsService {
     // ---- Helper methods ----
 
     private LoanAccountSummary toAccountSummaryDto(LmsAccountSummary entity) {
+        int dpd = entity.getDpd() != null ? entity.getDpd() : 0;
+
+        // Derive NPA status from DPD (RBI classification)
+        boolean npaFlag = dpd > 90;
+        String npaCategory;
+        if (dpd > 90) {
+            npaCategory = "NPA";
+        } else if (dpd > 60) {
+            npaCategory = "SMA-2";
+        } else if (dpd > 30) {
+            npaCategory = "SMA-1";
+        } else if (dpd > 0) {
+            npaCategory = "SMA-0";
+        } else {
+            npaCategory = "STANDARD";
+        }
+
         return LoanAccountSummary.builder()
                 .applicationNumber(entity.getApplicationNumber())
                 .lmsReferenceId(entity.getEncoreAccountId() != null
@@ -570,7 +590,9 @@ public class LmsService {
                 .nextEmiDate(entity.getNextEmiDate())
                 .nextEmiAmount(entity.getNextEmiAmount())
                 .lastPaymentDate(entity.getLastPaymentDate())
-                .dpd(entity.getDpd() != null ? entity.getDpd() : 0)
+                .dpd(dpd)
+                .npaFlag(npaFlag)
+                .npaCategory(npaCategory)
                 .build();
     }
 

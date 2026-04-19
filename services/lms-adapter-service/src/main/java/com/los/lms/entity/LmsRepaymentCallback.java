@@ -33,6 +33,9 @@ public class LmsRepaymentCallback {
     @Column(name = "repayment_type")
     private String repaymentType;
 
+    @Column(name = "installment_number")
+    private Integer installmentNumber;
+
     @Column(name = "amount", nullable = false)
     private BigDecimal amount;
 
