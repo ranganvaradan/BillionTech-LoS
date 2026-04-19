@@ -1,5 +1,6 @@
 package com.los.notification.service;
 
+import com.los.notification.config.NotificationProperties;
 import com.los.notification.dto.NotificationEvent;
 import com.los.notification.entity.NotificationLog;
 import com.los.notification.repository.NotificationLogRepository;
@@ -9,10 +10,18 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import jakarta.mail.internet.MimeMessage;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -28,6 +37,8 @@ public class NotificationService {
     private final NotificationLogRepository notificationLogRepository;
     private final NotificationTemplateEngine templateEngine;
     private final RabbitTemplate rabbitTemplate;
+    private final JavaMailSender mailSender;
+    private final NotificationProperties notificationProperties;
 
     /**
      * Send a notification through a specific channel.
@@ -279,21 +290,261 @@ public class NotificationService {
     }
 
     private void deliverNotification(String channel, String recipient, String subject, String body) {
-        // Simulated delivery — in production, integrate with actual providers
         switch (channel.toUpperCase()) {
-            case "SMS" -> {
-                log.info("📱 SMS to {}: {}", recipient, body.substring(0, Math.min(body.length(), 80)));
-                // Integration point: Twilio, MSG91, etc.
-            }
-            case "EMAIL" -> {
-                log.info("📧 Email to {} — Subject: {}", recipient, subject);
-                // Integration point: JavaMailSender, SendGrid, etc.
-            }
-            case "WHATSAPP" -> {
-                log.info("💬 WhatsApp to {}: {}", recipient, body.substring(0, Math.min(body.length(), 80)));
-                // Integration point: WhatsApp Business API
-            }
+            case "SMS" -> deliverSms(recipient, body);
+            case "EMAIL" -> deliverEmail(recipient, subject, body);
+            case "WHATSAPP" -> deliverWhatsApp(recipient, body);
             default -> log.warn("Unknown channel: {}", channel);
+        }
+    }
+
+    /**
+     * SMS delivery via MSG91 or Twilio.
+     * Falls back to console logging when credentials not configured.
+     */
+    private void deliverSms(String recipient, String body) {
+        NotificationProperties.SmsProperties smsConfig = notificationProperties.getSms();
+        String provider = smsConfig.getProvider();
+
+        if ("TWILIO".equalsIgnoreCase(provider)) {
+            deliverSmsTwilio(recipient, body, smsConfig.getTwilio());
+        } else {
+            deliverSmsMsg91(recipient, body, smsConfig.getMsg91());
+        }
+    }
+
+    /**
+     * MSG91 SMS delivery — adapted from legacy SmsServiceFacadeImpl.
+     * POST https://api.msg91.com/api/v5/flow/
+     * Headers: authkey={authKey}, Content-Type: application/json
+     */
+    private void deliverSmsMsg91(String recipient, String body, NotificationProperties.Msg91Properties config) {
+        if (config.getAuthKey() == null || config.getAuthKey().isBlank()) {
+            log.info("[SMS-SIM] MSG91 credentials not configured — simulated SMS to {}: {}",
+                    recipient, body.substring(0, Math.min(body.length(), 80)));
+            return;
+        }
+
+        try {
+            String payload = String.format(
+                    "{\"sender\":\"%s\",\"route\":\"%s\",\"country\":\"91\"," +
+                    "\"sms\":[{\"message\":\"%s\",\"to\":[\"%s\"]}]}",
+                    config.getSenderId(), config.getRoute(),
+                    body.replace("\"", "\\\""), recipient);
+
+            HttpClient client = HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(10))
+                    .build();
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(config.getBaseUrl() + "/flow/"))
+                    .timeout(Duration.ofSeconds(15))
+                    .header("Content-Type", "application/json")
+                    .header("authkey", config.getAuthKey())
+                    .POST(HttpRequest.BodyPublishers.ofString(payload))
+                    .build();
+
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 200) {
+                log.info("[SMS] MSG91 delivered to {}", recipient);
+            } else {
+                log.error("[SMS] MSG91 failed: HTTP {} — {}", response.statusCode(), response.body());
+                throw new RuntimeException("MSG91 SMS failed: HTTP " + response.statusCode());
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("SMS delivery interrupted", e);
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException("MSG91 SMS delivery error: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Twilio SMS delivery.
+     * POST https://api.twilio.com/2010-04-01/Accounts/{sid}/Messages.json
+     */
+    private void deliverSmsTwilio(String recipient, String body, NotificationProperties.TwilioProperties config) {
+        if (config.getAccountSid() == null || config.getAccountSid().isBlank()) {
+            log.info("[SMS-SIM] Twilio credentials not configured — simulated SMS to {}: {}",
+                    recipient, body.substring(0, Math.min(body.length(), 80)));
+            return;
+        }
+
+        try {
+            String payload = String.format("To=%s&From=%s&Body=%s",
+                    java.net.URLEncoder.encode(recipient, "UTF-8"),
+                    java.net.URLEncoder.encode(config.getFromNumber(), "UTF-8"),
+                    java.net.URLEncoder.encode(body, "UTF-8"));
+
+            String authString = config.getAccountSid() + ":" + config.getAuthToken();
+            String authHeader = "Basic " + java.util.Base64.getEncoder().encodeToString(authString.getBytes());
+
+            HttpClient client = HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(10))
+                    .build();
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.twilio.com/2010-04-01/Accounts/"
+                            + config.getAccountSid() + "/Messages.json"))
+                    .timeout(Duration.ofSeconds(15))
+                    .header("Content-Type", "application/x-www-form-urlencoded")
+                    .header("Authorization", authHeader)
+                    .POST(HttpRequest.BodyPublishers.ofString(payload))
+                    .build();
+
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 201) {
+                log.info("[SMS] Twilio delivered to {}", recipient);
+            } else {
+                log.error("[SMS] Twilio failed: HTTP {} — {}", response.statusCode(), response.body());
+                throw new RuntimeException("Twilio SMS failed: HTTP " + response.statusCode());
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Twilio delivery interrupted", e);
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException("Twilio SMS delivery error: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Email delivery via Spring JavaMailSender (SMTP) or SendGrid API.
+     * Falls back to console logging when credentials not configured.
+     */
+    private void deliverEmail(String recipient, String subject, String body) {
+        NotificationProperties.EmailProperties emailConfig = notificationProperties.getEmail();
+
+        if ("SENDGRID".equalsIgnoreCase(emailConfig.getProvider())) {
+            deliverEmailSendGrid(recipient, subject, body, emailConfig);
+        } else {
+            deliverEmailSmtp(recipient, subject, body, emailConfig);
+        }
+    }
+
+    /**
+     * SMTP Email delivery via Spring JavaMailSender.
+     */
+    private void deliverEmailSmtp(String recipient, String subject, String body,
+                                    NotificationProperties.EmailProperties config) {
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+            helper.setFrom(config.getFromAddress(), config.getFromName());
+            helper.setTo(recipient);
+            helper.setSubject(subject != null ? subject : "LOS Platform Notification");
+            helper.setText(body, true); // true = HTML
+
+            mailSender.send(message);
+            log.info("[EMAIL] SMTP delivered to {} — Subject: {}", recipient, subject);
+        } catch (Exception e) {
+            log.error("[EMAIL] SMTP delivery failed to {}: {}", recipient, e.getMessage());
+            throw new RuntimeException("SMTP email delivery failed: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * SendGrid Email delivery via REST API.
+     * POST https://api.sendgrid.com/v3/mail/send
+     */
+    private void deliverEmailSendGrid(String recipient, String subject, String body,
+                                        NotificationProperties.EmailProperties config) {
+        String apiKey = config.getSendgrid().getApiKey();
+        if (apiKey == null || apiKey.isBlank()) {
+            log.info("[EMAIL-SIM] SendGrid credentials not configured — simulated email to {} — Subject: {}",
+                    recipient, subject);
+            return;
+        }
+
+        try {
+            String payload = String.format(
+                    "{\"personalizations\":[{\"to\":[{\"email\":\"%s\"}]}]," +
+                    "\"from\":{\"email\":\"%s\",\"name\":\"%s\"}," +
+                    "\"subject\":\"%s\"," +
+                    "\"content\":[{\"type\":\"text/html\",\"value\":\"%s\"}]}",
+                    recipient,
+                    config.getFromAddress(), config.getFromName(),
+                    subject != null ? subject.replace("\"", "\\\"") : "LOS Notification",
+                    body.replace("\"", "\\\"").replace("\n", "\\n"));
+
+            HttpClient client = HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(10))
+                    .build();
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.sendgrid.com/v3/mail/send"))
+                    .timeout(Duration.ofSeconds(15))
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", "Bearer " + apiKey)
+                    .POST(HttpRequest.BodyPublishers.ofString(payload))
+                    .build();
+
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 202) {
+                log.info("[EMAIL] SendGrid delivered to {} — Subject: {}", recipient, subject);
+            } else {
+                log.error("[EMAIL] SendGrid failed: HTTP {} — {}", response.statusCode(), response.body());
+                throw new RuntimeException("SendGrid email failed: HTTP " + response.statusCode());
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("SendGrid delivery interrupted", e);
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException("SendGrid email delivery error: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * WhatsApp delivery via Meta WhatsApp Business API.
+     * Falls back to console logging when credentials not configured.
+     */
+    private void deliverWhatsApp(String recipient, String body) {
+        NotificationProperties.WhatsAppProperties waConfig = notificationProperties.getWhatsapp();
+        NotificationProperties.MetaWhatsAppProperties metaConfig = waConfig.getMeta();
+
+        if (metaConfig.getAccessToken() == null || metaConfig.getAccessToken().isBlank()) {
+            log.info("[WHATSAPP-SIM] WhatsApp credentials not configured — simulated message to {}: {}",
+                    recipient, body.substring(0, Math.min(body.length(), 80)));
+            return;
+        }
+
+        try {
+            String payload = String.format(
+                    "{\"messaging_product\":\"whatsapp\",\"to\":\"%s\"," +
+                    "\"type\":\"text\",\"text\":{\"body\":\"%s\"}}",
+                    recipient, body.replace("\"", "\\\""));
+
+            HttpClient client = HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(10))
+                    .build();
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(metaConfig.getBaseUrl() + "/" + metaConfig.getPhoneNumberId() + "/messages"))
+                    .timeout(Duration.ofSeconds(15))
+                    .header("Content-Type", "application/json")
+                    .header("Authorization", "Bearer " + metaConfig.getAccessToken())
+                    .POST(HttpRequest.BodyPublishers.ofString(payload))
+                    .build();
+
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 200) {
+                log.info("[WHATSAPP] Delivered to {}", recipient);
+            } else {
+                log.error("[WHATSAPP] Failed: HTTP {} — {}", response.statusCode(), response.body());
+                throw new RuntimeException("WhatsApp delivery failed: HTTP " + response.statusCode());
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("WhatsApp delivery interrupted", e);
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException("WhatsApp delivery error: " + e.getMessage(), e);
         }
     }
 }

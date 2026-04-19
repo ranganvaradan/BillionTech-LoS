@@ -47,3 +47,49 @@ springdoc:
 logging:
   level:
     com.los.notification: DEBUG
+
+# SMS Provider Configuration (MSG91 / Twilio)
+los:
+  notification:
+    sms:
+      provider: ${SMS_PROVIDER:MSG91}
+      # MSG91 configuration
+      msg91:
+        auth-key: ${MSG91_AUTH_KEY:}
+        sender-id: ${MSG91_SENDER_ID:LOSAPP}
+        route: ${MSG91_ROUTE:4}
+        base-url: ${MSG91_BASE_URL:https://api.msg91.com/api/v5}
+      # Twilio configuration (alternative)
+      twilio:
+        account-sid: ${TWILIO_ACCOUNT_SID:}
+        auth-token: ${TWILIO_AUTH_TOKEN:}
+        from-number: ${TWILIO_FROM_NUMBER:}
+    email:
+      provider: ${EMAIL_PROVIDER:SMTP}
+      from-address: ${EMAIL_FROM_ADDRESS:noreply@los-platform.com}
+      from-name: ${EMAIL_FROM_NAME:LOS Platform}
+      # SendGrid configuration
+      sendgrid:
+        api-key: ${SENDGRID_API_KEY:}
+    whatsapp:
+      provider: ${WHATSAPP_PROVIDER:META}
+      meta:
+        phone-number-id: ${WHATSAPP_PHONE_NUMBER_ID:}
+        access-token: ${WHATSAPP_ACCESS_TOKEN:}
+        base-url: ${WHATSAPP_BASE_URL:https://graph.facebook.com/v18.0}
+
+spring:
+  mail:
+    host: ${SMTP_HOST:smtp.gmail.com}
+    port: ${SMTP_PORT:587}
+    username: ${SMTP_USERNAME:}
+    password: ${SMTP_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enabled: true
+          connectiontimeout: 10000
+          timeout: 10000
+          writetimeout: 10000

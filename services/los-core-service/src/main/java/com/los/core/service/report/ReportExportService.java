@@ -1,12 +1,24 @@
 package com.los.core.service.report;
 
+import com.lowagie.text.Document;
+import com.lowagie.text.Element;
+import com.lowagie.text.PageSize;
+import com.lowagie.text.Paragraph;
+import com.lowagie.text.Phrase;
+import com.lowagie.text.pdf.PdfPCell;
+import com.lowagie.text.pdf.PdfPTable;
+import com.lowagie.text.pdf.PdfWriter;
 import com.los.core.model.entity.LoanApplication;
 import com.los.core.model.enums.ApplicationStatus;
 import com.los.core.repository.LoanApplicationRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.ss.usermodel.Font;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.stereotype.Service;
 
+import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
@@ -200,5 +212,181 @@ public class ReportExportService {
                 "rows", dsaRows,
                 "exportReady", true
         );
+    }
+
+    // ---- Actual file generation (PDF / Excel) ----
+
+    /**
+     * Generate an Excel (.xlsx) file from report data.
+     */
+    public byte[] generateExcel(String reportType, String startDate, String endDate) {
+        Map<String, Object> data = generateExportData(reportType, "EXCEL", startDate, endDate);
+        List<String> columns = data.containsKey("columns")
+                ? (List<String>) data.get("columns")
+                : List.of("applicationNumber", "status", "amount");
+        List<Map<String, Object>> rows = data.containsKey("rows")
+                ? (List<Map<String, Object>>) data.get("rows")
+                : Collections.emptyList();
+
+        try (XSSFWorkbook workbook = new XSSFWorkbook();
+             ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+
+            Sheet sheet = workbook.createSheet(reportType + " Report");
+
+            // Header style
+            CellStyle headerStyle = workbook.createCellStyle();
+            Font headerFont = workbook.createFont();
+            headerFont.setBold(true);
+            headerFont.setFontHeightInPoints((short) 11);
+            headerStyle.setFont(headerFont);
+            headerStyle.setFillForegroundColor(IndexedColors.LIGHT_CORNFLOWER_BLUE.getIndex());
+            headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+            headerStyle.setBorderBottom(BorderStyle.THIN);
+
+            // Header row
+            Row headerRow = sheet.createRow(0);
+            for (int i = 0; i < columns.size(); i++) {
+                Cell cell = headerRow.createCell(i);
+                cell.setCellValue(columns.get(i));
+                cell.setCellStyle(headerStyle);
+            }
+
+            // Data rows
+            int rowNum = 1;
+            for (Map<String, Object> rowData : rows) {
+                Row row = sheet.createRow(rowNum++);
+                for (int i = 0; i < columns.size(); i++) {
+                    Cell cell = row.createCell(i);
+                    Object value = rowData.get(columns.get(i));
+                    if (value instanceof Number) {
+                        cell.setCellValue(((Number) value).doubleValue());
+                    } else {
+                        cell.setCellValue(value != null ? value.toString() : "");
+                    }
+                }
+            }
+
+            // Auto-size columns
+            for (int i = 0; i < columns.size(); i++) {
+                sheet.autoSizeColumn(i);
+            }
+
+            workbook.write(baos);
+            log.info("Excel report generated: type={}, rows={}", reportType, rows.size());
+            return baos.toByteArray();
+        } catch (Exception e) {
+            log.error("Excel generation failed for {}: {}", reportType, e.getMessage());
+            throw new RuntimeException("Excel generation failed: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Generate a PDF file from report data.
+     */
+    public byte[] generatePdf(String reportType, String startDate, String endDate) {
+        Map<String, Object> data = generateExportData(reportType, "PDF", startDate, endDate);
+        List<String> columns = data.containsKey("columns")
+                ? (List<String>) data.get("columns")
+                : List.of("applicationNumber", "status", "amount");
+        List<Map<String, Object>> rows = data.containsKey("rows")
+                ? (List<Map<String, Object>>) data.get("rows")
+                : Collections.emptyList();
+
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+            Document document = new Document(PageSize.A4.rotate(), 30, 30, 40, 30);
+            PdfWriter.getInstance(document, baos);
+            document.open();
+
+            // Title
+            com.lowagie.text.Font titleFont =
+                    new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 16,
+                            com.lowagie.text.Font.BOLD, new java.awt.Color(0, 51, 102));
+            Paragraph title = new Paragraph(reportType.toUpperCase() + " REPORT", titleFont);
+            title.setAlignment(Element.ALIGN_CENTER);
+            title.setSpacingAfter(5);
+            document.add(title);
+
+            com.lowagie.text.Font smallFont =
+                    new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 8,
+                            com.lowagie.text.Font.ITALIC, java.awt.Color.GRAY);
+            Paragraph dateLine = new Paragraph(
+                    "Generated: " + Instant.now().toString() + (startDate != null ? " | Period: " + startDate + " to " + endDate : ""),
+                    smallFont);
+            dateLine.setAlignment(Element.ALIGN_CENTER);
+            dateLine.setSpacingAfter(15);
+            document.add(dateLine);
+
+            // Table
+            PdfPTable table = new PdfPTable(columns.size());
+            table.setWidthPercentage(100);
+
+            com.lowagie.text.Font headerPdfFont =
+                    new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 9,
+                            com.lowagie.text.Font.BOLD, java.awt.Color.WHITE);
+            com.lowagie.text.Font cellFont =
+                    new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 8,
+                            com.lowagie.text.Font.NORMAL);
+
+            // Header
+            for (String col : columns) {
+                PdfPCell cell = new PdfPCell(new Phrase(col, headerPdfFont));
+                cell.setBackgroundColor(new java.awt.Color(0, 51, 102));
+                cell.setPadding(5);
+                table.addCell(cell);
+            }
+
+            // Rows
+            for (Map<String, Object> rowData : rows) {
+                for (String col : columns) {
+                    Object value = rowData.get(col);
+                    PdfPCell cell = new PdfPCell(new Phrase(
+                            value != null ? value.toString() : "", cellFont));
+                    cell.setPadding(4);
+                    table.addCell(cell);
+                }
+            }
+
+            document.add(table);
+            document.close();
+
+            log.info("PDF report generated: type={}, rows={}", reportType, rows.size());
+            return baos.toByteArray();
+        } catch (Exception e) {
+            log.error("PDF generation failed for {}: {}", reportType, e.getMessage());
+            throw new RuntimeException("PDF generation failed: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Generate CSV content from report data.
+     */
+    public byte[] generateCsv(String reportType, String startDate, String endDate) {
+        Map<String, Object> data = generateExportData(reportType, "CSV", startDate, endDate);
+        List<String> columns = data.containsKey("columns")
+                ? (List<String>) data.get("columns")
+                : List.of("applicationNumber", "status", "amount");
+        List<Map<String, Object>> rows = data.containsKey("rows")
+                ? (List<Map<String, Object>>) data.get("rows")
+                : Collections.emptyList();
+
+        StringBuilder csv = new StringBuilder();
+        csv.append(String.join(",", columns)).append("\n");
+
+        for (Map<String, Object> rowData : rows) {
+            List<String> values = columns.stream()
+                    .map(col -> {
+                        Object val = rowData.get(col);
+                        if (val == null) return "";
+                        String str = val.toString();
+                        if (str.contains(",") || str.contains("\"") || str.contains("\n")) {
+                            return "\"" + str.replace("\"", "\"\"") + "\"";
+                        }
+                        return str;
+                    })
+                    .collect(Collectors.toList());
+            csv.append(String.join(",", values)).append("\n");
+        }
+
+        return csv.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
     }
 }

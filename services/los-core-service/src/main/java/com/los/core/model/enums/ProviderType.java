@@ -2,6 +2,7 @@ package com.los.core.model.enums;
 
 public enum ProviderType {
     AUTHBRIDGE,
+    KARZA,
     PERFIOS,
     HYPERVERGE,
     EQUIFAX,

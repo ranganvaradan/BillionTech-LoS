@@ -92,4 +92,13 @@ public class LmsAdapterController {
         return ResponseEntity.ok(lmsService.processTrancheDisbursement(
                 applicationNumber, trancheAmount, trancheNumber, totalTranches));
     }
+
+    @GetMapping("/encore/statement/{applicationNumber}")
+    @Operation(summary = "Get Encore account statement for a loan")
+    public ResponseEntity<List<Map<String, Object>>> getEncoreAccountStatement(
+            @PathVariable String applicationNumber,
+            @RequestParam(required = false) String fromDate,
+            @RequestParam(required = false) String toDate) {
+        return ResponseEntity.ok(lmsService.getEncoreAccountStatement(applicationNumber, fromDate, toDate));
+    }
 }

@@ -1,55 +1,107 @@
 package com.los.lms.service;
 
 import com.los.lms.dto.*;
+import com.los.lms.entity.LmsAccountSummary;
+import com.los.lms.entity.LmsLoanHandover;
+import com.los.lms.entity.LmsRepaymentCallback;
+import com.los.lms.repository.LmsAccountSummaryRepository;
+import com.los.lms.repository.LmsLoanHandoverRepository;
+import com.los.lms.repository.LmsRepaymentCallbackRepository;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.MathContext;
 import java.math.RoundingMode;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * LMS Adapter Service — manages loan handover, repayment schedule generation,
  * account summaries, and repayment callbacks.
  *
- * In production this would integrate with an external LMS via REST/SOAP.
- * Currently uses in-memory storage for simulation.
+ * Integrates with Encore LMS (from legacy bl-core EncoreServiceFacadeImpl) when
+ * credentials are configured. Falls back to local calculation when Encore is unavailable.
+ * All data is persisted to PostgreSQL (replaces in-memory ConcurrentHashMap).
  */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class LmsService {
 
-    private final Map<String, LoanHandoverRequest> handovers = new ConcurrentHashMap<>();
-    private final Map<String, LoanAccountSummary> accounts = new ConcurrentHashMap<>();
-    private final Map<String, List<RepaymentScheduleEntry>> schedules = new ConcurrentHashMap<>();
-    private final Map<String, List<RepaymentCallbackRequest>> payments = new ConcurrentHashMap<>();
+    private final EncoreLmsService encoreLmsService;
+    private final LmsLoanHandoverRepository handoverRepository;
+    private final LmsRepaymentCallbackRepository repaymentRepository;
+    private final LmsAccountSummaryRepository summaryRepository;
 
     /**
      * Hand over a disbursed loan to LMS for servicing.
+     * When Encore is configured: opens loan account + posts disbursement in Encore.
+     * Always persists to database.
      */
+    @Transactional
     public LoanHandoverResponse handoverLoan(LoanHandoverRequest request) {
-        String lmsRef = "LMS-" + request.getApplicationNumber();
+        String encoreAccountId = null;
+        String encoreTransactionId = null;
+        String status = "ACCEPTED";
+        String errorMessage = null;
 
-        handovers.put(request.getApplicationNumber(), request);
+        // Step 1: Open loan account in Encore (if configured)
+        if (encoreLmsService.isActive()) {
+            try {
+                encoreAccountId = encoreLmsService.openLoanAccount(request);
+                encoreTransactionId = encoreLmsService.disburse(encoreAccountId, request);
+                log.info("Encore loan account opened: {} with disbursement txn: {}",
+                        encoreAccountId, encoreTransactionId);
+            } catch (Exception e) {
+                log.error("Encore handover failed for {}: {}", request.getApplicationNumber(), e.getMessage());
+                errorMessage = "Encore error: " + e.getMessage();
+                status = "ENCORE_ERROR";
+                // Continue with local processing — Encore failure is non-blocking
+            }
+        } else {
+            log.info("[LMS] Encore not configured — using local calculation for {}",
+                    request.getApplicationNumber());
+        }
 
-        // Generate repayment schedule
+        String lmsRef = encoreAccountId != null ? encoreAccountId : "LMS-" + request.getApplicationNumber();
+
+        // Step 2: Generate repayment schedule locally
         List<RepaymentScheduleEntry> schedule = generateRepaymentSchedule(
                 request.getSanctionedAmount(),
                 request.getInterestRate(),
                 request.getTenureMonths()
         );
-        schedules.put(request.getApplicationNumber(), schedule);
 
         LocalDate firstEmiDate = LocalDate.now().plusMonths(1).withDayOfMonth(5);
         BigDecimal emiAmount = schedule.isEmpty() ? BigDecimal.ZERO : schedule.get(0).getEmiAmount();
 
-        // Create initial account summary
-        LoanAccountSummary summary = LoanAccountSummary.builder()
+        // Step 3: Persist handover to database
+        LmsLoanHandover handover = LmsLoanHandover.builder()
                 .applicationNumber(request.getApplicationNumber())
+                .borrowerName(request.getBorrowerName())
+                .productCode(request.getProductCode())
+                .sanctionedAmount(request.getSanctionedAmount())
+                .interestRate(request.getInterestRate())
+                .tenureMonths(request.getTenureMonths())
+                .encoreAccountId(encoreAccountId)
+                .encoreTransactionId(encoreTransactionId)
                 .lmsReferenceId(lmsRef)
+                .handoverStatus(status)
+                .disbursementDate(LocalDate.now())
+                .firstEmiDate(firstEmiDate)
+                .emiAmount(emiAmount)
+                .errorMessage(errorMessage)
+                .build();
+        handoverRepository.save(handover);
+
+        // Step 4: Persist account summary to database
+        LmsAccountSummary summaryEntity = LmsAccountSummary.builder()
+                .applicationNumber(request.getApplicationNumber())
+                .encoreAccountId(encoreAccountId)
                 .loanStatus("ACTIVE")
                 .sanctionedAmount(request.getSanctionedAmount())
                 .disbursedAmount(request.getSanctionedAmount())
@@ -61,19 +113,22 @@ public class LmsService {
                 .overdueEmis(0)
                 .nextEmiDate(firstEmiDate)
                 .nextEmiAmount(emiAmount)
-                .lastPaymentDate(null)
                 .dpd(0)
+                .lastSyncedAt(Instant.now())
                 .build();
-        accounts.put(request.getApplicationNumber(), summary);
+        summaryRepository.save(summaryEntity);
 
-        log.info("Loan handed over to LMS: {} -> {}", request.getApplicationNumber(), lmsRef);
+        log.info("Loan handed over to LMS: {} -> {} (encore={})",
+                request.getApplicationNumber(), lmsRef, encoreLmsService.isActive());
 
         return LoanHandoverResponse.builder()
-                .handoverId(UUID.randomUUID())
+                .handoverId(handover.getId())
                 .applicationNumber(request.getApplicationNumber())
                 .lmsReferenceId(lmsRef)
-                .status("ACCEPTED")
-                .message("Loan successfully handed over to LMS for servicing")
+                .status(status)
+                .message(errorMessage != null
+                        ? "Loan handed over with Encore warning: " + errorMessage
+                        : "Loan successfully handed over to LMS for servicing")
                 .firstEmiDate(firstEmiDate)
                 .emiAmount(emiAmount)
                 .totalEmis(request.getTenureMonths())
@@ -82,61 +137,125 @@ public class LmsService {
 
     /**
      * Get loan account summary from LMS.
+     * Tries Encore first (if configured), then falls back to database, then simulated.
      */
     public LoanAccountSummary getAccountSummary(String applicationNumber) {
-        LoanAccountSummary summary = accounts.get(applicationNumber);
-        if (summary == null) {
-            // Return a default simulated summary
-            return LoanAccountSummary.builder()
-                    .applicationNumber(applicationNumber)
-                    .lmsReferenceId("LMS-" + applicationNumber)
-                    .loanStatus("ACTIVE")
-                    .sanctionedAmount(new BigDecimal("500000"))
-                    .disbursedAmount(new BigDecimal("500000"))
-                    .outstandingPrincipal(new BigDecimal("485000"))
-                    .totalPaid(new BigDecimal("27500"))
-                    .overdueAmount(BigDecimal.ZERO)
-                    .totalEmis(36)
-                    .paidEmis(2)
-                    .overdueEmis(0)
-                    .nextEmiDate(LocalDate.now().plusDays(15))
-                    .nextEmiAmount(new BigDecimal("16250"))
-                    .lastPaymentDate(LocalDate.now().minusDays(20))
-                    .dpd(0)
-                    .build();
+        // Try database first
+        Optional<LmsAccountSummary> dbSummary = summaryRepository.findByApplicationNumber(applicationNumber);
+        if (dbSummary.isPresent()) {
+            LmsAccountSummary entity = dbSummary.get();
+
+            // If Encore is active and we have an account ID, try to sync from Encore
+            if (encoreLmsService.isActive() && entity.getEncoreAccountId() != null) {
+                try {
+                    List<Map<String, Object>> encoreSummaries =
+                            encoreLmsService.findSummaries(List.of(entity.getEncoreAccountId()));
+                    if (!encoreSummaries.isEmpty()) {
+                        Map<String, Object> encoreData = encoreSummaries.get(0);
+                        // Update entity from Encore data
+                        if (encoreData.containsKey("accountBalance")) {
+                            entity.setOutstandingPrincipal(
+                                    new BigDecimal(String.valueOf(encoreData.get("accountBalance"))));
+                        }
+                        if (encoreData.containsKey("operationalStatus")) {
+                            entity.setLoanStatus(String.valueOf(encoreData.get("operationalStatus")));
+                        }
+                        entity.setLastSyncedAt(Instant.now());
+                        summaryRepository.save(entity);
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to sync from Encore for {}: {}", applicationNumber, e.getMessage());
+                }
+            }
+
+            return toAccountSummaryDto(entity);
         }
-        return summary;
+
+        // Fallback: return simulated summary
+        return LoanAccountSummary.builder()
+                .applicationNumber(applicationNumber)
+                .lmsReferenceId("LMS-" + applicationNumber)
+                .loanStatus("ACTIVE")
+                .sanctionedAmount(new BigDecimal("500000"))
+                .disbursedAmount(new BigDecimal("500000"))
+                .outstandingPrincipal(new BigDecimal("485000"))
+                .totalPaid(new BigDecimal("27500"))
+                .overdueAmount(BigDecimal.ZERO)
+                .totalEmis(36)
+                .paidEmis(2)
+                .overdueEmis(0)
+                .nextEmiDate(LocalDate.now().plusDays(15))
+                .nextEmiAmount(new BigDecimal("16250"))
+                .lastPaymentDate(LocalDate.now().minusDays(20))
+                .dpd(0)
+                .build();
     }
 
     /**
      * Get full repayment schedule for a loan.
+     * Tries Encore first, then generates locally.
      */
     public RepaymentScheduleResponse getRepaymentSchedule(String applicationNumber) {
-        List<RepaymentScheduleEntry> schedule = schedules.get(applicationNumber);
-        LoanHandoverRequest handover = handovers.get(applicationNumber);
+        Optional<LmsLoanHandover> handoverOpt = handoverRepository.findByApplicationNumber(applicationNumber);
 
-        if (schedule == null || handover == null) {
-            // Generate a simulated schedule
-            BigDecimal amount = new BigDecimal("500000");
-            BigDecimal rate = new BigDecimal("12.5");
-            int tenure = 36;
-            schedule = generateRepaymentSchedule(amount, rate, tenure);
+        BigDecimal amount;
+        BigDecimal rate;
+        int tenure;
 
-            BigDecimal totalInterest = schedule.stream()
-                    .map(RepaymentScheduleEntry::getInterestComponent)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (handoverOpt.isPresent()) {
+            LmsLoanHandover handover = handoverOpt.get();
+            amount = handover.getSanctionedAmount();
+            rate = handover.getInterestRate();
+            tenure = handover.getTenureMonths();
 
-            return RepaymentScheduleResponse.builder()
-                    .applicationNumber(applicationNumber)
-                    .lmsReferenceId("LMS-" + applicationNumber)
-                    .sanctionedAmount(amount)
-                    .interestRate(rate)
-                    .tenureMonths(tenure)
-                    .totalInterest(totalInterest)
-                    .totalPayable(amount.add(totalInterest))
-                    .schedule(schedule)
-                    .build();
+            // Try Encore repayment schedule if configured
+            if (encoreLmsService.isActive() && handover.getEncoreAccountId() != null) {
+                try {
+                    List<Map<String, Object>> encoreSchedule =
+                            encoreLmsService.findRepaymentSchedule(handover.getEncoreAccountId());
+                    if (!encoreSchedule.isEmpty()) {
+                        // Convert Encore schedule to our DTO format
+                        List<RepaymentScheduleEntry> entries = encoreSchedule.stream().map(e -> {
+                            BigDecimal instAmount = new BigDecimal(String.valueOf(e.getOrDefault("installmentAmount", "0")));
+                            return RepaymentScheduleEntry.builder()
+                                    .installmentNumber(((Number) e.getOrDefault("sequenceNum", 0)).intValue())
+                                    .dueDate(LocalDate.parse(String.valueOf(e.getOrDefault("valueDateStr", LocalDate.now().toString()))))
+                                    .emiAmount(instAmount)
+                                    .principalComponent(new BigDecimal(String.valueOf(e.getOrDefault("principalRate", "0"))))
+                                    .interestComponent(new BigDecimal(String.valueOf(e.getOrDefault("normalInterestRate", "0"))))
+                                    .outstandingPrincipal(new BigDecimal(String.valueOf(e.getOrDefault("balance", "0"))))
+                                    .status("FROM_ENCORE")
+                                    .build();
+                        }).toList();
+
+                        BigDecimal totalInterest = entries.stream()
+                                .map(RepaymentScheduleEntry::getInterestComponent)
+                                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+                        return RepaymentScheduleResponse.builder()
+                                .applicationNumber(applicationNumber)
+                                .lmsReferenceId(handover.getEncoreAccountId())
+                                .sanctionedAmount(amount)
+                                .interestRate(rate)
+                                .tenureMonths(tenure)
+                                .totalInterest(totalInterest)
+                                .totalPayable(amount.add(totalInterest))
+                                .schedule(entries)
+                                .build();
+                    }
+                } catch (Exception e) {
+                    log.warn("Failed to get Encore schedule for {}: {}", applicationNumber, e.getMessage());
+                }
+            }
+        } else {
+            // Use defaults for simulated schedule
+            amount = new BigDecimal("500000");
+            rate = new BigDecimal("12.5");
+            tenure = 36;
         }
+
+        // Generate schedule locally
+        List<RepaymentScheduleEntry> schedule = generateRepaymentSchedule(amount, rate, tenure);
 
         BigDecimal totalInterest = schedule.stream()
                 .map(RepaymentScheduleEntry::getInterestComponent)
@@ -145,33 +264,62 @@ public class LmsService {
         return RepaymentScheduleResponse.builder()
                 .applicationNumber(applicationNumber)
                 .lmsReferenceId("LMS-" + applicationNumber)
-                .sanctionedAmount(handover.getSanctionedAmount())
-                .interestRate(handover.getInterestRate())
-                .tenureMonths(handover.getTenureMonths())
+                .sanctionedAmount(amount)
+                .interestRate(rate)
+                .tenureMonths(tenure)
                 .totalInterest(totalInterest)
-                .totalPayable(handover.getSanctionedAmount().add(totalInterest))
+                .totalPayable(amount.add(totalInterest))
                 .schedule(schedule)
                 .build();
     }
 
     /**
      * Process a repayment callback from LMS.
+     * Posts to Encore if configured, always persists to database.
      */
+    @Transactional
     public Map<String, Object> processRepaymentCallback(RepaymentCallbackRequest callback) {
-        payments.computeIfAbsent(callback.getApplicationNumber(), k -> new ArrayList<>()).add(callback);
+        // Post to Encore if configured
+        Optional<LmsLoanHandover> handoverOpt = handoverRepository.findByApplicationNumber(callback.getApplicationNumber());
+        String encoreAccountId = handoverOpt.map(LmsLoanHandover::getEncoreAccountId).orElse(null);
+        String encoreTxnId = null;
 
-        // Update account summary
-        LoanAccountSummary summary = accounts.get(callback.getApplicationNumber());
-        if (summary != null) {
+        if (encoreLmsService.isActive() && encoreAccountId != null) {
+            try {
+                encoreTxnId = encoreLmsService.repay(
+                        encoreAccountId, callback.getPaidAmount(), "ScheduledRepayment");
+            } catch (Exception e) {
+                log.error("Encore repayment failed for {}: {}", callback.getApplicationNumber(), e.getMessage());
+            }
+        }
+
+        // Persist repayment callback
+        LmsRepaymentCallback entity = LmsRepaymentCallback.builder()
+                .applicationNumber(callback.getApplicationNumber())
+                .encoreAccountId(encoreAccountId)
+                .transactionId(encoreTxnId)
+                .repaymentType("SCHEDULED")
+                .amount(callback.getPaidAmount())
+                .paymentDate(callback.getPaymentDate())
+                .paymentMode(callback.getPaymentMode())
+                .utrNumber(callback.getUtrNumber())
+                .status("PROCESSED")
+                .build();
+        repaymentRepository.save(entity);
+
+        // Update account summary in DB
+        Optional<LmsAccountSummary> summaryOpt = summaryRepository.findByApplicationNumber(callback.getApplicationNumber());
+        if (summaryOpt.isPresent()) {
+            LmsAccountSummary summary = summaryOpt.get();
             summary.setPaidEmis(summary.getPaidEmis() + 1);
             summary.setTotalPaid(summary.getTotalPaid().add(callback.getPaidAmount()));
             summary.setOutstandingPrincipal(
-                    summary.getOutstandingPrincipal().subtract(callback.getPaidAmount())
-            );
+                    summary.getOutstandingPrincipal().subtract(callback.getPaidAmount()));
             summary.setLastPaymentDate(callback.getPaymentDate());
             if (summary.getNextEmiDate() != null) {
                 summary.setNextEmiDate(summary.getNextEmiDate().plusMonths(1));
             }
+            summaryRepository.save(summary);
         }
 
         log.info("Repayment callback processed: {} installment #{} amount={}",
@@ -181,68 +329,68 @@ public class LmsService {
                 "status", "PROCESSED",
                 "applicationNumber", callback.getApplicationNumber(),
                 "installmentNumber", callback.getInstallmentNumber(),
+                "encoreTransactionId", encoreTxnId != null ? encoreTxnId : "",
                 "message", "Repayment recorded successfully"
         );
     }
 
     /**
-     * Get payment history for a loan.
+     * Get payment history for a loan (from database).
      */
     public List<RepaymentCallbackRequest> getPaymentHistory(String applicationNumber) {
-        return payments.getOrDefault(applicationNumber, List.of());
+        List<LmsRepaymentCallback> callbacks =
+                repaymentRepository.findByApplicationNumberOrderByCreatedAtDesc(applicationNumber);
+        return callbacks.stream().map(cb -> RepaymentCallbackRequest.builder()
+                .applicationNumber(cb.getApplicationNumber())
+                .paidAmount(cb.getAmount())
+                .paymentDate(cb.getPaymentDate())
+                .paymentMode(cb.getPaymentMode())
+                .utrNumber(cb.getUtrNumber())
+                .build()).toList();
     }
 
     /**
-     * Get all active loan accounts.
+     * Get all active loan accounts (from database).
      */
     public List<LoanAccountSummary> getAllAccounts() {
-        return new ArrayList<>(accounts.values());
+        return summaryRepository.findAll().stream()
+                .map(this::toAccountSummaryDto)
+                .toList();
     }
 
     /**
      * Update NPA flag for a loan account based on DPD (BR-11.4).
-     * SMA-0: 1-30 days, SMA-1: 31-60 days, SMA-2: 61-90 days, NPA: >90 days.
      */
+    @Transactional
     public Map<String, Object> updateNpaStatus(String applicationNumber, int currentDpd) {
-        LoanAccountSummary summary = accounts.get(applicationNumber);
-        if (summary == null) {
+        Optional<LmsAccountSummary> summaryOpt = summaryRepository.findByApplicationNumber(applicationNumber);
+        if (summaryOpt.isEmpty()) {
             return Map.of("status", "NOT_FOUND", "applicationNumber", applicationNumber);
         }
 
+        LmsAccountSummary summary = summaryOpt.get();
         summary.setDpd(currentDpd);
         String previousStatus = summary.getLoanStatus();
 
         if (currentDpd > 90) {
-            summary.setNpaFlag(true);
-            summary.setNpaCategory("NPA");
-            summary.setNpaDate(LocalDate.now());
             summary.setLoanStatus("NPA");
         } else if (currentDpd > 60) {
-            summary.setNpaFlag(false);
-            summary.setNpaCategory("SMA-2");
             summary.setLoanStatus("SMA-2");
         } else if (currentDpd > 30) {
-            summary.setNpaFlag(false);
-            summary.setNpaCategory("SMA-1");
             summary.setLoanStatus("SMA-1");
         } else if (currentDpd > 0) {
-            summary.setNpaFlag(false);
-            summary.setNpaCategory("SMA-0");
             summary.setLoanStatus("SMA-0");
         } else {
-            summary.setNpaFlag(false);
-            summary.setNpaCategory("STANDARD");
             summary.setLoanStatus("ACTIVE");
         }
+        summaryRepository.save(summary);
 
-        log.info("NPA status updated for {}: DPD={}, category={}, previousStatus={}",
-                applicationNumber, currentDpd, summary.getNpaCategory(), previousStatus);
+        log.info("NPA status updated for {}: DPD={}, status={}, previous={}",
+                applicationNumber, currentDpd, summary.getLoanStatus(), previousStatus);
 
         return Map.of(
                 "applicationNumber", applicationNumber,
                 "dpd", currentDpd,
-                "npaFlag", summary.isNpaFlag(),
-                "npaCategory", summary.getNpaCategory(),
                 "loanStatus", summary.getLoanStatus(),
                 "previousStatus", previousStatus
         );
@@ -252,31 +400,29 @@ public class LmsService {
      * Get collection summary — overdue accounts, DPD buckets, NPA portfolio.
      */
     public Map<String, Object> getCollectionSummary() {
-        List<LoanAccountSummary> allAccounts = new ArrayList<>(accounts.values());
+        List<LmsAccountSummary> allAccounts = summaryRepository.findAll();
 
         long totalAccounts = allAccounts.size();
-        long overdueAccounts = allAccounts.stream().filter(a -> a.getDpd() > 0).count();
-        long npaAccounts = allAccounts.stream().filter(LoanAccountSummary::isNpaFlag).count();
+        long overdueAccounts = allAccounts.stream().filter(a -> a.getDpd() != null && a.getDpd() > 0).count();
 
         BigDecimal totalOverdue = allAccounts.stream()
-                .filter(a -> a.getDpd() > 0)
-                .map(LoanAccountSummary::getOverdueAmount)
+                .filter(a -> a.getDpd() != null && a.getDpd() > 0)
+                .map(a -> a.getOverdueAmount() != null ? a.getOverdueAmount() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         BigDecimal totalOutstanding = allAccounts.stream()
-                .map(LoanAccountSummary::getOutstandingPrincipal)
+                .map(a -> a.getOutstandingPrincipal() != null ? a.getOutstandingPrincipal() : BigDecimal.ZERO)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        // DPD bucket analysis
-        long sma0 = allAccounts.stream().filter(a -> a.getDpd() > 0 && a.getDpd() <= 30).count();
-        long sma1 = allAccounts.stream().filter(a -> a.getDpd() > 30 && a.getDpd() <= 60).count();
-        long sma2 = allAccounts.stream().filter(a -> a.getDpd() > 60 && a.getDpd() <= 90).count();
-        long npa = allAccounts.stream().filter(a -> a.getDpd() > 90).count();
+        long sma0 = allAccounts.stream().filter(a -> a.getDpd() != null && a.getDpd() > 0 && a.getDpd() <= 30).count();
+        long sma1 = allAccounts.stream().filter(a -> a.getDpd() != null && a.getDpd() > 30 && a.getDpd() <= 60).count();
+        long sma2 = allAccounts.stream().filter(a -> a.getDpd() != null && a.getDpd() > 60 && a.getDpd() <= 90).count();
+        long npa = allAccounts.stream().filter(a -> a.getDpd() != null && a.getDpd() > 90).count();
 
         Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("totalAccounts", totalAccounts);
         summary.put("overdueAccounts", overdueAccounts);
-        summary.put("npaAccounts", npaAccounts);
+        summary.put("npaAccounts", npa);
         summary.put("totalOverdueAmount", totalOverdue);
         summary.put("totalOutstandingAmount", totalOutstanding);
         summary.put("collectionEfficiency", totalAccounts > 0
@@ -287,6 +433,7 @@ public class LmsService {
                 "SMA-2 (61-90)", sma2,
                 "NPA (>90)", npa
         ));
+        summary.put("encoreActive", encoreLmsService.isActive());
 
         return summary;
     }
@@ -294,20 +441,31 @@ public class LmsService {
     /**
      * BR-11.5: Process prepayment — partial or full.
      */
+    @Transactional
     public Map<String, Object> processPrepayment(String applicationNumber, BigDecimal prepaymentAmount,
                                                    String prepaymentType) {
-        LoanAccountSummary summary = accounts.get(applicationNumber);
-        if (summary == null) {
+        Optional<LmsAccountSummary> summaryOpt = summaryRepository.findByApplicationNumber(applicationNumber);
+        if (summaryOpt.isEmpty()) {
             return Map.of("status", "NOT_FOUND", "applicationNumber", applicationNumber);
         }
 
+        LmsAccountSummary summary = summaryOpt.get();
         BigDecimal outstanding = summary.getOutstandingPrincipal();
         boolean isFullPrepayment = "FULL".equalsIgnoreCase(prepaymentType)
                 || prepaymentAmount.compareTo(outstanding) >= 0;
 
+        // Post prepayment to Encore if configured
+        if (encoreLmsService.isActive() && summary.getEncoreAccountId() != null) {
+            try {
+                String rpyType = isFullPrepayment ? "Pre-closure" : "Prepayment";
+                encoreLmsService.repay(summary.getEncoreAccountId(), prepaymentAmount, rpyType);
+            } catch (Exception e) {
+                log.error("Encore prepayment failed for {}: {}", applicationNumber, e.getMessage());
+            }
+        }
+
         BigDecimal foreclosureCharges = BigDecimal.ZERO;
         if (isFullPrepayment) {
-            // Foreclosure charges: 2% of outstanding for fixed rate, 0 for floating
             foreclosureCharges = outstanding.multiply(new BigDecimal("0.02"))
                     .setScale(2, RoundingMode.HALF_UP);
             summary.setOutstandingPrincipal(BigDecimal.ZERO);
@@ -316,14 +474,12 @@ public class LmsService {
             summary.setNextEmiAmount(BigDecimal.ZERO);
         } else {
             summary.setOutstandingPrincipal(outstanding.subtract(prepaymentAmount));
-            // Recalculate EMI based on reduced principal
             int remainingEmis = summary.getTotalEmis() - summary.getPaidEmis();
             if (remainingEmis > 0) {
-                LoanHandoverRequest handover = handovers.get(applicationNumber);
-                BigDecimal rate = handover != null ? handover.getInterestRate() : new BigDecimal("12.5");
+                Optional<LmsLoanHandover> handoverOpt = handoverRepository.findByApplicationNumber(applicationNumber);
+                BigDecimal rate = handoverOpt.map(LmsLoanHandover::getInterestRate).orElse(new BigDecimal("12.5"));
                 List<RepaymentScheduleEntry> newSchedule = generateRepaymentSchedule(
                         summary.getOutstandingPrincipal(), rate, remainingEmis);
-                schedules.put(applicationNumber, newSchedule);
                 if (!newSchedule.isEmpty()) {
                     summary.setNextEmiAmount(newSchedule.get(0).getEmiAmount());
                 }
@@ -331,6 +487,7 @@ public class LmsService {
         }
 
         summary.setTotalPaid(summary.getTotalPaid().add(prepaymentAmount));
+        summaryRepository.save(summary);
 
         log.info("Prepayment processed for {}: type={}, amount={}, remaining={}",
                 applicationNumber, isFullPrepayment ? "FORECLOSURE" : "PARTIAL",
@@ -352,17 +509,20 @@ public class LmsService {
     /**
      * BR-9.7: Multi-tranche disbursement — disburse in multiple tranches.
      */
+    @Transactional
     public Map<String, Object> processTrancheDisbursement(String applicationNumber, BigDecimal trancheAmount,
                                                             int trancheNumber, int totalTranches) {
-        LoanAccountSummary summary = accounts.get(applicationNumber);
-        if (summary == null) {
+        Optional<LmsAccountSummary> summaryOpt = summaryRepository.findByApplicationNumber(applicationNumber);
+        if (summaryOpt.isEmpty()) {
             return Map.of("status", "NOT_FOUND", "applicationNumber", applicationNumber);
         }
 
+        LmsAccountSummary summary = summaryOpt.get();
         BigDecimal previouslyDisbursed = summary.getDisbursedAmount();
         BigDecimal newDisbursed = previouslyDisbursed.add(trancheAmount);
         summary.setDisbursedAmount(newDisbursed);
         summary.setOutstandingPrincipal(summary.getOutstandingPrincipal().add(trancheAmount));
+        summaryRepository.save(summary);
 
         log.info("Tranche disbursement for {}: tranche {}/{}, amount={}, totalDisbursed={}",
                 applicationNumber, trancheNumber, totalTranches, trancheAmount, newDisbursed);
@@ -380,6 +540,41 @@ public class LmsService {
     }
 
     /**
+     * Get Encore account statement for a loan.
+     */
+    public List<Map<String, Object>> getEncoreAccountStatement(String applicationNumber,
+                                                                 String fromDate, String toDate) {
+        Optional<LmsLoanHandover> handoverOpt = handoverRepository.findByApplicationNumber(applicationNumber);
+        if (handoverOpt.isEmpty() || handoverOpt.get().getEncoreAccountId() == null) {
+            return Collections.emptyList();
+        }
+        return encoreLmsService.getAccountStatement(handoverOpt.get().getEncoreAccountId(), fromDate, toDate);
+    }
+
+    // ---- Helper methods ----
+
+    private LoanAccountSummary toAccountSummaryDto(LmsAccountSummary entity) {
+        return LoanAccountSummary.builder()
+                .applicationNumber(entity.getApplicationNumber())
+                .lmsReferenceId(entity.getEncoreAccountId() != null
+                        ? entity.getEncoreAccountId() : "LMS-" + entity.getApplicationNumber())
+                .loanStatus(entity.getLoanStatus())
+                .sanctionedAmount(entity.getSanctionedAmount())
+                .disbursedAmount(entity.getDisbursedAmount())
+                .outstandingPrincipal(entity.getOutstandingPrincipal())
+                .totalPaid(entity.getTotalPaid())
+                .overdueAmount(entity.getOverdueAmount())
+                .totalEmis(entity.getTotalEmis())
+                .paidEmis(entity.getPaidEmis())
+                .overdueEmis(entity.getOverdueEmis())
+                .nextEmiDate(entity.getNextEmiDate())
+                .nextEmiAmount(entity.getNextEmiAmount())
+                .lastPaymentDate(entity.getLastPaymentDate())
+                .dpd(entity.getDpd() != null ? entity.getDpd() : 0)
+                .build();
+    }
+
+    /**
      * Generate amortization schedule using reducing balance method.
      */
     private List<RepaymentScheduleEntry> generateRepaymentSchedule(
@@ -389,7 +584,6 @@ public class LmsService {
         MathContext mc = new MathContext(10);
 
         BigDecimal monthlyRate = annualRate.divide(BigDecimal.valueOf(1200), mc);
-        // EMI = P * r * (1+r)^n / ((1+r)^n - 1)
         BigDecimal onePlusR = BigDecimal.ONE.add(monthlyRate);
         BigDecimal onePlusRPowN = onePlusR.pow(tenureMonths, mc);
         BigDecimal emi = principal.multiply(monthlyRate).multiply(onePlusRPowN)

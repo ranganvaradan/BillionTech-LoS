@@ -53,7 +53,7 @@ public class KycOrchestrationServiceImpl implements IKycOrchestrationService {
         KycStepResult stepResult = KycStepResult.builder()
                 .applicationId(applicationId)
                 .stepType(stepType)
-                .provider(ProviderType.AUTHBRIDGE) // default, will be updated
+                .provider(ProviderType.KARZA) // default, will be updated by router
                 .outcome(StepOutcome.PENDING)
                 .attemptNumber(attemptNumber)
                 .build();
