@@ -311,10 +311,10 @@ public class LmsService {
         Optional<LmsAccountSummary> summaryOpt = summaryRepository.findByApplicationNumber(callback.getApplicationNumber());
         if (summaryOpt.isPresent()) {
             LmsAccountSummary summary = summaryOpt.get();
-            summary.setPaidEmis(summary.getPaidEmis() + 1);
-            summary.setTotalPaid(summary.getTotalPaid().add(callback.getPaidAmount()));
+            summary.setPaidEmis((summary.getPaidEmis() != null ? summary.getPaidEmis() : 0) + 1);
+            summary.setTotalPaid((summary.getTotalPaid() != null ? summary.getTotalPaid() : BigDecimal.ZERO).add(callback.getPaidAmount()));
             summary.setOutstandingPrincipal(
-                    summary.getOutstandingPrincipal().subtract(callback.getPaidAmount()));
+                    (summary.getOutstandingPrincipal() != null ? summary.getOutstandingPrincipal() : BigDecimal.ZERO).subtract(callback.getPaidAmount()));
             summary.setLastPaymentDate(callback.getPaymentDate());
             if (summary.getNextEmiDate() != null) {
                 summary.setNextEmiDate(summary.getNextEmiDate().plusMonths(1));
