@@ -123,6 +123,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PASSWORD=${REDIS_PASSWORD:-los_redis_2026}
       - SPRING_FLYWAY_CLEAN_ON_VALIDATION_ERROR=true
+      - SPRING_FLYWAY_CLEAN_DISABLED=false
     depends_on:
       discovery-service:
         condition: service_healthy
@@ -146,6 +147,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PASSWORD=${REDIS_PASSWORD:-los_redis_2026}
       - SPRING_FLYWAY_CLEAN_ON_VALIDATION_ERROR=true
+      - SPRING_FLYWAY_CLEAN_DISABLED=false
     depends_on:
       discovery-service:
         condition: service_healthy
@@ -171,6 +173,7 @@ services:
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-los_minio_admin}
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-los_minio_secret_2026}
       - SPRING_FLYWAY_CLEAN_ON_VALIDATION_ERROR=true
+      - SPRING_FLYWAY_CLEAN_DISABLED=false
     depends_on:
       discovery-service:
         condition: service_healthy
@@ -195,6 +198,7 @@ services:
       - RABBITMQ_USER=${RABBITMQ_USER:-los_rabbit}
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-los_rabbit_2026}
       - SPRING_FLYWAY_CLEAN_ON_VALIDATION_ERROR=true
+      - SPRING_FLYWAY_CLEAN_DISABLED=false
     depends_on:
       discovery-service:
         condition: service_healthy
@@ -222,6 +226,7 @@ services:
       - ENCORE_API_USERNAME=${ENCORE_API_USERNAME:-}
       - ENCORE_API_PASSWORD=${ENCORE_API_PASSWORD:-}
       - SPRING_FLYWAY_CLEAN_ON_VALIDATION_ERROR=true
+      - SPRING_FLYWAY_CLEAN_DISABLED=false
     depends_on:
       discovery-service:
         condition: service_healthy
