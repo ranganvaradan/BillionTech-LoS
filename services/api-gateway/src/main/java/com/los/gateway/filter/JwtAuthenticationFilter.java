@@ -2,7 +2,6 @@ package com.los.gateway.filter;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.security.Keys;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
@@ -16,6 +15,7 @@ import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
 import javax.crypto.SecretKey;
+import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
@@ -33,11 +33,30 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
             "/api/v1/enrollment/register",
             "/api/v1/enrollment/otp",
             "/api/v1/enrollment/consent",
+            "/api/v1/vkyc/webhook/",
+            "/api/v1/esign/webhook/",
             "/webhook/",
             "/actuator/",
             "/swagger-ui",
             "/v3/api-docs"
     );
+
+    /** Cached signing key — created once from the secret, reused for every request. */
+    private SecretKey signingKey;
+
+    @jakarta.annotation.PostConstruct
+    void init() {
+        if (jwtSecret == null || jwtSecret.isBlank()) {
+            log.error("JWT secret is NULL or blank — all authenticated requests will fail. "
+                    + "Set JWT_SECRET environment variable or los.jwt.secret property.");
+        } else {
+            // Explicitly use HmacSHA256 to match IAM token generation (avoids HS512 auto-detection
+            // from Keys.hmacShaKeyFor when secret is longer than 64 bytes)
+            this.signingKey = new SecretKeySpec(
+                    jwtSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
+            log.info("JWT filter initialized — secret length: {} chars, algorithm: HS256", jwtSecret.length());
+        }
+    }
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
@@ -60,9 +79,8 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
 
         String token = authHeader.substring(7);
         try {
-            SecretKey key = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
             Claims claims = Jwts.parser()
-                    .verifyWith(key)
+                    .verifyWith(signingKey)
                     .build()
                     .parseSignedClaims(token)
                     .getPayload();
@@ -77,7 +95,9 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
 
             return chain.filter(exchange.mutate().request(mutatedRequest).build());
         } catch (Exception e) {
-            log.warn("JWT validation failed: {}", e.getMessage());
+            log.warn("JWT validation failed [{}]: {}",
+                    e.getClass().getSimpleName(),
+                    e.getMessage());
             exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
             return exchange.getResponse().setComplete();
         }

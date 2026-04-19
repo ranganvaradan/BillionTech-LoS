@@ -102,6 +102,7 @@ services:
       - EUREKA_HOST=discovery-service
       - REDIS_HOST=redis
       - REDIS_PASSWORD=${REDIS_PASSWORD:-los_redis_2026}
+      - JWT_SECRET=ThisIsADevelopmentSecretKeyThatMustBeAtLeast256BitsLongForHS256Algorithm2026
     depends_on:
       discovery-service:
         condition: service_healthy
@@ -122,6 +123,8 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-los_secret_2026}
       - REDIS_HOST=redis
       - REDIS_PASSWORD=${REDIS_PASSWORD:-los_redis_2026}
+      - JWT_SECRET=ThisIsADevelopmentSecretKeyThatMustBeAtLeast256BitsLongForHS256Algorithm2026
+      - SPRING_FLYWAY_VALIDATE_ON_MIGRATE=false
     depends_on:
       discovery-service:
         condition: service_healthy
@@ -144,6 +147,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-los_secret_2026}
       - REDIS_HOST=redis
       - REDIS_PASSWORD=${REDIS_PASSWORD:-los_redis_2026}
+      - SPRING_FLYWAY_VALIDATE_ON_MIGRATE=false
     depends_on:
       discovery-service:
         condition: service_healthy
@@ -168,6 +172,7 @@ services:
       - MINIO_ENDPOINT=http://minio:9000
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-los_minio_admin}
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-los_minio_secret_2026}
+      - SPRING_FLYWAY_VALIDATE_ON_MIGRATE=false
     depends_on:
       discovery-service:
         condition: service_healthy
@@ -191,6 +196,7 @@ services:
       - RABBITMQ_HOST=rabbitmq
       - RABBITMQ_USER=${RABBITMQ_USER:-los_rabbit}
       - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-los_rabbit_2026}
+      - SPRING_FLYWAY_VALIDATE_ON_MIGRATE=false
     depends_on:
       discovery-service:
         condition: service_healthy
@@ -211,6 +217,13 @@ services:
       - POSTGRES_HOST=postgres
       - POSTGRES_USER=${POSTGRES_USER:-los_admin}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-los_secret_2026}
+      # Encore LMS integration (leave blank for simulated mode)
+      - ENCORE_BASE_URL=${ENCORE_BASE_URL:-}
+      - ENCORE_HOSTNAME=${ENCORE_HOSTNAME:-}
+      - ENCORE_PORT=${ENCORE_PORT:-8080}
+      - ENCORE_API_USERNAME=${ENCORE_API_USERNAME:-}
+      - ENCORE_API_PASSWORD=${ENCORE_API_PASSWORD:-}
+      - SPRING_FLYWAY_VALIDATE_ON_MIGRATE=false
     depends_on:
       discovery-service:
         condition: service_healthy

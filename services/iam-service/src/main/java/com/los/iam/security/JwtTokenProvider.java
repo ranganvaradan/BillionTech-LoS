@@ -2,11 +2,11 @@ package com.los.iam.security;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
+import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Date;
@@ -25,8 +25,15 @@ public class JwtTokenProvider {
     @Value("${los.jwt.refresh-token-expiry:604800000}")
     private long refreshTokenExpiry;
 
+    /**
+     * Create an explicit HS256 signing key from the configured secret.
+     * Uses SecretKeySpec with "HmacSHA256" directly instead of Keys.hmacShaKeyFor()
+     * which auto-selects HS512 when the secret exceeds 64 bytes — causing an
+     * UnsupportedOperationException in the gateway's reactive JJWT parser.
+     */
     private SecretKey getSigningKey() {
-        return Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
+        return new SecretKeySpec(
+                jwtSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
     }
 
     public String generateAccessToken(UUID userId, String username, String roles) {
@@ -40,7 +47,7 @@ public class JwtTokenProvider {
                 ))
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plusMillis(accessTokenExpiry)))
-                .signWith(getSigningKey())
+                .signWith(getSigningKey(), Jwts.SIG.HS256)
                 .compact();
     }
 
@@ -52,7 +59,7 @@ public class JwtTokenProvider {
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(now.plusMillis(refreshTokenExpiry)))
                 .id(UUID.randomUUID().toString())
-                .signWith(getSigningKey())
+                .signWith(getSigningKey(), Jwts.SIG.HS256)
                 .compact();
     }
 

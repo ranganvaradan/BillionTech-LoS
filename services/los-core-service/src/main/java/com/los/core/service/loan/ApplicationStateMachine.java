@@ -12,7 +12,7 @@ public final class ApplicationStateMachine {
     private ApplicationStateMachine() {}
 
     private static final Map<ApplicationStatus, Set<ApplicationStatus>> VALID_TRANSITIONS = Map.ofEntries(
-            Map.entry(DRAFT,                Set.of(CONSENT_PENDING, WITHDRAWN)),
+            Map.entry(DRAFT,                Set.of(CONSENT_PENDING, KYC_IN_PROGRESS, WITHDRAWN)),
             Map.entry(CONSENT_PENDING,      Set.of(KYC_IN_PROGRESS, WITHDRAWN)),
             Map.entry(KYC_IN_PROGRESS,      Set.of(KYC_FAILED, UNDERWRITING, ON_HOLD, WITHDRAWN)),
             Map.entry(KYC_FAILED,           Set.of(KYC_IN_PROGRESS, REJECTED, WITHDRAWN)),

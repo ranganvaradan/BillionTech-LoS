@@ -22,4 +22,5 @@ public class LoanHandoverRequest {
     private BigDecimal emiAmount;
     private Map<String, Object> borrowerDetails;
     private Map<String, Object> collateralDetails;
+    private String productCode; // Encore loan product code
 }

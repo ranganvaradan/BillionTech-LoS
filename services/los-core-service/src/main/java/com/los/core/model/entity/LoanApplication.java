@@ -84,6 +84,32 @@ public class LoanApplication {
 
     private Instant escalatedAt;
 
+    // --- Flow orchestration fields (V6 migration) ---
+
+    @Column(precision = 15, scale = 2)
+    private BigDecimal sanctionedAmount;
+
+    @Column(precision = 5, scale = 2)
+    private BigDecimal approvedRate;
+
+    @Column(precision = 15, scale = 2)
+    private BigDecimal disbursedAmount;
+
+    private Instant disbursedAt;
+
+    @Column(length = 100)
+    private String lmsReferenceId;
+
+    @Column(length = 100)
+    private String esignTransactionId;
+
+    private Integer bureauScore;
+
+    @Column(length = 30)
+    private String creditDecision;
+
+    private Integer creditRiskScore;
+
     @CreationTimestamp
     @Column(updatable = false)
     private Instant createdAt;
