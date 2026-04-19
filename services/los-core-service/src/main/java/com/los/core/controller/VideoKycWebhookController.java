@@ -95,8 +95,15 @@ public class VideoKycWebhookController {
         Object resultObj = payload.get("result");
         Map<String, Object> result = resultObj instanceof Map ? (Map<String, Object>) resultObj : Map.of();
 
-        double matchScore = result.containsKey("match") ?
-                ((Number) result.get("match")).doubleValue() : 0.0;
+        double matchScore = 0.0;
+        if (result.containsKey("match")) {
+            Object matchObj = result.get("match");
+            if (matchObj instanceof Number) {
+                matchScore = ((Number) matchObj).doubleValue();
+            } else if (matchObj != null) {
+                try { matchScore = Double.parseDouble(String.valueOf(matchObj)); } catch (NumberFormatException ignored) {}
+            }
+        }
         String matchResult = matchScore >= 0.85 ? "MATCH" : "MISMATCH";
 
         log.info("[VKYC Webhook] Face match — txnId={}, score={}, result={}",

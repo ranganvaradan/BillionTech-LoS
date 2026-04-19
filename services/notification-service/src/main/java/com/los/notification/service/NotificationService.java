@@ -494,8 +494,8 @@ public class NotificationService {
                     "\"from\":{\"email\":\"%s\",\"name\":\"%s\"}," +
                     "\"subject\":\"%s\"," +
                     "\"content\":[{\"type\":\"text/html\",\"value\":\"%s\"}]}",
-                    recipient,
-                    config.getFromAddress(), config.getFromName(),
+                    escapeJson(recipient),
+                    escapeJson(config.getFromAddress()), escapeJson(config.getFromName()),
                     subject != null ? escapeJson(subject) : "LOS Notification",
                     escapeJson(body));
 
