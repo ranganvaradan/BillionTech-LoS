@@ -318,9 +318,11 @@ public class LmsService {
             summary.setPaidEmis((summary.getPaidEmis() != null ? summary.getPaidEmis() : 0) + 1);
             summary.setTotalPaid((summary.getTotalPaid() != null ? summary.getTotalPaid() : BigDecimal.ZERO).add(callback.getPaidAmount()));
             BigDecimal principalReduction = callback.getPrincipalComponent() != null
-                    ? callback.getPrincipalComponent() : callback.getPaidAmount();
-            summary.setOutstandingPrincipal(
-                    (summary.getOutstandingPrincipal() != null ? summary.getOutstandingPrincipal() : BigDecimal.ZERO).subtract(principalReduction));
+                    ? callback.getPrincipalComponent() : BigDecimal.ZERO;
+            if (principalReduction.compareTo(BigDecimal.ZERO) > 0) {
+                summary.setOutstandingPrincipal(
+                        (summary.getOutstandingPrincipal() != null ? summary.getOutstandingPrincipal() : BigDecimal.ZERO).subtract(principalReduction));
+            }
             summary.setLastPaymentDate(callback.getPaymentDate());
             if (summary.getNextEmiDate() != null) {
                 summary.setNextEmiDate(summary.getNextEmiDate().plusMonths(1));
@@ -350,6 +352,8 @@ public class LmsService {
                 .applicationNumber(cb.getApplicationNumber())
                 .installmentNumber(cb.getInstallmentNumber() != null ? cb.getInstallmentNumber() : 0)
                 .paidAmount(cb.getAmount())
+                .principalComponent(cb.getPrincipalComponent())
+                .interestComponent(cb.getInterestComponent())
                 .paymentDate(cb.getPaymentDate())
                 .paymentMode(cb.getPaymentMode())
                 .utrNumber(cb.getUtrNumber())
