@@ -303,18 +303,18 @@ public class LoanApplicationFlowService {
         log.info("Sanction issued for {} — amount: {}, rate: {}%, KFS: {}",
                 app.getApplicationNumber(), app.getSanctionedAmount(), app.getApprovedRate(), kfs.getId());
 
-        return Map.of(
-                "applicationId", applicationId,
-                "applicationNumber", app.getApplicationNumber(),
-                "status", "SANCTION_ISSUED",
-                "sanctionedAmount", app.getSanctionedAmount(),
-                "interestRate", app.getApprovedRate() != null ? app.getApprovedRate() : app.getInterestRate(),
-                "tenureMonths", app.getTenureMonths(),
-                "kfsId", kfs.getId(),
-                "kfsVersion", kfs.getVersion(),
-                "kfsStatus", kfs.getStatus(),
-                "coolingOffHours", kfs.getCoolingOffHours()
-        );
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("applicationId", applicationId);
+        result.put("applicationNumber", app.getApplicationNumber());
+        result.put("status", "SANCTION_ISSUED");
+        result.put("sanctionedAmount", app.getSanctionedAmount());
+        result.put("interestRate", app.getApprovedRate() != null ? app.getApprovedRate() : app.getInterestRate());
+        result.put("tenureMonths", app.getTenureMonths());
+        result.put("kfsId", kfs.getId());
+        result.put("kfsVersion", kfs.getVersion());
+        result.put("kfsStatus", kfs.getStatus());
+        result.put("coolingOffHours", kfs.getCoolingOffHours());
+        return result;
     }
 
     // ========================== STEP 6: ESIGN ==========================
@@ -474,7 +474,6 @@ public class LoanApplicationFlowService {
      * @param signerInfo    Signer details for eSign
      * @return Step-by-step results of the entire flow
      */
-    @Transactional
     public Map<String, Object> executeFullFlow(UUID applicationId,
                                                 Map<String, Object> kycPayload,
                                                 Map<String, Object> sanctionParams,
