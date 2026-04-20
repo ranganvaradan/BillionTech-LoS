@@ -21,7 +21,7 @@ public final class ApplicationStateMachine {
             Map.entry(REJECTED,             Set.of()),
             Map.entry(SANCTION_ISSUED,      Set.of(ESIGN_PENDING, ON_HOLD)),
             Map.entry(ESIGN_PENDING,        Set.of(ESIGN_COMPLETED, ON_HOLD)),
-            Map.entry(ESIGN_COMPLETED,      Set.of(DISBURSED, ON_HOLD)),
+            Map.entry(ESIGN_COMPLETED,      Set.of(DISBURSEMENT_PENDING, ON_HOLD)),
             Map.entry(DISBURSEMENT_PENDING, Set.of(DISBURSED, ON_HOLD)),
             Map.entry(DISBURSED,            Set.of()),
             Map.entry(WITHDRAWN,            Set.of()),

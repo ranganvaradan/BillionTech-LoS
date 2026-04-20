@@ -158,10 +158,27 @@ public class SessionSecurityService {
 
     public boolean isIpWhitelisted(String ip) {
         if (whitelistedIps.contains(ip)) return true;
-        // Check CIDR ranges (simplified)
+        // Check CIDR ranges
         return whitelistedIps.stream().anyMatch(cidr -> {
             if (!cidr.contains("/")) return false;
-            return ip.startsWith(cidr.substring(0, cidr.indexOf(".")));
+            try {
+                String[] parts = cidr.split("/");
+                int prefixLength = Integer.parseInt(parts[1]);
+                int mask = prefixLength == 0 ? 0 : 0xFFFFFFFF << (32 - prefixLength);
+                int cidrAddr = ipToInt(parts[0]);
+                int ipAddr = ipToInt(ip);
+                return (cidrAddr & mask) == (ipAddr & mask);
+            } catch (Exception e) {
+                return false;
+            }
         });
+    }
+
+    private static int ipToInt(String ip) {
+        String[] octets = ip.split("\\.");
+        return (Integer.parseInt(octets[0]) << 24)
+             | (Integer.parseInt(octets[1]) << 16)
+             | (Integer.parseInt(octets[2]) << 8)
+             |  Integer.parseInt(octets[3]);
     }
 }

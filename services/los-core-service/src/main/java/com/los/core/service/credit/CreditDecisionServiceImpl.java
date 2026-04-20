@@ -52,10 +52,10 @@ public class CreditDecisionServiceImpl implements ICreditDecisionService {
         if (bureauResult.isPresent() && bureauResult.get().getOutcome() == StepOutcome.SUCCESS) {
             Map<String, Object> parsed = bureauResult.get().getParsedData();
             if (parsed != null) {
-                creditScore = ((Number) parsed.getOrDefault("creditScore", 0)).intValue();
-                int overdueAccounts = ((Number) parsed.getOrDefault("overdueAccounts", 0)).intValue();
-                int dpd90Plus = ((Number) parsed.getOrDefault("dpd90Plus", 0)).intValue();
-                boolean willfulDefaulter = (boolean) parsed.getOrDefault("willfulDefaulter", false);
+                creditScore = parsed.get("creditScore") instanceof Number n ? n.intValue() : 0;
+                int overdueAccounts = parsed.get("overdueAccounts") instanceof Number n ? n.intValue() : 0;
+                int dpd90Plus = parsed.get("dpd90Plus") instanceof Number n ? n.intValue() : 0;
+                boolean willfulDefaulter = Boolean.parseBoolean(String.valueOf(parsed.getOrDefault("willfulDefaulter", false)));
 
                 if (creditScore < MIN_CREDIT_SCORE) {
                     reasons.add("Credit score " + creditScore + " below minimum threshold of " + MIN_CREDIT_SCORE);

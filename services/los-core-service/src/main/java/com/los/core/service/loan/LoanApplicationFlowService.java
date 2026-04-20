@@ -459,7 +459,7 @@ public class LoanApplicationFlowService {
             );
         }
 
-        app.setStatus(ApplicationStatus.ESIGN_COMPLETED);
+        app.setStatus(ApplicationStatus.DISBURSEMENT_PENDING);
         if (esignTransactionId != null) {
             app.setEsignTransactionId(esignTransactionId);
         }
@@ -468,11 +468,11 @@ public class LoanApplicationFlowService {
 
         auditService.logEvent(applicationId, "FLOW", "ESIGN_COMPLETE",
                 null, Map.of("status", "ESIGN_PENDING"),
-                Map.of("status", "ESIGN_COMPLETED", "esignTransactionId",
+                Map.of("status", "DISBURSEMENT_PENDING", "esignTransactionId",
                         esignTransactionId != null ? esignTransactionId : ""),
-                "eSign completed — ready for disbursement");
+                "eSign completed — status: DISBURSEMENT_PENDING, ready for disbursement");
 
-        log.info("eSign completed for {} — status: ESIGN_COMPLETED", app.getApplicationNumber());
+        log.info("eSign completed for {} — status: DISBURSEMENT_PENDING", app.getApplicationNumber());
         return toResponse(app);
     }
 
@@ -485,15 +485,15 @@ public class LoanApplicationFlowService {
     @Transactional
     public Map<String, Object> disburseAndHandoverToLms(UUID applicationId) {
         LoanApplication app = findOrThrow(applicationId);
-        if (app.getStatus() != ApplicationStatus.ESIGN_COMPLETED) {
+        if (app.getStatus() != ApplicationStatus.DISBURSEMENT_PENDING) {
             auditService.logEvent(applicationId, "PREREQUISITE_BLOCK", "DISBURSEMENT_BLOCKED",
                     null,
-                    Map.of("status", app.getStatus().name(), "reason", "STATUS_NOT_ESIGN_COMPLETED", "action", "DISBURSE"),
+                    Map.of("status", app.getStatus().name(), "reason", "STATUS_NOT_DISBURSEMENT_PENDING", "action", "DISBURSE"),
                     null,
-                    "Disbursement blocked: requires ESIGN_COMPLETED");
+                    "Disbursement blocked: requires DISBURSEMENT_PENDING");
             throw new BusinessRuleException(
-                    "Cannot disburse — application must be in ESIGN_COMPLETED status. Current: " + app.getStatus(),
-                    "STATUS_NOT_ESIGN_COMPLETED",
+                    "Cannot disburse — application must be in DISBURSEMENT_PENDING status. Current: " + app.getStatus(),
+                    "STATUS_NOT_DISBURSEMENT_PENDING",
                     "DISBURSE",
                     Map.of("status", app.getStatus().name())
             );
