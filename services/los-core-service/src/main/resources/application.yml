@@ -1,0 +1,122 @@
+server:
+  port: 8083
+
+spring:
+  application:
+    name: los-core-service
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/los_core
+    username: ${POSTGRES_USER:los_admin}
+    password: ${POSTGRES_PASSWORD:los_secret_2026}
+    hikari:
+      minimum-idle: 5
+      maximum-pool-size: 30
+      idle-timeout: 300000
+      max-lifetime: 600000
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:los_redis_2026}
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:los_rabbit}
+    password: ${RABBITMQ_PASSWORD:los_rabbit_2026}
+
+los:
+  minio:
+    endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+    access-key: ${MINIO_ACCESS_KEY:los_minio_admin}
+    secret-key: ${MINIO_SECRET_KEY:los_minio_secret_2026}
+    bucket-documents: los-documents
+    bucket-signed-docs: los-signed-docs
+
+  integration:
+    # LMS Adapter Service URL (for loan handover to Encore)
+    lms-adapter:
+      base-url: ${LMS_ADAPTER_URL:http://lms-adapter-service:8085}
+
+    # Karza KYC Provider (PAN, Aadhaar, GSTIN, DL, Voter ID, Bank Verification)
+    karza:
+      base-url: ${KARZA_BASE_URL:https://api.karza.in}
+      api-key: ${KARZA_API_KEY:}
+      gstn-url: ${KARZA_GSTN_URL:https://api.karza.in/v3/gstdetailed}
+      connect-timeout-ms: ${KARZA_CONNECT_TIMEOUT:10000}
+      read-timeout-ms: ${KARZA_READ_TIMEOUT:30000}
+
+    # Equifax Credit Bureau Provider (SOAP XML API)
+    equifax:
+      url: ${EQUIFAX_URL:https://cais.equifax.co.in/cais/equifax/enquiry}
+      customer-id: ${EQUIFAX_CUSTOMER_ID:}
+      user-id: ${EQUIFAX_USER_ID:}
+      password: ${EQUIFAX_PASSWORD:}
+      member-number: ${EQUIFAX_MEMBER_NUMBER:}
+      security-code: ${EQUIFAX_SECURITY_CODE:}
+      product-version: ${EQUIFAX_PRODUCT_VERSION:2.2}
+      report-format: ${EQUIFAX_REPORT_FORMAT:XML}
+      product-code: ${EQUIFAX_PRODUCT_CODE:CCR}
+      connect-timeout-ms: ${EQUIFAX_CONNECT_TIMEOUT:15000}
+      read-timeout-ms: ${EQUIFAX_READ_TIMEOUT:60000}
+
+    # Emsigner Digital Signing Provider
+    emsigner:
+      url: ${EMSIGNER_URL:https://emsigner.com/v3/gateway}
+      auth-token: ${EMSIGNER_AUTH_TOKEN:}
+      public-key-path: ${EMSIGNER_PUBLIC_KEY_PATH:classpath:keys/emsigner-public.pem}
+      success-callback-url: ${EMSIGNER_SUCCESS_URL:}
+      failure-callback-url: ${EMSIGNER_FAILURE_URL:}
+      cancel-callback-url: ${EMSIGNER_CANCEL_URL:}
+      connect-timeout-ms: ${EMSIGNER_CONNECT_TIMEOUT:10000}
+      read-timeout-ms: ${EMSIGNER_READ_TIMEOUT:60000}
+
+    # Hyperverge Video KYC Provider
+    hyperverge:
+      generate-link-url: ${HYPERVERGE_GENERATE_LINK_URL:https://ind.hyperverge.co/v1/link/generate}
+      app-id: ${HYPERVERGE_APP_ID:}
+      app-key: ${HYPERVERGE_APP_KEY:}
+      workflow-id: ${HYPERVERGE_WORKFLOW_ID:}
+      connect-timeout-ms: ${HYPERVERGE_CONNECT_TIMEOUT:10000}
+      read-timeout-ms: ${HYPERVERGE_READ_TIMEOUT:30000}
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://${EUREKA_HOST:localhost}:${EUREKA_PORT:8761}/eureka/
+  instance:
+    prefer-ip-address: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  level:
+    com.los.core: DEBUG
