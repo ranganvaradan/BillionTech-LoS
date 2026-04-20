@@ -8,7 +8,8 @@ import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
-import java.util.Set;
+import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * BR-19.6: OWASP Top 10 hardening filter.
@@ -19,11 +20,21 @@ import java.util.Set;
 @Order(1)
 public class OwaspSecurityFilter implements Filter {
 
-    private static final Set<String> BLOCKED_PATTERNS = Set.of(
+    /** XSS patterns — matched as literal substrings (case-insensitive). */
+    private static final List<String> XSS_PATTERNS = List.of(
             "<script", "javascript:", "onerror=", "onload=",
-            "eval(", "document.cookie", "window.location",
-            "SELECT.*FROM", "INSERT.*INTO", "DELETE.*FROM", "DROP.*TABLE",
-            "UNION.*SELECT", "'; --", "1=1", "OR 1=1"
+            "eval(", "document.cookie", "window.location"
+    );
+
+    /** SQL injection patterns — compiled as real regexes (case-insensitive). */
+    private static final List<Pattern> SQL_PATTERNS = List.of(
+            Pattern.compile("SELECT\\s+.+\\s+FROM", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("INSERT\\s+INTO", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("DELETE\\s+FROM", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("DROP\\s+TABLE", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("UNION\\s+SELECT", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("';\\s*--", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("\\bOR\\s+1\\s*=\\s*1\\b", Pattern.CASE_INSENSITIVE)
     );
 
     @Override
@@ -74,6 +85,11 @@ public class OwaspSecurityFilter implements Filter {
 
     private boolean containsMaliciousPattern(String input) {
         String upper = input.toUpperCase();
-        return BLOCKED_PATTERNS.stream().anyMatch(pattern -> upper.contains(pattern.toUpperCase()));
+        // Check XSS patterns (literal substring match)
+        if (XSS_PATTERNS.stream().anyMatch(pattern -> upper.contains(pattern.toUpperCase()))) {
+            return true;
+        }
+        // Check SQL injection patterns (proper regex match)
+        return SQL_PATTERNS.stream().anyMatch(pattern -> pattern.matcher(input).find());
     }
 }

@@ -221,7 +221,7 @@ export default function KycManagementPage() {
                     <div className="w-20 h-1.5 bg-slate-100 rounded-full overflow-hidden">
                       <div
                         className={`h-full rounded-full ${item.kycStatus === 'COMPLETED' ? 'bg-green-500' : item.kycStatus === 'FAILED' ? 'bg-red-500' : 'bg-blue-500'}`}
-                        style={{ width: `${(item.stepsCompleted / item.totalSteps) * 100}%` }}
+                        style={{ width: `${item.totalSteps > 0 ? (item.stepsCompleted / item.totalSteps) * 100 : 0}%` }}
                       />
                     </div>
                     <span className="text-xs text-slate-500">{item.stepsCompleted}/{item.totalSteps}</span>

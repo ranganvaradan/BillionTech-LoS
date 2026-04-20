@@ -38,7 +38,7 @@ async function handler(
     });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : 'Upstream request failed';
-    return Response.json({ message, targetUrl }, { status: 503 });
+    return Response.json({ message }, { status: 503 });
   }
 
   const responseText = await upstreamResponse.text();

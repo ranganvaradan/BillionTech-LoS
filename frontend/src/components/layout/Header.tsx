@@ -35,6 +35,7 @@ export default function Header() {
   const handleLogout = () => {
     if (typeof window !== 'undefined') {
       localStorage.removeItem('los_token');
+      localStorage.removeItem('los_refresh_token');
       localStorage.removeItem('los_user');
     }
     router.push('/login');
