@@ -107,6 +107,12 @@ public class ApplicationExtensionService {
                     continue;
                 }
 
+                if (!ApplicationStateMachine.isValidTransition(app.getStatus(), newStatus)) {
+                    errors.add(appId + ": invalid transition from " + app.getStatus() + " to " + newStatus);
+                    failed++;
+                    continue;
+                }
+
                 app.setStatus(newStatus);
                 if (remarks != null) {
                     app.setRemarks(remarks);
