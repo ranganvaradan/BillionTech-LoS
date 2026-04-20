@@ -136,7 +136,7 @@ public class WorkflowEngineServiceImpl implements IWorkflowEngineService {
 
             // Add remaining sequential steps
             for (Map<String, Object> step : steps) {
-                String stepType = (String) step.get("stepType");
+                String stepType = (String) step.get("step");
                 if (stepType != null && !parallelStepNames.contains(stepType)) {
                     Map<String, Object> sequentialPhase = new java.util.LinkedHashMap<>();
                     sequentialPhase.put("phase", phase++);
@@ -153,7 +153,7 @@ public class WorkflowEngineServiceImpl implements IWorkflowEngineService {
             List<String> otherSteps = new java.util.ArrayList<>();
 
             for (Map<String, Object> step : steps) {
-                String stepType = (String) step.get("stepType");
+                String stepType = (String) step.get("step");
                 if (stepType != null && isKycVerificationStep(stepType)) {
                     kycSteps.add(stepType);
                 } else if (stepType != null) {

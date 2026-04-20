@@ -195,7 +195,7 @@ public class KycOrchestrationServiceImpl implements IKycOrchestrationService {
             String outcome = r != null ? r.getOutcome().name() : "MISSING";
             boolean overridden = r != null && r.isOverridden();
 
-            if (r != null && r.getOutcome() == StepOutcome.FAILURE) {
+            if (r != null && r.getOutcome() == StepOutcome.FAILURE && !r.isOverridden()) {
                 anyFail = true;
             }
 

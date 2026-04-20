@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS co_lending_partners (
 CREATE TABLE IF NOT EXISTS co_lending_allocations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     application_id UUID NOT NULL REFERENCES loan_applications(id),
-    partner_id UUID NOT NULL REFERENCES co_lending_partners(id),
+    partner_id UUID REFERENCES co_lending_partners(id),
     partner_name VARCHAR(200),
     share_percent DECIMAL(5,2) NOT NULL,
     share_amount DECIMAL(15,2) NOT NULL,

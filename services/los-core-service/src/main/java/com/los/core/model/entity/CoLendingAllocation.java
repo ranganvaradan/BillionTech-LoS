@@ -27,7 +27,7 @@ public class CoLendingAllocation {
     @Column(nullable = false)
     private UUID applicationId;
 
-    @Column(nullable = false)
+    @Column(nullable = true)
     private UUID partnerId;
 
     @Column(nullable = false, length = 100)
