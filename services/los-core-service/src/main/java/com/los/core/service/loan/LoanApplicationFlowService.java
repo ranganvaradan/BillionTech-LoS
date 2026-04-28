@@ -459,10 +459,13 @@ public class LoanApplicationFlowService {
             );
         }
 
-        app.setStatus(ApplicationStatus.DISBURSEMENT_PENDING);
+        // Transition through ESIGN_COMPLETED (state machine: ESIGN_PENDING → ESIGN_COMPLETED → DISBURSEMENT_PENDING)
+        app.setStatus(ApplicationStatus.ESIGN_COMPLETED);
         if (esignTransactionId != null) {
             app.setEsignTransactionId(esignTransactionId);
         }
+        // Immediately advance to DISBURSEMENT_PENDING (ESIGN_COMPLETED is a transient acknowledgement state)
+        app.setStatus(ApplicationStatus.DISBURSEMENT_PENDING);
         app.setCurrentStepStartedAt(Instant.now());
         app = applicationRepository.save(app);
 
@@ -470,7 +473,7 @@ public class LoanApplicationFlowService {
                 null, Map.of("status", "ESIGN_PENDING"),
                 Map.of("status", "DISBURSEMENT_PENDING", "esignTransactionId",
                         esignTransactionId != null ? esignTransactionId : ""),
-                "eSign completed — status: DISBURSEMENT_PENDING, ready for disbursement");
+                "eSign completed — transitioned through ESIGN_COMPLETED to DISBURSEMENT_PENDING");
 
         log.info("eSign completed for {} — status: DISBURSEMENT_PENDING", app.getApplicationNumber());
         return toResponse(app);
