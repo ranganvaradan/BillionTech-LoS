@@ -207,7 +207,7 @@ public class AuthService {
         // Save current password to history (keep last 5)
         user.getPasswordHistory().add(0, user.getPasswordHash());
         if (user.getPasswordHistory().size() > 5) {
-            user.setPasswordHistory(user.getPasswordHistory().subList(0, 5));
+            user.setPasswordHistory(new java.util.ArrayList<>(user.getPasswordHistory().subList(0, 5)));
         }
 
         user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
