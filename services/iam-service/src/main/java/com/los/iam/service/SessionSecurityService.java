@@ -157,8 +157,12 @@ public class SessionSecurityService {
     }
 
     public boolean isIpWhitelisted(String ip) {
-        if (whitelistedIps.contains(ip)) return true;
-        // Check CIDR ranges
+        // Normalize IPv6 loopback variants to ::1
+        String normalizedIp = normalizeIp(ip);
+        if (whitelistedIps.contains(normalizedIp)) return true;
+        // Skip CIDR matching for IPv6 addresses (CIDR ranges are IPv4 only)
+        if (normalizedIp.contains(":")) return false;
+        // Check CIDR ranges (IPv4 only)
         return whitelistedIps.stream().anyMatch(cidr -> {
             if (!cidr.contains("/")) return false;
             try {
@@ -166,12 +170,22 @@ public class SessionSecurityService {
                 int prefixLength = Integer.parseInt(parts[1]);
                 int mask = prefixLength == 0 ? 0 : 0xFFFFFFFF << (32 - prefixLength);
                 int cidrAddr = ipToInt(parts[0]);
-                int ipAddr = ipToInt(ip);
+                int ipAddr = ipToInt(normalizedIp);
                 return (cidrAddr & mask) == (ipAddr & mask);
             } catch (Exception e) {
                 return false;
             }
         });
+    }
+
+    /** Normalize IPv6 loopback variants (0:0:0:0:0:0:0:1, ::1) to a canonical form. */
+    private static String normalizeIp(String ip) {
+        if (ip == null) return "";
+        // Common expanded IPv6 loopback from HttpServletRequest
+        if ("0:0:0:0:0:0:0:1".equals(ip) || "0000:0000:0000:0000:0000:0000:0000:0001".equals(ip)) {
+            return "::1";
+        }
+        return ip;
     }
 
     private static int ipToInt(String ip) {

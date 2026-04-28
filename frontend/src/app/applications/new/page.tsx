@@ -97,10 +97,12 @@ export default function NewApplicationPage() {
         await flowApi.submit(result.id);
       } catch (flowError) {
         console.error('Application created but submission to workflow failed', flowError);
+        setError('Application created but workflow submission failed. You can retry from the application detail page.');
       }
       router.push(`/applications/${result.id}`);
     } catch {
       setError('Failed to create application. Please try again.');
+    } finally {
       setSubmitting(false);
     }
   };

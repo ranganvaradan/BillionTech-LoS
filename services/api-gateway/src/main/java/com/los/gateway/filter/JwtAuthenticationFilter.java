@@ -87,7 +87,7 @@ public class JwtAuthenticationFilter implements GlobalFilter, Ordered {
             byte[] expectedSig = mac.doFinal(headerPayload.getBytes(StandardCharsets.UTF_8));
             String expectedSigB64 = Base64.getUrlEncoder().withoutPadding().encodeToString(expectedSig);
 
-            if (!expectedSigB64.equals(parts[2])) {
+            if (!java.security.MessageDigest.isEqual(expectedSigB64.getBytes(StandardCharsets.UTF_8), parts[2].getBytes(StandardCharsets.UTF_8))) {
                 log.warn("JWT rejected: signature mismatch");
                 exchange.getResponse().setStatusCode(HttpStatus.UNAUTHORIZED);
                 return exchange.getResponse().setComplete();

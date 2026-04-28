@@ -26,15 +26,18 @@ public class OwaspSecurityFilter implements Filter {
             "eval(", "document.cookie", "window.location"
     );
 
-    /** SQL injection patterns — compiled as real regexes (case-insensitive). */
+    /**
+     * SQL injection patterns — require suspicious delimiters (quotes, semicolons,
+     * comment markers) alongside SQL keywords to avoid false positives on
+     * legitimate query parameters like ?status=DELETE_FROM_QUEUE.
+     */
     private static final List<Pattern> SQL_PATTERNS = List.of(
-            Pattern.compile("SELECT\\s+.+\\s+FROM", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("INSERT\\s+INTO", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("DELETE\\s+FROM", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("DROP\\s+TABLE", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("UNION\\s+SELECT", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("'\\s*(SELECT|INSERT|DELETE|UPDATE|DROP|UNION)\\b", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("(SELECT|INSERT|DELETE|UPDATE|DROP|UNION)\\b[^&]*'", Pattern.CASE_INSENSITIVE),
             Pattern.compile("';\\s*--", Pattern.CASE_INSENSITIVE),
-            Pattern.compile("\\bOR\\s+1\\s*=\\s*1\\b", Pattern.CASE_INSENSITIVE)
+            Pattern.compile("\\bOR\\s+1\\s*=\\s*1\\b", Pattern.CASE_INSENSITIVE),
+            Pattern.compile("--\\s*$", Pattern.CASE_INSENSITIVE),
+            Pattern.compile(";\\s*(DROP|DELETE|UPDATE|INSERT)\\b", Pattern.CASE_INSENSITIVE)
     );
 
     @Override
