@@ -44,6 +44,7 @@ public class LoanApplicationServiceImpl implements ILoanApplicationService {
                 .borrowerType(request.getBorrowerType())
                 .loanProduct(request.getLoanProduct())
                 .requestedAmount(request.getRequestedAmount())
+                .interestRate(request.getInterestRate())
                 .tenureMonths(request.getTenureMonths())
                 .personalInfo(request.getPersonalInfo())
                 .businessInfo(request.getBusinessInfo())

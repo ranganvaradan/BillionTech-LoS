@@ -21,6 +21,8 @@ public class CreateApplicationRequest {
     @Positive(message = "Requested amount must be positive")
     private BigDecimal requestedAmount;
 
+    private BigDecimal interestRate;
+
     private Integer tenureMonths;
 
     private Map<String, Object> personalInfo;
