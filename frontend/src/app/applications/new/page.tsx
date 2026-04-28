@@ -93,13 +93,20 @@ export default function NewApplicationPage() {
         },
       };
       const result = await applicationApi.create(request);
+      let flowFailed = false;
       try {
         await flowApi.submit(result.id);
       } catch (flowError) {
+        flowFailed = true;
         console.error('Application created but submission to workflow failed', flowError);
-        setError('Application created but workflow submission failed. You can retry from the application detail page.');
       }
-      router.push(`/applications/${result.id}`);
+      if (flowFailed) {
+        setError('Application created but workflow submission failed. You can retry from the application detail page.');
+        // Still navigate after a brief delay so user can see the message
+        setTimeout(() => router.push(`/applications/${result.id}`), 2000);
+      } else {
+        router.push(`/applications/${result.id}`);
+      }
     } catch {
       setError('Failed to create application. Please try again.');
     } finally {
