@@ -182,7 +182,7 @@ public class LoanApplicationFlowService {
                 .stepType(KycStepType.BUREAU_PULL)
                 .provider(com.los.core.model.enums.ProviderType.EQUIFAX)
                 .outcome(bureauResult.success() ? StepOutcome.SUCCESS : StepOutcome.FAILURE)
-                .confidenceScore(bureauResult.success() ? bureauResult.creditScore() : 0.0)
+                .confidenceScore(bureauResult.success() ? 0.95 : 0.0) // creditScore (e.g. 720) stored on app.bureauScore, not here
                 .parsedData(bureauResult.reportData())
                 .transactionId(bureauResult.transactionId())
                 .errorMessage(bureauResult.errorMessage())
