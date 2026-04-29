@@ -81,7 +81,7 @@ public class ApiKeyAuthFilter implements Filter {
     private boolean isValidApiKey(String apiKey) {
         // Check configured static keys first (for dev/simple deployments)
         if (configuredApiKeys != null && !configuredApiKeys.isBlank()) {
-            List<String> keys = Arrays.asList(configuredApiKeys.split(","));
+            List<String> keys = Arrays.stream(configuredApiKeys.split(",")).map(String::trim).toList();
             if (keys.contains(apiKey.trim())) {
                 return true;
             }
