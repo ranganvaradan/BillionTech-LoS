@@ -32,7 +32,7 @@ public class TransactionCategorizer {
     @Value("${bankstatement.analysis.investment-keywords:MUTUAL FUND,MF,SIP,FD,FIXED DEPOSIT,RD,RECURRING,SHARE,STOCK,DEMAT,ZERODHA,GROWW}")
     private String investmentKeywords;
 
-    @Value("${bankstatement.analysis.bounce-keywords:BOUNCE,RETURN,DISHONOUR,UNPAID,INSUFFICIENT,ECS RETURN,NACH RETURN}")
+    @Value("${bankstatement.analysis.bounce-keywords:BOUNCE,CHQ RETURN,CHEQUE RETURN,INSTRUMENT RETURN,DISHONOUR,UNPAID,INSUFFICIENT,ECS RETURN,NACH RETURN}")
     private String bounceKeywords;
 
     @Value("${bankstatement.analysis.reversal-keywords:REVERSAL,REVERSED,REFUND,CASHBACK}")
@@ -51,10 +51,12 @@ public class TransactionCategorizer {
         // Detect category
         txn.setCategory(detectCategory(narration, txn));
 
-        // Detect bounce
+        // Detect bounce (only override if no more specific category was detected)
         if (matchesAny(narration, bounceKeywords)) {
             txn.setIsBounce(true);
-            txn.setCategory(TransactionCategory.BOUNCE_RETURN);
+            if (txn.getCategory() == TransactionCategory.OTHER || txn.getCategory() == TransactionCategory.CHEQUE) {
+                txn.setCategory(TransactionCategory.BOUNCE_RETURN);
+            }
         }
 
         // Detect reversal

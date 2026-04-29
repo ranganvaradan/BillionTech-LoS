@@ -277,7 +277,7 @@ public class PdfExtractor {
     BigDecimal parseAmount(String amountStr) {
         if (amountStr == null || amountStr.isBlank()) return null;
         amountStr = amountStr.trim().replace(",", "").replace("₹", "").replace("Rs.", "").replace("Rs", "").trim();
-        if (amountStr.isEmpty() || amountStr.equals("-") || amountStr.equals("0.00")) return null;
+        if (amountStr.isEmpty() || amountStr.equals("-")) return null;
         try {
             return new BigDecimal(amountStr);
         } catch (NumberFormatException e) {
