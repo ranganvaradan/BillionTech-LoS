@@ -119,6 +119,7 @@ npm run dev
 | LOS Core Service | 8083 | Full loan lifecycle — applications, KYC orchestration, workflow engine, credit decision, documents, eSign, KFS, Account Aggregator, NACH, co-lending, collateral, OCR, reports |
 | Notification Service | 8084 | SMS, email, WhatsApp (9 templates), in-app alerts, bulk SMS |
 | LMS Adapter | 8085 | Loan handover, amortization, prepayment/foreclosure, multi-tranche, co-lending split |
+| Bank Statement Service | 8086 | Bank statement extraction & analysis — PDF/Excel/CSV parsing for 25+ Indian banks, transaction categorization, ABB, FOIR, income analysis, red flag detection, creditworthiness scoring |
 
 ## Frontend Routes (20 Pages)
 
@@ -146,7 +147,7 @@ npm run dev
 
 | Component | Port | Purpose |
 |-----------|------|---------|
-| PostgreSQL 16 | 5432 | Primary database (4 schemas: losiam, losenrollment, loscore, losnotification) |
+| PostgreSQL 16 | 5432 | Primary database (5 schemas: losiam, losenrollment, loscore, losnotification, losbankstmt) |
 | Redis 7.2 | 6379 | Cache, OTP sessions, rate limiting |
 | RabbitMQ 3.13 | 5672 / 15672 | Message queue / Management UI |
 | MinIO | 9000 / 9001 | S3-compatible object storage (4 buckets) |
@@ -161,6 +162,7 @@ Each service exposes Swagger UI when running:
 - LOS Core: http://localhost:8083/swagger-ui.html
 - Notification: http://localhost:8084/swagger-ui.html
 - LMS Adapter: http://localhost:8085/swagger-ui.html
+- Bank Statement: http://localhost:8086/swagger-ui.html
 
 ## Tech Stack
 
@@ -192,7 +194,8 @@ los-platform/
 │   ├── enrollment-service/      # Enrollment (8082)
 │   ├── los-core-service/        # Core (8083)
 │   ├── notification-service/    # Notifications (8084)
-│   └── lms-adapter-service/     # LMS (8085)
+│   ├── lms-adapter-service/     # LMS (8085)
+│   └── bank-statement-service/ # Bank Statement (8086)
 └── frontend/                    # Next.js 16 (3000)
     ├── src/app/                 # App Router pages
     ├── src/components/          # Shared components
@@ -210,4 +213,5 @@ When using `start.sh`, logs are written to `./logs/`:
 - `logs/los-core-service.log`
 - `logs/notification-service.log`
 - `logs/lms-adapter-service.log`
+- `logs/bank-statement-service.log`
 - `logs/frontend.log`

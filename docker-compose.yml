@@ -217,6 +217,37 @@ services:
       postgres:
         condition: service_healthy
 
+  bank-statement-service:
+    build:
+      context: .
+      dockerfile: services/bank-statement-service/Dockerfile
+    container_name: los-bank-statement
+    ports:
+      - "127.0.0.1:8086:8086"
+    environment:
+      - EUREKA_HOST=discovery-service
+      - POSTGRES_HOST=postgres
+      - POSTGRES_USER=${POSTGRES_USER:-los_admin}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-los_secret_2026}
+      - REDIS_HOST=redis
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-los_redis_2026}
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_USER=${RABBITMQ_USER:-los_rabbit}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-los_rabbit_2026}
+      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-los_minio_admin}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-los_minio_secret_2026}
+      - TRUST_GATEWAY_HEADERS=${TRUST_GATEWAY_HEADERS:-false}
+    depends_on:
+      discovery-service:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
   # ─── Frontend ──────────────────────────────────────────
   frontend:
     build: ./frontend

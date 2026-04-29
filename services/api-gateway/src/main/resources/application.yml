@@ -154,6 +154,12 @@ spring:
           predicates:
             - Path=/api/v1/lms/**
 
+        # Bank Statement Service
+        - id: bank-statements
+          uri: lb://bank-statement-service
+          predicates:
+            - Path=/api/v1/bank-statements/**
+
   data:
     redis:
       host: ${REDIS_HOST:localhost}

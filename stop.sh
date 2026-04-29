@@ -41,7 +41,7 @@ fi
 # ─── Stop backend services ──────────────────────────────
 echo -e "${BLUE}[LOS] Stopping backend services...${NC}"
 
-SERVICES=("discovery-service" "api-gateway" "iam-service" "enrollment-service" "los-core-service" "notification-service" "lms-adapter-service" "frontend")
+SERVICES=("discovery-service" "api-gateway" "iam-service" "enrollment-service" "los-core-service" "notification-service" "lms-adapter-service" "bank-statement-service" "frontend")
 
 for svc in "${SERVICES[@]}"; do
   PID_FILE="$LOG_DIR/$svc.pid"
