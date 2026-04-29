@@ -27,6 +27,7 @@
         <module>services/los-core-service</module>
         <module>services/notification-service</module>
         <module>services/lms-adapter-service</module>
+        <module>services/bank-statement-service</module>
     </modules>
 
     <properties>
