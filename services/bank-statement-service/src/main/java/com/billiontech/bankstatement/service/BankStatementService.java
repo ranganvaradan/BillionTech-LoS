@@ -20,10 +20,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -57,114 +54,119 @@ public class BankStatementService {
     @Value("${minio.bucket-name:los-bank-statements}")
     private String bucketName;
 
-    @Transactional
     public UploadResponse uploadAndProcess(MultipartFile file, String password, String applicationId, String uploadedBy) {
-        // Save initial record
-        BankStatement statement = BankStatement.builder()
-                .fileName(file.getOriginalFilename())
-                .fileSize(file.getSize())
-                .contentType(file.getContentType())
-                .parsingStatus(ParsingStatus.UPLOADED)
-                .applicationId(applicationId)
-                .uploadedBy(uploadedBy)
-                .build();
-        statement = statementRepository.save(statement);
+        TransactionTemplate txTemplate = new TransactionTemplate(transactionManager);
 
+        // Phase 1: Create initial record in its own transaction (committed immediately
+        // so it's visible to REQUIRES_NEW error handling and async threads)
+        Long statementId = txTemplate.execute(status -> {
+            BankStatement stmt = BankStatement.builder()
+                    .fileName(file.getOriginalFilename())
+                    .fileSize(file.getSize())
+                    .contentType(file.getContentType())
+                    .parsingStatus(ParsingStatus.UPLOADED)
+                    .applicationId(applicationId)
+                    .uploadedBy(uploadedBy)
+                    .build();
+            return statementRepository.save(stmt).getId();
+        });
+
+        // Phase 2: Process (upload, extract, categorize, save transactions)
         try {
-            // Upload to MinIO
-            String filePath = uploadToMinio(file, statement.getId());
-            statement.setFilePath(filePath);
-            statement.setFileHash(computeHash(file));
+            UploadResponse response = txTemplate.execute(status -> {
+                try {
+                    BankStatement statement = statementRepository.findById(statementId)
+                            .orElseThrow(() -> new ResourceNotFoundException("Statement not found"));
 
-            // Extract
-            statement.setParsingStatus(ParsingStatus.PROCESSING);
-            statementRepository.save(statement);
+                    // Upload to MinIO
+                    String filePath = uploadToMinio(file, statement.getId());
+                    statement.setFilePath(filePath);
+                    statement.setFileHash(computeHash(file));
 
-            ParsedStatement parsed = extractionEngine.extract(file, password);
+                    // Extract
+                    statement.setParsingStatus(ParsingStatus.PROCESSING);
+                    statementRepository.save(statement);
 
-            // Update statement metadata
-            statement.setAccountHolderName(parsed.getAccountHolderName());
-            statement.setAccountNumberMasked(parsed.getAccountNumber());
-            statement.setBankName(parsed.getBankName());
-            statement.setBankCode(parsed.getBankCode());
-            statement.setIfscCode(parsed.getIfscCode());
-            statement.setBranchName(parsed.getBranchName());
-            statement.setStatementFromDate(parsed.getStatementFromDate());
-            statement.setStatementToDate(parsed.getStatementToDate());
-            statement.setOpeningBalance(parsed.getOpeningBalance());
-            statement.setClosingBalance(parsed.getClosingBalance());
-            statement.setTotalTransactions(parsed.getTransactions().size());
+                    ParsedStatement parsed = extractionEngine.extract(file, password);
 
-            // Save transactions
-            BigDecimal totalCredits = BigDecimal.ZERO;
-            BigDecimal totalDebits = BigDecimal.ZERO;
-            List<BankTransaction> savedTransactions = new ArrayList<>();
+                    // Update statement metadata
+                    statement.setAccountHolderName(parsed.getAccountHolderName());
+                    statement.setAccountNumberMasked(parsed.getAccountNumber());
+                    statement.setBankName(parsed.getBankName());
+                    statement.setBankCode(parsed.getBankCode());
+                    statement.setIfscCode(parsed.getIfscCode());
+                    statement.setBranchName(parsed.getBranchName());
+                    statement.setStatementFromDate(parsed.getStatementFromDate());
+                    statement.setStatementToDate(parsed.getStatementToDate());
+                    statement.setOpeningBalance(parsed.getOpeningBalance());
+                    statement.setClosingBalance(parsed.getClosingBalance());
+                    statement.setTotalTransactions(parsed.getTransactions().size());
 
-            for (ParsedTransaction pt : parsed.getTransactions()) {
-                BankTransaction txn = BankTransaction.builder()
-                        .statement(statement)
-                        .transactionDate(pt.getTransactionDate())
-                        .valueDate(pt.getValueDate())
-                        .narration(pt.getNarration())
-                        .referenceNumber(pt.getReferenceNumber())
-                        .debitAmount(Optional.ofNullable(pt.getDebitAmount()).orElse(BigDecimal.ZERO))
-                        .creditAmount(Optional.ofNullable(pt.getCreditAmount()).orElse(BigDecimal.ZERO))
-                        .runningBalance(pt.getRunningBalance())
-                        .build();
+                    // Save transactions
+                    BigDecimal totalCredits = BigDecimal.ZERO;
+                    BigDecimal totalDebits = BigDecimal.ZERO;
+                    List<BankTransaction> savedTransactions = new ArrayList<>();
 
-                categorizer.categorize(txn);
-                savedTransactions.add(txn);
+                    for (ParsedTransaction pt : parsed.getTransactions()) {
+                        BankTransaction txn = BankTransaction.builder()
+                                .statement(statement)
+                                .transactionDate(pt.getTransactionDate())
+                                .valueDate(pt.getValueDate())
+                                .narration(pt.getNarration())
+                                .referenceNumber(pt.getReferenceNumber())
+                                .debitAmount(Optional.ofNullable(pt.getDebitAmount()).orElse(BigDecimal.ZERO))
+                                .creditAmount(Optional.ofNullable(pt.getCreditAmount()).orElse(BigDecimal.ZERO))
+                                .runningBalance(pt.getRunningBalance())
+                                .build();
 
-                totalCredits = totalCredits.add(Optional.ofNullable(txn.getCreditAmount()).orElse(BigDecimal.ZERO));
-                totalDebits = totalDebits.add(Optional.ofNullable(txn.getDebitAmount()).orElse(BigDecimal.ZERO));
-            }
+                        categorizer.categorize(txn);
+                        savedTransactions.add(txn);
 
-            transactionRepository.saveAll(savedTransactions);
+                        totalCredits = totalCredits.add(Optional.ofNullable(txn.getCreditAmount()).orElse(BigDecimal.ZERO));
+                        totalDebits = totalDebits.add(Optional.ofNullable(txn.getDebitAmount()).orElse(BigDecimal.ZERO));
+                    }
 
-            statement.setTotalCreditAmount(totalCredits);
-            statement.setTotalDebitAmount(totalDebits);
-            statement.setParsingStatus(ParsingStatus.PARSED);
-            statementRepository.save(statement);
+                    transactionRepository.saveAll(savedTransactions);
 
-            // Publish parsed event
-            eventPublisher.publishParsed(statement.getId(), statement.getBankName(), savedTransactions.size());
+                    statement.setTotalCreditAmount(totalCredits);
+                    statement.setTotalDebitAmount(totalDebits);
+                    statement.setParsingStatus(ParsingStatus.PARSED);
+                    statementRepository.save(statement);
 
-            // Defer async analysis until after this transaction commits,
-            // so the async thread can see the committed transactions
-            Long stmtId = statement.getId();
-            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-                @Override
-                public void afterCommit() {
-                    asyncAnalysisService.runAnalysisAsync(stmtId);
+                    // Publish parsed event
+                    eventPublisher.publishParsed(statement.getId(), statement.getBankName(), savedTransactions.size());
+
+                    return UploadResponse.builder()
+                            .statementId(statement.getId())
+                            .fileName(file.getOriginalFilename())
+                            .status(ParsingStatus.PARSED)
+                            .message("Statement uploaded and parsed successfully. Analysis in progress.")
+                            .build();
+
+                } catch (Exception e) {
+                    throw new StatementProcessingException("Failed to process statement: " + e.getMessage(), e);
                 }
             });
 
-            return UploadResponse.builder()
-                    .statementId(statement.getId())
-                    .fileName(file.getOriginalFilename())
-                    .status(ParsingStatus.PARSED)
-                    .message("Statement uploaded and parsed successfully. Analysis in progress.")
-                    .build();
+            // Phase 3: Trigger async analysis (processing transaction already committed)
+            asyncAnalysisService.runAnalysisAsync(statementId);
 
+            return response;
         } catch (Exception e) {
-            log.error("Failed to process statement {}: {}", statement.getId(), e.getMessage(), e);
-            // Persist FAILED status in a new transaction (the outer @Transactional
-            // will roll back on the re-thrown RuntimeException, so we need REQUIRES_NEW)
-            Long failedId = statement.getId();
-            String errorMsg = e.getMessage();
+            log.error("Failed to process statement {}: {}", statementId, e.getMessage(), e);
+            // Persist FAILED status — the initial record is already committed,
+            // so this separate transaction can find and update it
             try {
-                TransactionTemplate txTemplate = new TransactionTemplate(transactionManager);
-                txTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
                 txTemplate.executeWithoutResult(status -> {
-                    BankStatement s = statementRepository.findById(failedId).orElse(null);
+                    BankStatement s = statementRepository.findById(statementId).orElse(null);
                     if (s != null) {
                         s.setParsingStatus(ParsingStatus.FAILED);
-                        s.setParsingError(errorMsg);
+                        s.setParsingError(e.getMessage());
                         statementRepository.save(s);
                     }
                 });
             } catch (Exception ex) {
-                log.error("Failed to persist FAILED status for statement {}: {}", failedId, ex.getMessage());
+                log.error("Failed to persist FAILED status for statement {}: {}", statementId, ex.getMessage());
             }
             throw new StatementProcessingException("Failed to process statement: " + e.getMessage(), e);
         }
