@@ -187,6 +187,7 @@ start_service "enrollment-service" "services/enrollment-service" 8082
 start_service "los-core-service" "services/los-core-service" 8083
 start_service "notification-service" "services/notification-service" 8084
 start_service "lms-adapter-service" "services/lms-adapter-service" 8085
+start_service "bank-statement-service" "services/bank-statement-service" 8086
 
 echo -e "${YELLOW}  Waiting for services to register with Eureka (30s)...${NC}"
 sleep 30
@@ -212,6 +213,7 @@ check_health "enrollment-service" 8082
 check_health "los-core-service" 8083
 check_health "notification-service" 8084
 check_health "lms-adapter-service" 8085
+check_health "bank-statement-service" 8086
 
 # ─── Start Frontend ─────────────────────────────────────
 echo ""
@@ -246,6 +248,7 @@ echo -e "${GREEN}║    Enrollment:    http://localhost:8082/swagger-ui.html    
 echo -e "${GREEN}║    LOS Core:      http://localhost:8083/swagger-ui.html     ║${NC}"
 echo -e "${GREEN}║    Notification:  http://localhost:8084/swagger-ui.html     ║${NC}"
 echo -e "${GREEN}║    LMS Adapter:   http://localhost:8085/swagger-ui.html     ║${NC}"
+echo -e "${GREEN}║    Bank Statement: http://localhost:8086/swagger-ui.html    ║${NC}"
 echo -e "${GREEN}║                                                            ║${NC}"
 echo -e "${GREEN}║  Infrastructure:                                           ║${NC}"
 echo -e "${GREEN}║    PostgreSQL:     localhost:5432                           ║${NC}"

@@ -20,6 +20,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.InputStream;
@@ -123,8 +125,15 @@ public class BankStatementService {
             // Publish parsed event
             eventPublisher.publishParsed(statement.getId(), statement.getBankName(), savedTransactions.size());
 
-            // Run analysis asynchronously (via separate bean to ensure @Async proxy works)
-            asyncAnalysisService.runAnalysisAsync(statement.getId());
+            // Defer async analysis until after this transaction commits,
+            // so the async thread can see the committed transactions
+            Long stmtId = statement.getId();
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    asyncAnalysisService.runAnalysisAsync(stmtId);
+                }
+            });
 
             return UploadResponse.builder()
                     .statementId(statement.getId())

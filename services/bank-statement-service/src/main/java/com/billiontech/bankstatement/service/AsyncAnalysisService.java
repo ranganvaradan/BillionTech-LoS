@@ -31,9 +31,10 @@ public class AsyncAnalysisService {
     private final BankStatementEventPublisher eventPublisher;
 
     @Async
+    @Transactional
     public void runAnalysisAsync(Long statementId) {
         try {
-            runAnalysis(statementId);
+            doRunAnalysis(statementId);
         } catch (Exception e) {
             log.error("Async analysis failed for statement {}: {}", statementId, e.getMessage(), e);
         }
@@ -41,6 +42,10 @@ public class AsyncAnalysisService {
 
     @Transactional
     public void runAnalysis(Long statementId) {
+        doRunAnalysis(statementId);
+    }
+
+    private void doRunAnalysis(Long statementId) {
         BankStatement statement = statementRepository.findById(statementId)
                 .orElseThrow(() -> new ResourceNotFoundException("Statement not found: " + statementId));
 
