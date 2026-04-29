@@ -54,7 +54,7 @@ bankstatement:
     api-keys: ${API_KEYS:dev-api-key-2026}
     trust-gateway-headers: ${TRUST_GATEWAY_HEADERS:false}
   analysis:
-    salary-keywords: SALARY,SAL,WAGES,PAY,PAYROLL,STIPEND,REMUNERATION
+    salary-keywords: SALARY,SAL CR,WAGES,PAYROLL,STIPEND,REMUNERATION
     emi-keywords: EMI,LOAN,EQUATED MONTHLY,REPAYMENT
     rent-keywords: RENT,HOUSE RENT,RENTAL
     insurance-keywords: LIC,INSURANCE,PREMIUM,POLICY

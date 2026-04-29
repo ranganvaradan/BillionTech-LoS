@@ -97,6 +97,7 @@ public class PdfExtractor {
         extractMetadata(lines, statement);
 
         List<ParsedTransaction> transactions = extractTransactions(lines);
+        reconcileAmounts(transactions);
         statement.setTransactions(transactions);
 
         if (!transactions.isEmpty()) {
@@ -121,6 +122,38 @@ public class PdfExtractor {
         }
 
         return statement;
+    }
+
+    /**
+     * For 2-amount lines (amount + balance), use running balance progression
+     * to determine whether the amount is a debit or credit.
+     */
+    private void reconcileAmounts(List<ParsedTransaction> transactions) {
+        for (int i = 0; i < transactions.size(); i++) {
+            ParsedTransaction txn = transactions.get(i);
+            // Only process transactions where credit is null (2-amount lines pending reconciliation)
+            if (txn.getCreditAmount() != null || txn.getDebitAmount() == null || txn.getRunningBalance() == null) {
+                continue;
+            }
+            BigDecimal amount = txn.getDebitAmount();
+            BigDecimal prevBalance = null;
+            if (i > 0 && transactions.get(i - 1).getRunningBalance() != null) {
+                prevBalance = transactions.get(i - 1).getRunningBalance();
+            }
+            if (prevBalance != null) {
+                // If balance increased, this is a credit; if decreased, a debit
+                BigDecimal balanceDiff = txn.getRunningBalance().subtract(prevBalance);
+                if (balanceDiff.compareTo(BigDecimal.ZERO) > 0) {
+                    txn.setCreditAmount(amount);
+                    txn.setDebitAmount(BigDecimal.ZERO);
+                } else {
+                    txn.setCreditAmount(BigDecimal.ZERO);
+                }
+            } else {
+                // No previous balance to compare — default to debit
+                txn.setCreditAmount(BigDecimal.ZERO);
+            }
+        }
     }
 
     private void extractMetadata(String[] lines, ParsedStatement statement) {
@@ -233,11 +266,11 @@ public class PdfExtractor {
                 builder.creditAmount(amounts.get(1));
                 builder.runningBalance(amounts.get(2));
             } else if (amounts.size() == 2) {
-                // date | narration | amount | balance
+                // date | narration | amount | balance — direction determined in post-processing
                 builder.runningBalance(amounts.get(1));
-                // Determine if debit or credit from narration context or balance change
+                // Temporarily store the amount; debit vs credit resolved by reconcileAmounts()
                 builder.debitAmount(amounts.get(0));
-                builder.creditAmount(BigDecimal.ZERO);
+                builder.creditAmount(null);
             } else if (amounts.size() == 1) {
                 builder.runningBalance(amounts.get(0));
             }

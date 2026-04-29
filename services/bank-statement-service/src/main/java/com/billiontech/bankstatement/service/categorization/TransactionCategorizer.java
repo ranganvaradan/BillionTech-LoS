@@ -9,12 +9,13 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.*;
+import java.util.regex.Pattern;
 
 @Service
 @Slf4j
 public class TransactionCategorizer {
 
-    @Value("${bankstatement.analysis.salary-keywords:SALARY,SAL,WAGES,PAY,PAYROLL,STIPEND,REMUNERATION}")
+    @Value("${bankstatement.analysis.salary-keywords:SALARY,SAL CR,WAGES,PAYROLL,STIPEND,REMUNERATION}")
     private String salaryKeywords;
 
     @Value("${bankstatement.analysis.emi-keywords:EMI,LOAN,EQUATED MONTHLY,REPAYMENT}")
@@ -75,9 +76,9 @@ public class TransactionCategorizer {
         boolean isCredit = txn.getCreditAmount() != null && txn.getCreditAmount().compareTo(BigDecimal.ZERO) > 0;
 
         if (matchesAny(narration, salaryKeywords) && isCredit) return TransactionCategory.SALARY;
-        if (matchesAny(narration, emiKeywords)) return TransactionCategory.EMI_LOAN;
         if (matchesAny(narration, rentKeywords)) return TransactionCategory.RENT;
         if (matchesAny(narration, insuranceKeywords)) return TransactionCategory.INSURANCE;
+        if (matchesAny(narration, emiKeywords)) return TransactionCategory.EMI_LOAN;
         if (matchesAny(narration, utilityKeywords)) return TransactionCategory.UTILITIES;
         if (matchesAny(narration, governmentKeywords)) return TransactionCategory.GOVERNMENT;
         if (matchesAny(narration, investmentKeywords)) return TransactionCategory.INVESTMENT;
@@ -153,7 +154,15 @@ public class TransactionCategorizer {
         if (keywordsCsv == null || keywordsCsv.isBlank()) return false;
         String[] keywords = keywordsCsv.split(",");
         for (String keyword : keywords) {
-            if (text.contains(keyword.trim())) return true;
+            String kw = keyword.trim();
+            if (kw.length() <= 3) {
+                // Short keywords use word-boundary matching to avoid substring false positives
+                // (e.g. "PAY" should not match "PAYTM", "EMI" should not match "PREMIUM")
+                Pattern p = Pattern.compile("(?<![A-Z])" + Pattern.quote(kw) + "(?![A-Z])");
+                if (p.matcher(text).find()) return true;
+            } else {
+                if (text.contains(kw)) return true;
+            }
         }
         return false;
     }
