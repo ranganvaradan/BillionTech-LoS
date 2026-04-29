@@ -125,8 +125,8 @@ public class TransactionCategorizer {
         if (narration.contains("CASH")) return TransactionChannel.CASH;
         if (narration.contains("MOB") || narration.contains("MOBILE")) return TransactionChannel.MOBILE_BANKING;
         if (narration.contains("NET") || narration.contains("INTERNET") || narration.contains("INB")) return TransactionChannel.INTERNET_BANKING;
-        if (narration.contains("DD") || narration.contains("DEMAND DRAFT")) return TransactionChannel.DEMAND_DRAFT;
-        if (narration.contains("AUTO") || narration.contains("SI ") || narration.contains("STANDING")) return TransactionChannel.AUTO_DEBIT;
+        if (narration.contains("DEMAND DRAFT") || matchesWord(narration, "DD")) return TransactionChannel.DEMAND_DRAFT;
+        if (narration.contains("AUTO") || narration.contains("STANDING") || matchesWord(narration, "SI")) return TransactionChannel.AUTO_DEBIT;
         return TransactionChannel.OTHER;
     }
 
@@ -148,6 +148,11 @@ public class TransactionCategorizer {
                 txn.setCounterpartyName(parts[parts.length - 1].trim());
             }
         }
+    }
+
+    private boolean matchesWord(String text, String keyword) {
+        Pattern p = Pattern.compile("(?<![A-Z])" + Pattern.quote(keyword) + "(?![A-Z])");
+        return p.matcher(text).find();
     }
 
     private boolean matchesAny(String text, String keywordsCsv) {

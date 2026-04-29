@@ -223,7 +223,7 @@ services:
       dockerfile: services/bank-statement-service/Dockerfile
     container_name: los-bank-statement
     ports:
-      - "8086:8086"
+      - "127.0.0.1:8086:8086"
     environment:
       - EUREKA_HOST=discovery-service
       - POSTGRES_HOST=postgres
@@ -237,7 +237,7 @@ services:
       - MINIO_ENDPOINT=http://minio:9000
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-los_minio_admin}
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-los_minio_secret_2026}
-      - TRUST_GATEWAY_HEADERS=true
+      - TRUST_GATEWAY_HEADERS=${TRUST_GATEWAY_HEADERS:-false}
     depends_on:
       discovery-service:
         condition: service_healthy
