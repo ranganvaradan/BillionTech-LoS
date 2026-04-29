@@ -12,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -29,14 +30,26 @@ public class AsyncAnalysisService {
     private final AnalysisEngine analysisEngine;
     private final TamperDetectionService tamperDetectionService;
     private final BankStatementEventPublisher eventPublisher;
+    private final TransactionTemplate transactionTemplate;
 
     @Async
-    @Transactional
     public void runAnalysisAsync(Long statementId) {
         try {
-            doRunAnalysis(statementId);
+            transactionTemplate.executeWithoutResult(status -> doRunAnalysis(statementId));
         } catch (Exception e) {
             log.error("Async analysis failed for statement {}: {}", statementId, e.getMessage(), e);
+            try {
+                transactionTemplate.executeWithoutResult(status -> {
+                    BankStatement statement = statementRepository.findById(statementId).orElse(null);
+                    if (statement != null) {
+                        statement.setParsingStatus(ParsingStatus.FAILED);
+                        statement.setParsingError("Analysis failed: " + e.getMessage());
+                        statementRepository.save(statement);
+                    }
+                });
+            } catch (Exception ex) {
+                log.error("Failed to update statement status to FAILED for {}: {}", statementId, ex.getMessage());
+            }
         }
     }
 
