@@ -52,6 +52,7 @@ bankstatement:
   security:
     api-key-header: X-API-Key
     api-keys: ${API_KEYS:dev-api-key-2026}
+    trust-gateway-headers: ${TRUST_GATEWAY_HEADERS:false}
   analysis:
     salary-keywords: SALARY,SAL,WAGES,PAY,PAYROLL,STIPEND,REMUNERATION
     emi-keywords: EMI,LOAN,EQUATED MONTHLY,REPAYMENT

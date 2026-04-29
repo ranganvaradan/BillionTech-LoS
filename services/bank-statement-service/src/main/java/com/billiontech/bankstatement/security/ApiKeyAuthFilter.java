@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
@@ -29,6 +30,9 @@ public class ApiKeyAuthFilter implements Filter {
 
     @Value("${bankstatement.security.api-keys:}")
     private String configuredApiKeys;
+
+    @Value("${bankstatement.security.trust-gateway-headers:false}")
+    private boolean trustGatewayHeaders;
 
     private static final Set<String> PUBLIC_PATHS = Set.of(
             "/swagger-ui", "/v3/api-docs", "/actuator", "/api/v1/bank-statements/supported-banks"
@@ -47,10 +51,13 @@ public class ApiKeyAuthFilter implements Filter {
         }
 
         // Check X-User-Id header (from API Gateway — LoS mode)
-        String userId = httpRequest.getHeader("X-User-Id");
-        if (userId != null && !userId.isBlank()) {
-            chain.doFilter(request, response);
-            return;
+        // Only trusted when explicitly enabled (i.e., running behind the gateway)
+        if (trustGatewayHeaders) {
+            String userId = httpRequest.getHeader("X-User-Id");
+            if (userId != null && !userId.isBlank()) {
+                chain.doFilter(request, response);
+                return;
+            }
         }
 
         // Check API key (standalone mode)
@@ -79,9 +86,11 @@ public class ApiKeyAuthFilter implements Filter {
                 return true;
             }
         }
-        // Check database-stored keys
+        // Check database-stored keys (also verify expiration)
         String hash = hashKey(apiKey);
-        return apiKeyRepository.findByKeyHashAndIsActiveTrue(hash).isPresent();
+        return apiKeyRepository.findByKeyHashAndIsActiveTrue(hash)
+                .filter(key -> key.getExpiresAt() == null || key.getExpiresAt().isAfter(LocalDateTime.now()))
+                .isPresent();
     }
 
     public static String hashKey(String key) {

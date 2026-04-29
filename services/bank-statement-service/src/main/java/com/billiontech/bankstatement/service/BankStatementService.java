@@ -18,7 +18,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -47,6 +46,7 @@ public class BankStatementService {
     private final TamperDetectionService tamperDetectionService;
     private final BankStatementEventPublisher eventPublisher;
     private final MinioClient minioClient;
+    private final AsyncAnalysisService asyncAnalysisService;
 
     @Value("${minio.bucket-name:los-bank-statements}")
     private String bucketName;
@@ -123,8 +123,8 @@ public class BankStatementService {
             // Publish parsed event
             eventPublisher.publishParsed(statement.getId(), statement.getBankName(), savedTransactions.size());
 
-            // Run analysis asynchronously
-            runAnalysisAsync(statement.getId());
+            // Run analysis asynchronously (via separate bean to ensure @Async proxy works)
+            asyncAnalysisService.runAnalysisAsync(statement.getId());
 
             return UploadResponse.builder()
                     .statementId(statement.getId())
@@ -142,56 +142,7 @@ public class BankStatementService {
         }
     }
 
-    @Async
-    @Transactional
-    public void runAnalysisAsync(Long statementId) {
-        try {
-            runAnalysis(statementId);
-        } catch (Exception e) {
-            log.error("Async analysis failed for statement {}: {}", statementId, e.getMessage(), e);
-        }
-    }
 
-    @Transactional
-    public void runAnalysis(Long statementId) {
-        BankStatement statement = statementRepository.findById(statementId)
-                .orElseThrow(() -> new ResourceNotFoundException("Statement not found: " + statementId));
-
-        statement.setParsingStatus(ParsingStatus.ANALYZING);
-        statementRepository.save(statement);
-
-        List<BankTransaction> transactions = transactionRepository.findByStatementIdOrderByTransactionDateAsc(statementId);
-
-        // Tamper detection
-        TamperDetectionService.TamperResult tamperResult = tamperDetectionService.check(transactions);
-        statement.setTamperCheckStatus(tamperResult.getStatus());
-        statement.setTamperCheckDetails(tamperResult.getDetails());
-
-        // Run analysis
-        StatementAnalysis analysis = analysisEngine.analyze(statement, transactions);
-
-        // Remove existing analysis if re-running
-        analysisRepository.findByStatementId(statementId).ifPresent(analysisRepository::delete);
-
-        analysisRepository.save(analysis);
-
-        // Compute and save monthly summaries
-        monthlySummaryRepository.deleteAll(
-                monthlySummaryRepository.findByStatementIdOrderByYearAscMonthAsc(statementId));
-        List<MonthlySummary> summaries = analysisEngine.computeMonthlySummaries(statement, transactions);
-        monthlySummaryRepository.saveAll(summaries);
-
-        statement.setParsingStatus(ParsingStatus.ANALYSIS_COMPLETE);
-        statementRepository.save(statement);
-
-        // Publish events
-        eventPublisher.publishAnalysisComplete(statementId,
-                Optional.ofNullable(analysis.getCreditworthinessScore()).orElse(BigDecimal.ZERO).doubleValue());
-
-        if (analysis.getRedFlags() != null && !analysis.getRedFlags().isEmpty()) {
-            eventPublisher.publishRedFlagDetected(statementId, statement.getApplicationId(), analysis.getRedFlags().size());
-        }
-    }
 
     @Transactional(readOnly = true)
     public StatementResponse getStatement(Long id) {

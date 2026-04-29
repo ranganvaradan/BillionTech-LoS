@@ -231,10 +231,11 @@ public class AnalysisEngine {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         analysis.setTotalIncome(totalIncome);
-        analysis.setNonSalaryIncome(totalIncome.subtract(
-                Optional.ofNullable(analysis.getDetectedSalaryAmount()).orElse(BigDecimal.ZERO)
-                        .multiply(BigDecimal.valueOf(
-                                transactions.stream().filter(t -> t.getCategory() == TransactionCategory.SALARY).count()))));
+        BigDecimal totalSalaryCredits = transactions.stream()
+                .filter(t -> t.getCategory() == TransactionCategory.SALARY)
+                .map(t -> Optional.ofNullable(t.getCreditAmount()).orElse(BigDecimal.ZERO))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        analysis.setNonSalaryIncome(totalIncome.subtract(totalSalaryCredits));
 
         // Imputed monthly income
         if (analysis.getDetectedSalaryAmount() != null && analysis.getDetectedSalaryAmount().compareTo(BigDecimal.ZERO) > 0) {
@@ -295,15 +296,25 @@ public class AnalysisEngine {
                 : BigDecimal.ZERO;
         analysis.setRentAmount(avgRent);
 
-        // Insurance
+        // Insurance (monthly average)
         BigDecimal insuranceTotal = transactions.stream()
                 .filter(t -> t.getCategory() == TransactionCategory.INSURANCE)
                 .map(t -> Optional.ofNullable(t.getDebitAmount()).orElse(BigDecimal.ZERO))
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        analysis.setInsuranceAmount(insuranceTotal);
+        Map<YearMonth, BigDecimal> insuranceByMonth = transactions.stream()
+                .filter(t -> t.getCategory() == TransactionCategory.INSURANCE)
+                .collect(Collectors.groupingBy(
+                        t -> YearMonth.from(t.getTransactionDate()),
+                        Collectors.reducing(BigDecimal.ZERO,
+                                t -> Optional.ofNullable(t.getDebitAmount()).orElse(BigDecimal.ZERO),
+                                BigDecimal::add)));
+        BigDecimal avgInsurance = !insuranceByMonth.isEmpty()
+                ? insuranceTotal.divide(BigDecimal.valueOf(insuranceByMonth.size()), SCALE, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO;
+        analysis.setInsuranceAmount(avgInsurance);
 
-        // Total obligations
-        BigDecimal totalObligations = avgMonthlyEmi.add(avgRent).add(insuranceTotal);
+        // Total obligations (all monthly averages)
+        BigDecimal totalObligations = avgMonthlyEmi.add(avgRent).add(avgInsurance);
         analysis.setTotalObligations(totalObligations);
 
         // FOIR

@@ -237,6 +237,7 @@ services:
       - MINIO_ENDPOINT=http://minio:9000
       - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-los_minio_admin}
       - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-los_minio_secret_2026}
+      - TRUST_GATEWAY_HEADERS=true
     depends_on:
       discovery-service:
         condition: service_healthy
