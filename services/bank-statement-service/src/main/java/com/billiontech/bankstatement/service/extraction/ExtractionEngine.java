@@ -24,8 +24,7 @@ public class ExtractionEngine {
         }
 
         String lowerName = fileName.toLowerCase();
-        try {
-            InputStream inputStream = file.getInputStream();
+        try (InputStream inputStream = file.getInputStream()) {
             if (lowerName.endsWith(".pdf")) {
                 return pdfExtractor.extract(inputStream, password);
             } else if (lowerName.endsWith(".xlsx") || lowerName.endsWith(".xls")) {

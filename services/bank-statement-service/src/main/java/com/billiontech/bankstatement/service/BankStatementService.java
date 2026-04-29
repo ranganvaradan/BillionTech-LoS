@@ -22,6 +22,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.InputStream;
@@ -49,6 +52,7 @@ public class BankStatementService {
     private final BankStatementEventPublisher eventPublisher;
     private final MinioClient minioClient;
     private final AsyncAnalysisService asyncAnalysisService;
+    private final PlatformTransactionManager transactionManager;
 
     @Value("${minio.bucket-name:los-bank-statements}")
     private String bucketName;
@@ -143,10 +147,25 @@ public class BankStatementService {
                     .build();
 
         } catch (Exception e) {
-            statement.setParsingStatus(ParsingStatus.FAILED);
-            statement.setParsingError(e.getMessage());
-            statementRepository.save(statement);
             log.error("Failed to process statement {}: {}", statement.getId(), e.getMessage(), e);
+            // Persist FAILED status in a new transaction (the outer @Transactional
+            // will roll back on the re-thrown RuntimeException, so we need REQUIRES_NEW)
+            Long failedId = statement.getId();
+            String errorMsg = e.getMessage();
+            try {
+                TransactionTemplate txTemplate = new TransactionTemplate(transactionManager);
+                txTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+                txTemplate.executeWithoutResult(status -> {
+                    BankStatement s = statementRepository.findById(failedId).orElse(null);
+                    if (s != null) {
+                        s.setParsingStatus(ParsingStatus.FAILED);
+                        s.setParsingError(errorMsg);
+                        statementRepository.save(s);
+                    }
+                });
+            } catch (Exception ex) {
+                log.error("Failed to persist FAILED status for statement {}: {}", failedId, ex.getMessage());
+            }
             throw new StatementProcessingException("Failed to process statement: " + e.getMessage(), e);
         }
     }
