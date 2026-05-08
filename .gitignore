@@ -1,0 +1,31 @@
+﻿# Build output
+target/
+*.jar
+*.class
+
+# Maven local repo
+C:/
+
+# IDE
+.metadata/
+.idea/
+*.iml
+
+# Env files
+.env
+.env.dev
+.env.prod
+
+# Local documents and uploads
+uploads/
+.los-local-documents/
+
+# Node
+node_modules/
+
+# Logs
+*.log
+*.sha1
+*.m2
+.m2/
+Users/
