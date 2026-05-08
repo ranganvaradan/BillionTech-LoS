@@ -1,187 +1,247 @@
+version: "3.9"
+
 services:
-  discovery-service:
-    build:
-      context: .
-      dockerfile: services/discovery-service/Dockerfile
-    container_name: los_discovery
-    restart: unless-stopped
-    environment:
-      SPRING_PROFILES_ACTIVE: prod
-      SERVER_PORT: 8761
-    ports:
-      - "8761:8761"
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8761/actuator/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 60s
 
   postgres:
-    image: postgres:15-alpine
-    container_name: los_postgres
-    restart: unless-stopped
-    env_file:
-      - .env.prod
+    image: postgres:16-alpine
+    container_name: los-postgres
+    restart: always
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
-      - los_postgres_data:/var/lib/postgresql/data
-      - ./init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql:ro
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
       interval: 10s
       timeout: 5s
       retries: 10
 
   redis:
-    image: redis:7-alpine
-    container_name: los_redis
-    restart: unless-stopped
-    ports:
-      - "6379:6379"
+    image: redis:7.2-alpine
+    container_name: los-redis
+    restart: always
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
 
   rabbitmq:
-    image: rabbitmq:3-management-alpine
-    container_name: los_rabbitmq
-    restart: unless-stopped
-    ports:
-      - "5672:5672"
-      - "15672:15672"
+    image: rabbitmq:3.13-management-alpine
+    container_name: los-rabbitmq
+    restart: always
     environment:
-      RABBITMQ_DEFAULT_USER: losuser
-      RABBITMQ_DEFAULT_PASS: lospassword
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "ping"]
-      interval: 10s
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    container_name: los-minio
+    restart: always
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
       timeout: 5s
-      retries: 5
+      retries: 10
 
-
-  los-core:
+  discovery-service:
     build:
       context: .
-      dockerfile: services/los-core-service/Dockerfile.prod
-    container_name: los_core
-    restart: unless-stopped
-    env_file:
-      - .env.prod
+      dockerfile: services/discovery-service/Dockerfile
+    container_name: los-discovery
+    restart: always
     environment:
-      SPRING_PROFILES_ACTIVE: prod
-      SERVER_PORT: 8083
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
-      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
-      DOCUMENT_STORAGE_PATH: /data/documents
-      SPRING_DATA_REDIS_HOST: redis
-      SPRING_DATA_REDIS_PORT: 6379
-      SPRING_RABBITMQ_HOST: rabbitmq
-      SPRING_RABBITMQ_PORT: 5672
-      SPRING_RABBITMQ_USERNAME: losuser
-      SPRING_RABBITMQ_PASSWORD: lospassword
+      - JAVA_OPTS=-Xms128m -Xmx256m
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8761/actuator/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
 
+  api-gateway:
+    build:
+      context: .
+      dockerfile: services/api-gateway/Dockerfile
+    container_name: los-gateway
+    restart: always
+    environment:
+      - JAVA_OPTS=-Xms128m -Xmx256m
+      - EUREKA_HOST=discovery-service
+      - REDIS_HOST=redis
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - JWT_SECRET=${JWT_SECRET}
+    depends_on:
+      discovery-service:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
-
-
-
+  iam-service:
+    build:
+      context: .
+      dockerfile: services/iam-service/Dockerfile
+    container_name: los-iam
+    restart: always
+    environment:
+      - JAVA_OPTS=-Xms128m -Xmx256m
+      - EUREKA_HOST=discovery-service
+      - POSTGRES_HOST=postgres
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - REDIS_HOST=redis
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - JWT_SECRET=${JWT_SECRET}
     depends_on:
       discovery-service:
         condition: service_healthy
       postgres:
         condition: service_healthy
-      redis:
+
+  los-core-service:
+    build:
+      context: .
+      dockerfile: services/los-core-service/Dockerfile
+    container_name: los-core
+    restart: always
+    environment:
+      - JAVA_OPTS=-Xms256m -Xmx512m
+      - EUREKA_HOST=discovery-service
+      - POSTGRES_HOST=postgres
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_USER=${RABBITMQ_USER}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD}
+      - REDIS_HOST=redis
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - JWT_SECRET=${JWT_SECRET}
+      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      - PII_ENCRYPTION_KEY=${PII_ENCRYPTION_KEY}
+      - SPRING_FLYWAY_VALIDATE_ON_MIGRATE=false
+      - KARZA_API_KEY=${KARZA_API_KEY}
+      - EQUIFAX_CUSTOMER_ID=${EQUIFAX_CUSTOMER_ID}
+      - EQUIFAX_USERNAME=${EQUIFAX_USERNAME}
+      - EQUIFAX_PASSWORD=${EQUIFAX_PASSWORD}
+      - EMSIGNER_AUTH_TOKEN=${EMSIGNER_AUTH_TOKEN}
+      - EMSIGNER_BASE_URL=${EMSIGNER_BASE_URL}
+    depends_on:
+      discovery-service:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-    volumes:
-      - los_documents:/data/documents
-    expose:
-      - "8083"
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8083/actuator/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 60s
+
+  enrollment-service:
+    build:
+      context: .
+      dockerfile: services/enrollment-service/Dockerfile
+    container_name: los-enrollment
+    restart: always
+    environment:
+      - JAVA_OPTS=-Xms128m -Xmx256m
+      - EUREKA_HOST=discovery-service
+      - POSTGRES_HOST=postgres
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - REDIS_HOST=redis
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - JWT_SECRET=${JWT_SECRET}
+    depends_on:
+      discovery-service:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
 
   notification-service:
     build:
       context: .
       dockerfile: services/notification-service/Dockerfile
-    container_name: los_notification
-    restart: unless-stopped
-    env_file:
-      - .env.prod
+    container_name: los-notification
+    restart: always
     environment:
-      SPRING_PROFILES_ACTIVE: prod
-      SERVER_PORT: 8084
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/los_notification
-      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
-      SPRING_RABBITMQ_HOST: rabbitmq
-      SPRING_RABBITMQ_PORT: 5672
-      SPRING_RABBITMQ_USERNAME: losuser
-      SPRING_RABBITMQ_PASSWORD: lospassword
-      EUREKA_HOST: discovery-service
-      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USERNAME: ${SMTP_USERNAME:-billiontechuat@gmail.com}
-      SMTP_PASSWORD: ${SMTP_PASSWORD:-lqwt apmk jusw hcyo}
-      SPRING_MAIL_HOST: ${SMTP_HOST:-smtp.gmail.com}
-      SPRING_MAIL_PORT: ${SMTP_PORT:-587}
-      SPRING_MAIL_USERNAME: ${SMTP_USERNAME:-billiontechuat@gmail.com}
-      SPRING_MAIL_PASSWORD: ${SMTP_PASSWORD:-lqwt apmk jusw hcyo}
-      SPRING_MAIL_PROPERTIES_MAIL_SMTP_AUTH: "true"
-      SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE: "true"
-      SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_REQUIRED: "true"
-      SPRING_MAIL_PROPERTIES_MAIL_SMTP_SSL_ENABLE: "false"
-      SPRING_MAIL_PROPERTIES_MAIL_SMTP_CONNECTIONTIMEOUT: "10000"
-      SPRING_MAIL_PROPERTIES_MAIL_SMTP_TIMEOUT: "10000"
-      SPRING_MAIL_PROPERTIES_MAIL_SMTP_WRITETIMEOUT: "10000"
-      SPRING_MAIL_PROPERTIES_MAIL_DEBUG: ${SMTP_DEBUG:-false}
-      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-SMTP}
-      EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-billiontechuat@gmail.com}
-      EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-LOS Platform}
-      EMAIL_SIMULATION_ENABLED: ${EMAIL_SIMULATION_ENABLED:-false}
+      - JAVA_OPTS=-Xms128m -Xmx192m
+      - EUREKA_HOST=discovery-service
+      - POSTGRES_HOST=postgres
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_USER=${RABBITMQ_USER}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD}
+      - SMTP_HOST=${SMTP_HOST}
+      - SMTP_PORT=${SMTP_PORT}
+      - SMTP_USERNAME=${SMTP_USERNAME}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
     depends_on:
       discovery-service:
         condition: service_healthy
-      postgres:
+      rabbitmq:
+        condition: service_healthy
+
+  lms-adapter-service:
+    build:
+      context: .
+      dockerfile: services/lms-adapter-service/Dockerfile
+    container_name: los-lms
+    restart: always
+    environment:
+      - JAVA_OPTS=-Xms128m -Xmx192m
+      - EUREKA_HOST=discovery-service
+      - POSTGRES_HOST=postgres
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_USER=${RABBITMQ_USER}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD}
+      - LMS_BASE_URL=${LMS_BASE_URL}
+      - LMS_API_KEY=${LMS_API_KEY}
+    depends_on:
+      discovery-service:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-    ports:
-      - "8084:8084"
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8084/actuator/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 10
-      start_period: 60s
 
-  ui-service:
+  frontend:
     build:
-      context: ./ui-service
-      dockerfile: Dockerfile.prod
-      args:
-        VITE_API_BASE_URL: /api
-    container_name: los_ui
-    restart: unless-stopped
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: los-frontend
+    restart: always
+    environment:
+      - API_BACKEND_URL=http://api-gateway:8080
+      - NODE_ENV=production
     depends_on:
-      los-core:
-        condition: service_healthy
-      notification-service:
-        condition: service_healthy
-    ports:
-      - "80:80"
+      - api-gateway
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.los-frontend.rule=Host(`los.billiontech.ai`)"
+      - "traefik.http.routers.los-frontend.entrypoints=https"
+      - "traefik.http.routers.los-frontend.tls=true"
+      - "traefik.http.routers.los-frontend.tls.certresolver=letsencrypt"
+      - "traefik.http.services.los-frontend.loadbalancer.server.port=3000"
 
 volumes:
-  los_postgres_data:
-  los_documents:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:
+  minio_data:
