@@ -11,11 +11,11 @@ COPY services/los-core-service/pom.xml ./services/los-core-service/pom.xml
 COPY services/notification-service/pom.xml ./services/notification-service/pom.xml
 COPY services/lms-adapter-service/pom.xml ./services/lms-adapter-service/pom.xml
 
-RUN echo "Skipping Maven go-offline step"
+RUN mvn dependency:go-offline -pl services/los-core-service -am -q 2>/dev/null || true
 
 COPY services/discovery-service/src ./services/discovery-service/src
 COPY services/los-core-service/src ./services/los-core-service/src
-RUN mvn package -pl services/los-core-service -am -DskipTests -e
+RUN mvn package -pl services/los-core-service -am -DskipTests -q
 
 # ─── Stage 2: Runtime ───────────────────────────────────
 FROM eclipse-temurin:17-jre-alpine
