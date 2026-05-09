@@ -15,7 +15,7 @@ RUN echo "Skipping Maven go-offline step"
 
 COPY services/discovery-service/src ./services/discovery-service/src
 COPY services/los-core-service/src ./services/los-core-service/src
-RUN mvn package -pl services/los-core-service -am -DskipTests
+RUN mvn package -pl services/los-core-service -am -DskipTests -e
 
 # ─── Stage 2: Runtime ───────────────────────────────────
 FROM eclipse-temurin:17-jre-alpine
