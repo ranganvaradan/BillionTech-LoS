@@ -1,0 +1,212 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      discovery:
+        locator:
+          enabled: true
+          lower-case-service-id: true
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowedOriginPatterns: "*"
+            allowedMethods:
+              - GET
+              - POST
+              - PUT
+              - PATCH
+              - DELETE
+              - OPTIONS
+            allowedHeaders: "*"
+            allowCredentials: true
+            maxAge: 3600
+      default-filters:
+        - DedupeResponseHeader=Access-Control-Allow-Credentials Access-Control-Allow-Origin
+        - AddResponseHeader=X-Content-Type-Options, nosniff
+        - AddResponseHeader=X-Frame-Options, DENY
+        - AddResponseHeader=X-XSS-Protection, 1; mode=block
+        - AddResponseHeader=Strict-Transport-Security, max-age=31536000; includeSubDomains
+        - AddResponseHeader=Cache-Control, no-store
+      routes:
+        # IAM Service
+        - id: iam-auth
+          uri: lb://iam-service
+          predicates:
+            - Path=/api/v1/auth/**
+        - id: iam-users
+          uri: lb://iam-service
+          predicates:
+            - Path=/api/v1/users/**
+        - id: iam-security
+          uri: lb://iam-service
+          predicates:
+            - Path=/api/v1/security/sessions/**,/api/v1/security/api-keys/**,/api/v1/security/ip-whitelist/**
+
+        # Enrollment Service
+        - id: enrollment
+          uri: lb://enrollment-service
+          predicates:
+            - Path=/api/v1/enrollment/**
+
+        # LOS Core Service
+        - id: los-applications
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/applications/**
+        - id: los-kyc
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/kyc/**
+        - id: los-workflows
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/workflows/**
+        - id: los-integrations
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/integrations/**
+        - id: los-transactions
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/transactions/**
+        - id: los-documents
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/documents/**
+        - id: los-reports
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/reports/**
+        - id: los-credit
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/credit/**
+        - id: los-credit-enhanced
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/credit-enhanced/**
+        - id: los-credit-rules
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/credit-rules/**
+        - id: los-audit
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/audit/**
+        - id: los-kfs
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/kfs/**
+        - id: los-aa
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/aa/**
+        - id: los-nach
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/nach/**
+        - id: los-esign
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/esign/**
+        - id: los-tat
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/tat/**
+        - id: los-core-security
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/security/pii/**
+        - id: los-co-lending
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/co-lending/**
+        - id: los-collateral
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/collateral/**
+        - id: los-ocr
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/ocr/**
+        - id: los-partners
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/partners/**
+        - id: los-webhooks
+          uri: lb://los-core-service
+          predicates:
+            - Path=/webhook/**
+        - id: los-underwriting-admin
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/underwriting/**
+        - id: los-directory
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/los/**
+        - id: los-assignment-rules
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/assignment/**
+        - id: los-flow
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/flow/**
+        - id: los-vkyc
+          uri: lb://los-core-service
+          predicates:
+            - Path=/api/v1/vkyc/**
+
+        # Notification Service
+        - id: notifications
+          uri: lb://notification-service
+          predicates:
+            - Path=/api/v1/notifications/**
+
+        # LMS Adapter
+        - id: lms
+          uri: lb://lms-adapter-service
+          predicates:
+            - Path=/api/v1/lms/**
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:los_redis_2026}
+
+los:
+  jwt:
+    secret: ${JWT_SECRET:ThisIsADevelopmentSecretKeyThatMustBeAtLeast256BitsLongForHS256Algorithm2026}
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://${EUREKA_HOST:localhost}:${EUREKA_PORT:8761}/eureka/
+  instance:
+    prefer-ip-address: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,gateway
+  endpoint:
+    health:
+      show-details: always
+    gateway:
+      enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+logging:
+  level:
+    com.los.gateway: DEBUG
+    org.springframework.cloud.gateway: INFO
