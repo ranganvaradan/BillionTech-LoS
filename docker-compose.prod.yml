@@ -130,6 +130,8 @@ services:
     restart: always
     ports:
       - "3000:80"
+    expose:
+      - "80"
     depends_on:
       los-core:
         condition: service_started
