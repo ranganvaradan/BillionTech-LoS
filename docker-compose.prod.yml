@@ -132,8 +132,7 @@ services:
       - "3000:80"
     depends_on:
       los-core:
-        condition: service_healthy
-
+        
 volumes:
   postgres_data:
   rabbitmq_data:
