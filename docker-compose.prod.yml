@@ -224,15 +224,12 @@ services:
 
   frontend:
     build:
-      context: ./frontend
+      context: ./ui-service
       dockerfile: Dockerfile
     container_name: los-frontend
     restart: always
-    environment:
-      - API_BACKEND_URL=http://api-gateway:8080
-      - NODE_ENV=production
     ports:
-      - "3000:3000"
+      - "3000:80"
     depends_on:
       - api-gateway
 

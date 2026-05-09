@@ -1,0 +1,20 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bl-navy: #001529;
+  --color-bl-primary: #1890ff;
+  --color-bl-canvas: #f0f2f5;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  html {
+    @apply font-sans text-slate-800 antialiased;
+  }
+  body {
+    @apply m-0 min-h-screen;
+  }
+  #root {
+    @apply min-h-screen;
+  }
+}
