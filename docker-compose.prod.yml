@@ -7,14 +7,14 @@ services:
     container_name: los-postgres
     restart: always
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: losdb
+      POSTGRES_USER: losuser
+      POSTGRES_PASSWORD: Bltest@123
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init-databases.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U losuser -d losdb"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -35,8 +35,8 @@ services:
     container_name: los-rabbitmq
     restart: always
     environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+      RABBITMQ_DEFAULT_USER: losuser
+      RABBITMQ_DEFAULT_PASS: lospassword
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
@@ -54,16 +54,21 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: prod
       SERVER_PORT: 8083
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
-      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: losdb
+      POSTGRES_USER: losuser
+      POSTGRES_PASSWORD: Bltest@123
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/losdb
+      SPRING_DATASOURCE_USERNAME: losuser
+      SPRING_DATASOURCE_PASSWORD: Bltest@123
       DOCUMENT_STORAGE_PATH: /data/documents
+      LOS_FILE_STORAGE_ROOT: /data/documents
       SPRING_DATA_REDIS_HOST: redis
       SPRING_DATA_REDIS_PORT: 6379
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_PORT: 5672
-      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER}
-      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      SPRING_RABBITMQ_USERNAME: losuser
+      SPRING_RABBITMQ_PASSWORD: lospassword
+      JWT_SECRET: BillionTechLOSJwtSecretKey2026MustBeAtLeast32Chars
     depends_on:
       postgres:
         condition: service_healthy
@@ -89,25 +94,25 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: prod
       SERVER_PORT: 8084
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/los_notification
-      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/losdb
+      SPRING_DATASOURCE_USERNAME: losuser
+      SPRING_DATASOURCE_PASSWORD: Bltest@123
       SPRING_RABBITMQ_HOST: rabbitmq
       SPRING_RABBITMQ_PORT: 5672
-      SPRING_RABBITMQ_USERNAME: ${RABBITMQ_USER}
-      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
-      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USERNAME: ${SMTP_USERNAME}
-      SMTP_PASSWORD: ${SMTP_PASSWORD}
-      SPRING_MAIL_HOST: ${SMTP_HOST:-smtp.gmail.com}
-      SPRING_MAIL_PORT: ${SMTP_PORT:-587}
-      SPRING_MAIL_USERNAME: ${SMTP_USERNAME}
-      SPRING_MAIL_PASSWORD: ${SMTP_PASSWORD}
+      SPRING_RABBITMQ_USERNAME: losuser
+      SPRING_RABBITMQ_PASSWORD: lospassword
+      SMTP_HOST: smtp.gmail.com
+      SMTP_PORT: 587
+      SMTP_USERNAME: billiontechuat@gmail.com
+      SMTP_PASSWORD: lqwt apmk jusw hcyo
+      SPRING_MAIL_HOST: smtp.gmail.com
+      SPRING_MAIL_PORT: 587
+      SPRING_MAIL_USERNAME: billiontechuat@gmail.com
+      SPRING_MAIL_PASSWORD: lqwt apmk jusw hcyo
       SPRING_MAIL_PROPERTIES_MAIL_SMTP_AUTH: "true"
       SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE: "true"
-      EMAIL_FROM_ADDRESS: ${SMTP_USERNAME}
-      EMAIL_FROM_NAME: "LOS Platform"
+      EMAIL_FROM_ADDRESS: billiontechuat@gmail.com
+      EMAIL_FROM_NAME: LOS Platform
     depends_on:
       postgres:
         condition: service_healthy
@@ -118,8 +123,6 @@ services:
     build:
       context: ./ui-service
       dockerfile: Dockerfile.prod
-      args:
-        VITE_API_BASE_URL: ""
     container_name: los-frontend
     restart: always
     ports:
