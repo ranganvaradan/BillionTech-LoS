@@ -233,14 +233,7 @@ services:
       - NODE_ENV=production
     depends_on:
       - api-gateway
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.los-frontend.rule=Host(`los.billiontech.ai`)"
-      - "traefik.http.routers.los-frontend.entrypoints=https"
-      - "traefik.http.routers.los-frontend.tls=true"
-      - "traefik.http.routers.los-frontend.tls.certresolver=letsencrypt"
-      - "traefik.http.services.los-frontend.loadbalancer.server.port=3000"
-
+    
 volumes:
   postgres_data:
   redis_data:
