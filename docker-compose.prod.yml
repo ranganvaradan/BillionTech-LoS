@@ -12,7 +12,7 @@ services:
       POSTGRES_PASSWORD: Bltest@123
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init-databases.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U losuser -d losdb"]
       interval: 10s
