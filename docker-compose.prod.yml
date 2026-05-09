@@ -231,9 +231,11 @@ services:
     environment:
       - API_BACKEND_URL=http://api-gateway:8080
       - NODE_ENV=production
+    ports:
+      - "3000:3000"
     depends_on:
       - api-gateway
-    
+
 volumes:
   postgres_data:
   redis_data:
