@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  calculateCollateralLtv,
+  listCollateralValuations,
+  type CollateralLtvResult,
+  type CollateralValuation,
+} from '@/api/collateral'
+import {
   fetchCamPdfBlob,
   getCam,
   rejectCamMemorandum,
@@ -10,6 +16,8 @@ import {
 import { markCamReviewedFlow } from '@/api/flow'
 import { ApiError } from '@/api/http'
 import { applicationPartyLabels } from '@/lib/applicationPartyLabels'
+import { formatMoney } from '@/lib/format'
+import { requiresCollateral } from '@/lib/intake/securedProducts'
 import type { ApplicationResponse } from '@/types/application'
 import type { CamResponse, CamUpdateRequest } from '@/types/cam'
 
@@ -74,6 +82,12 @@ function resolveSanctioningDefaults(
   return { amount, tenure, rate, decision, fromApplication }
 }
 
+function ltvDisplayTone(ratio: number): { className: string; label: string } {
+  if (ratio <= 60) return { className: 'text-emerald-800', label: 'Conservative LTV' }
+  if (ratio <= 80) return { className: 'text-amber-900', label: 'Within policy ceiling' }
+  return { className: 'text-rose-800', label: 'Above policy ceiling' }
+}
+
 export function CamSection({
   applicationId,
   app,
@@ -102,6 +116,45 @@ export function CamSection({
   const [officerRem, setOfficerRem] = useState('')
   const [managerRem, setManagerRem] = useState('')
   const [prefilledFromApplication, setPrefilledFromApplication] = useState(false)
+  const [ltv, setLtv] = useState<CollateralLtvResult | null>(null)
+  const [valuations, setValuations] = useState<CollateralValuation[]>([])
+  const [ltvLoading, setLtvLoading] = useState(false)
+
+  const loanAmountForLtv = useMemo(() => {
+    const fromRec = recAmt.trim() ? Number.parseFloat(recAmt) : NaN
+    if (Number.isFinite(fromRec) && fromRec > 0) return fromRec
+    return app.requestedAmount != null && app.requestedAmount > 0 ? app.requestedAmount : null
+  }, [recAmt, app.requestedAmount])
+
+  const showCollateralLtv = requiresCollateral(app.loanProduct) || valuations.length > 0
+
+  const loadCollateralLtv = useCallback(async () => {
+    if (!showCollateralLtv && loanAmountForLtv == null) {
+      setLtv(null)
+      setValuations([])
+      return
+    }
+    setLtvLoading(true)
+    try {
+      const rows = await listCollateralValuations(applicationId)
+      setValuations(rows)
+      if (loanAmountForLtv != null) {
+        const result = await calculateCollateralLtv(applicationId, loanAmountForLtv)
+        setLtv(result)
+      } else {
+        setLtv(null)
+      }
+    } catch {
+      setLtv(null)
+      setValuations([])
+    } finally {
+      setLtvLoading(false)
+    }
+  }, [applicationId, loanAmountForLtv, showCollateralLtv])
+
+  useEffect(() => {
+    void loadCollateralLtv()
+  }, [loadCollateralLtv])
 
   const sectionOrder = useMemo(() => {
     const profileLabel = applicationPartyLabels(app.intakeSegment).camProfileSection
@@ -486,6 +539,78 @@ export function CamSection({
               </label>
             </div>
           </div>
+
+          {showCollateralLtv ? (
+            <div className="bt-section-card bt-section-card--success p-4 text-sm text-slate-800">
+              <h3 className="text-sm font-semibold text-emerald-950">Collateral &amp; LTV</h3>
+              <p className="mt-1 text-xs text-slate-600">
+                Based on completed collateral valuations against the proposed / requested loan amount (
+                {loanAmountForLtv != null ? formatMoney(loanAmountForLtv) : '—'}).
+              </p>
+              {ltvLoading ? (
+                <p className="mt-3 text-xs text-slate-500">Loading collateral and LTV…</p>
+              ) : ltv ? (
+                <dl className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-xs">
+                  <div>
+                    <dt className="text-slate-500">Total collateral value</dt>
+                    <dd className="font-medium tabular-nums text-slate-900">
+                      {formatMoney(ltv.totalCollateralValue)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-slate-500">LTV ratio</dt>
+                    <dd className={`font-semibold tabular-nums ${ltvDisplayTone(Number(ltv.ltvRatio)).className}`}>
+                      {ltv.ltvRatio}% · {ltvDisplayTone(Number(ltv.ltvRatio)).label}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-slate-500">Policy acceptable (≤ {ltv.maxAllowedLtv}%)</dt>
+                    <dd className="font-medium">
+                      {ltv.ltvAcceptable ? (
+                        <span className="text-emerald-800">Yes</span>
+                      ) : (
+                        <span className="text-rose-800">No</span>
+                      )}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-slate-500">Valuations on file</dt>
+                    <dd className="font-medium text-slate-900">{ltv.valuationCount}</dd>
+                  </div>
+                </dl>
+              ) : (
+                <p className="mt-3 text-xs text-amber-900">
+                  No LTV calculation yet — add completed collateral valuations on the Collateral tab.
+                </p>
+              )}
+              {valuations.length > 0 ? (
+                <div className="mt-4 overflow-x-auto">
+                  <table className="bt-table min-w-full text-xs">
+                    <thead>
+                      <tr>
+                        <th>Type</th>
+                        <th>Description</th>
+                        <th>Status</th>
+                        <th>Accepted value</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {valuations.map((v) => (
+                        <tr key={v.id}>
+                          <td className="text-slate-900">{v.collateralType.replaceAll('_', ' ')}</td>
+                          <td className="max-w-[14rem] truncate text-slate-700">{v.description ?? '—'}</td>
+                          <td className="text-slate-700">{v.status.replaceAll('_', ' ')}</td>
+                          <td className="tabular-nums text-slate-900">
+                            {v.status === 'COMPLETED' ? formatMoney(v.valuationAmount) : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
 
           {sectionOrder.map((s) => {
             if (s.key === 'collateral' && !cam.sectionExtended?.[s.key]) {
