@@ -1,6 +1,9 @@
 package com.los.core.controller;
 
+import com.los.core.exception.ResourceNotFoundException;
 import com.los.core.model.entity.AaConsent;
+import com.los.core.model.entity.LoanApplication;
+import com.los.core.repository.LoanApplicationRepository;
 import com.los.core.service.aa.AccountAggregatorService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -20,6 +23,7 @@ import java.util.UUID;
 public class AccountAggregatorController {
 
     private final AccountAggregatorService aaService;
+    private final LoanApplicationRepository loanApplicationRepository;
 
     @PostMapping("/consent")
     @Operation(summary = "Create an AA consent request")
@@ -29,6 +33,23 @@ public class AccountAggregatorController {
             @RequestParam(required = false) List<String> fiTypes,
             @RequestParam(required = false) String aaName,
             @RequestBody(required = false) Map<String, Object> purpose) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(aaService.createConsentRequest(applicationId, customerId, fiTypes, aaName, purpose));
+    }
+
+    @PostMapping("/consent/application/{applicationId}/initiate")
+    @Operation(summary = "Initiate AA consent for application — resolves customer automatically")
+    public ResponseEntity<AaConsent> initiateForApplication(
+            @PathVariable UUID applicationId,
+            @RequestParam(required = false) List<String> fiTypes,
+            @RequestParam(required = false) String aaName,
+            @RequestBody(required = false) Map<String, Object> purpose) {
+        LoanApplication application = loanApplicationRepository.findById(applicationId)
+                .orElseThrow(() -> new ResourceNotFoundException("Application not found: " + applicationId));
+        UUID customerId = application.getCustomerId();
+        if (customerId == null) {
+            throw new IllegalArgumentException("Application has no linked customer id: " + applicationId);
+        }
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(aaService.createConsentRequest(applicationId, customerId, fiTypes, aaName, purpose));
     }
