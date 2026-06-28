@@ -90,6 +90,25 @@ export interface IntakeFormState {
   collateralGoldPurityKarat: string
   collateralGoldEstimatedValue: string
   collateralGoldOrnamentDescription: string
+  /** Vehicle collateral */
+  collateralVehicleType: '' | 'TWO_WHEELER' | 'FOUR_WHEELER' | 'COMMERCIAL'
+  collateralVehicleMakeModel: string
+  collateralVehicleYear: string
+  collateralVehicleRegistrationNumber: string
+  collateralVehicleEstimatedMarketValue: string
+  collateralVehicleExistingLoan: '' | 'yes' | 'no'
+  /** Fixed deposit collateral */
+  collateralFdBankName: string
+  collateralFdAccountNumber: string
+  collateralFdAmount: string
+  collateralFdMaturityDate: string
+  collateralFdReceiptNumber: string
+  /** Machinery collateral */
+  collateralMachineryTypeDescription: string
+  collateralMachineryMakeModel: string
+  collateralMachineryYearOfPurchase: string
+  collateralMachineryEstimatedValue: string
+  collateralMachineryLocationAddress: string
 }
 
 export function createEmptyIntakeFormState(): IntakeFormState {
@@ -164,5 +183,21 @@ export function createEmptyIntakeFormState(): IntakeFormState {
     collateralGoldPurityKarat: '',
     collateralGoldEstimatedValue: '',
     collateralGoldOrnamentDescription: '',
+    collateralVehicleType: '',
+    collateralVehicleMakeModel: '',
+    collateralVehicleYear: '',
+    collateralVehicleRegistrationNumber: '',
+    collateralVehicleEstimatedMarketValue: '',
+    collateralVehicleExistingLoan: '',
+    collateralFdBankName: '',
+    collateralFdAccountNumber: '',
+    collateralFdAmount: '',
+    collateralFdMaturityDate: '',
+    collateralFdReceiptNumber: '',
+    collateralMachineryTypeDescription: '',
+    collateralMachineryMakeModel: '',
+    collateralMachineryYearOfPurchase: '',
+    collateralMachineryEstimatedValue: '',
+    collateralMachineryLocationAddress: '',
   }
 }

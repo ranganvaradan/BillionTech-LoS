@@ -310,6 +310,25 @@ export function validateCollateralIntakeStep(s: IntakeFormState): string | null 
     if (!s.collateralGoldPurityKarat.trim()) return 'Enter purity (e.g. 22K) or karat.'
     if (!s.collateralGoldOrnamentDescription.trim()) return 'Describe the item(s) offered as security.'
   }
+  if (kind === 'VEHICLE') {
+    if (!s.collateralVehicleType) return 'Select the vehicle type.'
+    if (!s.collateralVehicleMakeModel.trim()) return 'Enter the vehicle make and model.'
+    if (!s.collateralVehicleYear.trim()) return 'Enter the year of manufacture.'
+    if (!s.collateralVehicleRegistrationNumber.trim()) return 'Enter the vehicle registration number.'
+    if (!s.collateralVehicleExistingLoan) return 'Indicate if there is an existing loan on this vehicle.'
+  }
+  if (kind === 'FIXED_DEPOSIT') {
+    if (!s.collateralFdBankName.trim()) return 'Enter the bank name for the fixed deposit.'
+    if (!s.collateralFdAccountNumber.trim()) return 'Enter the FD account number.'
+    if (!s.collateralFdMaturityDate.trim()) return 'Enter the FD maturity date.'
+    if (!s.collateralFdReceiptNumber.trim()) return 'Enter the FD receipt number.'
+  }
+  if (kind === 'MACHINERY') {
+    if (!s.collateralMachineryTypeDescription.trim()) return 'Enter the machinery type or description.'
+    if (!s.collateralMachineryMakeModel.trim()) return 'Enter the machinery make and model.'
+    if (!s.collateralMachineryYearOfPurchase.trim()) return 'Enter the year of purchase.'
+    if (!s.collateralMachineryLocationAddress.trim()) return 'Enter the machinery location or address.'
+  }
   return null
 }
 
