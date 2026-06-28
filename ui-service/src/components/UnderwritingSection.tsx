@@ -1,6 +1,7 @@
 import { BORROWER_INTAKE_KEY } from '@/lib/intake/collateralIntakePayload'
 import { requiresCollateral } from '@/lib/intake/securedProducts'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { listAaConsents, type AaFetchedData } from '@/api/accountAggregator'
 import { listDocuments, uploadDocument } from '@/api/documents'
 import { getKycOutcome } from '@/api/kyc'
 import {
@@ -22,6 +23,11 @@ import { buildCreditSummary } from '@/lib/credit/creditSummaryBuilder'
 import { getVisibleUnderwritingFields } from '@/lib/credit/underwritingFieldVisibility'
 import { applicationPartyLabels } from '@/lib/applicationPartyLabels'
 import type { ApplicationResponse } from '@/types/application'
+
+function computeAaFoir(data: AaFetchedData): number | null {
+  if (!data.avgMonthlyInflow || data.avgMonthlyInflow <= 0) return null
+  return (data.regularEmiOutflows / data.avgMonthlyInflow) * 100
+}
 
 export function UnderwritingSection({
   applicationId,
@@ -49,6 +55,33 @@ export function UnderwritingSection({
   const [showParameterReference, setShowParameterReference] = useState(false)
   const [aiLosLoading, setAiLosLoading] = useState(false)
   const [aiLosStatus, setAiLosStatus] = useState<string | null>(null)
+  const [aaLoading, setAaLoading] = useState(true)
+  const [aaFetchedData, setAaFetchedData] = useState<AaFetchedData | null>(null)
+  const [aaVerified, setAaVerified] = useState(false)
+
+  const loadAaSummary = useCallback(async () => {
+    setAaLoading(true)
+    try {
+      const consents = await listAaConsents(applicationId)
+      const fetched = consents.find((c) => c.status === 'DATA_FETCHED' && c.fetchedDataSummary)
+      setAaVerified(Boolean(fetched))
+      setAaFetchedData(fetched?.fetchedDataSummary ?? null)
+    } catch {
+      setAaVerified(false)
+      setAaFetchedData(null)
+    } finally {
+      setAaLoading(false)
+    }
+  }, [applicationId])
+
+  useEffect(() => {
+    void loadAaSummary()
+  }, [loadAaSummary, app.updatedAt])
+
+  const aaFoir = useMemo(
+    () => (aaFetchedData ? computeAaFoir(aaFetchedData) : null),
+    [aaFetchedData],
+  )
 
   const loadOutcome = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) {
@@ -449,6 +482,54 @@ export function UnderwritingSection({
             ))}
           </dl>
         </div>
+      </div>
+
+      <div
+        className={
+          aaVerified
+            ? 'bt-section-card bt-section-card--success p-4 text-xs text-slate-800'
+            : 'bt-section-card bt-section-card--warning p-4 text-xs text-slate-800'
+        }
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-sm font-semibold text-slate-900">AA bank data</h3>
+          <span
+            className={
+              aaVerified
+                ? 'inline-block rounded border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-900'
+                : 'inline-block rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-950'
+            }
+          >
+            {aaVerified ? 'AA Verified' : 'AA Pending'}
+          </span>
+        </div>
+        {aaLoading ? (
+          <p className="mt-2 text-slate-500">Loading Account Aggregator data…</p>
+        ) : aaVerified && aaFetchedData ? (
+          <dl className="mt-3 grid gap-2 sm:grid-cols-3">
+            <div>
+              <dt className="text-slate-500">Total balance</dt>
+              <dd className="font-medium tabular-nums text-slate-900">{formatMoney(aaFetchedData.totalBalance)}</dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">Avg monthly inflow</dt>
+              <dd className="font-medium tabular-nums text-slate-900">
+                {formatMoney(aaFetchedData.avgMonthlyInflow)}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-slate-500">FOIR (from AA)</dt>
+              <dd className="font-medium tabular-nums text-slate-900">
+                {aaFoir != null ? `${aaFoir.toFixed(1)}%` : '—'}
+              </dd>
+            </div>
+          </dl>
+        ) : (
+          <p className="mt-2 text-slate-600">
+            No fetched AA bank data yet. Initiate consent on the <strong>Bank Data</strong> tab to pull
+            verified balances and cashflow for underwriting.
+          </p>
+        )}
       </div>
 
       {creditSum.collateralSummary ? (
