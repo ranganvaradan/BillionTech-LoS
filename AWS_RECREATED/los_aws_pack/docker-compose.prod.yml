@@ -1,0 +1,66 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: los_postgres
+    restart: unless-stopped
+    env_file:
+      - .env.prod
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - los_postgres_data:/var/lib/postgresql/data
+      - ./init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  los-core:
+    build:
+      context: .
+      dockerfile: services/los-core-service/Dockerfile.prod
+    container_name: los_core
+    restart: unless-stopped
+    env_file:
+      - .env.prod
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SERVER_PORT: 8083
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      DOCUMENT_STORAGE_PATH: /data/documents
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - los_documents:/data/documents
+    expose:
+      - "8083"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8083/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  ui-service:
+    build:
+      context: ./ui-service
+      dockerfile: Dockerfile.prod
+      args:
+        VITE_API_BASE_URL: /api
+    container_name: los_ui
+    restart: unless-stopped
+    depends_on:
+      los-core:
+        condition: service_healthy
+    ports:
+      - "${LOS_UI_HOST_PORT:-8080}:80"
+
+volumes:
+  los_postgres_data:
+  los_documents:

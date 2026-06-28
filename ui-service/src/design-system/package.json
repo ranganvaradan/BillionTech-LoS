@@ -1,0 +1,6 @@
+{
+  "name": "@plp/design-system",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BillionTech design tokens and CSS components (from Payment-Terms)"
+}

@@ -1,0 +1,32 @@
+# Profile: local — relaxed API security for browser / Vite dev (no 401 on /api/**).
+# Run:  java -jar ... --spring.profiles.active=local
+#   or  export SPRING_PROFILES_ACTIVE=local
+spring:
+  config:
+    activate:
+      on-profile: local
+
+los:
+  payu:
+    merchant-key: ${PAYU_MERCHANT_KEY:g8yc8J}
+    merchant-salt: ${PAYU_MERCHANT_SALT:BBc2U41mOZPLuteAYBW9wJ2Lnm9V9rQV}
+    gateway-url: ${PAYU_GATEWAY_URL:https://test.payu.in/_payment}
+    callback-base-url: ${LOS_PUBLIC_API_BASE_URL:http://localhost:8083}
+    borrower-ui-url: ${LOS_BORROWER_UI_URL:http://localhost:5173/los/borrower}
+  plp:
+    # Base URL must reach the PLP ingress that exposes both POST /api/v1/auth/login and /api/v1/integrations/los/** (API gateway JWT).
+    # Set PLP_INTEGRATION_EMAIL + PLP_INTEGRATION_PASSWORD for an ACTIVE PLP IAM lender user so LOS can obtain a Bearer JWT.
+    enabled: ${PLP_SYNC_ENABLED:true}
+    # Local PLP gateway on host :8180 (no /plp-api). In Docker use host.docker.internal; on host IDE use localhost.
+    base-url: ${PLP_BASE_URL:http://host.docker.internal:8180}
+    lender-id: ${PLP_LENDER_ID:2d6e05e3-423f-4946-8027-8cbb4f01aefa}
+    integration-email: ${PLP_INTEGRATION_EMAIL:admin@credinnov.com}
+    integration-password: ${PLP_INTEGRATION_PASSWORD:Bltest@123}
+    read-timeout-ms: ${PLP_READ_TIMEOUT_MS:120000}
+  security:
+    local-dev-permit-all: true
+  demo:
+    enabled: true
+  # UI + API on one machine without running MinIO — files under file-storage.root
+  document:
+    storage: local

@@ -1,0 +1,178 @@
+services:
+  discovery-service:
+    build:
+      context: .
+      dockerfile: services/discovery-service/Dockerfile
+    container_name: los_discovery
+    init: true
+    command: sh -c "java -jar app.jar"
+    ports:
+      - "8761:8761"
+    env_file:
+      - .env.dev
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      SERVER_PORT: 8761
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8761/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: los_postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5432:5432"
+    volumes:
+      - los_postgres_data:/var/lib/postgresql/data
+      - ./init-databases.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: los_redis
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: los_rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: losuser
+      RABBITMQ_DEFAULT_PASS: lospassword
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  # 🔥 Backend (HOT RELOAD)
+  los-core:
+    build:
+      context: .
+      dockerfile: services/los-core-service/Dockerfile.dev
+    container_name: los_core
+    init: true
+    working_dir: /app/services/los-core-service
+    command: sh -c "if ls target/los-core-service-*.jar >/dev/null 2>&1; then exec java -jar target/los-core-service-*.jar; else exec mvn -Daether.connector.connectTimeout=10000 -Daether.connector.requestTimeout=30000 spring-boot:run; fi"
+    volumes:
+      - .:/app
+      - los_maven_repo:/root/.m2
+    ports:
+      - "8083:8083"
+    env_file:
+      - .env.dev
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      SERVER_PORT: 8083
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/los_core
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      LOS_NOTIFICATION_URL: http://notification-service:8084
+      ENCORE_BASE_URL: ${ENCORE_BASE_URL:-http://credinnov-sandbox.senseitech.com/credinnov-encore-server/}
+      ENCORE_API_USERNAME: ${ENCORE_API_USERNAME:-admin}
+      ENCORE_API_PASSWORD: ${ENCORE_API_PASSWORD:-password1}
+      ENCORE_REST_AUTH_TOKEN: ${ENCORE_REST_AUTH_TOKEN:-}
+      LMS_CALLBACK_HMAC_SECRET: ${LMS_CALLBACK_HMAC_SECRET:-}
+
+      PAYU_MERCHANT_KEY: ${PAYU_MERCHANT_KEY:-g8yc8J}
+      PAYU_MERCHANT_SALT: ${PAYU_MERCHANT_SALT:-BBc2U41mOZPLuteAYBW9wJ2Lnm9V9rQV}
+      PAYU_GATEWAY_URL: ${PAYU_GATEWAY_URL:-https://test.payu.in/_payment}
+      LOS_PUBLIC_API_BASE_URL: ${LOS_PUBLIC_API_BASE_URL:-http://localhost:8083}
+      LOS_BORROWER_UI_URL: ${LOS_BORROWER_UI_URL:-http://localhost:5173/los/borrower}
+    depends_on:
+      discovery-service:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      rabbitmq:
+        condition: service_started
+      notification-service:
+        condition: service_started
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: services/notification-service/Dockerfile
+    container_name: los_notification
+    init: true
+    command: sh -c "java -jar app.jar"
+    ports:
+      - "8084:8084"
+    env_file:
+      - .env.dev
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      SERVER_PORT: 8084
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/los_notification
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: losuser
+      SPRING_RABBITMQ_PASSWORD: lospassword
+      EUREKA_HOST: discovery-service
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-billiontechuat@gmail.com}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-lqwt apmk jusw hcyo}
+      SPRING_MAIL_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SPRING_MAIL_PORT: ${SMTP_PORT:-587}
+      SPRING_MAIL_USERNAME: ${SMTP_USERNAME:-billiontechuat@gmail.com}
+      SPRING_MAIL_PASSWORD: ${SMTP_PASSWORD:-lqwt apmk jusw hcyo}
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_AUTH: "true"
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE: "true"
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_REQUIRED: "true"
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_SSL_ENABLE: "false"
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_CONNECTIONTIMEOUT: "10000"
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_TIMEOUT: "10000"
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_WRITETIMEOUT: "10000"
+      SPRING_MAIL_PROPERTIES_MAIL_DEBUG: ${SMTP_DEBUG:-false}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-SMTP}
+      EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-billiontechuat@gmail.com}
+      EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-LOS Platform}
+      EMAIL_SIMULATION_ENABLED: ${EMAIL_SIMULATION_ENABLED:-false}
+    depends_on:
+      discovery-service:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_started
+
+  # 🔥 UI (HOT RELOAD)
+  ui-service:
+    image: node:20-alpine
+    container_name: los_ui
+    init: true
+    working_dir: /app
+    volumes:
+      - ./ui-service:/app
+      - /app/node_modules
+    command: sh -c "npm install && npm run dev -- --host"
+    environment:
+      # Inside the compose network the backend is reachable by its service name, not localhost.
+      VITE_API_PROXY_TARGET: http://los-core:8083
+      # Windows/Docker bind mounts don't emit native FS events; force polling so Vite HMR sees edits.
+      CHOKIDAR_USEPOLLING: "true"
+      CHOKIDAR_INTERVAL: "300"
+    ports:
+      - "5173:5173"
+    depends_on:
+      los-core:
+        condition: service_started
+
+volumes:
+  los_postgres_data:
+  los_maven_repo:

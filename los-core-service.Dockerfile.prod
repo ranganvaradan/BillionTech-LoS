@@ -1,0 +1,14 @@
+FROM maven:3.9.9-eclipse-temurin-17 AS build
+WORKDIR /workspace
+COPY pom.xml ./
+COPY services ./services
+RUN mvn -pl services/los-core-service -am -DskipTests package
+
+FROM eclipse-temurin:17-jre-alpine
+WORKDIR /app
+RUN addgroup -S app && adduser -S app -G app && mkdir -p /data/documents && chown -R app:app /data /app
+ARG JAR_FILE=services/los-core-service/target/*.jar
+COPY --from=build --chown=app:app /workspace/${JAR_FILE} app.jar
+USER app
+EXPOSE 8083
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -Djava.net.preferIPv4Stack=true -jar /app/app.jar"]

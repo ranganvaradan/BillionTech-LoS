@@ -1,0 +1,9 @@
+#NOTE: This is a Maven Resolver internal implementation file, its format can be changed without prior notice.
+#Wed Apr 29 02:26:30 UTC 2026
+https\://artifacts.billionloans.com/repository/maven-snapshots/.error=
+https\://repo.maven.apache.org/maven2/.lastUpdated=1777429590305
+https\://artifacts.billionloans.com/repository/maven-snapshots/.lastUpdated=1777429590003
+https\://artifacts.billionloans.com/repository/maven-releases/.lastUpdated=1777429589271
+https\://artifacts.billionloans.com/repository/maven-releases/.error=
+https\://artifacts.billionloans.com/repository/bl-thirdparty/.error=
+https\://artifacts.billionloans.com/repository/bl-thirdparty/.lastUpdated=1777429589671

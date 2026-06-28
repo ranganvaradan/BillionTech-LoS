@@ -1,0 +1,18 @@
+# EC2: attach los-core to the PLP compose network so integration uses Docker DNS (reliable on Linux).
+# Usage (from /vol/LOS_APP):
+#   docker network ls | grep plp
+#   docker compose -f docker-compose.prod.yml -f docker-compose.plp-integration.yml up -d --build los-core
+#
+# PLP stack must be up first (project name "plp" → network plp_plp-net).
+
+services:
+  los-core:
+    environment:
+      PLP_BASE_URL: http://api-gateway:8080
+    networks:
+      - default
+      - plp_plp-net
+
+networks:
+  plp_plp-net:
+    external: true

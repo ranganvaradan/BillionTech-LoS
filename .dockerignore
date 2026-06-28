@@ -1,0 +1,10 @@
+.git
+**/node_modules
+**/.next
+**/target
+**/*.class
+**/logs
+**/uploads
+*.md
+.env
+.env.example

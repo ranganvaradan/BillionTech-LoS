@@ -1,0 +1,31 @@
+/* BillionTech Design System — design tokens */
+:root {
+  --bt-orange: #f97316;
+  --bt-orange-hover: #ea6c0a;
+  --bt-orange-light: #fff7ed;
+  --bt-orange-border: #fdba74;
+
+  --bt-gray-50: #f8f9fb;
+  --bt-gray-100: #f1f3f5;
+  --bt-gray-200: #e5e7eb;
+  --bt-gray-300: #d1d5db;
+  --bt-gray-400: #9ca3af;
+  --bt-gray-500: #6b7280;
+  --bt-gray-600: #4b5563;
+  --bt-gray-700: #374151;
+  --bt-gray-900: #111827;
+
+  --bt-green: #16a34a;
+  --bt-green-bg: #f0fdf4;
+  --bt-green-border: #bbf7d0;
+  --bt-red: #dc2626;
+  --bt-red-bg: #fef2f2;
+  --bt-amber: #d97706;
+  --bt-amber-bg: #fffbeb;
+  --bt-blue: #2563eb;
+  --bt-blue-bg: #eff6ff;
+
+  --topnav-height: 52px;
+  --content-padding: 24px;
+  --bt-sidebar-width: 256px;
+}

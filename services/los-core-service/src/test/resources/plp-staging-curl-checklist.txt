@@ -1,0 +1,19 @@
+PLP staging curl checklist (replace placeholders with real UUIDs from PLP / LOS)
+
+export PLP_BASE=https://plp.billiontech.ai/plp-api
+export LENDER_ID=<plp-lender-uuid>
+
+# 1 Anchor
+curl -k -X POST "$PLP_BASE/api/v1/integrations/los/anchors" \
+  -H "Content-Type: application/json" \
+  -d '{"sourceSystem":"LOS","losAnchorId":"LOS-ANCHOR-001","anchor":{"name":"Acme Ltd","code":"ACME","pan":"ABCDE1234F","gstin":"27ABCDE1234F1Z5","email":"finance@acme.com","mobile":"9876543210","address":"Mumbai"}}'
+
+# 2 Program
+curl -k -X POST "$PLP_BASE/api/v1/integrations/los/programs" \
+  -H "Content-Type: application/json" \
+  -d "{\"sourceSystem\":\"LOS\",\"losProgramId\":\"LP-001\",\"programCode\":\"PRG-001\",\"programName\":\"Acme Pay Day Loan\",\"productType\":\"PAY_DAY_LOAN\",\"lenderId\":\"$LENDER_ID\",\"programLimit\":1000000,\"maxBorrowerLimit\":100000,\"defaultInterestRate\":12.00,\"maxTenureDays\":90,\"validFrom\":\"2026-01-01\",\"validTo\":\"2027-12-31\"}"
+
+# 3 Sub-program (use plpProgramId and anchor UUID from responses above)
+# 4 Borrowers, 5 Links, 6 Mappings — see LOS_to_PLP_Integration_Handoff.docx
+
+Validate PLP los_sync_audit rows and link/mapping status PENDING_APPROVAL.
