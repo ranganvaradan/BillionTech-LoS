@@ -6,6 +6,8 @@ import { KycDetailsSection } from '@/components/KycDetailsSection'
 import { LoadingState } from '@/components/LoadingState'
 import { PageHeader } from '@/components/PageHeader'
 import { CollateralIntakeStaffPanel } from '@/components/CollateralIntakeStaffPanel'
+import { CollateralPanel } from '@/components/CollateralPanel'
+import { AaConsentPanel } from '@/components/AaConsentPanel'
 import { BorrowerSubmittedIntakePanel } from '@/components/BorrowerSubmittedIntakePanel'
 import { CamSection } from '@/components/CamSection'
 import { DisbursementSection } from '@/components/DisbursementSection'
@@ -47,6 +49,7 @@ const TABS = [
   { id: 'collateral' as const, label: 'Collateral' },
   { id: 'kyc' as const, label: 'KYC' },
   { id: 'documents' as const, label: 'Documents' },
+  { id: 'bankData' as const, label: 'Bank Data' },
   { id: 'underwriting' as const, label: 'Underwriting' },
   { id: 'cam' as const, label: 'CAM' },
   { id: 'sanction' as const, label: 'Sanction' },
@@ -55,9 +58,18 @@ const TABS = [
   { id: 'history' as const, label: 'History' },
 ]
 
+type ApplicationTabId = (typeof TABS)[number]['id'] | 'vkyc'
+
+/** AA bank-data tab applies to borrower-facing retail / business credit journeys, not anchor onboarding. */
+function isAaApplicable(app: ApplicationResponse): boolean {
+  if (app.intakeSegment === 'ANCHOR') return false
+  if (isInvoiceDiscountingAnchorApp(app)) return false
+  return true
+}
+
 export function ApplicationDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const [tab, setTab] = useState<'summary' | 'borrower' | 'collateral' | 'kyc' | 'vkyc' | 'documents' | 'underwriting' | 'cam' | 'sanction' | 'esign' | 'disbursement' | 'history'>('summary')
+  const [tab, setTab] = useState<ApplicationTabId>('summary')
   const [activeWorkflow, setActiveWorkflow] = useState<WorkflowConfigResponse | null>(null)
   const [vkycEligibility, setVkycEligibility] = useState<Record<string, unknown> | null>(null)
   const [vkycTimeline, setVkycTimeline] = useState<Record<string, unknown> | null>(null)
@@ -118,17 +130,19 @@ export function ApplicationDetailPage() {
     const skipPostSanction = app ? anchorSkipsPostSanctionSteps(app) : false
     const skipDisbursement = app ? idBorrowerSkipsDisbursement(app) : false
     const hidden = skipPostSanction
-      ? new Set(['cam', 'esign', 'disbursement'])
+      ? new Set<string>(['cam', 'esign', 'disbursement'])
       : skipDisbursement
-        ? new Set(['disbursement'])
+        ? new Set<string>(['disbursement'])
         : new Set<string>()
-    const base: Array<{ id: typeof tab; label: string }> = TABS.filter((t) => !hidden.has(t.id)).map((t) => {
+    if (app && !requiresCollateral(app.loanProduct)) hidden.add('collateral')
+    if (app && !isAaApplicable(app)) hidden.add('bankData')
+    const base: Array<{ id: ApplicationTabId; label: string }> = TABS.filter((t) => !hidden.has(t.id)).map((t) => {
       if (t.id === 'borrower') return { ...t, label: L.profileTab }
       if (t.id === 'underwriting') {
         return { ...t, label: underwritingTabLabel(app?.intakeSegment, app?.loanProduct) }
       }
       return t
-    }) as Array<{ id: typeof tab; label: string }>
+    }) as Array<{ id: ApplicationTabId; label: string }>
     return insertVkycTab(base, vkycGate)
   }, [app, vkycGate])
   useEffect(() => {
@@ -140,6 +154,12 @@ export function ApplicationDetailPage() {
   useEffect(() => {
     if (!vkycGate.visible && tab === 'vkyc') setTab('summary')
   }, [vkycGate.visible, tab])
+
+  useEffect(() => {
+    if (!app) return
+    if (tab === 'collateral' && !requiresCollateral(app.loanProduct)) setTab('summary')
+    if (tab === 'bankData' && !isAaApplicable(app)) setTab('summary')
+  }, [app, tab])
 
   if (!valid) {
     return (
@@ -185,7 +205,7 @@ export function ApplicationDetailPage() {
                 type="button"
                 role="tab"
                 aria-selected={tab === t.id}
-                onClick={() => setTab(t.id as typeof tab)}
+                onClick={() => setTab(t.id as ApplicationTabId)}
                 className={tab === t.id ? 'bt-tab active' : 'bt-tab'}
               >
                 {t.label}
@@ -218,11 +238,22 @@ export function ApplicationDetailPage() {
                 </div>
                 )
               })()}
-              {tab === 'collateral' && (
-                <div>
-                  <h2 className="mb-1 text-lg font-medium text-slate-900">Collateral (intake)</h2>
-                  <p className="mb-4 text-sm text-slate-600">Security details and uploads submitted with the application for secured products (LAP, Loan Against Shares, Gold Loan).</p>
-                  <CollateralIntakeStaffPanel app={app} />
+              {tab === 'collateral' && requiresCollateral(app.loanProduct) && (
+                <div className="space-y-6">
+                  <div>
+                    <h2 className="mb-1 text-lg font-medium text-slate-900">Collateral</h2>
+                    <p className="mb-4 text-sm text-slate-600">
+                      Official valuations, LTV checks, and intake security details for this secured product.
+                    </p>
+                    <CollateralPanel applicationId={id} loanAmount={app.requestedAmount} />
+                  </div>
+                  <div>
+                    <h3 className="mb-1 text-base font-medium text-slate-900">Intake declaration</h3>
+                    <p className="mb-4 text-sm text-slate-600">
+                      Security details and uploads submitted with the application (LAP, Loan Against Shares, Gold Loan, etc.).
+                    </p>
+                    <CollateralIntakeStaffPanel app={app} />
+                  </div>
                 </div>
               )}
               {tab === 'kyc' && (
@@ -250,6 +281,15 @@ export function ApplicationDetailPage() {
                   appStatus={app.status}
                   loanProduct={app.loanProduct}
                 />
+              )}
+              {tab === 'bankData' && isAaApplicable(app) && (
+                <div>
+                  <h2 className="mb-1 text-lg font-medium text-slate-900">Bank Data / Account Aggregator</h2>
+                  <p className="mb-4 text-sm text-slate-600">
+                    RBI AA consent lifecycle and fetched bank statement data for income and obligation verification.
+                  </p>
+                  <AaConsentPanel applicationId={id} />
+                </div>
               )}
               {tab === 'underwriting' &&
                 (isInvoiceDiscountingAnchorApp(app) ? (
