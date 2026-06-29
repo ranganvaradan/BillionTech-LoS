@@ -10,6 +10,7 @@ import org.springframework.context.annotation.Configuration;
 public class IntegrationProperties {
 
     private KarzaProperties karza = new KarzaProperties();
+    private VahanProperties vahan = new VahanProperties();
     private EquifaxProperties equifax = new EquifaxProperties();
     private EmsignerProperties emsigner = new EmsignerProperties();
     private HypervergeProperties hyperverge = new HypervergeProperties();
@@ -23,6 +24,16 @@ public class IntegrationProperties {
         private String baseUrl = "https://api.karza.in";
         private String apiKey = "xbAUwrvXGNGN2ea";
         private String gstnUrl = "https://api.karza.in/gst/prod/v2/gst-verification";
+        private int connectTimeoutMs = 10000;
+        private int readTimeoutMs = 30000;
+    }
+
+    @Data
+    public static class VahanProperties {
+        private String baseUrl = "https://api.karza.in/v2";
+        private String apiKey = "";
+        /** When true, returns realistic dummy RC data without calling Karza/Vahan. */
+        private boolean simulation = true;
         private int connectTimeoutMs = 10000;
         private int readTimeoutMs = 30000;
     }
