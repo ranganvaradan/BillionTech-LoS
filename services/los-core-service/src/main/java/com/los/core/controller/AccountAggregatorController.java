@@ -93,4 +93,11 @@ public class AccountAggregatorController {
     public ResponseEntity<Map<String, Boolean>> hasActiveConsent(@PathVariable UUID applicationId) {
         return ResponseEntity.ok(Map.of("hasActiveConsent", aaService.hasActiveConsent(applicationId)));
     }
+
+    @PostMapping("/consent/callback")
+    @Operation(summary = "Setu AA webhook callback for consent status and FI data notifications")
+    public ResponseEntity<Void> handleAaCallback(@RequestBody Map<String, Object> callbackPayload) {
+        aaService.handleAaCallback(callbackPayload);
+        return ResponseEntity.ok().build();
+    }
 }

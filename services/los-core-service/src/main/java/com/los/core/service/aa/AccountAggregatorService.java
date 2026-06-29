@@ -22,6 +22,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -217,6 +218,45 @@ public class AccountAggregatorService {
     }
 
     /**
+     * Process Setu AA webhook callback (consent status update or FI data ready).
+     * Updates local consent state and auto-fetches FI data when consent is approved.
+     */
+    @Transactional
+    public void handleAaCallback(Map<String, Object> callbackPayload) {
+        if (callbackPayload == null || callbackPayload.isEmpty()) {
+            log.warn("[AA Callback] Ignoring empty payload");
+            return;
+        }
+
+        String notificationType = stringValue(callbackPayload, "type");
+        String providerConsentId = stringValue(callbackPayload, "consentId");
+        log.info("[AA Callback] type={} consentId={}", notificationType, providerConsentId);
+
+        Optional<AaConsent> consentOpt = resolveConsentFromCallback(callbackPayload);
+        if (consentOpt.isEmpty()) {
+            log.warn("[AA Callback] No matching consent for providerConsentId={}", providerConsentId);
+            return;
+        }
+
+        AaConsent consent = consentOpt.get();
+        mergeCallbackMetadata(consent, callbackPayload);
+
+        auditService.logEvent(consent.getApplicationId(), "AA_CALLBACK_RECEIVED",
+                Map.of(
+                        "consentHandle", consent.getConsentHandle(),
+                        "type", notificationType != null ? notificationType : "UNKNOWN",
+                        "providerConsentId", providerConsentId != null ? providerConsentId : ""
+                ));
+
+        if (isFiDataNotification(notificationType)) {
+            handleFiDataReady(consent, callbackPayload);
+            return;
+        }
+
+        handleConsentStatusUpdate(consent, callbackPayload, providerConsentId);
+    }
+
+    /**
      * Get consents for an application.
      */
     public List<AaConsent> getConsents(UUID applicationId) {
@@ -291,5 +331,225 @@ public class AccountAggregatorService {
             return normalized;
         }
         return fallback;
+    }
+
+    private void handleConsentStatusUpdate(AaConsent consent, Map<String, Object> callbackPayload,
+                                           String providerConsentId) {
+        if (!isCallbackSuccessful(callbackPayload)) {
+            markConsentRejected(consent, callbackPayload, "AA provider reported consent failure");
+            return;
+        }
+
+        String providerStatus = extractProviderStatus(callbackPayload);
+        String mappedStatus = normalizeLocalStatus(providerStatus, consent.getStatus());
+
+        if ("PENDING".equals(mappedStatus)) {
+            aaConsentRepository.save(consent);
+            return;
+        }
+
+        if ("APPROVED".equals(mappedStatus)) {
+            approveFromCallback(consent, providerConsentId);
+            autoFetchIfNeeded(consent.getConsentHandle());
+            return;
+        }
+
+        if ("REJECTED".equals(mappedStatus)) {
+            markConsentRejected(consent, callbackPayload, "Borrower rejected AA consent");
+            return;
+        }
+
+        if ("REVOKED".equals(mappedStatus)) {
+            consent.setStatus("REVOKED");
+            consent.setRevokedAt(Instant.now());
+            consent.setRevokeReason("Revoked via AA provider callback");
+            aaConsentRepository.save(consent);
+            auditService.logEvent(consent.getApplicationId(), "AA_CONSENT_REVOKED",
+                    Map.of("consentHandle", consent.getConsentHandle(), "source", "WEBHOOK"));
+        }
+    }
+
+    private void handleFiDataReady(AaConsent consent, Map<String, Object> callbackPayload) {
+        if ("DATA_FETCHED".equals(consent.getStatus())) {
+            return;
+        }
+        if ("APPROVED".equals(consent.getStatus())) {
+            autoFetchIfNeeded(consent.getConsentHandle());
+            return;
+        }
+        if ("PENDING".equals(consent.getStatus()) && isCallbackSuccessful(callbackPayload)) {
+            approveFromCallback(consent, stringValue(callbackPayload, "consentId"));
+            autoFetchIfNeeded(consent.getConsentHandle());
+        }
+    }
+
+    private void approveFromCallback(AaConsent consent, String providerConsentId) {
+        if (!"PENDING".equals(consent.getStatus()) && !"APPROVED".equals(consent.getStatus())) {
+            return;
+        }
+        if ("PENDING".equals(consent.getStatus())) {
+            consent.setStatus("APPROVED");
+            consent.setApprovedAt(Instant.now());
+        }
+        if (providerConsentId != null && !providerConsentId.isBlank()) {
+            consent.setConsentId(providerConsentId);
+        }
+        aaConsentRepository.save(consent);
+        auditService.logEvent(consent.getApplicationId(), "AA_CONSENT_APPROVED",
+                Map.of("consentHandle", consent.getConsentHandle(), "source", "WEBHOOK"));
+    }
+
+    private void autoFetchIfNeeded(String consentHandle) {
+        AaConsent current = aaConsentRepository.findByConsentHandle(consentHandle).orElse(null);
+        if (current == null || "DATA_FETCHED".equals(current.getStatus())) {
+            return;
+        }
+        if (!"APPROVED".equals(current.getStatus())) {
+            return;
+        }
+        try {
+            fetchData(consentHandle);
+        } catch (Exception e) {
+            log.error("[AA Callback] Auto-fetch failed for handle={}: {}", consentHandle, e.getMessage(), e);
+        }
+    }
+
+    private void markConsentRejected(AaConsent consent, Map<String, Object> callbackPayload, String defaultReason) {
+        consent.setStatus("REJECTED");
+        Map<String, Object> purposeInfo = consent.getPurposeInfo() != null
+                ? new LinkedHashMap<>(consent.getPurposeInfo())
+                : new LinkedHashMap<>();
+        purposeInfo.put("rejectionReason", extractErrorMessage(callbackPayload, defaultReason));
+        consent.setPurposeInfo(purposeInfo);
+        aaConsentRepository.save(consent);
+        auditService.logEvent(consent.getApplicationId(), "AA_CONSENT_REJECTED",
+                Map.of("consentHandle", consent.getConsentHandle(), "source", "WEBHOOK"));
+    }
+
+    private Optional<AaConsent> resolveConsentFromCallback(Map<String, Object> callbackPayload) {
+        String providerConsentId = stringValue(callbackPayload, "consentId");
+        if (providerConsentId != null && !providerConsentId.isBlank()) {
+            Optional<AaConsent> byProviderId = aaConsentRepository.findByConsentId(providerConsentId);
+            if (byProviderId.isPresent()) {
+                return byProviderId;
+            }
+        }
+
+        String consentHandle = extractConsentHandle(callbackPayload);
+        if (consentHandle != null && !consentHandle.isBlank()) {
+            return aaConsentRepository.findByConsentHandle(consentHandle);
+        }
+
+        return Optional.empty();
+    }
+
+    private static boolean isFiDataNotification(String notificationType) {
+        if (notificationType == null || notificationType.isBlank()) {
+            return false;
+        }
+        String normalized = notificationType.trim().toUpperCase(Locale.ROOT);
+        return "FI_DATA_READY".equals(normalized)
+                || "SESSION_STATUS_UPDATE".equals(normalized)
+                || "FI_NOTIFICATION".equals(normalized);
+    }
+
+    private static boolean isCallbackSuccessful(Map<String, Object> callbackPayload) {
+        Object success = callbackPayload.get("success");
+        if (success == null) {
+            return extractProviderStatus(callbackPayload) != null;
+        }
+        if (success instanceof Boolean bool) {
+            return bool;
+        }
+        return Boolean.parseBoolean(String.valueOf(success));
+    }
+
+    private static String extractProviderStatus(Map<String, Object> callbackPayload) {
+        Map<String, Object> data = mapValue(callbackPayload.get("data"));
+        if (data != null) {
+            String status = stringValue(data, "status");
+            if (status != null && !status.isBlank()) {
+                return status;
+            }
+        }
+        return stringValue(callbackPayload, "status");
+    }
+
+    private static String extractConsentHandle(Map<String, Object> callbackPayload) {
+        Map<String, Object> data = mapValue(callbackPayload.get("data"));
+        if (data != null) {
+            Map<String, Object> context = mapValue(data.get("context"));
+            if (context != null) {
+                String handle = stringValue(context, "consentHandle");
+                if (handle != null && !handle.isBlank()) {
+                    return handle;
+                }
+            }
+            Map<String, Object> detail = mapValue(data.get("detail"));
+            if (detail != null) {
+                Map<String, Object> detailContext = mapValue(detail.get("context"));
+                if (detailContext != null) {
+                    return stringValue(detailContext, "consentHandle");
+                }
+            }
+        }
+        Map<String, Object> topContext = mapValue(callbackPayload.get("context"));
+        if (topContext != null) {
+            return stringValue(topContext, "consentHandle");
+        }
+        return null;
+    }
+
+    private static String extractErrorMessage(Map<String, Object> callbackPayload, String defaultReason) {
+        Map<String, Object> error = mapValue(callbackPayload.get("error"));
+        if (error != null) {
+            String message = stringValue(error, "message");
+            if (message != null && !message.isBlank()) {
+                return message;
+            }
+            String code = stringValue(error, "code");
+            if (code != null && !code.isBlank()) {
+                return code;
+            }
+        }
+        Object errorValue = callbackPayload.get("error");
+        if (errorValue instanceof String str && !str.isBlank()) {
+            return str;
+        }
+        return defaultReason;
+    }
+
+    private static void mergeCallbackMetadata(AaConsent consent, Map<String, Object> callbackPayload) {
+        Map<String, Object> purposeInfo = consent.getPurposeInfo() != null
+                ? new LinkedHashMap<>(consent.getPurposeInfo())
+                : new LinkedHashMap<>();
+        Map<String, Object> lastCallback = new LinkedHashMap<>();
+        lastCallback.put("type", stringValue(callbackPayload, "type"));
+        lastCallback.put("timestamp", stringValue(callbackPayload, "timestamp"));
+        lastCallback.put("consentId", stringValue(callbackPayload, "consentId"));
+        lastCallback.put("status", extractProviderStatus(callbackPayload));
+        lastCallback.put("receivedAt", Instant.now().toString());
+        purposeInfo.put("lastCallback", lastCallback);
+        consent.setPurposeInfo(purposeInfo);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> mapValue(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            return (Map<String, Object>) map;
+        }
+        return null;
+    }
+
+    private static String stringValue(Map<String, Object> map, String key) {
+        if (map == null || key == null) {
+            return null;
+        }
+        Object value = map.get(key);
+        if (value == null) {
+            return null;
+        }
+        String text = String.valueOf(value).trim();
+        return text.isEmpty() ? null : text;
     }
 }
