@@ -18,6 +18,7 @@ public class IntegrationProperties {
     private GoldRateProperties goldRate = new GoldRateProperties();
     private CkycProperties ckyc = new CkycProperties();
     private SetuAaProperties setuAa = new SetuAaProperties();
+    private CersaiProperties cersai = new CersaiProperties();
     private EquifaxProperties equifax = new EquifaxProperties();
     private EmsignerProperties emsigner = new EmsignerProperties();
     private HypervergeProperties hyperverge = new HypervergeProperties();
@@ -108,6 +109,21 @@ public class IntegrationProperties {
         private String redirectUrl = "https://los.billiontech.ai/aa/callback";
         /** When true, routes AA calls through {@link com.los.core.service.aa.providers.impl.SimulatedAaProvider}. */
         private boolean simulation = true;
+        private int connectTimeoutMs = 10000;
+        private int readTimeoutMs = 60000;
+    }
+
+    @Data
+    public static class CersaiProperties {
+        private String baseUrl = "";
+        private String institutionId = "";
+        private String apiKey = "";
+        /** When true, returns simulated search/register responses without calling CERSAI. */
+        private boolean simulation = true;
+        private String searchPath = "/v1/security-interest/search";
+        private String registerPath = "/v1/security-interest/register";
+        private String lenderName = "Billion Loans NBFC";
+        private String lenderCin = "";
         private int connectTimeoutMs = 10000;
         private int readTimeoutMs = 60000;
     }
