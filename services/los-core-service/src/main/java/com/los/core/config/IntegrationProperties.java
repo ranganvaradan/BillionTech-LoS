@@ -16,6 +16,7 @@ public class IntegrationProperties {
     private PropertyEcProperties propertyEc = new PropertyEcProperties();
     private GoogleMapsProperties googleMaps = new GoogleMapsProperties();
     private GoldRateProperties goldRate = new GoldRateProperties();
+    private CkycProperties ckyc = new CkycProperties();
     private EquifaxProperties equifax = new EquifaxProperties();
     private EmsignerProperties emsigner = new EmsignerProperties();
     private HypervergeProperties hyperverge = new HypervergeProperties();
@@ -79,6 +80,21 @@ public class IntegrationProperties {
         private BigDecimal manualRatePerGram = new BigDecimal("6500");
         private int connectTimeoutMs = 10000;
         private int readTimeoutMs = 30000;
+    }
+
+    @Data
+    public static class CkycProperties {
+        /** KARZA or AUTHBRIDGE — determines default upload URL and auth header when not overridden. */
+        private String provider = "KARZA";
+        /** Full CKYC upload endpoint; when blank, derived from {@link #provider}. */
+        private String uploadUrl = "";
+        private String apiKey = "";
+        /** When true, returns a simulated KIN without calling the registry API. */
+        private boolean simulation = true;
+        private String fiCode = "";
+        private String branchCode = "001";
+        private int connectTimeoutMs = 10000;
+        private int readTimeoutMs = 60000;
     }
 
     @Data
