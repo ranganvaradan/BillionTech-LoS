@@ -11,6 +11,7 @@ public class IntegrationProperties {
 
     private KarzaProperties karza = new KarzaProperties();
     private VahanProperties vahan = new VahanProperties();
+    private PropertyEcProperties propertyEc = new PropertyEcProperties();
     private EquifaxProperties equifax = new EquifaxProperties();
     private EmsignerProperties emsigner = new EmsignerProperties();
     private HypervergeProperties hyperverge = new HypervergeProperties();
@@ -33,6 +34,18 @@ public class IntegrationProperties {
         private String baseUrl = "https://api.karza.in/v2";
         private String apiKey = "";
         /** When true, returns realistic dummy RC data without calling Karza/Vahan. */
+        private boolean simulation = true;
+        private int connectTimeoutMs = 10000;
+        private int readTimeoutMs = 30000;
+    }
+
+    @Data
+    public static class PropertyEcProperties {
+        /** KARZA or AUTHBRIDGE — only Karza HTTP path is wired in Phase 2. */
+        private String provider = "KARZA";
+        private String baseUrl = "https://api.karza.in/v3";
+        private String apiKey = "";
+        /** When true, returns dummy encumbrance data without calling external APIs. */
         private boolean simulation = true;
         private int connectTimeoutMs = 10000;
         private int readTimeoutMs = 30000;
