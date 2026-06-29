@@ -17,6 +17,7 @@ public class IntegrationProperties {
     private GoogleMapsProperties googleMaps = new GoogleMapsProperties();
     private GoldRateProperties goldRate = new GoldRateProperties();
     private CkycProperties ckyc = new CkycProperties();
+    private SetuAaProperties setuAa = new SetuAaProperties();
     private EquifaxProperties equifax = new EquifaxProperties();
     private EmsignerProperties emsigner = new EmsignerProperties();
     private HypervergeProperties hyperverge = new HypervergeProperties();
@@ -93,6 +94,20 @@ public class IntegrationProperties {
         private boolean simulation = true;
         private String fiCode = "";
         private String branchCode = "001";
+        private int connectTimeoutMs = 10000;
+        private int readTimeoutMs = 60000;
+    }
+
+    @Data
+    public static class SetuAaProperties {
+        private String baseUrl = "https://fiu-uat.setu.co";
+        private String authUrl = "https://orgs.setu.co/api/v1/users/login";
+        private String clientId = "";
+        private String clientSecret = "";
+        private String productInstanceId = "";
+        private String redirectUrl = "https://los.billiontech.ai/aa/callback";
+        /** When true, routes AA calls through {@link com.los.core.service.aa.providers.impl.SimulatedAaProvider}. */
+        private boolean simulation = true;
         private int connectTimeoutMs = 10000;
         private int readTimeoutMs = 60000;
     }
