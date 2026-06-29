@@ -12,6 +12,7 @@ public class IntegrationProperties {
     private KarzaProperties karza = new KarzaProperties();
     private VahanProperties vahan = new VahanProperties();
     private PropertyEcProperties propertyEc = new PropertyEcProperties();
+    private GoogleMapsProperties googleMaps = new GoogleMapsProperties();
     private EquifaxProperties equifax = new EquifaxProperties();
     private EmsignerProperties emsigner = new EmsignerProperties();
     private HypervergeProperties hyperverge = new HypervergeProperties();
@@ -47,6 +48,16 @@ public class IntegrationProperties {
         private String apiKey = "";
         /** When true, returns dummy encumbrance data without calling external APIs. */
         private boolean simulation = true;
+        private int connectTimeoutMs = 10000;
+        private int readTimeoutMs = 30000;
+    }
+
+    @Data
+    public static class GoogleMapsProperties {
+        private String apiKey = "";
+        /** When true, returns dummy geo coordinates without calling Google Maps. */
+        private boolean simulation = true;
+        private String geocodeUrl = "https://maps.googleapis.com/maps/api/geocode/json";
         private int connectTimeoutMs = 10000;
         private int readTimeoutMs = 30000;
     }
