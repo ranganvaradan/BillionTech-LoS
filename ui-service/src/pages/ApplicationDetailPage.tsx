@@ -245,7 +245,11 @@ export function ApplicationDetailPage() {
                     <p className="mb-4 text-sm text-slate-600">
                       Official valuations, LTV checks, and intake security details for this secured product.
                     </p>
-                    <CollateralPanel applicationId={id} loanAmount={app.requestedAmount} />
+                    <CollateralPanel
+                      applicationId={id}
+                      loanAmount={app.requestedAmount}
+                      applicationStatus={app.status}
+                    />
                   </div>
                   <div>
                     <h3 className="mb-1 text-base font-medium text-slate-900">Intake declaration</h3>
