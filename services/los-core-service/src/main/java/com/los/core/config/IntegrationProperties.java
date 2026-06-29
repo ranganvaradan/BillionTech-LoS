@@ -4,6 +4,8 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 
+import java.math.BigDecimal;
+
 @Data
 @Configuration
 @ConfigurationProperties(prefix = "los.integration")
@@ -13,6 +15,7 @@ public class IntegrationProperties {
     private VahanProperties vahan = new VahanProperties();
     private PropertyEcProperties propertyEc = new PropertyEcProperties();
     private GoogleMapsProperties googleMaps = new GoogleMapsProperties();
+    private GoldRateProperties goldRate = new GoldRateProperties();
     private EquifaxProperties equifax = new EquifaxProperties();
     private EmsignerProperties emsigner = new EmsignerProperties();
     private HypervergeProperties hyperverge = new HypervergeProperties();
@@ -58,6 +61,22 @@ public class IntegrationProperties {
         /** When true, returns dummy geo coordinates without calling Google Maps. */
         private boolean simulation = true;
         private String geocodeUrl = "https://maps.googleapis.com/maps/api/geocode/json";
+        private int connectTimeoutMs = 10000;
+        private int readTimeoutMs = 30000;
+    }
+
+    @Data
+    public static class GoldRateProperties {
+        /** MCX, IBJA, or MANUAL. */
+        private String provider = "MCX";
+        private String apiKey = "";
+        /** When true, uses {@link #simulationRatePerGram} without calling external APIs. */
+        private boolean simulation = true;
+        private String rateUrl = "https://api.mcxindia.com/gold-rate";
+        /** Simulated rate per gram (INR) used in dev/demo. */
+        private BigDecimal simulationRatePerGram = new BigDecimal("6500");
+        /** Fixed rate per gram when provider is MANUAL. */
+        private BigDecimal manualRatePerGram = new BigDecimal("6500");
         private int connectTimeoutMs = 10000;
         private int readTimeoutMs = 30000;
     }
