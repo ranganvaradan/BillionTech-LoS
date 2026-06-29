@@ -68,6 +68,14 @@ function hasActiveAaState(consents: AaConsent[]): boolean {
   return consents.some((c) => c.status === 'PENDING' || c.status === 'APPROVED' || c.status === 'DATA_FETCHED')
 }
 
+function getAaRedirectUrl(consent: AaConsent): string | null {
+  const url = consent.purposeInfo?.redirectUrl
+  if (typeof url === 'string' && url.trim()) return url.trim()
+  return null
+}
+
+const AA_POLL_INTERVAL_MS = 10_000
+
 export function AaConsentPanel({ applicationId }: { applicationId: string }) {
   const userRole = loadSessionUser()?.role ?? ''
   const canManage = canManageAa(userRole)
@@ -78,6 +86,7 @@ export function AaConsentPanel({ applicationId }: { applicationId: string }) {
   const [busyHandle, setBusyHandle] = useState<string | null>(null)
   const [initiateBusy, setInitiateBusy] = useState(false)
   const [showInitiateForm, setShowInitiateForm] = useState(false)
+  const [polling, setPolling] = useState(false)
 
   const [selectedFiTypes, setSelectedFiTypes] = useState<string[]>([...DEFAULT_FI_TYPES])
   const [aaName, setAaName] = useState('DEFAULT_AA')
@@ -99,6 +108,28 @@ export function AaConsentPanel({ applicationId }: { applicationId: string }) {
   useEffect(() => {
     void reload()
   }, [reload])
+
+  const hasPendingConsent = useMemo(() => consents.some((c) => c.status === 'PENDING'), [consents])
+
+  const pollConsents = useCallback(async () => {
+    try {
+      setPolling(true)
+      const rows = await listAaConsents(applicationId)
+      setConsents(rows)
+    } catch {
+      // Ignore transient poll failures; manual refresh and actions still surface errors.
+    } finally {
+      setPolling(false)
+    }
+  }, [applicationId])
+
+  useEffect(() => {
+    if (!hasPendingConsent || loading) return undefined
+    const timer = window.setInterval(() => {
+      void pollConsents()
+    }, AA_POLL_INTERVAL_MS)
+    return () => window.clearInterval(timer)
+  }, [hasPendingConsent, loading, pollConsents])
 
   const latestConsent = consents[0] ?? null
   const fetchedConsent = useMemo(
@@ -182,6 +213,15 @@ export function AaConsentPanel({ applicationId }: { applicationId: string }) {
     )
   }
 
+  function openAaApp(consent: AaConsent) {
+    const url = getAaRedirectUrl(consent)
+    if (!url) {
+      setError('No AA redirect URL is available for this consent yet.')
+      return
+    }
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
+
   function renderStatusBanner() {
     if (loading) return null
     if (!latestConsent) {
@@ -208,12 +248,39 @@ export function AaConsentPanel({ applicationId }: { applicationId: string }) {
 
     const s = latestConsent.status
     if (s === 'PENDING') {
+      const redirectUrl = getAaRedirectUrl(latestConsent)
       return (
-        <div className="bt-section-card bt-section-card--warning p-4 text-sm text-amber-950">
-          <p className="font-medium">Waiting for borrower approval</p>
-          <p className="mt-1 text-xs">
-            Consent handle: <span className="font-mono">{latestConsent.consentHandle}</span>
-          </p>
+        <div className="bt-section-card bt-section-card--warning flex flex-wrap items-center justify-between gap-3 p-4 text-sm text-amber-950">
+          <div>
+            <p className="font-medium">Waiting for borrower approval</p>
+            <p className="mt-1 text-xs">
+              Consent handle: <span className="font-mono">{latestConsent.consentHandle}</span>
+            </p>
+            {polling ? (
+              <p className="mt-1 text-xs text-amber-800">Checking consent status every 10 seconds…</p>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {redirectUrl ? (
+              <button
+                type="button"
+                onClick={() => openAaApp(latestConsent)}
+                className="rounded-md bg-amber-900 px-3 py-1.5 text-xs font-medium text-white"
+              >
+                Open AA app
+              </button>
+            ) : null}
+            {canManage ? (
+              <button
+                type="button"
+                disabled={busyHandle === latestConsent.consentHandle}
+                onClick={() => void onSimulateApprove(latestConsent)}
+                className="rounded-md border border-amber-700 bg-white px-3 py-1.5 text-xs font-medium text-amber-950 disabled:opacity-50"
+              >
+                Simulate approval
+              </button>
+            ) : null}
+          </div>
         </div>
       )
     }
@@ -375,6 +442,15 @@ export function AaConsentPanel({ applicationId }: { applicationId: string }) {
                               Revoke
                             </button>
                           ) : null}
+                          {row.status === 'PENDING' && getAaRedirectUrl(row) ? (
+                            <button
+                              type="button"
+                              onClick={() => openAaApp(row)}
+                              className="text-left font-medium text-amber-900 underline hover:text-amber-950"
+                            >
+                              Open AA app
+                            </button>
+                          ) : null}
                           {row.status === 'PENDING' && canManage ? (
                             <button
                               type="button"
@@ -386,7 +462,6 @@ export function AaConsentPanel({ applicationId }: { applicationId: string }) {
                             </button>
                           ) : null}
                           {row.status !== 'PENDING' && row.status !== 'APPROVED' ? '—' : null}
-                          {!canManage && (row.status === 'PENDING' || row.status === 'APPROVED') ? '—' : null}
                         </div>
                       </td>
                     </tr>
