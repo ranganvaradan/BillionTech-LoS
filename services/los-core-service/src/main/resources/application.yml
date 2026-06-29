@@ -119,6 +119,78 @@ los:
       connect-timeout-ms: ${KARZA_CONNECT_TIMEOUT:10000}
       read-timeout-ms: ${KARZA_READ_TIMEOUT:30000}
 
+    # Phase 2 — Vehicle RC verification (Karza/Vahan)
+    vahan:
+      base-url: ${VAHAN_BASE_URL:https://api.karza.in/v2}
+      api-key: ${KARZA_API_KEY:}
+      simulation: ${VAHAN_SIMULATION:true}
+      connect-timeout-ms: ${VAHAN_CONNECT_TIMEOUT:10000}
+      read-timeout-ms: ${VAHAN_READ_TIMEOUT:30000}
+
+    # Phase 2 — Property encumbrance certificate (Karza)
+    property-ec:
+      provider: ${PROPERTY_EC_PROVIDER:KARZA}
+      base-url: ${PROPERTY_EC_BASE_URL:https://api.karza.in/v3}
+      api-key: ${KARZA_API_KEY:}
+      simulation: ${PROPERTY_EC_SIMULATION:true}
+      connect-timeout-ms: ${PROPERTY_EC_CONNECT_TIMEOUT:10000}
+      read-timeout-ms: ${PROPERTY_EC_READ_TIMEOUT:30000}
+
+    # Phase 2 — Central KYC Registry (CKYC upload)
+    ckyc:
+      provider: ${CKYC_PROVIDER:KARZA}
+      upload-url: ${CKYC_UPLOAD_URL:}
+      api-key: ${CKYC_API_KEY:}
+      simulation: ${CKYC_SIMULATION:true}
+      fi-code: ${CKYC_FI_CODE:}
+      branch-code: ${CKYC_BRANCH_CODE:001}
+      connect-timeout-ms: ${CKYC_CONNECT_TIMEOUT:10000}
+      read-timeout-ms: ${CKYC_READ_TIMEOUT:60000}
+
+    # Phase 2 — Property geo-tagging (Google Geocoding)
+    google-maps:
+      api-key: ${GOOGLE_MAPS_API_KEY:}
+      simulation: ${GEO_SIMULATION:true}
+      geocode-url: ${GOOGLE_GEOCODE_URL:https://maps.googleapis.com/maps/api/geocode/json}
+      connect-timeout-ms: ${GOOGLE_MAPS_CONNECT_TIMEOUT:10000}
+      read-timeout-ms: ${GOOGLE_MAPS_READ_TIMEOUT:30000}
+
+    # Phase 2 — Live gold rate (MCX/IBJA) with simulation fallback
+    gold-rate:
+      provider: ${GOLD_RATE_PROVIDER:SIMULATION}
+      api-key: ${GOLD_RATE_API_KEY:}
+      simulation: ${GOLD_SIMULATION:true}
+      rate-url: ${GOLD_RATE_URL:https://api.mcxindia.com/gold-rate}
+      simulation-rate-per-gram: ${GOLD_SIMULATION_RATE:6500}
+      manual-rate-per-gram: ${GOLD_MANUAL_RATE:6500}
+      connect-timeout-ms: ${GOLD_RATE_CONNECT_TIMEOUT:10000}
+      read-timeout-ms: ${GOLD_RATE_READ_TIMEOUT:30000}
+
+    # Phase 2 — Account Aggregator (Setu AA)
+    setu-aa:
+      base-url: ${SETU_AA_URL:https://fiu-uat.setu.co}
+      auth-url: ${SETU_AA_AUTH_URL:https://orgs.setu.co/api/v1/users/login}
+      client-id: ${SETU_CLIENT_ID:}
+      client-secret: ${SETU_CLIENT_SECRET:}
+      product-instance-id: ${SETU_PRODUCT_INSTANCE_ID:}
+      redirect-url: ${SETU_REDIRECT_URL:https://los.billiontech.ai/aa/callback}
+      simulation: ${SETU_SIMULATION:true}
+      connect-timeout-ms: ${SETU_AA_CONNECT_TIMEOUT:10000}
+      read-timeout-ms: ${SETU_AA_READ_TIMEOUT:60000}
+
+    # Phase 2 — CERSAI security interest search & registration
+    cersai:
+      base-url: ${CERSAI_URL:}
+      institution-id: ${CERSAI_INSTITUTION_ID:}
+      api-key: ${CERSAI_API_KEY:}
+      simulation: ${CERSAI_SIMULATION:true}
+      search-path: ${CERSAI_SEARCH_PATH:/v1/security-interest/search}
+      register-path: ${CERSAI_REGISTER_PATH:/v1/security-interest/register}
+      lender-name: ${CERSAI_LENDER_NAME:Billion Loans NBFC}
+      lender-cin: ${CERSAI_LENDER_CIN:}
+      connect-timeout-ms: ${CERSAI_CONNECT_TIMEOUT:10000}
+      read-timeout-ms: ${CERSAI_READ_TIMEOUT:60000}
+
     # Equifax Credit Bureau Provider (SOAP XML API)
     equifax:
       url: ${EQUIFAX_URL:https://cais.equifax.co.in/cais/equifax/enquiry}
@@ -171,6 +243,12 @@ los:
       what-if-path: ${AI_LOS_WHATIF_PATH:/what-if}
       connect-timeout-ms: ${AI_LOS_CONNECT_TIMEOUT:8000}
       read-timeout-ms: ${AI_LOS_READ_TIMEOUT:15000}
+
+  # Phase 2 — Collateral valuation defaults (gold LTV / haircut)
+  collateral:
+    gold:
+      haircut: ${COLLATERAL_GOLD_HAIRCUT:0.25}
+      max-ltv: ${COLLATERAL_GOLD_MAX_LTV:75}
 
   # Encore LMS — HTTP from los-core to remote Encore API (ENCORE_BASE_URL + Basic Auth).
   lms:
