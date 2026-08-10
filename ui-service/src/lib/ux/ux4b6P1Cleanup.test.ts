@@ -78,14 +78,14 @@ describe('UX-4B6 P1 cleanup', () => {
   })
 
   it('P1-5: Credit Manager primary tabs; Advanced holds technical surfaces', () => {
-    expect(PROSPECT_DEMO_VISIBLE_TAB_IDS).toEqual([
+    expect([...PROSPECT_DEMO_VISIBLE_TAB_IDS]).toEqual([
       'scope',
       'rules',
       'simulation',
       'lifecycle',
-      'overview',
     ])
     expect([...PROSPECT_DEMO_HIDDEN_TAB_IDS]).toEqual([
+      'overview',
       'kyc-eligibility',
       'structure',
       'ambiguities',
@@ -94,12 +94,11 @@ describe('UX-4B6 P1 cleanup', () => {
       'approvals',
     ])
     const studioSrc = readFileSync(join(uiSrc, 'pages/creditIntelligence/CiPolicyStudioPage.tsx'), 'utf8')
-    expect(studioSrc).toContain('Show full policy workspace')
     expect(studioSrc).toContain('Demo view')
-    expect(studioSrc).toContain('PROSPECT_DEMO_VISIBLE_TAB_IDS')
     expect(studioSrc).toContain('Save Draft')
-    expect(studioSrc).toContain("setTab('rules')")
-    expect(studioSrc).toContain('Advanced')
+    expect(studioSrc).toContain('Policy details')
+    expect(studioSrc).toContain('selectWorkflowTab')
+    expect(studioSrc).toContain('Advanced / technical')
   })
 
   it('workbench role visibility unchanged (six-tab model; RM hides Credit Assessment)', () => {

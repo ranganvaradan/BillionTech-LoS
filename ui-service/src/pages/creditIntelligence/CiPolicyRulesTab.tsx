@@ -167,9 +167,20 @@ function matchesStatusFilter(status: string, filter: StatusFilter): boolean {
     case 'ALL':
       return status !== 'Deleted'
     case 'NEEDS_REVIEW':
-      return status === 'Needs your input' || status === 'Needs Review' || status === 'Blocked' || status === 'Ready'
+      return (
+        status === 'Needs your input' ||
+        status === 'Needs Review' ||
+        status === 'Blocked' ||
+        status === 'Needs configuration' ||
+        status === 'Unavailable'
+      )
     case 'ACCEPTED':
-      return status === 'Accepted' || status === 'Edited' || status === 'Approved'
+      return (
+        status === 'Ready' ||
+        status === 'Accepted' ||
+        status === 'Edited' ||
+        status === 'Approved'
+      )
     case 'MANUAL_INPUT':
       return status === 'Manual Input' || status === 'Manual Review'
     case 'DATA_REQ':
@@ -194,6 +205,7 @@ export function CiPolicyRulesTab({
   documentId,
   ingestionBinding,
   prospectDemoMode = false,
+  compactShell = false,
 }: {
   cards: unknown[]
   dataAndCalculations?: unknown[]
@@ -207,6 +219,8 @@ export function CiPolicyRulesTab({
   documentId?: string | null
   ingestionBinding?: Record<string, unknown> | null
   prospectDemoMode?: boolean
+  /** POLICY-UX-SHELL-1 — start with rules, not a large summary block. */
+  compactShell?: boolean
 }) {
   const [clauseOpen, setClauseOpen] = useState<Record<string, boolean>>({})
   const [editOpen, setEditOpen] = useState<Record<string, boolean>>({})
@@ -308,64 +322,101 @@ export function CiPolicyRulesTab({
   }
 
   return (
-    <div className="space-y-4">
-      <CiExecutiveSummary
-        title="Review Rules"
-        nextAction={
-          <div className="flex flex-wrap gap-2">
-            {onSaveDraft ? (
-              <button type="button" className="bt-btn bt-btn-primary bt-btn-sm" disabled={busy} onClick={onSaveDraft}>
-                Save Draft
-              </button>
-            ) : null}
-            {onViewTests ? (
-              <button type="button" className="bt-btn bt-btn-secondary bt-btn-sm" onClick={onViewTests}>
-                Test Policy
-              </button>
-            ) : null}
-            {onActivationCheck ? (
-              <button type="button" className="bt-btn bt-btn-secondary bt-btn-sm" onClick={onActivationCheck}>
-                Activation Check
-              </button>
-            ) : null}
+    <div className="space-y-3">
+      {compactShell ? (
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Rules</h2>
+            <p className="text-sm text-slate-600">
+              {totals.total} underwriting rules · {totals.ready} ready · {totals.needs} need input
+              {dataAndCalculations.length > 0 ? (
+                <span className="text-slate-500">
+                  {' '}
+                  · {dataAndCalculations.length} in Data &amp; calculations
+                </span>
+              ) : null}
+            </p>
           </div>
-        }
-      >
-        <p className="text-sm text-slate-700">
-          <strong>{totals.ready}</strong> ready · <strong>{totals.needs}</strong> need your input ·{' '}
-          <strong>{dataAndCalculations.length}</strong> data &amp; calculations ·{' '}
-          <strong>{totals.manual}</strong> manual · <strong>{totals.ignored}</strong> ignored by you
-          <span className="text-slate-500"> ({totals.total} underwriting rules)</span>
-        </p>
-        {ingestionBinding ? (
-          <p className="mt-2 text-sm text-slate-700">
-            <strong>{String(ingestionBinding.totalClauses ?? totals.total)}</strong> clauses interpreted ·{' '}
-            <strong>{String(ingestionBinding.existingAutomatedCapabilities ?? 0)}</strong> existing automated ·{' '}
-            <strong>{String(ingestionBinding.manualInputs ?? 0)}</strong> manual inputs ·{' '}
-            <strong>{String(ingestionBinding.manualReviews ?? 0)}</strong> manual review ·{' '}
-            <strong>{String(ingestionBinding.productConfiguration ?? 0)}</strong> product/config ·{' '}
-            <strong>{String(ingestionBinding.documentRequirements ?? 0)}</strong> documents ·{' '}
-            <strong>{String(ingestionBinding.portfolioControls ?? 0)}</strong> portfolio ·{' '}
-            <strong>{String(ingestionBinding.servicingOrNarrative ?? 0)}</strong> servicing/narrative
-          </p>
-        ) : null}
-        <p className="mt-1 text-xs text-slate-500">
-          Save Draft anytime — unresolved items, documents, portfolio and servicing do not block a draft.
-        </p>
-      </CiExecutiveSummary>
-
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          className="bt-btn bt-btn-secondary bt-btn-sm"
-          onClick={() => {
-            setCatalogueEdit(null)
-            setCatalogueOpen((v) => !v)
-          }}
-        >
-          {catalogueOpen ? 'Hide capability catalogue' : 'Browse / Add Rule'}
-        </button>
-      </div>
+          <button
+            type="button"
+            className="bt-btn bt-btn-secondary bt-btn-sm"
+            onClick={() => {
+              setCatalogueEdit(null)
+              setCatalogueOpen((v) => !v)
+            }}
+          >
+            {catalogueOpen ? 'Hide catalogue' : '+ Add rule'}
+          </button>
+        </div>
+      ) : (
+        <>
+          <CiExecutiveSummary
+            title="Review Rules"
+            nextAction={
+              <div className="flex flex-wrap gap-2">
+                {onSaveDraft ? (
+                  <button
+                    type="button"
+                    className="bt-btn bt-btn-primary bt-btn-sm"
+                    disabled={busy}
+                    onClick={onSaveDraft}
+                  >
+                    Save Draft
+                  </button>
+                ) : null}
+                {onViewTests ? (
+                  <button type="button" className="bt-btn bt-btn-secondary bt-btn-sm" onClick={onViewTests}>
+                    Test Policy
+                  </button>
+                ) : null}
+                {onActivationCheck ? (
+                  <button
+                    type="button"
+                    className="bt-btn bt-btn-secondary bt-btn-sm"
+                    onClick={onActivationCheck}
+                  >
+                    Activation Check
+                  </button>
+                ) : null}
+              </div>
+            }
+          >
+            <p className="text-sm text-slate-700">
+              <strong>{totals.ready}</strong> ready · <strong>{totals.needs}</strong> need your input ·{' '}
+              <strong>{dataAndCalculations.length}</strong> data &amp; calculations ·{' '}
+              <strong>{totals.manual}</strong> manual · <strong>{totals.ignored}</strong> ignored by you
+              <span className="text-slate-500"> ({totals.total} underwriting rules)</span>
+            </p>
+            {ingestionBinding ? (
+              <p className="mt-2 text-sm text-slate-700">
+                <strong>{String(ingestionBinding.totalClauses ?? totals.total)}</strong> clauses interpreted ·{' '}
+                <strong>{String(ingestionBinding.existingAutomatedCapabilities ?? 0)}</strong> existing automated ·{' '}
+                <strong>{String(ingestionBinding.manualInputs ?? 0)}</strong> manual inputs ·{' '}
+                <strong>{String(ingestionBinding.manualReviews ?? 0)}</strong> manual review ·{' '}
+                <strong>{String(ingestionBinding.productConfiguration ?? 0)}</strong> product/config ·{' '}
+                <strong>{String(ingestionBinding.documentRequirements ?? 0)}</strong> documents ·{' '}
+                <strong>{String(ingestionBinding.portfolioControls ?? 0)}</strong> portfolio ·{' '}
+                <strong>{String(ingestionBinding.servicingOrNarrative ?? 0)}</strong> servicing/narrative
+              </p>
+            ) : null}
+            <p className="mt-1 text-xs text-slate-500">
+              Save Draft anytime — unresolved items, documents, portfolio and servicing do not block a draft.
+            </p>
+          </CiExecutiveSummary>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="bt-btn bt-btn-secondary bt-btn-sm"
+              onClick={() => {
+                setCatalogueEdit(null)
+                setCatalogueOpen((v) => !v)
+              }}
+            >
+              {catalogueOpen ? 'Hide capability catalogue' : 'Browse / Add Rule'}
+            </button>
+          </div>
+        </>
+      )}
       <CiCapabilityCataloguePanel
         open={catalogueOpen}
         onClose={() => {
@@ -384,14 +435,21 @@ export function CiPolicyRulesTab({
 
       <div className="flex flex-wrap items-center gap-2">
         {(
-          [
-            ['ALL', 'All'],
-            ['NEEDS_REVIEW', 'Needs review'],
-            ['ACCEPTED', 'Accepted'],
-            ['MANUAL_INPUT', 'Manual input'],
-            ['DATA_REQ', 'Data / metrics'],
-            ['IGNORED', 'Ignored by you'],
-          ] as const
+          (compactShell
+            ? ([
+                ['ALL', 'All'],
+                ['NEEDS_REVIEW', 'Need input'],
+                ['ACCEPTED', 'Ready'],
+              ] as const)
+            : ([
+                ['ALL', 'All'],
+                ['NEEDS_REVIEW', 'Needs review'],
+                ['ACCEPTED', 'Accepted'],
+                ['MANUAL_INPUT', 'Manual input'],
+                ['DATA_REQ', 'Data / metrics'],
+                ['IGNORED', 'Ignored by you'],
+              ] as const)
+          )
         ).map(([id, label]) => (
           <button
             key={id}

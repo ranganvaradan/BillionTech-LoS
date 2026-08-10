@@ -20,12 +20,15 @@ import { PageHeader } from '@/components/PageHeader'
 import { PoliciesWorkspaceNav } from '@/components/workspace/PoliciesWorkspaceNav'
 import { CiFixtureBanner } from '@/components/creditIntelligence/CiFixtureBanner'
 import { CiExecutiveSummary, CiSection, CiTechnicalDetails } from '@/components/creditIntelligence/CiSection'
+import { POLICY_STUDIO_PRIMARY_TAB_IDS } from '@/lib/applicationWorkbench'
+import { derivePolicyNextStep, progressStageLabels } from '@/lib/creditIntelligence/businessLexicon'
 import {
-  POLICY_STUDIO_ADVANCED_TAB_IDS,
-  POLICY_STUDIO_PRIMARY_TAB_IDS,
-  PROSPECT_DEMO_VISIBLE_TAB_IDS,
-} from '@/lib/applicationWorkbench'
-import { draftOnlyBanner, derivePolicyNextStep, progressStageLabels } from '@/lib/creditIntelligence/businessLexicon'
+  formatShellStatusLine,
+  POLICY_STUDIO_DETAILS_SECTIONS,
+  POLICY_STUDIO_WORKFLOW_TABS,
+  underwritingRuleStats,
+  type PolicyStudioDetailsSectionId,
+} from '@/lib/ux/policyStudioShell'
 import { CiPolicyAmbiguitiesTab } from '@/pages/creditIntelligence/CiPolicyAmbiguitiesTab'
 import { CiPolicyAnalystExperience } from '@/pages/creditIntelligence/CiPolicyAnalystExperience'
 import { CiPolicyApprovalsTab } from '@/pages/creditIntelligence/CiPolicyApprovalsTab'
@@ -69,22 +72,7 @@ function chipClass(state: string): string {
   return 'bg-slate-100 text-slate-500'
 }
 
-const TABS: { id: TabId; label: string }[] = [
-  { id: 'scope', label: 'Scope' },
-  { id: 'rules', label: 'Rules' },
-  { id: 'simulation', label: 'Test' },
-  { id: 'lifecycle', label: 'Versions' },
-  { id: 'overview', label: 'Overview' },
-  { id: 'kyc-eligibility', label: 'KYC & Eligibility' },
-  { id: 'structure', label: 'Structure' },
-  { id: 'ambiguities', label: 'Ambiguous Terms' },
-  { id: 'data-readiness', label: 'Data Readiness' },
-  { id: 'tests', label: 'Generated Tests' },
-  { id: 'approvals', label: 'Approvals' },
-]
-
 const PRIMARY_TAB_IDS = POLICY_STUDIO_PRIMARY_TAB_IDS as readonly string[]
-const ADVANCED_TAB_IDS = POLICY_STUDIO_ADVANCED_TAB_IDS as readonly string[]
 
 export function CiPolicyStudioPage() {
   const { user } = useAuth()
@@ -95,7 +83,7 @@ export function CiPolicyStudioPage() {
   const [analysisWaiting, setAnalysisWaiting] = useState(false)
   const [analysisStartedAt, setAnalysisStartedAt] = useState(0)
   const [analysisFileLabel, setAnalysisFileLabel] = useState<string | null>(null)
-  const [tab, setTab] = useState<TabId>('overview')
+  const [tab, setTab] = useState<TabId>('scope')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -110,12 +98,39 @@ export function CiPolicyStudioPage() {
   })
   const [demoActor, setDemoActor] = useState('credit_manager')
   const [demoMsg, setDemoMsg] = useState<string | null>(null)
-  const [showAdvancedTabs, setShowAdvancedTabs] = useState(false)
-  const [draftMsg, setDraftMsg] = useState<string | null>(null)
+  const [detailsOpen, setDetailsOpen] = useState(false)
+  const [detailsSection, setDetailsSection] = useState<PolicyStudioDetailsSectionId>('overview')
+  const [moreOpen, setMoreOpen] = useState(false)
+  const [savedLabel, setSavedLabel] = useState<string | null>(null)
   const [dirty, setDirty] = useState(false)
   const [scopeDirty, setScopeDirty] = useState(false)
   const [rulesDirty, setRulesDirty] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  const moreRef = useRef<HTMLDivElement>(null)
+
+  const selectWorkflowTab = (id: TabId) => {
+    setDetailsOpen(false)
+    setMoreOpen(false)
+    setTab(id)
+  }
+
+  const openPolicyDetails = (section: PolicyStudioDetailsSectionId = 'overview') => {
+    setDetailsSection(section)
+    setDetailsOpen(true)
+    setMoreOpen(false)
+  }
+
+  const goToSurface = (id: TabId) => {
+    if ((PRIMARY_TAB_IDS as readonly string[]).includes(id)) {
+      selectWorkflowTab(id)
+      return
+    }
+    if (POLICY_STUDIO_DETAILS_SECTIONS.some((s) => s.id === id)) {
+      openPolicyDetails(id as PolicyStudioDetailsSectionId)
+      return
+    }
+    selectWorkflowTab('scope')
+  }
 
   const toggleProspectDemoMode = () => {
     setProspectDemoMode((prev) => {
@@ -144,6 +159,15 @@ export function CiPolicyStudioPage() {
   useEffect(() => {
     void loadLanding()
   }, [loadLanding])
+
+  useEffect(() => {
+    if (!moreOpen) return
+    const onDoc = (e: MouseEvent) => {
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) setMoreOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [moreOpen])
 
   const beginAnalysis = (fileLabel: string) => {
     setError(null)
@@ -179,7 +203,9 @@ export function CiPolicyStudioPage() {
       const data = await getStagingPolicyStudio(kind)
       finishAnalysis(data)
       if (kind === 'kyc') {
-        setTab('kyc-eligibility')
+        setDetailsSection('kyc-eligibility')
+        setDetailsOpen(true)
+        setTab('scope')
       }
     } catch (e) {
       failAnalysis(e instanceof ApiError ? e.message : 'Could not open demo policy')
@@ -214,7 +240,6 @@ export function CiPolicyStudioPage() {
     setDirty(false)
     setScopeDirty(false)
     setRulesDirty(false)
-    setDraftMsg('Set where this policy applies — then refine Rules. Save Draft anytime from either tab.')
   }
 
   const cancelAnalysis = () => {
@@ -247,7 +272,8 @@ export function CiPolicyStudioPage() {
     try {
       const data = await resetDemoPolicy(kind)
       setSession(data)
-      setTab('overview')
+      setTab('scope')
+      setDetailsOpen(false)
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Could not reset demo policy')
     } finally {
@@ -284,7 +310,7 @@ export function CiPolicyStudioPage() {
       setSession(data)
       setDirty(true)
       setRulesDirty(true)
-      setDraftMsg(null)
+      setSavedLabel(null)
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Could not record rule review')
     } finally {
@@ -306,7 +332,8 @@ export function CiPolicyStudioPage() {
       setSession(data)
       setDirty(false)
       setRulesDirty(false)
-      setDraftMsg(String(asRecord(data).message ?? 'Draft saved.'))
+      setScopeDirty(false)
+      setSavedLabel('Saved just now')
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Could not save draft')
     } finally {
@@ -326,7 +353,7 @@ export function CiPolicyStudioPage() {
       setSession(data)
       setDirty(true)
       setRulesDirty(true)
-      setDraftMsg(String(asRecord(data).message ?? 'Rule added for review.'))
+      setSavedLabel(null)
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Could not add rule')
     } finally {
@@ -339,9 +366,7 @@ export function CiPolicyStudioPage() {
       setSession(data as typeof session)
       setDirty(true)
       setRulesDirty(true)
-      setDraftMsg(
-        String(asRecord(data).message ?? 'Capability saved in draft — use Save Draft anytime.'),
-      )
+      setSavedLabel(null)
     }
   }
 
@@ -369,6 +394,16 @@ export function CiPolicyStudioPage() {
   })()
   const ambiguityCategories = asList(session?.ambiguityCategories)
   const testsCount = Number(asRecord(session?.executable).testCaseCount ?? counts.tests ?? 0)
+  const uwStats = underwritingRuleStats(ruleCards)
+  const isDirty = dirty || scopeDirty || rulesDirty
+  const contentTab: TabId = detailsOpen ? (detailsSection as TabId) : tab
+  const shellStatus = formatShellStatusLine({
+    lifecycleStatus: String(header.status ?? 'DRAFT'),
+    ready: uwStats.ready,
+    needsInput: uwStats.needsInput,
+    dirty: isDirty,
+    savedLabel,
+  })
 
   const capabilities = useMemo(
     () => (Array.isArray(landing?.capabilities) ? landing!.capabilities! : []),
@@ -521,7 +556,9 @@ export function CiPolicyStudioPage() {
                         if (doc) {
                           setSession(await getPolicyStudioSession(doc))
                           setView('session')
-                          setTab('approvals')
+                          setTab('scope')
+                          setDetailsSection('approvals')
+                          setDetailsOpen(true)
                         }
                         setDemoMsg(
                           `Happy path complete — Draft ${String(asRecord(data.draftSummary).versionLabel ?? 'ready')}. ${String(data.demoResolutionBanner ?? '')}`,
@@ -551,7 +588,9 @@ export function CiPolicyStudioPage() {
                         if (doc) {
                           setSession(await getPolicyStudioSession(doc))
                           setView('session')
-                          setTab('approvals')
+                          setTab('scope')
+                          setDetailsSection('approvals')
+                          setDetailsOpen(true)
                         }
                         setDemoMsg(String(data.message ?? 'Blocked path — draft cannot be built.'))
                       } catch (e) {
@@ -575,204 +614,203 @@ export function CiPolicyStudioPage() {
   }
 
   return (
-    <div>
-      <PageHeader
-        title={String(header.policyName ?? 'Policy Understanding')}
-        description="Set Scope, refine Rules, Test, then Versions. Save Draft anytime. Draft / approved / scheduled — not live LOS production configuration."
-        actions={
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              className="bt-btn bt-btn-primary bt-btn-sm"
-              disabled={busy || !documentId}
-              onClick={() => void saveDraft()}
-            >
-              Save Draft
-            </button>
+    <div data-testid="policy-studio-session-shell">
+      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <button
+            type="button"
+            className="mb-1 text-xs text-slate-500 hover:text-slate-800"
+            onClick={() => {
+              setView('landing')
+              setSession(null)
+              setError(null)
+              setDemoMsg(null)
+              setSavedLabel(null)
+              setDetailsOpen(false)
+            }}
+          >
+            ← Policies
+          </button>
+          <h1 className="truncate text-xl font-semibold text-slate-900">
+            {String(header.policyName ?? 'Policy')}
+          </h1>
+          <p className="mt-0.5 text-sm text-slate-600" data-testid="policy-shell-status">
+            {shellStatus}
+            {session?.demo ? (
+              <span className="ml-2 text-xs font-medium text-amber-800">· Demo sample</span>
+            ) : null}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            className="bt-btn bt-btn-primary bt-btn-sm"
+            disabled={busy || !documentId}
+            onClick={() => void saveDraft()}
+            data-testid="save-draft"
+          >
+            Save Draft
+          </button>
+          {tab === 'simulation' && !detailsOpen ? (
             <button
               type="button"
               className="bt-btn bt-btn-secondary bt-btn-sm"
-              onClick={() => setTab('simulation')}
+              onClick={() => selectWorkflowTab('simulation')}
             >
-              Test Policy
+              Run Test
             </button>
+          ) : null}
+          {tab === 'lifecycle' && !detailsOpen ? (
             <button
               type="button"
               className="bt-btn bt-btn-secondary bt-btn-sm"
-              onClick={() => setTab('lifecycle')}
+              onClick={() => selectWorkflowTab('lifecycle')}
             >
               Activation Check
             </button>
-            <button
-              type="button"
-              className={`bt-btn bt-btn-sm ${prospectDemoMode ? 'bt-btn-primary' : 'bt-btn-secondary'}`}
-              onClick={toggleProspectDemoMode}
-            >
-              {prospectDemoMode ? 'Demo view ON' : 'Demo view'}
-            </button>
-            {session?.demo || session?.canResetDemo ? (
-              <button
-                type="button"
-                className="bt-btn bt-btn-secondary bt-btn-sm"
-                disabled={busy}
-                onClick={() => void resetDemo()}
-              >
-                Reset Demo Policy
-              </button>
-            ) : null}
+          ) : null}
+          <div className="relative" ref={moreRef}>
             <button
               type="button"
               className="bt-btn bt-btn-secondary bt-btn-sm"
-              onClick={() => {
-                setView('landing')
-                setSession(null)
-                setError(null)
-                setDemoMsg(null)
-                setDraftMsg(null)
-              }}
+              aria-expanded={moreOpen}
+              onClick={() => setMoreOpen((v) => !v)}
+              data-testid="policy-more-menu"
             >
-              Back to upload
+              More ▾
             </button>
+            {moreOpen ? (
+              <div className="absolute right-0 z-20 mt-1 w-56 rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+                <button
+                  type="button"
+                  className="block w-full px-3 py-2 text-left text-sm text-slate-800 hover:bg-slate-50"
+                  onClick={() => openPolicyDetails('overview')}
+                >
+                  Policy details
+                </button>
+                {(PRIMARY_TAB_IDS as readonly string[]).includes(tab) && tab !== 'lifecycle' ? (
+                  <button
+                    type="button"
+                    className="block w-full px-3 py-2 text-left text-sm text-slate-800 hover:bg-slate-50"
+                    onClick={() => {
+                      selectWorkflowTab('lifecycle')
+                    }}
+                  >
+                    Activation Check
+                  </button>
+                ) : null}
+                {(PRIMARY_TAB_IDS as readonly string[]).includes(tab) && tab !== 'simulation' ? (
+                  <button
+                    type="button"
+                    className="block w-full px-3 py-2 text-left text-sm text-slate-800 hover:bg-slate-50"
+                    onClick={() => selectWorkflowTab('simulation')}
+                  >
+                    Test Policy
+                  </button>
+                ) : null}
+                <div className="my-1 border-t border-slate-100" />
+                <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                  Development / demo
+                </p>
+                <button
+                  type="button"
+                  className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                  onClick={() => {
+                    toggleProspectDemoMode()
+                    setMoreOpen(false)
+                  }}
+                >
+                  {prospectDemoMode ? 'Demo view ON' : 'Demo view'}
+                </button>
+                {session?.demo || session?.canResetDemo ? (
+                  <button
+                    type="button"
+                    className="block w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
+                    disabled={busy}
+                    onClick={() => {
+                      setMoreOpen(false)
+                      void resetDemo()
+                    }}
+                  >
+                    Reset Demo Policy
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
           </div>
-        }
-      />
-      <PoliciesWorkspaceNav />
-      {session?.demo ? (
-        <div className="mb-4 rounded-md border border-amber-400 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-950">
-          {String(session.demoLabel ?? 'DEMO POLICY — CUSTOMER-SUPPLIED SAMPLE')}
         </div>
-      ) : (
-        <CiFixtureBanner />
-      )}
-      <div className="mb-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-950">
-        {draftOnlyBanner(prospectDemoMode)}
       </div>
-      {prospectDemoMode ? (
-        <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
-          <span>
-            <strong>Demo view</strong> — shows a simplified policy review experience.
-          </span>
-          <button
-            type="button"
-            className="font-medium text-sky-800 underline hover:text-sky-950"
-            onClick={toggleProspectDemoMode}
-          >
-            Show full policy workspace
-          </button>
-        </div>
+
+      {error ? (
+        <p className="mb-3 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800" role="alert">
+          {error}
+        </p>
       ) : null}
       {demoMsg ? (
         <p className="mb-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
           {demoMsg}
         </p>
       ) : null}
-      {draftMsg ? (
-        <p className="mb-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
-          {draftMsg}
-        </p>
-      ) : null}
-      {dirty || scopeDirty || rulesDirty ? (
-        <p className="mb-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-          Unsaved changes
-          {scopeDirty ? ' (Scope)' : ''}
-          {rulesDirty || dirty ? ' (Rules)' : ''}
-          {' — '}
-          use <strong>Save Draft</strong> anytime (implementability is not required). Scope and Rules save independently.
-        </p>
-      ) : null}
-      {error ? (
-        <p className="mb-4 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800" role="alert">
-          {error}
-        </p>
-      ) : null}
 
-      {session ? (
-        <div className="mb-4 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-          <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-            <span className="font-semibold text-slate-900">{String(header.policyName ?? 'Policy')}</span>
-            <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-900">
-              {String(header.status ?? 'DRAFT')}
-            </span>
-            <span className="text-xs text-slate-500">
-              Source: {String(header.fileName ?? session.fileName ?? '—')}
-            </span>
-          </div>
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-700">
-            <span>
-              <strong>{String(readinessBanner.rulesIdentified ?? counts.rulesTotal ?? ruleCards.length)}</strong>{' '}
-              rules identified
-            </span>
-            <span>
-              <strong className="text-emerald-800">
-                {String(readinessBanner.rulesReady ?? counts.rulesReady ?? 0)}
-              </strong>{' '}
-              ready
-            </span>
-            <span>
-              <strong className="text-amber-800">
-                {String(readinessBanner.rulesNeedReview ?? counts.rulesNeedReview ?? 0)}
-              </strong>{' '}
-              need your input
-            </span>
-            <span>
-              <strong className="text-indigo-800">{String(counts.rulesManualInput ?? 0)}</strong> manual
-              input
-            </span>
-            <span>
-              <strong className="text-slate-700">{String(readinessBanner.rulesIgnoredByYou ?? readinessBanner.rulesIgnored ?? counts.rulesIgnoredByYou ?? counts.rulesIgnored ?? 0)}</strong>{' '}
-              ignored by you
-              {' · '}
-              <strong className="text-slate-700">{String(readinessBanner.rulesDataRequirements ?? counts.rulesDataRequirements ?? 0)}</strong>{' '}
-              data requirements
-            </span>
-          </div>
-        </div>
-      ) : null}
-
-      <div className="mb-4 flex flex-wrap items-center gap-2 border-b border-slate-200 pb-2">
-        {TABS.filter((t) => PRIMARY_TAB_IDS.includes(t.id)).map((t) => (
+      <nav
+        className="mb-3 flex flex-wrap items-center gap-2 border-b border-slate-200 pb-2"
+        data-testid="policy-primary-tabs"
+        aria-label="Policy workflow"
+      >
+        {POLICY_STUDIO_WORKFLOW_TABS.map((t) => (
           <button
             key={t.id}
             type="button"
-            onClick={() => setTab(t.id)}
+            onClick={() => selectWorkflowTab(t.id as TabId)}
             className={`rounded-full px-3 py-1.5 text-sm font-medium ${
-              tab === t.id ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              !detailsOpen && tab === t.id
+                ? 'bg-slate-900 text-white'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
             }`}
+            data-testid={`primary-tab-${t.id}`}
           >
             {t.label}
           </button>
         ))}
         <button
           type="button"
-          onClick={() => setShowAdvancedTabs((v) => !v)}
-          className="rounded-full px-3 py-1.5 text-sm font-medium bg-slate-50 text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100"
+          onClick={() => openPolicyDetails(detailsSection)}
+          className={`ml-auto rounded-full px-3 py-1.5 text-sm font-medium ${
+            detailsOpen
+              ? 'bg-slate-800 text-white'
+              : 'bg-slate-50 text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100'
+          }`}
+          data-testid="policy-details-entry"
         >
-          {showAdvancedTabs ? 'Hide Advanced' : 'Advanced'}
+          Policy details
         </button>
-        {(showAdvancedTabs || (!prospectDemoMode && ADVANCED_TAB_IDS.includes(tab))) &&
-          TABS.filter((t) => {
-            if (!ADVANCED_TAB_IDS.includes(t.id)) return false
-            if (prospectDemoMode) {
-              return showAdvancedTabs || (PROSPECT_DEMO_VISIBLE_TAB_IDS as readonly string[]).includes(t.id)
-            }
-            return showAdvancedTabs || t.id === tab
-          }).map((t) => (
+      </nav>
+
+      {detailsOpen ? (
+        <div
+          className="mb-3 flex flex-wrap gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+          data-testid="policy-details-sections"
+        >
+          {POLICY_STUDIO_DETAILS_SECTIONS.map((s) => (
             <button
-              key={t.id}
+              key={s.id}
               type="button"
-              onClick={() => setTab(t.id)}
-              className={`rounded-full px-3 py-1.5 text-sm font-medium ${
-                tab === t.id ? 'bg-indigo-900 text-white' : 'bg-indigo-50 text-indigo-900 hover:bg-indigo-100'
+              onClick={() => setDetailsSection(s.id)}
+              className={`rounded px-2 py-1 text-xs font-medium ${
+                detailsSection === s.id
+                  ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              {t.label}
+              {s.label}
             </button>
           ))}
-      </div>
+        </div>
+      ) : null}
 
       {busy ? <p className="text-sm text-slate-600">Working on your policy…</p> : null}
 
-      {tab === 'overview' && session ? (
+      {contentTab === 'overview' && session ? (
         <div className="space-y-4">
           {(() => {
             const implSum = asRecord(asRecord(session.implementability).summary ?? session.implementabilitySummary)
@@ -794,7 +832,7 @@ export function CiPolicyStudioPage() {
                   <button
                     type="button"
                     className="bt-btn bt-btn-primary bt-btn-sm"
-                    onClick={() => setTab(next.tabHint as TabId)}
+                    onClick={() => goToSurface(next.tabHint as TabId)}
                   >
                     {next.title}
                   </button>
@@ -903,10 +941,10 @@ export function CiPolicyStudioPage() {
                     type="button"
                     className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-left hover:border-sky-300 hover:bg-sky-50"
                     onClick={() => {
-                      if (label.includes('KYC')) setTab('kyc-eligibility')
-                      else if (label.includes('Ambigu')) setTab('ambiguities')
+                      if (label.includes('KYC')) goToSurface('kyc-eligibility')
+                      else if (label.includes('Ambigu')) goToSurface('ambiguities')
                       else if (label.includes('Credit') || label.includes('Rule') || label.includes('Banking') || label.includes('Bureau'))
-                        setTab('rules')
+                        goToSurface('rules')
                     }}
                   >
                     <div className="text-2xl font-semibold text-slate-900">{String(row.count ?? 0)}</div>
@@ -952,7 +990,7 @@ export function CiPolicyStudioPage() {
         </div>
       ) : null}
 
-      {tab === 'structure' && session ? (
+      {contentTab === 'structure' && session ? (
         <CiSection title="Policy structure" description="Expand a section to review clause titles">
           <ul className="space-y-2">
             {structure.map((s, i) => {
@@ -1004,7 +1042,7 @@ export function CiPolicyStudioPage() {
         </CiSection>
       ) : null}
 
-      {tab === 'kyc-eligibility' && session ? (
+      {contentTab === 'kyc-eligibility' && session ? (
         <CiPolicyKycTab
           cards={ruleCards}
           domainBreakdown={asRecord(asRecord(session).domainBreakdown)}
@@ -1016,7 +1054,7 @@ export function CiPolicyStudioPage() {
         />
       ) : null}
 
-      {tab === 'ambiguities' && session ? (
+      {contentTab === 'ambiguities' && session ? (
         <CiPolicyAmbiguitiesTab
           cards={ambiguityCards}
           categories={ambiguityCategories}
@@ -1026,7 +1064,7 @@ export function CiPolicyStudioPage() {
         />
       ) : null}
 
-      {tab === 'scope' && session ? (
+      {contentTab === 'scope' && session ? (
         documentId ? (
           <CiPolicyScopeTab
             documentId={documentId}
@@ -1034,7 +1072,10 @@ export function CiPolicyStudioPage() {
             setBusy={setBusy}
             onError={setError}
             session={session}
-            onScopeDirty={setScopeDirty}
+            onScopeDirty={(d) => {
+              setScopeDirty(d)
+              if (d) setSavedLabel(null)
+            }}
             onSessionRefresh={(next) => {
               if (next) setSession(next)
               setScopeDirty(false)
@@ -1047,28 +1088,27 @@ export function CiPolicyStudioPage() {
         )
       ) : null}
 
-      {tab === 'rules' && session ? (
+      {contentTab === 'rules' && session ? (
         <CiPolicyRulesTab
           cards={ruleCards}
           dataAndCalculations={dataAndCalculations}
           busy={busy}
           onReview={reviewRule}
-          onViewTests={() => setTab('simulation')}
-          onSaveDraft={() => void saveDraft()}
-          onActivationCheck={() => setTab('lifecycle')}
+          onViewTests={() => selectWorkflowTab('simulation')}
           onAddPlainEnglishRule={addPlainEnglishRule}
           onCatalogueChanged={applyCatalogueSession}
           documentId={documentId}
           ingestionBinding={asRecord(asRecord(session).ingestionBinding)}
           prospectDemoMode={prospectDemoMode}
+          compactShell
         />
       ) : null}
 
-      {tab === 'data-readiness' && session ? (
+      {contentTab === 'data-readiness' && session ? (
         <CiPolicyDataReadinessTab
           session={session}
           prospectDemoMode={prospectDemoMode}
-          onGoApprovals={() => setTab('approvals')}
+          onGoApprovals={() => openPolicyDetails('approvals')}
           documentId={documentId || undefined}
           busy={busy}
           setBusy={setBusy}
@@ -1077,7 +1117,7 @@ export function CiPolicyStudioPage() {
         />
       ) : null}
 
-      {tab === 'tests' && session ? (
+      {contentTab === 'tests' && session ? (
         documentId ? (
           <CiPolicyTestsTab
             documentId={documentId}
@@ -1093,7 +1133,7 @@ export function CiPolicyStudioPage() {
         )
       ) : null}
 
-      {tab === 'simulation' && session ? (
+      {contentTab === 'simulation' && session ? (
         documentId ? (
           <CiPolicySimulationTab
             documentId={documentId}
@@ -1110,7 +1150,7 @@ export function CiPolicyStudioPage() {
         )
       ) : null}
 
-      {tab === 'approvals' && session ? (
+      {contentTab === 'approvals' && session ? (
         documentId ? (
           <CiPolicyApprovalsTab
             documentId={documentId}
@@ -1128,7 +1168,7 @@ export function CiPolicyStudioPage() {
         )
       ) : null}
 
-      {tab === 'lifecycle' && session ? (
+      {contentTab === 'lifecycle' && session ? (
         documentId ? (
           <CiPolicyLifecycleTab
             documentId={documentId}
@@ -1151,9 +1191,9 @@ export function CiPolicyStudioPage() {
         )
       ) : null}
 
-      {session && !prospectDemoMode ? (
-        <div className="mt-6">
-          <CiTechnicalDetails>
+      {session && detailsOpen && !prospectDemoMode ? (
+        <div className="mt-6" data-testid="policy-advanced-technical">
+          <CiTechnicalDetails title="Advanced / technical">
             {JSON.stringify(
               {
                 documentId: header.documentId,

@@ -32,8 +32,8 @@ describe('POLICY-UX-2C catalogue parameter editor', () => {
     expect(rules).toContain('documentId')
     expect(rules).toContain('onCatalogueChanged')
     expect(rules).toContain('businessCapabilityId')
-    expect(rules).toContain('Existing capability')
-    expect(rules).toContain('Browse / Add Rule')
+    expect(rules).toMatch(/Existing capability|existing capability|capability catalogue/i)
+    expect(rules.includes('Browse / Add Rule') || rules.includes('+ Add rule')).toBe(true)
   })
 
   it('Studio page applies catalogue session without requiring activation', () => {

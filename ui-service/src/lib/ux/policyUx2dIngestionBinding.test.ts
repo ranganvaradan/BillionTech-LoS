@@ -17,12 +17,13 @@ describe('POLICY-UX-2D ingestion binding UX', () => {
     expect(rules).toContain('Documents')
     expect(rules).toContain('Portfolio Controls')
     expect(rules).toContain('Servicing')
-    expect(rules).toContain('high-confidence existing-capability')
+    expect(rules).toContain('acceptAllEligible')
   })
 
   it('Studio page wires ingestionBinding into Rules tab', () => {
     const page = read('pages/creditIntelligence/CiPolicyStudioPage.tsx')
     expect(page).toContain('ingestionBinding={asRecord(asRecord(session).ingestionBinding)}')
-    expect(page).toContain("setTab('rules')")
+    expect(page).toMatch(/goToSurface\('rules'\)|selectWorkflowTab\('rules'\)/)
   })
 })
+

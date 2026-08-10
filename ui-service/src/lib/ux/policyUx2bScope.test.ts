@@ -12,9 +12,8 @@ describe('POLICY-UX-2B Scope experience', () => {
       'rules',
       'simulation',
       'lifecycle',
-      'overview',
     ])
-    expect([...PROSPECT_DEMO_VISIBLE_TAB_IDS].slice(0, 4)).toEqual([
+    expect([...PROSPECT_DEMO_VISIBLE_TAB_IDS]).toEqual([
       'scope',
       'rules',
       'simulation',
@@ -24,11 +23,12 @@ describe('POLICY-UX-2B Scope experience', () => {
 
   it('studio page wires Scope tab and CiPolicyScopeTab', () => {
     const page = readFileSync(join(uiSrc, 'pages/creditIntelligence/CiPolicyStudioPage.tsx'), 'utf8')
-    expect(page).toContain("id: 'scope'")
     expect(page).toContain('CiPolicyScopeTab')
     expect(page).toContain("setTab('scope')")
+    expect(page).toContain('selectWorkflowTab')
     expect(page).toContain('scopeDirty')
     expect(page).toContain('rulesDirty')
+    expect(page).toContain("contentTab === 'scope'")
   })
 
   it('scope tab is business-facing (All, include-only, no EXCLUDE)', () => {

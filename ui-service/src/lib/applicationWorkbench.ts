@@ -333,16 +333,17 @@ export function collateralOverviewCopy(opts: {
  * Credit Manager primary tabs (Prospect Demo / simplified journey).
  * Technical surfaces remain under Advanced in the Studio page.
  */
+/** POLICY-UX-SHELL-1 — Credit Manager primary workflow (never mutate). */
 export const PROSPECT_DEMO_VISIBLE_TAB_IDS = [
   'scope',
   'rules',
   'simulation',
   'lifecycle',
-  'overview',
 ] as const
 
-/** Demoted from primary navigation — still reachable via Advanced. */
+/** Demoted from primary navigation — reachable via Policy details. */
 export const PROSPECT_DEMO_HIDDEN_TAB_IDS = [
+  'overview',
   'kyc-eligibility',
   'structure',
   'ambiguities',
@@ -351,12 +352,12 @@ export const PROSPECT_DEMO_HIDDEN_TAB_IDS = [
   'approvals',
 ] as const
 
+/** Stable primary tabs: Scope | Rules | Test | Versions */
 export const POLICY_STUDIO_PRIMARY_TAB_IDS = [
   'scope',
   'rules',
   'simulation',
   'lifecycle',
-  'overview',
 ] as const
 
 /** GACAT lineage — statuses that are not CM "Ignored". */
@@ -370,7 +371,9 @@ export const POLICY_RULE_NON_CM_STATUSES = [
   'Manual Review',
 ] as const
 
+/** Policy details / Advanced sections — never peer primary tabs. */
 export const POLICY_STUDIO_ADVANCED_TAB_IDS = [
+  'overview',
   'kyc-eligibility',
   'structure',
   'ambiguities',
