@@ -29,6 +29,8 @@ public class CamResponse {
     private BigDecimal recommendedAmount;
     private Integer recommendedTenureMonths;
     private BigDecimal recommendedRate;
+    /** UPFRONT | REDUCING */
+    private String interestType;
     private List<String> conditionsPrecedent;
     private List<String> conditionsSubsequent;
     private String creditOfficerRemarks;

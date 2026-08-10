@@ -1,5 +1,6 @@
 package com.los.core.service.underwriting;
 
+import com.los.core.audit.AdminConfigAuditSupport;
 import com.los.core.exception.BusinessRuleException;
 import com.los.core.exception.ResourceNotFoundException;
 import com.los.core.model.dto.request.UnderwritingScorecardRequest;
@@ -21,6 +22,7 @@ import java.util.stream.Collectors;
 public class UnderwritingScorecardAdminService {
 
     private final UnderwritingScorecardRepository repository;
+    private final AdminConfigAuditSupport adminConfigAuditSupport;
 
     public List<UnderwritingScorecardResponse> list() {
         return repository.findAll().stream().map(this::toResponse).collect(Collectors.toList());
@@ -32,17 +34,22 @@ public class UnderwritingScorecardAdminService {
         apply(e, r);
         e.setActive(r.isActive());
         e.setUpdatedAt(Instant.now());
-        return toResponse(repository.save(e));
+        UnderwritingScorecardResponse saved = toResponse(repository.save(e));
+        adminConfigAuditSupport.captureCreate("UNDERWRITING_SCORECARD", saved.getId().toString(), saved, "Underwriting scorecard created");
+        return saved;
     }
 
     @Transactional
     public UnderwritingScorecardResponse update(UUID id, UnderwritingScorecardRequest r) {
         UnderwritingScorecard e = repository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Scorecard not found: " + id));
+        UnderwritingScorecardResponse before = toResponse(e);
         apply(e, r);
         e.setActive(r.isActive());
         e.setUpdatedAt(Instant.now());
-        return toResponse(repository.save(e));
+        UnderwritingScorecardResponse after = toResponse(repository.save(e));
+        adminConfigAuditSupport.captureUpdate("UNDERWRITING_SCORECARD", id.toString(), before, after, "Underwriting scorecard updated");
+        return after;
     }
 
     @Transactional
@@ -56,7 +63,9 @@ public class UnderwritingScorecardAdminService {
                     "DEACTIVATE_FIRST",
                     null);
         }
+        UnderwritingScorecardResponse before = toResponse(e);
         repository.delete(e);
+        adminConfigAuditSupport.captureDelete("UNDERWRITING_SCORECARD", id.toString(), before, "Underwriting scorecard deleted");
     }
 
     private void apply(UnderwritingScorecard e, UnderwritingScorecardRequest r) {

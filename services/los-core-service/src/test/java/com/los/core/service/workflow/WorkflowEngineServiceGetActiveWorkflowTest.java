@@ -3,6 +3,7 @@ package com.los.core.service.workflow;
 import com.los.core.model.dto.response.WorkflowConfigResponse;
 import com.los.core.model.entity.WorkflowConfig;
 import com.los.core.model.enums.BorrowerType;
+import com.los.core.model.enums.IntakeSegment;
 import com.los.core.repository.WorkflowConfigRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -12,7 +13,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -25,13 +25,14 @@ import static org.mockito.Mockito.when;
 
 /**
  * Documents that {@link WorkflowEngineServiceImpl#getActiveWorkflow} matches
- * {@code borrowerType.name()} and {@code loanProduct} with exact string equality (V32 uses {@code PERSONAL_LOAN} for retail).
+ * {@code borrowerType.name()}, {@code loanProduct}, and {@code intakeSegment} (V50+),
+ * returning the highest active version when multiple rows exist (V84+).
  */
 @ExtendWith(MockitoExtension.class)
 class WorkflowEngineServiceGetActiveWorkflowTest {
 
     @Mock
-    private WorkflowConfigRepository workflowConfigRepository;
+    private WorkflowConfigRepository workflowRepository;
 
     @InjectMocks
     private WorkflowEngineServiceImpl workflowEngineService;
@@ -49,12 +50,14 @@ class WorkflowEngineServiceGetActiveWorkflowTest {
                 .name("INDIVIDUAL_PERSONAL_DISPLAY")
                 .borrowerType("INDIVIDUAL")
                 .loanProduct("PERSONAL_LOAN")
+                .intakeSegment("BORROWER")
                 .steps(steps)
                 .active(true)
                 .version(1)
                 .build();
-        when(workflowConfigRepository.findByBorrowerTypeAndLoanProductAndActiveTrue("INDIVIDUAL", "PERSONAL_LOAN"))
-                .thenReturn(Optional.of(config));
+        when(workflowRepository.findByBorrowerTypeAndLoanProductAndIntakeSegmentAndActiveTrueOrderByVersionDesc(
+                "INDIVIDUAL", "PERSONAL_LOAN", "BORROWER"))
+                .thenReturn(List.of(config));
 
         WorkflowConfigResponse result = workflowEngineService.getActiveWorkflow(BorrowerType.INDIVIDUAL, "PERSONAL_LOAN");
         assertNotNull(result);
@@ -63,17 +66,41 @@ class WorkflowEngineServiceGetActiveWorkflowTest {
         assertTrue(result.getSteps().stream().anyMatch(m -> "PAN_VERIFY".equals(m.get("step"))));
         assertTrue(result.getSteps().stream().anyMatch(m -> "AADHAAR_OTP".equals(m.get("step"))));
         assertTrue(result.getSteps().stream().anyMatch(m -> "BUREAU_PULL".equals(m.get("step"))));
-        verify(workflowConfigRepository).findByBorrowerTypeAndLoanProductAndActiveTrue(eq("INDIVIDUAL"), eq("PERSONAL_LOAN"));
+        verify(workflowRepository).findByBorrowerTypeAndLoanProductAndIntakeSegmentAndActiveTrueOrderByVersionDesc(
+                eq("INDIVIDUAL"), eq("PERSONAL_LOAN"), eq("BORROWER"));
     }
 
     @Test
     void getActiveWorkflow_throwsWhenNoRow() {
-        when(workflowConfigRepository.findByBorrowerTypeAndLoanProductAndActiveTrue("INDIVIDUAL", "UnknownProduct"))
-                .thenReturn(Optional.empty());
+        when(workflowRepository.findByBorrowerTypeAndLoanProductAndIntakeSegmentAndActiveTrueOrderByVersionDesc(
+                "INDIVIDUAL", "UnknownProduct", "BORROWER"))
+                .thenReturn(List.of());
         com.los.core.exception.ResourceNotFoundException ex = assertThrows(
                 com.los.core.exception.ResourceNotFoundException.class,
                 () -> workflowEngineService.getActiveWorkflow(BorrowerType.INDIVIDUAL, "UnknownProduct")
         );
         assertTrue(ex.getMessage().contains("No active workflow for INDIVIDUAL/UnknownProduct"));
+    }
+
+    @Test
+    void getActiveWorkflow_anchorSegment_usesTripleLookup() {
+        UUID id = UUID.randomUUID();
+        WorkflowConfig config = WorkflowConfig.builder()
+                .id(id)
+                .name("anchor")
+                .borrowerType("COMPANY")
+                .loanProduct("BUSINESS_WC_INVOICE_DISCOUNTING")
+                .intakeSegment("ANCHOR")
+                .steps(List.of(Map.of("step", "PAN_VERIFY", "mandatory", true, "order", 1)))
+                .active(true)
+                .version(1)
+                .build();
+        when(workflowRepository.findByBorrowerTypeAndLoanProductAndIntakeSegmentAndActiveTrueOrderByVersionDesc(
+                "COMPANY", "BUSINESS_WC_INVOICE_DISCOUNTING", "ANCHOR"))
+                .thenReturn(List.of(config));
+
+        WorkflowConfigResponse r = workflowEngineService.getActiveWorkflow(
+                BorrowerType.COMPANY, "BUSINESS_WC_INVOICE_DISCOUNTING", IntakeSegment.ANCHOR);
+        assertEquals("ANCHOR", r.getIntakeSegment());
     }
 }

@@ -1,0 +1,237 @@
+﻿%PDF-1.3
+3 0 obj
+<< /Filter /FlateDecode /Length 4560 >>
+stream
+qPJ7y
+YuN[
+i8gXR
+tUQ+E\
+YCSJu
+e5cqK
+8PYg
+tbr}[
+VhxD
+hCcoB
+hhRk]b
+/rPe
+aAw=4
+$HrB0
+@Xyk,}U%)&"
+-}'JudL
+VSOn
+LgeQ
+Pac{:
+endstream
+endobj
+1 0 obj
+<< /Type /Page /Parent 2 0 R /Resources 4 0 R /Contents 3 0 R /MediaBox [0 0 595 842]
+endobj
+4 0 obj
+<< /ProcSet [ /PDF /Text ] /ColorSpace << /Cs1 5 0 R >> /Font << /TT2 7 0 R
+endobj
+16 0 obj
+<< /N 3 /Alternate /DeviceRGB /Length 2612 /Filter /FlateDecode >>
+stream
+)VdT
+yCAP8
+TIj"]&=&
+:dGr
+0j&jaj
+SwBOK/X/_
+-bEDC
+GME{E
+L(sYf
+~5f5wug
+endstream
+endobj
+5 0 obj
+[ /ICCBased 16 0 R ]
+endobj
+2 0 obj
+<< /Type /Pages /MediaBox [0 0 595 842] /Count 1 /Kids [ 1 0 R ] >>
+endobj
+17 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+7 0 obj
+<< /Type /Font /Subtype /TrueType /BaseFont /AAAAAC+Arial-BoldMT /FontDescriptor
+18 0 R /ToUnicode 19 0 R /FirstChar 33 /LastChar 40 /Widths [ 722 611 389
+endobj
+19 0 obj
+<< /Length 276 /Filter /FlateDecode >>
+stream
+Kqb!
+endstream
+endobj
+18 0 obj
+<< /Type /FontDescriptor /FontName /AAAAAC+Arial-BoldMT /Flags 4 /FontBBox
+[-628 -376 2000 1056] /ItalicAngle 0 /Ascent 905 /Descent -212 /CapHeight
+716 /StemV 0 /Leading 33 /XHeight 519 /AvgWidth 479 /MaxWidth 2000 /FontFile2
+endobj
+20 0 obj
+<< /Length1 1220 /Length 960 /Filter /FlateDecode >>
+stream
+>yjV]!5
+"bedA
+endstream
+endobj
+9 0 obj
+<< /Type /Font /Subtype /TrueType /BaseFont /AAAAAE+Aptos /FontDescriptor
+21 0 R /ToUnicode 22 0 R /FirstChar 33 /LastChar 33 /Widths [ 203 ] >>
+endobj
+22 0 obj
+<< /Length 223 /Filter /FlateDecode >>
+stream
+endstream
+endobj
+21 0 obj
+<< /Type /FontDescriptor /FontName /AAAAAE+Aptos /Flags 4 /FontBBox [-500 -275 1182 1010]
+/ItalicAngle 0 /Ascent 939 /Descent -282 /CapHeight 657 /StemV 0 /XHeight
+476 /AvgWidth 561 /MaxWidth 1269 /FontFile2 23 0 R >>
+endobj
+23 0 obj
+<< /Length1 5304 /Length 3179 /Filter /FlateDecode >>
+stream
+BlWy
+cVEQ
+vEUs
+JCLV
+&Oqk
+YmIJ
+FIKq
+(dXA
+niH)
+&wAr
+udlN
+N&wnnnhP
+lknn
+LkKo
+endstream
+endobj
+11 0 obj
+<< /Type /Font /Subtype /TrueType /BaseFont /AAAAAG+Calibri /FontDescriptor
+24 0 R /ToUnicode 25 0 R /FirstChar 33 /LastChar 38 /Widths [ 498 507 252
+endobj
+25 0 obj
+<< /Length 248 /Filter /FlateDecode >>
+stream
+]PMk
+mShK
+endstream
+endobj
+24 0 obj
+<< /Type /FontDescriptor /FontName /AAAAAG+Calibri /Flags 4 /FontBBox [-503 -313 1240 1026]
+/ItalicAngle 0 /Ascent 952 /Descent -269 /CapHeight 632 /StemV 0 /XHeight
+464 /AvgWidth 521 /MaxWidth 1328 /FontFile2 26 0 R >>
+endobj
+26 0 obj
+<< /Length1 17080 /Length 8237 /Filter /FlateDecode >>
+stream
+^LhY
+zWvno
+XPpk
+v6mlZ
+ZIZH
+{IzI
+hdKI
+(gSiz
+8IRHF
+hOt'
+UiKPl
+>EWV
+jut] 
+[Gfk
+aU}fES
+U}VcsK
+xwE[
+PvqP]
+"!~MAL
+MCs<x
+sVxp-
+]jrl
+9vtb
+uQf]
+\QrL
+~Lph
+D*gED
+endstream
+endobj
+13 0 obj
+<< /Type /Font /Subtype /TrueType /BaseFont /AAAAAI+ArialMT /FontDescriptor
+27 0 R /ToUnicode 28 0 R /FirstChar 33 /LastChar 87 /Widths [ 278 667 556
+endobj
+28 0 obj
+<< /Length 558 /Filter /FlateDecode >>
+stream
+RVz_
+["PmTMD
+UpVV
+*XJF
+@[pNl
+endstream
+endobj
+27 0 obj
+<< /Type /FontDescriptor /FontName /AAAAAI+ArialMT /Flags 4 /FontBBox [-665 -325 2000 1039]
+/ItalicAngle 0 /Ascent 905 /Descent -212 /CapHeight 716 /StemV 0 /Leading
+33 /XHeight 519 /AvgWidth 441 /MaxWidth 2000 /FontFile2 29 0 R >>
+endobj
+29 0 obj
+<< /Length1 5300 /Length 4191 /Filter /FlateDecode >>
+stream
+6uaJ
+mbo?
+@Sri
+`HUH
+D+SIX
+:}cIX
+BNeg
+`QIW,
+]XGyu
+`fZ]SFz-I`
+Bfm*b
+endstream
+endobj
+15 0 obj
+<< /Type /Font /Subtype /TrueType /BaseFont /AAAAAK+Aptos /FontDescriptor
+30 0 R /ToUnicode 31 0 R /FirstChar 33 /LastChar 33 /Widths [ 203 ] >>
+endobj
+31 0 obj
+<< /Length 223 /Filter /FlateDecode >>
+stream
+endstream
+endobj
+30 0 obj
+<< /Type /FontDescriptor /FontName /AAAAAK+Aptos /Flags 4 /FontBBox [-500 -275 1182 1010]
+/ItalicAngle 0 /Ascent 939 /Descent -282 /CapHeight 657 /StemV 0 /XHeight
+476 /AvgWidth 561 /MaxWidth 1269 /FontFile2 32 0 R >>
+endobj
+32 0 obj
+<< /Length1 5304 /Length 3179 /Filter /FlateDecode >>
+stream
+BlWy
+cVEQ
+vEUs
+JCLV
+&Oqk
+YmIJ
+FIKq
+(dXA
+niH)
+&wAr
+udlN
+N&wnnnhP
+lknn
+LkKo
+endstream
+endobj
+33 0 obj
+<< /Title (Bureau BRE) /Producer (macOS Version 14.6.1 \(Build 23G93\) Quartz PDFContext)
+/Author (IPPO607) /Creator (Word) /CreationDate (D:20241003084417Z00'00')
+/ModDate (D:20241003084417Z00'00') >>
+endobj
+xref
+trailer
+<< /Size 34 /Root 17 0 R /Info 33 0 R /ID [ <45266a0a2d2408d053c4e19da675549d>
+startxref
+%%EOF
+

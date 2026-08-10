@@ -4,6 +4,7 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 import java.util.Map;
+import java.util.UUID;
 
 @Data
 public class UpdateApplicationRequest {
@@ -11,6 +12,12 @@ public class UpdateApplicationRequest {
     private BigDecimal requestedAmount;
 
     private Integer tenureMonths;
+
+    private String lmsProductCode;
+
+    private String lmsTenureUnit;
+
+    private UUID workflowId;
 
     private Map<String, Object> personalInfo;
 

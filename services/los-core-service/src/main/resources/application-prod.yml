@@ -9,8 +9,17 @@ eureka:
     enabled: false
     register-with-eureka: false
     fetch-registry: false
+  instance:
+    hostname: localhost
 
 spring:
   cloud:
     discovery:
       enabled: false
+    loadbalancer:
+      enabled: false
+    inetutils:
+      timeout-seconds: 2
+      preferred-networks:
+        - 172
+        - 10

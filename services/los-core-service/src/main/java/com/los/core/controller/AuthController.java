@@ -1,5 +1,6 @@
 package com.los.core.controller;
 
+import com.los.core.model.dto.auth.ChangePasswordRequest;
 import com.los.core.model.dto.auth.ForgotPasswordRequest;
 import com.los.core.model.dto.auth.ForgotPasswordResponse;
 import com.los.core.model.dto.auth.LoginRequest;
@@ -15,8 +16,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.UUID;
 
 /**
  * Demo local login and password reset. {@link com.los.core.service.auth.DemoAuthService} stores BCrypt hashes in
@@ -53,5 +57,14 @@ public class AuthController {
     public ResponseEntity<Void> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
         demoAuthService.resetPassword(request);
         return ResponseEntity.status(HttpStatus.NO_CONTENT).build();
+    }
+
+    @PostMapping("/change-password")
+    @Operation(summary = "Change password for the signed-in user (used by the forced first-login reset)")
+    public ResponseEntity<LoginResponse> changePassword(
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
+            @Valid @RequestBody ChangePasswordRequest request) {
+        UUID actingUser = userId != null && !userId.isBlank() ? UUID.fromString(userId) : null;
+        return ResponseEntity.ok(demoAuthService.changePassword(actingUser, request));
     }
 }

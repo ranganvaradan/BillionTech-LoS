@@ -2,7 +2,11 @@ package com.los.core.model.dto.response;
 
 import com.los.core.model.enums.ApplicationStatus;
 import com.los.core.model.enums.BorrowerType;
+import com.los.core.model.enums.IntakeOwner;
+import com.los.core.model.enums.IntakeSegment;
+import com.los.core.model.enums.VkycCompletionMode;
 import com.los.core.model.enums.VkycStatus;
+import com.los.plp.model.enums.PlpSyncStatus;
 import lombok.Builder;
 import lombok.Data;
 
@@ -20,9 +24,16 @@ public class ApplicationResponse {
     private UUID customerId;
     private BorrowerType borrowerType;
     private String loanProduct;
+    private IntakeSegment intakeSegment;
+    private IntakeOwner intakeOwner;
+    private Integer intakeCompletedStep;
+    private String borrowerSentBackNotes;
     private BigDecimal requestedAmount;
     private BigDecimal interestRate;
     private Integer tenureMonths;
+    private String lmsProductCode;
+    private String lmsTenureUnit;
+    private UUID workflowId;
     private ApplicationStatus status;
     private Map<String, Object> personalInfo;
     private Map<String, Object> businessInfo;
@@ -62,6 +73,14 @@ public class ApplicationResponse {
     private String vkycVideoUrl;
     private String vkycPanImageUrl;
     private String vkycFaceImageUrl;
+
+    private VkycCompletionMode vkycCompletionMode;
+    private String pkycReason;
+    private String pkycComments;
+    private UUID pkycDocumentId;
+    private UUID pkycVerifiedBy;
+    private Instant pkycVerifiedAt;
+
     private Boolean amlHit;
     private Integer bureauScore;
     private Integer manualBureauScore;
@@ -69,6 +88,20 @@ public class ApplicationResponse {
     private UUID manualBureauDocumentId;
     private String creditDecision;
     private Integer creditRiskScore;
+
+    private UUID subProgramId;
+    private UUID plpBorrowerId;
+    private UUID plpSubProgramBorrowerId;
+    private UUID plpBorrowerProgramMappingId;
+    private PlpSyncStatus plpProgramSyncStatus;
+    private String plpProgramSyncError;
+    private Instant plpProgramSyncedAt;
+    private PlpSyncStatus plpBorrowerSyncStatus;
+    private Instant plpBorrowerSyncedAt;
+    private PlpSyncStatus plpLinkSyncStatus;
+    private Instant plpLinkSyncedAt;
+    private PlpSyncStatus plpMappingSyncStatus;
+    private Instant plpMappingSyncedAt;
 
     private Instant createdAt;
     private Instant updatedAt;
@@ -78,4 +111,13 @@ public class ApplicationResponse {
     private Map<String, Object> creditControlView;
     /** Latest row from {@code underwriting_evaluations}. */
     private Map<String, Object> latestUnderwritingEvaluation;
+    /** Current CAM workflow state when a memo exists (e.g. DRAFT, SUBMITTED, SENT_BACK, APPROVED). */
+    private String camStatus;
+
+    /** True when KYC identity fields changed after the last successful verification run. */
+    private Boolean kycInputsModifiedSinceVerify;
+    private java.util.List<String> kycInputChangeSummary;
+    /** True when intake/KYC fields changed after the latest staff send-back snapshot. */
+    private Boolean intakeModifiedSinceSendBack;
+    private java.util.List<String> intakeChangeSummary;
 }

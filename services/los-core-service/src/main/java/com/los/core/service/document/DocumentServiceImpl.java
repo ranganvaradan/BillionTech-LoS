@@ -1,5 +1,6 @@
 package com.los.core.service.document;
 
+import com.los.core.exception.BusinessRuleException;
 import com.los.core.exception.ResourceNotFoundException;
 import com.los.core.model.dto.response.DocumentResponse;
 import com.los.core.model.entity.Document;
@@ -14,6 +15,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.InputStream;
 import java.net.URLConnection;
+import java.nio.file.AccessDeniedException;
 import java.security.MessageDigest;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -33,14 +35,27 @@ public class DocumentServiceImpl implements IDocumentService {
             "PAN_CARD", "AADHAAR", "BANK_STATEMENT", "PHOTOGRAPH"
     );
 
+    /** Common identity / KYC uploads (PAN, photo ID). */
+    private static final Set<String> ALLOWED_IMAGE_OR_PDF_EXT = Set.of("pdf", "jpg", "jpeg", "png");
+
     @Override
     public DocumentResponse uploadDocument(UUID applicationId, String documentType, MultipartFile file, KycStepType kycStepType) {
+        if (file == null || file.isEmpty()) {
+            throw new BusinessRuleException(
+                    "Upload could not be completed — no file was received.",
+                    "DOCUMENT_EMPTY",
+                    "UPLOAD_DOCUMENT",
+                    Map.of("documentType", documentType == null ? "" : documentType));
+        }
         String originalFileName = file.getOriginalFilename();
         if (originalFileName == null || originalFileName.isBlank()) {
             originalFileName = "document";
         }
+        String type = documentType == null ? "" : documentType.trim();
+        validateUploadFile(type, originalFileName, file.getContentType());
+
         String storageKey = String.format("%s/%s/%s_%s",
-                applicationId, documentType, UUID.randomUUID(), originalFileName);
+                applicationId, type, UUID.randomUUID(), sanitizeFileName(originalFileName));
 
         try {
             byte[] fileBytes = file.getBytes();
@@ -50,7 +65,7 @@ public class DocumentServiceImpl implements IDocumentService {
 
             Document document = Document.builder()
                     .applicationId(applicationId)
-                    .documentType(documentType)
+                    .documentType(type)
                     .kycStepType(kycStepType)
                     .fileName(originalFileName)
                     .storageKey(storageKey)
@@ -60,17 +75,134 @@ public class DocumentServiceImpl implements IDocumentService {
                     .build();
 
             document = documentRepository.save(document);
-            log.info("Document uploaded: {} for application {}", documentType, applicationId);
+            log.info("Document uploaded: {} for application {}", type, applicationId);
 
             auditService.logEvent(applicationId, "DOCUMENT", "UPLOADED",
                     null, null,
-                    Map.of("documentType", documentType, "fileName", originalFileName),
-                    "Document uploaded: " + documentType);
+                    Map.of("documentType", type, "fileName", originalFileName),
+                    "Document uploaded: " + type);
+
+            return toResponse(document);
+        } catch (BusinessRuleException e) {
+            throw e;
+        } catch (AccessDeniedException e) {
+            log.error("Document storage access denied for application {}: {}", applicationId, e.getMessage());
+            throw new BusinessRuleException(
+                    "Document storage unavailable. Please try again or contact support.",
+                    "DOCUMENT_STORAGE_UNAVAILABLE",
+                    "UPLOAD_DOCUMENT",
+                    Map.of("documentType", type));
+        } catch (Exception e) {
+            if (isAccessDenied(e)) {
+                log.error("Document storage access denied for application {}: {}", applicationId, e.getMessage());
+                throw new BusinessRuleException(
+                        "Document storage unavailable. Please try again or contact support.",
+                        "DOCUMENT_STORAGE_UNAVAILABLE",
+                        "UPLOAD_DOCUMENT",
+                        Map.of("documentType", type));
+            }
+            log.error("Failed to upload document for application {}: {}", applicationId, e.getMessage());
+            throw new BusinessRuleException(
+                    "Upload could not be completed. Please try again.",
+                    "DOCUMENT_UPLOAD_FAILED",
+                    "UPLOAD_DOCUMENT",
+                    Map.of("documentType", type));
+        }
+    }
+
+    private static boolean isAccessDenied(Throwable e) {
+        Throwable t = e;
+        while (t != null) {
+            if (t instanceof AccessDeniedException) {
+                return true;
+            }
+            String msg = t.getMessage();
+            if (msg != null && msg.toLowerCase(Locale.ROOT).contains("accessdenied")) {
+                return true;
+            }
+            t = t.getCause();
+        }
+        return false;
+    }
+
+    private static void validateUploadFile(String documentType, String fileName, String contentType) {
+        String ext = extensionOf(fileName);
+        String ct = contentType == null ? "" : contentType.trim().toLowerCase(Locale.ROOT);
+        boolean identityDoc = "PAN_CARD".equalsIgnoreCase(documentType)
+                || "AADHAAR".equalsIgnoreCase(documentType)
+                || "PHOTOGRAPH".equalsIgnoreCase(documentType);
+        if (identityDoc) {
+            boolean extOk = ALLOWED_IMAGE_OR_PDF_EXT.contains(ext);
+            boolean mimeOk = ct.isBlank()
+                    || ct.equals("application/octet-stream")
+                    || ct.equals("application/pdf")
+                    || ct.startsWith("image/");
+            if (!extOk || !mimeOk) {
+                throw new BusinessRuleException(
+                        "Unsupported file type. Upload a PDF, JPG, or PNG.",
+                        "DOCUMENT_UNSUPPORTED_TYPE",
+                        "UPLOAD_DOCUMENT",
+                        Map.of("documentType", documentType, "extension", ext));
+            }
+        }
+    }
+
+    private static String extensionOf(String fileName) {
+        if (fileName == null) {
+            return "";
+        }
+        int dot = fileName.lastIndexOf('.');
+        if (dot < 0 || dot == fileName.length() - 1) {
+            return "";
+        }
+        return fileName.substring(dot + 1).trim().toLowerCase(Locale.ROOT);
+    }
+
+    private static String sanitizeFileName(String name) {
+        String cleaned = name.replaceAll("[\\\\/]+", "_").trim();
+        return cleaned.isBlank() ? "document" : cleaned;
+    }
+
+    @Override
+    public DocumentResponse storeDocumentBytes(
+            UUID applicationId,
+            String documentType,
+            String fileName,
+            String contentType,
+            byte[] bytes) {
+        if (bytes == null || bytes.length == 0) {
+            throw new IllegalArgumentException("Document bytes are required");
+        }
+        String originalFileName = (fileName == null || fileName.isBlank()) ? "document" : fileName.trim();
+        String storageKey = String.format("%s/%s/%s_%s",
+                applicationId, documentType, UUID.randomUUID(), originalFileName);
+        try {
+            String checksum = computeSha256(bytes);
+            String ct = normalizeContentType(contentType, originalFileName);
+            documentBlobStore.putObject(storageKey, bytes, bytes.length, ct);
+
+            Document document = Document.builder()
+                    .applicationId(applicationId)
+                    .documentType(documentType)
+                    .fileName(originalFileName)
+                    .storageKey(storageKey)
+                    .contentType(ct)
+                    .fileSize((long) bytes.length)
+                    .checksum(checksum)
+                    .build();
+
+            document = documentRepository.save(document);
+            log.info("Document stored: {} for application {}", documentType, applicationId);
+
+            auditService.logEvent(applicationId, "DOCUMENT", "UPLOADED",
+                    null, null,
+                    Map.of("documentType", documentType, "fileName", originalFileName, "source", "SERVICE"),
+                    "Document stored: " + documentType);
 
             return toResponse(document);
         } catch (Exception e) {
-            log.error("Failed to upload document: {}", e.getMessage());
-            throw new RuntimeException("Document upload failed: " + e.getMessage(), e);
+            log.error("Failed to store document bytes: {}", e.getMessage());
+            throw new RuntimeException("Document store failed: " + e.getMessage(), e);
         }
     }
 

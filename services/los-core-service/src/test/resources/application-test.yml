@@ -1,6 +1,9 @@
 # Slice tests (JPA) — in-memory H2, no Flyway (Postgres-only migrations)
 # Same relaxed API rules as local dev so @SpringBootTest continues to work without security setup.
 los:
+  plp:
+    enabled: false
+    lender-id: 00000000-0000-0000-0000-000000000001
   document:
     storage: local
   file-storage:

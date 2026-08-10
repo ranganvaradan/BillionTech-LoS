@@ -9,4 +9,6 @@ import java.util.UUID;
 public interface UserRoleMappingRepository extends JpaRepository<UserRoleMapping, UUID> {
 
     List<UserRoleMapping> findByActiveIsTrueAndLosRoleOrderByPriorityDesc(String losRole);
+
+    void deleteByUserId(UUID userId);
 }

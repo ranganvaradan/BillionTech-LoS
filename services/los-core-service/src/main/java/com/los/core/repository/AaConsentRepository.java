@@ -19,6 +19,8 @@ public interface AaConsentRepository extends JpaRepository<AaConsent, UUID> {
 
     Optional<AaConsent> findByConsentHandle(String consentHandle);
 
+    Optional<AaConsent> findByConsentId(String consentId);
+
     Optional<AaConsent> findFirstByApplicationIdAndStatusOrderByCreatedAtDesc(UUID applicationId, String status);
 
     List<AaConsent> findByCustomerIdOrderByCreatedAtDesc(UUID customerId);

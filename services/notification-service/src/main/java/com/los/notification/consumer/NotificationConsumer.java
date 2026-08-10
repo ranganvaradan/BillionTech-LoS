@@ -4,6 +4,7 @@ import com.los.notification.dto.NotificationEvent;
 import com.los.notification.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.amqp.support.AmqpHeaders;
 import org.springframework.messaging.handler.annotation.Header;
@@ -93,10 +94,18 @@ public class NotificationConsumer {
 
     @RabbitListener(queues = "notification.dlq")
     public void handleDlq(
-            @Payload String payload,
+            Message message,
             @Header(name = AmqpHeaders.RECEIVED_ROUTING_KEY, required = false) String routingKey,
             @Header(name = AmqpHeaders.DELIVERY_TAG, required = false) Long deliveryTag) {
-        log.error("[NOTIFICATION_DLQ][ERROR] queue=notification.dlq routingKey={} deliveryTag={} payload={}",
-                routingKey, deliveryTag, payload);
+        String body = message != null && message.getBody() != null
+                ? new String(message.getBody())
+                : "";
+        log.error("[NOTIFICATION_DLQ][ERROR] queue=notification.dlq routingKey={} deliveryTag={} typeId={} payload={}",
+                routingKey,
+                deliveryTag,
+                message != null && message.getMessageProperties() != null
+                        ? message.getMessageProperties().getHeader("__TypeId__")
+                        : null,
+                body);
     }
 }

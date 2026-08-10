@@ -8,10 +8,15 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.Collection;
+import java.util.List;
 import java.util.UUID;
 
 @Repository
 public interface ApplicationStatusHistoryRepository extends JpaRepository<ApplicationStatusHistory, UUID> {
+
+    List<ApplicationStatusHistory> findByApplicationIdOrderByCreatedAtDesc(UUID applicationId);
+
+    List<ApplicationStatusHistory> findByApplicationIdOrderByCreatedAtAsc(UUID applicationId);
 
     @Modifying
     @Query("delete from ApplicationStatusHistory h where h.applicationId in :ids")

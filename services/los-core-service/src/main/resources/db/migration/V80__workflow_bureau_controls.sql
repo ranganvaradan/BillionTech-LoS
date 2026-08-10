@@ -1,0 +1,3 @@
+ALTER TABLE workflow_configs
+    ADD COLUMN IF NOT EXISTS bureau_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    ADD COLUMN IF NOT EXISTS auto_pull_bureau_after_kyc_success BOOLEAN NOT NULL DEFAULT TRUE;

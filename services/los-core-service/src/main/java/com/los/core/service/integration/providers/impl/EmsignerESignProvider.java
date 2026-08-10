@@ -8,11 +8,14 @@ import com.los.core.config.IntegrationProperties;
 import com.los.core.model.entity.ApiAuditLog;
 import com.los.core.model.entity.schema.los2.AggregatorProviderConfig;
 import com.los.core.model.entity.KfsDocument;
+import com.los.core.model.entity.LoanApplication;
 import com.los.core.repository.ApiAuditLogRepository;
 import com.los.core.repository.KfsDocumentRepository;
+import com.los.core.repository.LoanApplicationRepository;
 import com.los.core.repository.schema.los2.AggregatorProviderConfigRepository;
 import com.los.core.service.integration.providers.IESignProvider;
 import com.los.core.service.kfs.KfsPdfGenerationService;
+import com.los.core.service.loan.InvoiceDiscountingApplicationRules;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -48,6 +51,7 @@ public class EmsignerESignProvider implements IESignProvider {
     private final ObjectMapper objectMapper;
     private final AggregatorProviderConfigRepository aggregatorProviderConfigRepository; // retained for compatibility, no runtime fallback
     private final KfsDocumentRepository kfsDocumentRepository;
+    private final LoanApplicationRepository applicationRepository;
     private final KfsPdfGenerationService kfsPdfGenerationService;
 
     @Override
@@ -172,7 +176,6 @@ public class EmsignerESignProvider implements IESignProvider {
 
     private String selectTemplateId(EmbeddedRuntime rt, String bearer, int pageCount) {
         String listUrl = rt.listTemplatesUrl();
-        final String fallbackTemplateId = "16649";
         try {
             String listBody = objectMapper.writeValueAsString(Map.of("PageCount", pageCount));
             log.info("[Emsigner] ListTemplates POST url={} (match pageCount={})", listUrl, pageCount);
@@ -180,14 +183,14 @@ public class EmsignerESignProvider implements IESignProvider {
             HttpResponse<String> resp = httpPostJson(rt, listUrl, listBody, bearer);
             log.info("[Emsigner] ListTemplates HTTP {}", resp.statusCode());
             if (resp.statusCode() != 200) {
-                log.warn("[Emsigner] ListTemplates non-200 — falling back to non-template payload");
-                return fallbackTemplateId;
+                log.warn("[Emsigner] ListTemplates non-200 — initiating without Emsigner template");
+                return null;
             }
             JsonNode root = objectMapper.readTree(resp.body());
             JsonNode arr = root.path("Response");
             if (arr == null || !arr.isArray() || arr.isEmpty()) {
-                log.warn("[Emsigner] ListTemplates returned no array — fallback non-template payload");
-                return fallbackTemplateId;
+                log.warn("[Emsigner] ListTemplates returned no array — initiating without Emsigner template");
+                return null;
             }
             for (JsonNode n : arr) {
                 int pages = pageCountFromTemplateName(textOrNull(n.path("TemplateName")));
@@ -202,11 +205,11 @@ public class EmsignerESignProvider implements IESignProvider {
                     }
                 }
             }
-            log.warn("[Emsigner] No template matched pageCount={} — fallback non-template.", pageCount);
+            log.warn("[Emsigner] No template matched pageCount={} — initiating without Emsigner template", pageCount);
         } catch (Exception ex) {
-            log.warn("[Emsigner] ListTemplates failed — fallback non-template payload: {}", ex.getMessage());
+            log.warn("[Emsigner] ListTemplates failed — initiating without Emsigner template: {}", ex.getMessage());
         }
-        return fallbackTemplateId;
+        return null;
     }
 
     private static int pageCountFromTemplateName(String templateName) {
@@ -264,8 +267,8 @@ public class EmsignerESignProvider implements IESignProvider {
             byte[] pdfBytes,
             int pageCount,
             String templateId) {
-        String name = "Alwyn Vaz";
-        String emailId = "alwyn@billionloans.com";
+        String name = "Rangan Varadan";
+        String emailId = "sivaraj@billionloans.com";
         String borrowerEmail = Objects.toString(
                 optionalString(signerInfo, "borrowerEmail", "email", "signerEmail", "EmailId"), "").trim();
         if (borrowerEmail.isBlank()) {
@@ -398,13 +401,20 @@ public class EmsignerESignProvider implements IESignProvider {
             throw new IllegalStateException("applicationId is required to load KFS PDF");
         }
         Optional<KfsDocument> kfsOpt = kfsDocumentRepository.findFirstByApplicationIdOrderByCreatedAtDesc(applicationId);
-        if (kfsOpt.isEmpty()) {
-            throw new IllegalStateException("No KFS document for application " + applicationId
-                    + " — generate KFS before eSign or pass fileBase64 in signerInfo.");
+        if (kfsOpt.isPresent()) {
+            byte[] pdf = kfsPdfGenerationService.generateKfsPdf(kfsOpt.get());
+            log.info("[Emsigner] Generated PDF from KFS entity id={}", kfsOpt.get().getId());
+            return pdf;
         }
-        byte[] pdf = kfsPdfGenerationService.generateKfsPdf(kfsOpt.get());
-        log.info("[Emsigner] Generated KFS PDF from entity id={}", kfsOpt.get().getId());
-        return pdf;
+        LoanApplication app = applicationRepository.findById(applicationId).orElse(null);
+        if (app != null && InvoiceDiscountingApplicationRules.isBorrowerFlow(app)) {
+            byte[] pdf = kfsPdfGenerationService.generateInvoiceDiscountingTermsPdfForApplication(applicationId);
+            log.info("[Emsigner] Generated invoice discounting terms PDF (legacy/fallback) for applicationId={}",
+                    applicationId);
+            return pdf;
+        }
+        throw new IllegalStateException("No KFS document for application " + applicationId
+                + " — generate KFS before eSign or pass fileBase64 in signerInfo.");
     }
 
     private static int countPdfPages(byte[] pdfBytes) {
@@ -550,7 +560,7 @@ public class EmsignerESignProvider implements IESignProvider {
 
         log.info("[Emsigner][CONFIG CHECK] baseUrl={}, appName={}, initiate={}",
                 base, props.getAppName(), props.getInitiateApiUrl());
-        log.info("[Emsigner] Using properties आधारित config");
+        log.info("[Emsigner] Using properties config");
         log.info("[Emsigner][CONFIG SOURCE] PROPERTIES");
         log.info("[Emsigner][CONFIG] baseUrl={} initiateUrl={} listTemplatesUrl={} downloadUrl={} appName={} secretKeyPresent={} tokenPresent={}",
                 base, initAbs, listAbs, absoluteUrl(base, downloadCfg), props.getAppName(), true, true);

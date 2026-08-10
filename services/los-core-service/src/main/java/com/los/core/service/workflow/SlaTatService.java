@@ -3,7 +3,6 @@ package com.los.core.service.workflow;
 import com.los.core.model.entity.LoanApplication;
 import com.los.core.model.entity.WorkflowConfig;
 import com.los.core.repository.LoanApplicationRepository;
-import com.los.core.repository.WorkflowConfigRepository;
 import com.los.core.service.audit.AuditService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,7 +24,7 @@ import java.util.*;
 public class SlaTatService {
 
     private final LoanApplicationRepository applicationRepository;
-    private final WorkflowConfigRepository workflowConfigRepository;
+    private final ActiveWorkflowConfigService activeWorkflowConfigService;
     private final AuditService auditService;
 
     /**
@@ -36,9 +35,7 @@ public class SlaTatService {
         LoanApplication app = applicationRepository.findById(applicationId)
                 .orElseThrow(() -> new RuntimeException("Application not found: " + applicationId));
 
-        Optional<WorkflowConfig> wfOpt = workflowConfigRepository
-                .findByBorrowerTypeAndLoanProductAndActiveTrue(
-                        app.getBorrowerType().name(), app.getLoanProduct());
+        Optional<WorkflowConfig> wfOpt = activeWorkflowConfigService.findActiveForApplication(app);
 
         int slaHours = 24; // default 24 hours
         if (wfOpt.isPresent() && wfOpt.get().getSlaHoursPerStep() != null) {

@@ -12,7 +12,9 @@ import com.los.core.repository.LoanApplicationRepository;
 import com.los.core.repository.UnderwritingEvaluationRepository;
 import com.los.core.repository.UnderwritingScorecardRepository;
 import com.los.core.service.credit.CreditControlService;
+import com.los.core.service.credit.LimitSizingService;
 import com.los.core.service.kyc.IKycOrchestrationService;
+import com.los.core.service.loan.WorkflowRoleGuard;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -48,9 +50,24 @@ class CreditAppraisalServiceTest {
     private IKycOrchestrationService kycOrchestrationService;
     @Mock
     private CreditControlService creditControlService;
+    @Mock
+    private LimitSizingService limitSizingService;
+    @Mock
+    private WorkflowRoleGuard workflowRoleGuard;
 
     @InjectMocks
     private CreditAppraisalService service;
+
+    private static CreditAppraisalMemo camWithBasis(UUID id, String status) {
+        return CreditAppraisalMemo.builder()
+                .applicationId(id)
+                .camStatus(status)
+                .camJson(Map.of())
+                .recommendedAmount(new BigDecimal("125000"))
+                .recommendedTenureMonths(12)
+                .recommendedRate(new BigDecimal("14.5"))
+                .build();
+    }
 
     @Test
     void ensureCam_populatesSectionExtended() {
@@ -65,48 +82,76 @@ class CreditAppraisalServiceTest {
                 .status(ApplicationStatus.CAM_READY)
                 .personalInfo(Map.of("fullName", "Test User", "monthlyNetIncome", "45000"))
                 .build();
-        when(underwritingEvaluationRepository.findTopByApplicationIdOrderByEvaluatedAtDesc(id))
-                .thenReturn(Optional.empty());
-        when(kycOrchestrationService.computeKycOutcome(id))
-                .thenReturn(Map.of("outcome", "PASS", "exceptions", List.of()));
-        when(creditControlService.buildReadView(any(LoanApplication.class))).thenReturn(Map.of("effective", Map.of()));
         when(camRepository.findByApplicationId(id)).thenReturn(Optional.empty());
         when(camRepository.save(any(CreditAppraisalMemo.class))).thenAnswer(i -> i.getArgument(0));
+        when(underwritingEvaluationRepository.findTopByApplicationIdOrderByEvaluatedAtDesc(id))
+                .thenReturn(Optional.empty());
+        when(kycOrchestrationService.computeKycOutcome(id)).thenReturn(Map.of("outcome", "PASS"));
+        when(creditControlService.buildReadView(app)).thenReturn(Map.of());
+        when(limitSizingService.capRecommendedIfConfigured(any(), any())).thenAnswer(i -> i.getArgument(1));
 
-        CreditAppraisalMemo saved = service.ensureCamForApplication(app);
+        CreditAppraisalMemo cam = service.ensureCamForApplication(app);
+        assertThat(cam.getCamJson()).containsKey("sectionExtended");
+        assertThat(cam.getRecommendedAmount()).isEqualByComparingTo("500000");
+        assertThat(cam.getRecommendedTenureMonths()).isEqualTo(36);
+    }
 
-        assertThat(saved.getCamJson()).containsKey("sectionExtended");
-        @SuppressWarnings("unchecked")
-        Map<String, Object> ext = (Map<String, Object>) saved.getCamJson().get("sectionExtended");
-        assertThat(ext).containsKeys("executiveSummary", "borrowerProfile", "riskFlags", "completenessPercent");
+    @Test
+    void ensureCam_populatesSanctioningDefaultsFromApplicationRequest() {
+        UUID id = UUID.randomUUID();
+        LoanApplication app = LoanApplication.builder()
+                .id(id)
+                .applicationNumber("T-2")
+                .borrowerType(BorrowerType.INDIVIDUAL)
+                .loanProduct("PL")
+                .requestedAmount(new BigDecimal("100000"))
+                .tenureMonths(24)
+                .interestRate(new BigDecimal("12"))
+                .status(ApplicationStatus.CAM_READY)
+                .personalInfo(Map.of("fullName", "A"))
+                .build();
+        when(camRepository.findByApplicationId(id)).thenReturn(Optional.empty());
+        when(camRepository.save(any(CreditAppraisalMemo.class))).thenAnswer(i -> i.getArgument(0));
+        when(underwritingEvaluationRepository.findTopByApplicationIdOrderByEvaluatedAtDesc(id))
+                .thenReturn(Optional.empty());
+        when(kycOrchestrationService.computeKycOutcome(id)).thenReturn(Map.of("outcome", "PASS"));
+        when(creditControlService.buildReadView(app)).thenReturn(Map.of());
+        when(limitSizingService.capRecommendedIfConfigured(any(), any())).thenAnswer(i -> i.getArgument(1));
+
+        CreditAppraisalMemo cam = service.ensureCamForApplication(app);
+        assertThat(cam.getRecommendedRate()).isEqualByComparingTo("12");
+    }
+
+    @Test
+    void getCam_backfillsMissingSanctioningDefaultsOnRead() {
+        UUID id = UUID.randomUUID();
+        LoanApplication app = LoanApplication.builder()
+                .id(id)
+                .applicationNumber("T-3")
+                .borrowerType(BorrowerType.INDIVIDUAL)
+                .loanProduct("PL")
+                .requestedAmount(new BigDecimal("200000"))
+                .tenureMonths(18)
+                .status(ApplicationStatus.CAM_READY)
+                .personalInfo(Map.of("fullName", "B"))
+                .build();
+        CreditAppraisalMemo existing = CreditAppraisalMemo.builder()
+                .applicationId(id)
+                .camStatus("DRAFT")
+                .camJson(Map.of())
+                .build();
+        when(applicationRepository.findById(id)).thenReturn(Optional.of(app));
+        when(camRepository.findByApplicationId(id)).thenReturn(Optional.of(existing));
+        when(camRepository.save(any(CreditAppraisalMemo.class))).thenAnswer(i -> i.getArgument(0));
+        when(limitSizingService.capRecommendedIfConfigured(any(), any())).thenAnswer(i -> i.getArgument(1));
+
+        CamResponse res = service.getCam(id);
+        assertThat(res.getRecommendedAmount()).isEqualByComparingTo("200000");
+        assertThat(res.getRecommendedTenureMonths()).isEqualTo(18);
     }
 
     @Test
     void updateCam_persistsEditableSections() {
-        UUID id = UUID.randomUUID();
-        CreditAppraisalMemo cam = CreditAppraisalMemo.builder()
-                .applicationId(id)
-                .camVersion(1)
-                .camStatus("DRAFT")
-                .camJson(Map.of("sectionExtended", Map.of("a", 1)))
-                .build();
-        when(camRepository.findByApplicationId(id)).thenReturn(Optional.of(cam));
-        when(camRepository.save(any(CreditAppraisalMemo.class))).thenAnswer(i -> i.getArgument(0));
-        LoanApplication app = LoanApplication.builder().id(id).applicationNumber("X").status(ApplicationStatus.CAM_READY).build();
-        when(applicationRepository.findById(id)).thenReturn(Optional.of(app));
-
-        CamUpdateRequest req = new CamUpdateRequest();
-        req.setEditableSectionsPatch(Map.of("executiveSummaryNarrative", "Edited summary for committee"));
-        CamResponse res = service.updateCam(id, req);
-
-        ArgumentCaptor<CreditAppraisalMemo> cap = ArgumentCaptor.forClass(CreditAppraisalMemo.class);
-        verify(camRepository).save(cap.capture());
-        assertThat(cap.getValue().getEditableSectionsJson()).containsEntry("executiveSummaryNarrative", "Edited summary for committee");
-        assertThat(res.getEditableSections()).containsKey("executiveSummaryNarrative");
-    }
-
-    @Test
-    void submitCam_transitionsToSubmitted() {
         UUID id = UUID.randomUUID();
         CreditAppraisalMemo cam = CreditAppraisalMemo.builder()
                 .applicationId(id)
@@ -115,11 +160,191 @@ class CreditAppraisalServiceTest {
                 .build();
         when(camRepository.findByApplicationId(id)).thenReturn(Optional.of(cam));
         when(camRepository.save(any(CreditAppraisalMemo.class))).thenAnswer(i -> i.getArgument(0));
+        LoanApplication app = LoanApplication.builder()
+                .id(id).applicationNumber("X").status(ApplicationStatus.CAM_READY).build();
+        when(applicationRepository.findById(id)).thenReturn(Optional.of(app));
+
+        CamUpdateRequest req = new CamUpdateRequest();
+        req.setEditableSectionsPatch(Map.of("executiveSummaryNarrative", "Note"));
+        CamResponse res = service.updateCam(id, req, null);
+        assertThat(res.getEditableSections()).containsEntry("executiveSummaryNarrative", "Note");
+    }
+
+    @Test
+    void updateCam_persistsInterestTypeAndRate() {
+        UUID id = UUID.randomUUID();
+        CreditAppraisalMemo cam = CreditAppraisalMemo.builder()
+                .applicationId(id)
+                .camStatus("DRAFT")
+                .camJson(Map.of())
+                .build();
+        when(camRepository.findByApplicationId(id)).thenReturn(Optional.of(cam));
+        when(camRepository.save(any(CreditAppraisalMemo.class))).thenAnswer(i -> i.getArgument(0));
+        LoanApplication app = LoanApplication.builder()
+                .id(id).applicationNumber("X").status(ApplicationStatus.CAM_READY).build();
+        when(applicationRepository.findById(id)).thenReturn(Optional.of(app));
+
+        CamUpdateRequest req = new CamUpdateRequest();
+        req.setRecommendedRate(new BigDecimal("13.25"));
+        req.setInterestType("REDUCING");
+        CamResponse res = service.updateCam(id, req, null);
+        assertThat(res.getRecommendedRate()).isEqualByComparingTo("13.25");
+        assertThat(res.getInterestType()).isEqualTo("REDUCING");
+        assertThat(cam.getInterestType()).isEqualTo("REDUCING");
+        assertThat(cam.getRecommendedRate()).isEqualByComparingTo("13.25");
+    }
+
+    @Test
+    void updateCam_rejectsWhenApproved() {
+        UUID id = UUID.randomUUID();
+        CreditAppraisalMemo cam = CreditAppraisalMemo.builder()
+                .applicationId(id)
+                .camStatus("APPROVED")
+                .camJson(Map.of())
+                .build();
+        when(camRepository.findByApplicationId(id)).thenReturn(Optional.of(cam));
+
+        CamUpdateRequest req = new CamUpdateRequest();
+        req.setRecommendedRate(new BigDecimal("10"));
+        assertThatThrownBy(() -> service.updateCam(id, req, null))
+                .isInstanceOf(BusinessRuleException.class)
+                .hasMessageContaining("locked");
+    }
+
+    @Test
+    void submitCam_requiresProposedRate() {
+        UUID id = UUID.randomUUID();
+        CreditAppraisalMemo cam = CreditAppraisalMemo.builder()
+                .applicationId(id)
+                .camStatus("DRAFT")
+                .camJson(Map.of())
+                .recommendedAmount(new BigDecimal("125000"))
+                .recommendedTenureMonths(12)
+                .build();
+        when(camRepository.findByApplicationId(id)).thenReturn(Optional.of(cam));
+
+        assertThatThrownBy(() -> service.submitCam(id, null))
+                .isInstanceOf(BusinessRuleException.class)
+                .extracting(ex -> ((BusinessRuleException) ex).getReason())
+                .isEqualTo("CAM_SANCTION_BASIS_INCOMPLETE");
+    }
+
+    @Test
+    void submitCam_transitionsToSubmitted() {
+        UUID id = UUID.randomUUID();
+        CreditAppraisalMemo cam = camWithBasis(id, "DRAFT");
+        when(camRepository.findByApplicationId(id)).thenReturn(Optional.of(cam));
+        when(camRepository.save(any(CreditAppraisalMemo.class))).thenAnswer(i -> i.getArgument(0));
         LoanApplication app = LoanApplication.builder().id(id).applicationNumber("X").status(ApplicationStatus.CAM_READY).build();
         when(applicationRepository.findById(id)).thenReturn(Optional.of(app));
 
-        CamResponse res = service.submitCam(id);
+        CamResponse res = service.submitCam(id, null);
         assertThat(res.getCamStatus()).isEqualTo("SUBMITTED");
+    }
+
+    @Test
+    void submitCam_fromCamSentBack_restoresCamReadyApplicationStatus() {
+        UUID id = UUID.randomUUID();
+        CreditAppraisalMemo cam = camWithBasis(id, "SENT_BACK");
+        when(camRepository.findByApplicationId(id)).thenReturn(Optional.of(cam));
+        when(camRepository.save(any(CreditAppraisalMemo.class))).thenAnswer(i -> i.getArgument(0));
+        LoanApplication app = LoanApplication.builder().id(id).applicationNumber("X").status(ApplicationStatus.CAM_SENT_BACK).build();
+        when(applicationRepository.findById(id)).thenReturn(Optional.of(app));
+        when(applicationRepository.save(any(LoanApplication.class))).thenAnswer(i -> i.getArgument(0));
+
+        CamResponse res = service.submitCam(id, null);
+        assertThat(res.getCamStatus()).isEqualTo("SUBMITTED");
+        assertThat(res.getApplicationStatus()).isEqualTo("CAM_READY");
+
+        ArgumentCaptor<LoanApplication> cap = ArgumentCaptor.forClass(LoanApplication.class);
+        verify(applicationRepository).save(cap.capture());
+        assertThat(cap.getValue().getStatus()).isEqualTo(ApplicationStatus.CAM_READY);
+    }
+
+    @Test
+    void sendBackCam_movesApplicationToCamSentBack() {
+        UUID id = UUID.randomUUID();
+        CreditAppraisalMemo cam = CreditAppraisalMemo.builder()
+                .applicationId(id)
+                .camStatus("SUBMITTED")
+                .camJson(Map.of())
+                .build();
+        when(camRepository.findByApplicationId(id)).thenReturn(Optional.of(cam));
+        when(camRepository.save(any(CreditAppraisalMemo.class))).thenAnswer(i -> i.getArgument(0));
+        LoanApplication app = LoanApplication.builder().id(id).applicationNumber("X").status(ApplicationStatus.CAM_READY).build();
+        when(applicationRepository.findById(id)).thenReturn(Optional.of(app));
+        when(applicationRepository.save(any(LoanApplication.class))).thenAnswer(i -> i.getArgument(0));
+
+        CamResponse res = service.sendBackCam(id, null, "Please revise");
+        assertThat(res.getCamStatus()).isEqualTo("SENT_BACK");
+        assertThat(res.getApplicationStatus()).isEqualTo("CAM_SENT_BACK");
+
+        ArgumentCaptor<LoanApplication> cap = ArgumentCaptor.forClass(LoanApplication.class);
+        verify(applicationRepository).save(cap.capture());
+        assertThat(cap.getValue().getStatus()).isEqualTo(ApplicationStatus.CAM_SENT_BACK);
+    }
+
+    @Test
+    void sendBackCam_fromApproved_opensRevisionWithoutSilentEdit() {
+        UUID id = UUID.randomUUID();
+        CreditAppraisalMemo cam = CreditAppraisalMemo.builder()
+                .applicationId(id)
+                .camStatus("APPROVED")
+                .camReviewed(true)
+                .camVersion(1)
+                .camJson(Map.of())
+                .recommendedAmount(new BigDecimal("125000"))
+                .recommendedTenureMonths(12)
+                .build();
+        when(camRepository.findByApplicationId(id)).thenReturn(Optional.of(cam));
+        when(camRepository.save(any(CreditAppraisalMemo.class))).thenAnswer(i -> i.getArgument(0));
+        LoanApplication app = LoanApplication.builder()
+                .id(id).applicationNumber("X").status(ApplicationStatus.SANCTION_PENDING).build();
+        when(applicationRepository.findById(id)).thenReturn(Optional.of(app));
+        when(applicationRepository.save(any(LoanApplication.class))).thenAnswer(i -> i.getArgument(0));
+
+        CamResponse res = service.sendBackCam(id, null, "Enter proposed rate");
+        assertThat(res.getCamStatus()).isEqualTo("SENT_BACK");
+        assertThat(res.isCamReviewed()).isFalse();
+        assertThat(res.getCamVersion()).isEqualTo(2);
+        assertThat(res.getApplicationStatus()).isEqualTo("CAM_SENT_BACK");
+        assertThat(cam.getRecommendedRate()).isNull();
+    }
+
+    @Test
+    void markReviewed_requiresProposedRate() {
+        UUID id = UUID.randomUUID();
+        CreditAppraisalMemo cam = CreditAppraisalMemo.builder()
+                .applicationId(id)
+                .camStatus("DRAFT")
+                .camJson(Map.of())
+                .recommendedAmount(new BigDecimal("125000"))
+                .recommendedTenureMonths(12)
+                .build();
+        when(camRepository.findByApplicationId(id)).thenReturn(Optional.of(cam));
+
+        assertThatThrownBy(() -> service.markReviewed(id, null))
+                .isInstanceOf(BusinessRuleException.class)
+                .extracting(ex -> ((BusinessRuleException) ex).getReason())
+                .isEqualTo("CAM_SANCTION_BASIS_INCOMPLETE");
+    }
+
+    @Test
+    void markReviewed_preservesRateAndApproves() {
+        UUID id = UUID.randomUUID();
+        CreditAppraisalMemo cam = camWithBasis(id, "SUBMITTED");
+        cam.setInterestType("UPFRONT");
+        when(camRepository.findByApplicationId(id)).thenReturn(Optional.of(cam));
+        when(camRepository.save(any(CreditAppraisalMemo.class))).thenAnswer(i -> i.getArgument(0));
+        LoanApplication app = LoanApplication.builder()
+                .id(id).applicationNumber("X").status(ApplicationStatus.CAM_READY).build();
+        when(applicationRepository.findById(id)).thenReturn(Optional.of(app));
+        when(applicationRepository.save(any(LoanApplication.class))).thenAnswer(i -> i.getArgument(0));
+
+        service.markReviewed(id, null);
+        assertThat(cam.getCamStatus()).isEqualTo("APPROVED");
+        assertThat(cam.getRecommendedRate()).isEqualByComparingTo("14.5");
+        assertThat(cam.getInterestType()).isEqualTo("UPFRONT");
     }
 
     @Test

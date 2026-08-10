@@ -1,0 +1,44 @@
+{
+  "_fixtureMeta": {
+    "dataOrigin": "SYNTHETIC",
+    "sanitized": true,
+    "note": "Minimal Karza GST result shape from KarzaGstCanonicalExtractorTest"
+  },
+  "fullResponse": {
+    "result": {
+      "gstin": "29AAHCB0052H2ZV",
+      "reportType": "pdfUpload",
+      "profile": {
+        "lgnm": "SAMPLE CO PVT LTD",
+        "tradeNam": "SAMPLE",
+        "gstin": "29AAHCB0052H2ZV",
+        "sts": "Active"
+      },
+      "current": {
+        "financialPeriod": "072025-062026",
+        "monthWiseSummary": [
+          {
+            "retPeriod": "042026",
+            "gstr1": { "ttlVal": 2572330 },
+            "gstr3b": { "ttlVal": 2500000 }
+          },
+          {
+            "retPeriod": "052026",
+            "gstr1": { "ttlVal": 1450507 }
+          }
+        ],
+        "filingStatus": [
+          {
+            "retPeriod": "042026",
+            "status": [
+              { "rtntype": "GSTR1", "status": "Filed" },
+              { "rtntype": "GSTR3B", "status": "Filed" }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "gstin": "29AAHCB0052H2ZV",
+  "provider": "KARZA"
+}

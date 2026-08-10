@@ -3,6 +3,8 @@ package com.los.core.service.borrower;
 import com.los.core.model.dto.response.BorrowerTimelineStepResponse;
 import com.los.core.model.entity.LoanApplication;
 import com.los.core.model.enums.ApplicationStatus;
+import com.los.core.service.loan.InvoiceDiscountingLosLoanGuard;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -13,9 +15,15 @@ import java.util.List;
  * Coarse business-friendly lifecycle for the portal — not tied to internal workflow step names.
  */
 @Service
+@RequiredArgsConstructor
 public class BorrowerLifecycleTimelineService {
 
+    private final InvoiceDiscountingLosLoanGuard invoiceDiscountingLosLoanGuard;
+
     public List<BorrowerTimelineStepResponse> build(LoanApplication app) {
+        if (invoiceDiscountingLosLoanGuard.skipsLosTermLoanCreation(app)) {
+            return buildInvoiceDiscountingBorrower(app);
+        }
         ApplicationStatus s = app.getStatus();
         List<BorrowerTimelineStepResponse> out = new ArrayList<>();
 
@@ -38,6 +46,47 @@ public class BorrowerLifecycleTimelineService {
                 stateDisb(s, app), app.getDisbursedAt()));
 
         return out;
+    }
+
+    private List<BorrowerTimelineStepResponse> buildInvoiceDiscountingBorrower(LoanApplication app) {
+        ApplicationStatus s = app.getStatus();
+        List<BorrowerTimelineStepResponse> out = new ArrayList<>();
+
+        out.add(step("submitted", "Application submitted", descSubmit(s),
+                stateAfterDraft(s), ts(s != ApplicationStatus.DRAFT, app)));
+
+        out.add(step("docs", "Document verification", "We verify identity, address, and business documents.",
+                stateKycPhase(s), ts(pastKyc(s), app)));
+
+        out.add(step("credit", "Credit check and underwriting", "We assess eligibility for the invoice discounting program.",
+                stateCredit(s), ts(pastCredit(s), app)));
+
+        out.add(step("outcome", "Sanction decision", "Your approved facility limit and program terms are confirmed.",
+                stateOutcome(s), ts(decisionKnown(s), app)));
+
+        out.add(step("terms", "Terms and eSign", "Review the sanction terms document and sign digitally.",
+                stateKfs(s), ts(pastEsign(s), app)));
+
+        out.add(step("complete", "Program onboarding complete", "You can use Programs and Invoice discounting in the portal.",
+                stateIdOnboardingComplete(s), pastEsign(s) ? app.getUpdatedAt() : null));
+
+        return out;
+    }
+
+    private String stateIdOnboardingComplete(ApplicationStatus s) {
+        if (s == ApplicationStatus.REJECTED || s == ApplicationStatus.WITHDRAWN) {
+            return "locked";
+        }
+        if (pastEsign(s)) {
+            return "completed";
+        }
+        if (s == ApplicationStatus.KFS_GENERATED || s == ApplicationStatus.ESIGN_PENDING) {
+            return "in_progress";
+        }
+        if (decisionKnown(s)) {
+            return "pending";
+        }
+        return "pending";
     }
 
     private BorrowerTimelineStepResponse step(

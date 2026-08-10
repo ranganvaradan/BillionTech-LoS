@@ -1,12 +1,7 @@
 FROM maven:3.9-eclipse-temurin-17
-
 WORKDIR /app
-
-# Copy full project (multi-module)
-COPY . .
-
-# Move into core service
-WORKDIR /app/services/los-core-service
-
-# Run using Maven (no jar needed)
-CMD ["mvn", "spring-boot:run"]
+COPY parent-pom.xml .
+COPY pom.xml .
+COPY src ./src
+RUN mvn install -N -f parent-pom.xml -q
+CMD ["mvn", "-Daether.connector.connectTimeout=10000", "-Daether.connector.requestTimeout=30000", "spring-boot:run"]

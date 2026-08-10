@@ -2,20 +2,26 @@ package com.los.core.service.vkyc;
 
 import com.los.core.exception.BusinessRuleException;
 import com.los.core.exception.ResourceNotFoundException;
+import com.los.core.model.entity.Document;
 import com.los.core.model.entity.LoanApplication;
 import com.los.core.model.entity.StepExecutionRecord;
 import com.los.core.model.entity.WorkflowConfig;
-import com.los.core.model.enums.KycStepType;
+import com.los.core.model.enums.ApplicationStatus;
+import com.los.core.model.enums.VkycCompletionMode;
+import com.los.core.model.enums.VkycPkycReason;
 import com.los.core.model.enums.VkycStatus;
+import com.los.core.repository.DocumentRepository;
 import com.los.core.repository.LosUserRepository;
 import com.los.core.repository.LoanApplicationRepository;
 import com.los.core.repository.StepExecutionRecordRepository;
-import com.los.core.repository.WorkflowConfigRepository;
 import com.los.core.service.audit.AuditService;
 import com.los.core.service.flow.step.StepExecutionRecordWriter;
 import com.los.core.service.integration.IIntegrationRouterService;
+import com.los.core.service.workflow.ActiveWorkflowConfigService;
+import com.los.core.service.workflow.WorkflowNotificationResolverService;
 import com.los.core.config.VkycNotificationProperties;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,9 +29,34 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class VkycWorkflowService {
+
+    /** Document type for PKYC evidence uploads ({@code POST /documents/.../upload}). */
+    public static final String PHYSICAL_KYC_DOCUMENT_TYPE = "PHYSICAL_KYC_EVIDENCE";
+
+    private static final Set<String> PKYC_ALLOWED_ROLES = Set.of(
+            "ADMIN",
+            "ADMINISTRATOR",
+            "OPERATIONS",
+            "VKYC_MANAGER",
+            "RISK_MANAGER",
+            "CREDIT_MANAGER",
+            "BRANCH_VERIFIER",
+            "KYC_REVIEWER"
+    );
+    private static final Set<ApplicationStatus> PKYC_FORBIDDEN_APP_STATUS = Set.of(
+            ApplicationStatus.REJECTED,
+            ApplicationStatus.WITHDRAWN,
+            ApplicationStatus.DISBURSED
+    );
+    private static final Set<String> PKYC_ALLOWED_CONTENT_TYPES = Set.of(
+            "application/pdf",
+            "image/jpeg",
+            "image/png"
+    );
 
     private static final Set<String> VKYC_STEP_NAMES = Set.of("VIDEO_KYC", "VKYC");
     private static final Set<VkycStatus> RESEND_BLOCKED = Set.of(
@@ -48,7 +79,7 @@ public class VkycWorkflowService {
     );
 
     private final LoanApplicationRepository loanApplicationRepository;
-    private final WorkflowConfigRepository workflowConfigRepository;
+    private final ActiveWorkflowConfigService activeWorkflowConfigService;
     private final StepExecutionRecordRepository stepExecutionRecordRepository;
     private final StepExecutionRecordWriter stepExecutionRecordWriter;
     private final AuditService auditService;
@@ -57,6 +88,8 @@ public class VkycWorkflowService {
     private final VkycNotificationProperties vkycNotificationProperties;
     private final VkycLinkNotifier vkycLinkNotifier;
     private final LosUserRepository losUserRepository;
+    private final DocumentRepository documentRepository;
+    private final WorkflowNotificationResolverService workflowNotificationResolverService;
 
     public Map<String, Object> getVkycConfiguration(UUID applicationId) {
         LoanApplication app = loadApp(applicationId);
@@ -68,6 +101,7 @@ public class VkycWorkflowService {
                 "vkycPresentInWorkflow", hasStep,
                 "workflowPosition", cfg != null && cfg.getWorkflowPosition() != null ? cfg.getWorkflowPosition() : "",
                 "vkycTriggerCondition", cfg != null && cfg.getVkycTriggerCondition() != null ? cfg.getVkycTriggerCondition() : List.of(),
+                "allowPhysicalKycFallback", cfg != null && isPhysicalKycFallbackAllowedOnWorkflow(cfg),
                 "steps", cfg != null && cfg.getSteps() != null ? cfg.getSteps() : List.of()
         );
     }
@@ -229,6 +263,17 @@ public class VkycWorkflowService {
     @Transactional
     public Map<String, Object> generateVkycUrl(UUID applicationId, UUID performedBy) {
         LoanApplication app = loadApp(applicationId);
+        if (isVkycSatisfiedByPkyc(app)) {
+            log.info("Skipping HyperVerge VKYC link generation because PKYC completion detected for applicationId={}", applicationId);
+            auditService.logEvent(applicationId, "VKYC", "HYPERVERGE_BYPASSED_DUE_TO_PKYC", performedBy, null,
+                    Map.of("action", "VKYC_GENERATE_URL", "vkycCompletionMode", VkycCompletionMode.PKYC.name()),
+                    "HyperVerge VKYC link generation skipped — application completed through Physical KYC");
+            throw new BusinessRuleException(
+                    "VKYC link generation is not available — this application was completed via Physical KYC (PKYC).",
+                    "VKYC_BLOCKED_BY_PKYC",
+                    "VKYC_GENERATE_URL",
+                    Map.of("vkycCompletionMode", VkycCompletionMode.PKYC.name()));
+        }
         Map<String, Object> eligibility = evaluateEligibility(applicationId);
         if (!Boolean.TRUE.equals(eligibility.get("eligible"))) {
             throw new BusinessRuleException("VKYC not eligible for this application", "VKYC_NOT_ELIGIBLE", "VKYC_GENERATE_URL", eligibility);
@@ -286,6 +331,17 @@ public class VkycWorkflowService {
         }
         LoanApplication app = loanApplicationRepository.findTopByVkycTransactionId(txn)
                 .orElseThrow(() -> new ResourceNotFoundException("No application for vkyc transactionId: " + txn));
+        if (isVkycSatisfiedByPkyc(app)) {
+            log.info("VKYC webhook ignored — PKYC completion already recorded for applicationId={}", app.getId());
+            auditService.logEvent(app.getId(), "VKYC", "WEBHOOK_IGNORED_PKYC_COMPLETED", null, null,
+                    Map.of("transactionId", txn, "vkycCompletionMode", VkycCompletionMode.PKYC.name()),
+                    "HyperVerge VKYC webhook ignored — Physical KYC already satisfied this checkpoint");
+            return Map.of(
+                    "applicationId", app.getId().toString(),
+                    "transactionId", txn,
+                    "ignored", true,
+                    "reason", "PKYC_COMPLETED");
+        }
         String hvStatus = String.valueOf(payload.getOrDefault("status", "")).toLowerCase(Locale.ROOT);
         VkycStatus mapped = mapWebhookStatus(hvStatus);
         if (mapped != null) {
@@ -333,6 +389,17 @@ public class VkycWorkflowService {
     @Transactional
     public Map<String, Object> resendVkycUrl(UUID applicationId, UUID actorUserId) {
         LoanApplication app = loadApp(applicationId);
+        if (isVkycSatisfiedByPkyc(app)) {
+            log.info("VKYC notification skipped because PKYC completion detected for applicationId={}", applicationId);
+            auditService.logEvent(applicationId, "VKYC", "NOTIFICATION_SKIPPED_DUE_TO_PKYC", actorUserId, null,
+                    Map.of("action", "VKYC_RESEND", "event", "VKYC_LINK"),
+                    "VKYC link resend skipped — application completed through Physical KYC");
+            throw new BusinessRuleException(
+                    "VKYC link resend is not available — this application was completed via Physical KYC (PKYC).",
+                    "VKYC_RESEND_BLOCKED_BY_PKYC",
+                    "VKYC_RESEND",
+                    Map.of("vkycCompletionMode", VkycCompletionMode.PKYC.name()));
+        }
         VkycStatus status = app.getVkycStatus() != null ? app.getVkycStatus() : VkycStatus.NOT_STARTED;
         if (RESEND_BLOCKED.contains(status)) {
             throw new BusinessRuleException("VKYC resend is not allowed at current stage", "VKYC_RESEND_BLOCKED", "VKYC_RESEND", Map.of("status", status.name()));
@@ -375,6 +442,7 @@ public class VkycWorkflowService {
 
     public Map<String, Object> getTimeline(UUID applicationId) {
         LoanApplication app = loadApp(applicationId);
+        WorkflowConfig cfg = loadWorkflow(app).orElse(null);
         List<StepExecutionRecord> records = stepExecutionRecordRepository.findByApplicationIdAndStepTypeStartingWithOrderByStartedAtAsc(applicationId, "VKYC_");
         List<Map<String, Object>> stages = new ArrayList<>();
         for (StepExecutionRecord r : records) {
@@ -386,6 +454,7 @@ public class VkycWorkflowService {
         }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("applicationId", applicationId.toString());
+        out.put("allowPhysicalKycFallback", cfg != null && isPhysicalKycFallbackAllowedOnWorkflow(cfg));
         out.put("vkycRequired", Boolean.TRUE.equals(app.getVkycRequired()));
         out.put("vkycStatus", app.getVkycStatus() != null ? app.getVkycStatus().name() : VkycStatus.NOT_STARTED.name());
         out.put("vkycReferenceId", app.getVkycReferenceId() != null ? app.getVkycReferenceId() : "");
@@ -400,8 +469,207 @@ public class VkycWorkflowService {
         out.put("vkycAgentId", app.getVkycAgentId() != null ? app.getVkycAgentId().toString() : "");
         out.put("vkycAuditorId", app.getVkycAuditorId() != null ? app.getVkycAuditorId().toString() : "");
         out.put("vkycCompletedAt", app.getVkycCompletedAt() != null ? app.getVkycCompletedAt().toString() : "");
+        out.put("vkycCompletionMode", app.getVkycCompletionMode() != null ? app.getVkycCompletionMode().name() : "");
+        out.put("pkycReason", app.getPkycReason() != null ? app.getPkycReason() : "");
+        out.put("pkycComments", app.getPkycComments() != null ? app.getPkycComments() : "");
+        out.put("pkycDocumentId", app.getPkycDocumentId() != null ? app.getPkycDocumentId().toString() : "");
+        out.put("pkycVerifiedBy", app.getPkycVerifiedBy() != null ? app.getPkycVerifiedBy().toString() : "");
+        out.put("pkycVerifiedAt", app.getPkycVerifiedAt() != null ? app.getPkycVerifiedAt().toString() : "");
         out.put("stages", stages);
         return out;
+    }
+
+    /**
+     * Completes the VKYC checkpoint using physical/offline verification (PKYC fallback).
+     * Leaves normal HyperVerge / stage-transition flows untouched.
+     */
+    @Transactional
+    public Map<String, Object> completePhysicalKyc(
+            UUID applicationId,
+            VkycPkycReason reason,
+            String comments,
+            UUID documentId,
+            UUID actorUserId,
+            Set<String> userRoles) {
+        assertPkycRoles(userRoles);
+        if (actorUserId == null) {
+            throw new BusinessRuleException("Physical KYC completion requires authenticated user id", "PKYC_USER_REQUIRED", "PKYC_COMPLETE", null);
+        }
+        if (reason == null) {
+            throw new BusinessRuleException("PKYC reason is required", "PKYC_REASON_REQUIRED", "PKYC_COMPLETE", null);
+        }
+        if (comments == null || comments.isBlank()) {
+            throw new BusinessRuleException("PKYC comments are required", "PKYC_COMMENTS_REQUIRED", "PKYC_COMPLETE", null);
+        }
+        if (documentId == null) {
+            throw new BusinessRuleException("PKYC document is required", "PKYC_DOCUMENT_REQUIRED", "PKYC_COMPLETE", null);
+        }
+        String trimmedComments = comments.trim();
+        if (trimmedComments.length() > 4000) {
+            throw new BusinessRuleException("PKYC comments exceed maximum length", "PKYC_COMMENTS_TOO_LONG", "PKYC_COMPLETE", null);
+        }
+
+        LoanApplication app = loadApp(applicationId);
+        if (PKYC_FORBIDDEN_APP_STATUS.contains(app.getStatus())) {
+            throw new BusinessRuleException("Physical KYC is not allowed for this application status", "PKYC_APP_STATUS_BLOCKED", "PKYC_COMPLETE",
+                    Map.of("status", app.getStatus().name()));
+        }
+
+        VkycStatus cur = app.getVkycStatus() != null ? app.getVkycStatus() : VkycStatus.NOT_STARTED;
+        if (VKYC_AUDITOR_CLEARED.contains(cur) || app.getVkycCompletionMode() == VkycCompletionMode.PKYC) {
+            throw new BusinessRuleException("VKYC is already cleared for this application", "PKYC_ALREADY_CLEARED", "PKYC_COMPLETE",
+                    Map.of("vkycStatus", cur.name()));
+        }
+
+        WorkflowConfig cfg = loadWorkflow(app).orElse(null);
+        if (cfg == null || !hasVkycStep(cfg.getSteps())) {
+            throw new BusinessRuleException("VKYC is not configured for this workflow", "PKYC_VKYC_NOT_CONFIGURED", "PKYC_COMPLETE", null);
+        }
+        if (!isPhysicalKycFallbackAllowedOnWorkflow(cfg)) {
+            throw new BusinessRuleException("Physical KYC fallback is not enabled for this workflow", "PKYC_FALLBACK_DISABLED", "PKYC_COMPLETE", null);
+        }
+        Map<String, Object> eligibility = evaluateEligibilityInternal(app, cfg);
+        if (!Boolean.TRUE.equals(eligibility.get("eligible"))) {
+            throw new BusinessRuleException("VKYC does not apply to this application — PKYC unavailable", "PKYC_NOT_ELIGIBLE", "PKYC_COMPLETE", eligibility);
+        }
+
+        Document doc = documentRepository.findById(documentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Document not found: " + documentId));
+        if (!applicationId.equals(doc.getApplicationId())) {
+            throw new BusinessRuleException("Document does not belong to this application", "PKYC_DOCUMENT_OWNER", "PKYC_COMPLETE", null);
+        }
+        if (!PHYSICAL_KYC_DOCUMENT_TYPE.equals(doc.getDocumentType())) {
+            throw new BusinessRuleException("PKYC requires document type " + PHYSICAL_KYC_DOCUMENT_TYPE, "PKYC_DOCUMENT_TYPE", "PKYC_COMPLETE",
+                    Map.of("actualType", doc.getDocumentType() != null ? doc.getDocumentType() : ""));
+        }
+        if (!isAllowedPkycContentType(doc.getContentType())) {
+            throw new BusinessRuleException("PKYC document must be PDF, JPG, or PNG", "PKYC_DOCUMENT_FORMAT", "PKYC_COMPLETE",
+                    Map.of("contentType", doc.getContentType() != null ? doc.getContentType() : ""));
+        }
+
+        Instant now = Instant.now();
+
+        auditService.logEvent(applicationId, "VKYC", "PKYC_INITIATED", actorUserId, null,
+                Map.of(
+                        "user", actorUserId.toString(),
+                        "timestamp", now.toString(),
+                        "reason", reason.name(),
+                        "comments", trimmedComments
+                ),
+                "VKYC — Physical KYC initiation");
+
+        auditService.logEvent(applicationId, "VKYC", "PKYC_DOCUMENT_UPLOADED", actorUserId, null,
+                Map.of("documentId", documentId.toString(), "contentType", doc.getContentType() != null ? doc.getContentType() : "",
+                        "fileName", doc.getFileName() != null ? doc.getFileName() : ""),
+                "VKYC — PKYC supporting document referenced");
+
+        app.setVkycRequired(true);
+        app.setVkycStatus(VkycStatus.AUDITOR_APPROVED);
+        app.setVkycAuditorId(actorUserId);
+        app.setVkycCompletedAt(now);
+        app.setVkycCompletionMode(VkycCompletionMode.PKYC);
+        app.setPkycReason(reason.name());
+        app.setPkycComments(trimmedComments);
+        app.setPkycDocumentId(documentId);
+        app.setPkycVerifiedBy(actorUserId);
+        app.setPkycVerifiedAt(now);
+        app.setVkycLastEvent("PKYC_COMPLETED");
+        loanApplicationRepository.save(app);
+
+        Map<String, Object> timelinePayload = Map.of(
+                "reason", reason.name(),
+                "comments", trimmedComments,
+                "verifiedByUserId", actorUserId.toString(),
+                "documentId", documentId.toString(),
+                "message", "VKYC fallback used — completed through Physical KYC"
+        );
+        recordTimeline(applicationId, "VKYC_PKYC_COMPLETED", timelinePayload);
+
+        auditService.logEvent(applicationId, "VKYC", "PKYC_COMPLETED", actorUserId,
+                Map.of("vkycStatus", cur.name()),
+                Map.of(
+                        "vkycStatus", VkycStatus.AUDITOR_APPROVED.name(),
+                        "vkycCompletionMode", VkycCompletionMode.PKYC.name(),
+                        "pkycReason", reason.name(),
+                        "pkycVerifiedBy", actorUserId.toString(),
+                        "pkycVerifiedAt", now.toString()
+                ),
+                "VKYC — Physical KYC completed");
+
+        publishPkycFollowUpNotifications(app, reason, trimmedComments);
+
+        return Map.of(
+                "status", VkycStatus.AUDITOR_APPROVED.name(),
+                "vkycCompletionMode", VkycCompletionMode.PKYC.name(),
+                "pkycVerifiedAt", now.toString()
+        );
+    }
+
+    private void publishPkycFollowUpNotifications(LoanApplication app, VkycPkycReason reason, String comments) {
+        String email = resolveContactEmail(app);
+        List<String> to = (email != null && !email.isBlank()) ? List.of(email.trim()) : List.of();
+
+        Map<String, Object> base = new LinkedHashMap<>();
+        base.put("borrowerName", com.los.core.service.loan.ApplicationPartyResolver.resolveDisplayName(app));
+        base.put("applicationNumber", app.getApplicationNumber() != null ? app.getApplicationNumber() : "");
+        base.put("vkycLink", app.getVkycUrl() != null ? app.getVkycUrl() : "");
+        base.put("lenderName", "BillionTech LOS");
+        base.put("vkycCompletionMode", VkycCompletionMode.PKYC.name());
+        base.put("pkycReason", reason.name());
+        base.put("pkycComments", comments);
+
+        // Do not publish VKYC_APPROVED / VKYC_LINK here — those resolve to standard VKYC templates (often
+        // multi-channel) and must not fire after PKYC. Optional supplemental: VKYC_COMPLETED_VIA_PKY only.
+        Map<String, Object> pkycEvt = new LinkedHashMap<>(base);
+        pkycEvt.put("eventType", "VKYC_COMPLETED_VIA_PKY");
+        var extra = workflowNotificationResolverService.resolveExplicitOnlyForEvent(
+                app.getId(),
+                "VIDEO_KYC",
+                "VKYC_COMPLETED_VIA_PKY",
+                to,
+                "VKYC_COMPLETED_VIA_PKY",
+                "EMAIL");
+        vkycLinkNotifier.publishWorkflowEmailActions(app.getId(), extra, pkycEvt);
+    }
+
+    private static void assertPkycRoles(Set<String> userRoles) {
+        if (userRoles == null || userRoles.isEmpty()) {
+            throw new BusinessRuleException("Physical KYC requires an authorized ops role", "PKYC_ROLE_REQUIRED", "PKYC_COMPLETE", null);
+        }
+        Set<String> normalized = new HashSet<>();
+        for (String r : userRoles) {
+            if (r != null && !r.isBlank()) {
+                normalized.add(r.trim().toUpperCase(Locale.ROOT));
+            }
+        }
+        if (normalized.stream().noneMatch(PKYC_ALLOWED_ROLES::contains)) {
+            throw new BusinessRuleException("You are not allowed to complete Physical KYC for this workflow", "PKYC_FORBIDDEN", "PKYC_COMPLETE",
+                    Map.of("allowedRoles", PKYC_ALLOWED_ROLES.stream().sorted().toList()));
+        }
+    }
+
+    private static boolean isPhysicalKycFallbackAllowedOnWorkflow(WorkflowConfig cfg) {
+        if (cfg == null || cfg.getSteps() == null) {
+            return false;
+        }
+        for (Map<String, Object> step : cfg.getSteps()) {
+            Object raw = step.get("step");
+            if (raw == null || !VKYC_STEP_NAMES.contains(String.valueOf(raw).toUpperCase(Locale.ROOT))) {
+                continue;
+            }
+            Object flag = step.get("allowPhysicalKycFallback");
+            return Boolean.TRUE.equals(flag)
+                    || "true".equalsIgnoreCase(String.valueOf(flag).trim());
+        }
+        return false;
+    }
+
+    private static boolean isAllowedPkycContentType(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return false;
+        }
+        String c = raw.toLowerCase(Locale.ROOT).split(";")[0].trim();
+        return PKYC_ALLOWED_CONTENT_TYPES.contains(c);
     }
 
     public Map<String, Object> getWorkflowOrdering(UUID applicationId) {
@@ -424,14 +692,21 @@ public class VkycWorkflowService {
     }
 
     private void sendVkycEmail(LoanApplication app, boolean resent) {
+        if (isVkycSatisfiedByPkyc(app)) {
+            log.info("VKYC notification skipped because PKYC completion detected for applicationId={}", app.getId());
+            auditService.logEvent(app.getId(), "VKYC", "NOTIFICATION_SKIPPED_DUE_TO_PKYC", null, null,
+                    Map.of("resent", resent ? "true" : "false", "event", "VKYC_LINK"),
+                    "VKYC link notification skipped — application completed through Physical KYC");
+            return;
+        }
         if (!vkycNotificationProperties.isEnabled()) {
             return;
         }
-        String email = resolveBorrowerEmail(app);
+        String email = resolveContactEmail(app);
         if (email == null || email.isBlank()) {
             return;
         }
-        String borrowerName = resolveBorrowerName(app);
+        String borrowerName = com.los.core.service.loan.ApplicationPartyResolver.resolveDisplayName(app);
         try {
             vkycLinkNotifier.publishVkycLinkEmail(
                     app.getId(),
@@ -456,26 +731,28 @@ public class VkycWorkflowService {
         }
     }
 
-    private String resolveBorrowerEmail(LoanApplication app) {
-        Map<String, Object> p = app.getPersonalInfo();
-        if (p == null) return null;
-        Object e = firstNonNull(p.get("borrowerEmail"), p.get("email"));
-        if (e != null && !e.toString().isBlank()) return e.toString().trim();
+    /** Application party email, with registered-user fallback for legacy borrower records. */
+    private String resolveContactEmail(LoanApplication app) {
+        String fromParty = com.los.core.service.loan.ApplicationPartyResolver.resolveEmail(app);
+        if (fromParty != null && !fromParty.isBlank()) {
+            return fromParty.trim();
+        }
+        if (app.getCustomerId() == null) {
+            return null;
+        }
         return losUserRepository.findById(app.getCustomerId())
                 .map(u -> u.getEmail() != null ? u.getEmail().trim() : null)
+                .filter(e -> e != null && !e.isBlank())
                 .orElse(null);
-    }
-
-    private String resolveBorrowerName(LoanApplication app) {
-        Map<String, Object> p = app.getPersonalInfo();
-        if (p == null) return "Borrower";
-        Object n = firstNonNull(p.get("fullName"), p.get("name"), p.get("firstName"));
-        if (n == null) return "Borrower";
-        return n.toString().trim().isBlank() ? "Borrower" : n.toString().trim();
     }
 
     private boolean isExpired(LoanApplication app) {
         return app.getVkycUrlExpiryAt() != null && Instant.now().isAfter(app.getVkycUrlExpiryAt());
+    }
+
+    /** True when the VKYC checkpoint was satisfied via Physical KYC — no further video/VKYC comms or HV calls. */
+    private static boolean isVkycSatisfiedByPkyc(LoanApplication app) {
+        return app != null && app.getVkycCompletionMode() == VkycCompletionMode.PKYC;
     }
 
     private static Object firstNonNull(Object... values) {
@@ -505,38 +782,7 @@ public class VkycWorkflowService {
     }
 
     private Map<String, Object> buildVkycProviderPayload(LoanApplication app) {
-        Map<String, Object> payload = new HashMap<>();
-        Map<String, Object> p = app.getPersonalInfo();
-        if (p != null) {
-            // panNumber is stored as `panNumber` by intake + KYC tab — single canonical key.
-            putIfPresent(payload, "panNumber", p.get("panNumber"));
-            // DOB canonical key from intake is `dateOfBirth`; legacy `dob` and KYC tab's `drivingLicenseDob`
-            // are kept as fallbacks so older / partial records still resolve correctly.
-            putIfPresent(payload, "dob", firstNonBlank(
-                    p.get("dateOfBirth"),
-                    p.get("dob"),
-                    p.get("drivingLicenseDob")));
-            // Intake stores address as `addressLine` (with optional `addressLine2`); legacy
-            // `addressLine1` / `address` are kept as fallbacks.
-            putIfPresent(payload, "address", firstNonBlank(
-                    p.get("addressLine"),
-                    p.get("addressLine1"),
-                    p.get("address"),
-                    p.get("addressLine2")));
-            // Intake key is `pincode` (lowercase); accept `pinCode` / `zipCode` / `postalCode`
-            // as backward-compatible aliases.
-            putIfPresent(payload, "pincode", firstNonBlank(
-                    p.get("pincode"),
-                    p.get("pinCode"),
-                    p.get("zipCode"),
-                    p.get("postalCode")));
-            putIfPresent(payload, "name", firstNonBlank(p.get("fullName"), p.get("name")));
-            putIfPresent(payload, "email", resolveBorrowerEmail(app));
-            putIfPresent(payload, "mobile", firstNonBlank(p.get("borrowerMobile"), p.get("mobile"), p.get("phone")));
-        }
-        payload.put("applicationId", app.getId().toString());
-        payload.put("applicationNumber", app.getApplicationNumber());
-        return payload;
+        return com.los.core.service.loan.ApplicationPartyResolver.buildVkycProviderPayload(app);
     }
 
     private void putIfPresent(Map<String, Object> map, String key, Object value) {
@@ -546,7 +792,7 @@ public class VkycWorkflowService {
     }
 
     private Optional<WorkflowConfig> loadWorkflow(LoanApplication app) {
-        return workflowConfigRepository.findByBorrowerTypeAndLoanProductAndActiveTrue(app.getBorrowerType().name(), app.getLoanProduct());
+        return activeWorkflowConfigService.findActiveForApplication(app);
     }
 
     private LoanApplication loadApp(UUID applicationId) {

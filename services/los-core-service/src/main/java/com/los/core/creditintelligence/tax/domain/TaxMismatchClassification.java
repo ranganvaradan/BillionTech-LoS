@@ -1,0 +1,17 @@
+package com.los.core.creditintelligence.tax.domain;
+
+public enum TaxMismatchClassification {
+    LEGACY_DEFAULT_USED,
+    LEGACY_MANUAL_VALUE,
+    CANONICAL_DATA_INSUFFICIENT,
+    ITR_FORM_FIELD_NOT_AVAILABLE,
+    ITR_VALUE_DIFFERENT,
+    REVISED_RETURN_SELECTED,
+    PRESUMPTIVE_RETURN,
+    PAN_MISMATCH,
+    AIS_VARIANCE,
+    FORM26AS_VARIANCE,
+    STALE_RETURN,
+    PARSER_DIFFERENCE,
+    OTHER
+}

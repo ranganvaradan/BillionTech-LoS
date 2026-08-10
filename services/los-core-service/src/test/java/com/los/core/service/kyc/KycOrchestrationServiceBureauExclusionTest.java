@@ -4,7 +4,9 @@ import com.los.core.model.dto.response.WorkflowConfigResponse;
 import com.los.core.model.entity.LoanApplication;
 import com.los.core.model.enums.ApplicationStatus;
 import com.los.core.model.enums.BorrowerType;
+import com.los.core.model.enums.IntakeSegment;
 import com.los.core.model.enums.KycStepType;
+import com.los.core.repository.AuditEventRepository;
 import com.los.core.repository.KycStepResultRepository;
 import com.los.core.repository.LoanApplicationRepository;
 import com.los.core.repository.ManualKycReviewRepository;
@@ -49,6 +51,8 @@ class KycOrchestrationServiceBureauExclusionTest {
     private IWorkflowEngineService workflowEngine;
     @Mock
     private AuditService auditService;
+    @Mock
+    private AuditEventRepository auditEventRepository;
 
     private KycOrchestrationServiceImpl kycOrchestrationService;
 
@@ -62,7 +66,8 @@ class KycOrchestrationServiceBureauExclusionTest {
                 manualKycReviewRepository,
                 integrationRouter,
                 workflowEngine,
-                auditService
+                auditService,
+                auditEventRepository
         );
     }
 
@@ -93,7 +98,7 @@ class KycOrchestrationServiceBureauExclusionTest {
                         Map.of("step", "BUREAU_PULL", "mandatory", true, "order", 2, "provider", "EQUIFAX")
                 ))
                 .build();
-        when(workflowEngine.getActiveWorkflow(BorrowerType.INDIVIDUAL, "PERSONAL_LOAN")).thenReturn(cfg);
+        when(workflowEngine.getActiveWorkflow(BorrowerType.INDIVIDUAL, "PERSONAL_LOAN", IntakeSegment.BORROWER)).thenReturn(cfg);
 
         var results = kycOrchestrationService.executeWorkflow(appId, Map.of());
 
@@ -116,7 +121,7 @@ class KycOrchestrationServiceBureauExclusionTest {
         when(loanApplicationRepository.findById(appId)).thenReturn(Optional.of(app));
         when(kycStepResultRepository.findByApplicationIdOrderByCreatedAtAsc(appId)).thenReturn(List.of());
         when(manualKycReviewRepository.findByApplicationIdOrderByUpdatedAtDesc(appId)).thenReturn(List.of());
-        when(workflowEngine.getActiveWorkflow(BorrowerType.INDIVIDUAL, "PERSONAL_LOAN")).thenReturn(WorkflowConfigResponse.builder()
+        when(workflowEngine.getActiveWorkflow(BorrowerType.INDIVIDUAL, "PERSONAL_LOAN", IntakeSegment.BORROWER)).thenReturn(WorkflowConfigResponse.builder()
                 .steps(List.of(
                         Map.of("step", "PAN_VERIFY", "mandatory", true, "order", 1),
                         Map.of("step", "BUREAU_PULL", "mandatory", true, "order", 2)

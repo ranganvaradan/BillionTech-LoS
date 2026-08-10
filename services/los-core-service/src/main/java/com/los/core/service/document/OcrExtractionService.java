@@ -3,6 +3,8 @@ package com.los.core.service.document;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
@@ -27,8 +29,14 @@ public class OcrExtractionService {
             case "SALARY_SLIP" -> extractSalarySlip(documentId);
             case "ITR" -> extractItr(documentId);
             case "GST_CERTIFICATE" -> extractGstCertificate(documentId);
+            case "GST_RETURN", "GST_RETURNS" -> extractGstStatement(documentId, documentType);
             case "DRIVING_LICENSE" -> extractDrivingLicense(documentId);
             case "VOTER_ID" -> extractVoterId(documentId);
+            case "CONSTITUTION_DOCS", "CC_STATEMENT", "PAYABLES_RECEIVABLES_AGEING",
+                 "PROPERTY_OWNERSHIP_PROOF", "EXISTING_FACILITY_SANCTION", "EXISTING_FACILITY_STATEMENT",
+                 "PDC", "NACH_MANDATE", "BUREAU_REPORT", "COMMERCIAL_BUREAU_REPORT",
+                 "BOARD_RESOLUTION", "PURCHASE_ORDER", "DELIVERY_GRN", "TRADE_PAYMENT_RECORD",
+                 "BUYER_NOC" -> extractedStub(documentId, documentType);
             default -> Map.of(
                     "documentId", documentId.toString(),
                     "documentType", documentType,
@@ -87,24 +95,31 @@ public class OcrExtractionService {
     }
 
     private Map<String, Object> extractBankStatement(UUID documentId) {
-        return Map.of(
-                "documentId", documentId.toString(),
-                "documentType", "BANK_STATEMENT",
-                "status", "EXTRACTED",
-                "confidence", 0.85,
-                "extractedData", Map.of(
-                        "bankName", "HDFC Bank",
-                        "accountNumber", "XXXX1234",
-                        "accountHolder", "Rahul Kumar Sharma",
-                        "statementPeriod", "Jan 2026 - Mar 2026",
-                        "openingBalance", 125000,
-                        "closingBalance", 185000,
-                        "totalCredits", 450000,
-                        "totalDebits", 390000,
-                        "transactionCount", 47
-                ),
-                "analysisReady", true
-        );
+        Map<String, Object> extracted = new LinkedHashMap<>();
+        extracted.put("bankName", "HDFC Bank");
+        extracted.put("accountNumber", "XXXX1234");
+        extracted.put("accountHolder", "Rahul Kumar Sharma");
+        extracted.put("statementPeriod", "Jan 2026 - Mar 2026");
+        extracted.put("openingBalance", 125000);
+        extracted.put("closingBalance", 185000);
+        extracted.put("totalCredits", 450000);
+        extracted.put("totalDebits", 390000);
+        extracted.put("transactionCount", 47);
+        extracted.put("annualBankingTurnover", 41000000);
+        extracted.put("bankingTurnoverPctGst", 80);
+        extracted.put("abbObligationMultiple", 1.2);
+        extracted.put("ccUtilisationPct", 70);
+        extracted.put("chequeBounces12m", 2);
+        extracted.put("chequeBounces3m", 0);
+
+        Map<String, Object> out = new HashMap<>();
+        out.put("documentId", documentId.toString());
+        out.put("documentType", "BANK_STATEMENT");
+        out.put("status", "EXTRACTED");
+        out.put("confidence", 0.85);
+        out.put("extractedData", extracted);
+        out.put("analysisReady", true);
+        return out;
     }
 
     private Map<String, Object> extractSalarySlip(UUID documentId) {
@@ -128,20 +143,46 @@ public class OcrExtractionService {
     }
 
     private Map<String, Object> extractItr(UUID documentId) {
-        return Map.of(
-                "documentId", documentId.toString(),
-                "documentType", "ITR",
-                "status", "EXTRACTED",
-                "confidence", 0.87,
-                "extractedData", Map.of(
-                        "assessmentYear", "2025-26",
-                        "panNumber", "ABCDE1234F",
-                        "grossTotalIncome", 1200000,
-                        "totalTaxPaid", 125000,
-                        "itrForm", "ITR-1",
-                        "filingDate", "2025-07-15"
-                )
-        );
+        Map<String, Object> extracted = new LinkedHashMap<>();
+        extracted.put("assessmentYear", "2025-26");
+        extracted.put("panNumber", "ABCDE1234F");
+        extracted.put("grossTotalIncome", 1200000);
+        extracted.put("itrIncome", 450000);
+        extracted.put("pat", 500000);
+        extracted.put("interestCoverage", 1.6);
+        extracted.put("debtToEquity", 1.5);
+        extracted.put("ebitda", 650000);
+        extracted.put("debtService", 300000);
+        extracted.put("tol", 3500000);
+        extracted.put("tnw", 5000000);
+        extracted.put("totalTaxPaid", 125000);
+        extracted.put("itrForm", "ITR-1");
+        extracted.put("filingDate", "2025-07-15");
+
+        Map<String, Object> out = new HashMap<>();
+        out.put("documentId", documentId.toString());
+        out.put("documentType", "ITR");
+        out.put("status", "EXTRACTED");
+        out.put("confidence", 0.87);
+        out.put("extractedData", extracted);
+        return out;
+    }
+
+    private Map<String, Object> extractGstStatement(UUID documentId, String documentType) {
+        Map<String, Object> extracted = new LinkedHashMap<>();
+        extracted.put("gstin", "07ABCDE1234F1Z5");
+        extracted.put("avgGmv3m", 4200000);
+        extracted.put("active90days", 1);
+        extracted.put("gstIncome", 350000);
+        extracted.put("annualGstTurnover", 52000000);
+
+        Map<String, Object> out = new HashMap<>();
+        out.put("documentId", documentId.toString());
+        out.put("documentType", documentType.toUpperCase());
+        out.put("status", "EXTRACTED");
+        out.put("confidence", 0.86);
+        out.put("extractedData", extracted);
+        return out;
     }
 
     private Map<String, Object> extractGstCertificate(UUID documentId) {
@@ -190,6 +231,17 @@ public class OcrExtractionService {
                         "gender", "Male",
                         "address", "123, Main Road, Sector 15, Gurgaon"
                 )
+        );
+    }
+
+    private Map<String, Object> extractedStub(UUID documentId, String documentType) {
+        return Map.of(
+                "documentId", documentId.toString(),
+                "documentType", documentType.toUpperCase(),
+                "status", "EXTRACTED",
+                "confidence", 0.75,
+                "extractedData", Map.of("acknowledged", true),
+                "message", "Stub extraction for " + documentType
         );
     }
 }

@@ -81,6 +81,7 @@ class DemoApplicationsDeleteIT {
         mockMvc.perform(delete("/api/v1/demo/applications").accept("application/json"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.deletedApplications").value(1))
+                .andExpect(jsonPath("$.deletedBorrowerUsers").exists())
                 .andExpect(jsonPath("$.status").value("success"));
 
         assertThat(loanApplicationRepository.count()).isZero();

@@ -5,7 +5,7 @@ import com.los.core.exception.ResourceNotFoundException;
 import com.los.core.model.entity.LoanApplication;
 import com.los.core.model.entity.WorkflowConfig;
 import com.los.core.repository.LoanApplicationRepository;
-import com.los.core.repository.WorkflowConfigRepository;
+import com.los.core.service.workflow.ActiveWorkflowConfigService;
 import com.los.core.service.flow.step.StepExecutionRecordingService;
 import com.los.core.service.flow.step.StepResult;
 import lombok.RequiredArgsConstructor;
@@ -28,7 +28,7 @@ import java.util.UUID;
 public class WorkflowExecutionCoordinator {
 
     private final LoanApplicationRepository loanApplicationRepository;
-    private final WorkflowConfigRepository workflowConfigRepository;
+    private final ActiveWorkflowConfigService activeWorkflowConfigService;
     private final StepExecutionRecordingService stepExecutionRecordingService;
     private final WorkflowResolutionOptions workflowResolutionOptions;
     @Value("${los.workflow.step-validation-strict:false}")
@@ -83,7 +83,6 @@ public class WorkflowExecutionCoordinator {
         if (app.getBorrowerType() == null || app.getLoanProduct() == null || app.getLoanProduct().isBlank()) {
             return Optional.empty();
         }
-        return workflowConfigRepository.findByBorrowerTypeAndLoanProductAndActiveTrue(
-                app.getBorrowerType().name(), app.getLoanProduct());
+        return activeWorkflowConfigService.findActiveForApplication(app);
     }
 }

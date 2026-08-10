@@ -3,6 +3,7 @@ package com.los.core.controller;
 import com.los.core.repository.LoanApplicationRepository;
 import com.los.core.service.demo.DemoApplicationPurgeService;
 import com.los.core.service.demo.DemoModeService;
+import com.los.core.service.demo.DemoPurgeResult;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -51,9 +52,14 @@ public class DemoController {
                     .body(Map.of("message", DemoModeService.DEMO_MODE_DISABLED_MESSAGE));
         }
         try {
-            int n = demoApplicationPurgeService.deleteAllApplicationsAndDependents();
+            DemoPurgeResult result = demoApplicationPurgeService.purgeAllDemoData();
             Map<String, Object> ok = new LinkedHashMap<>();
-            ok.put("deletedApplications", n);
+            ok.put("deletedApplications", result.deletedApplications());
+            ok.put("deletedBorrowerUsers", result.deletedBorrowerUsers());
+            ok.put("deletedLosPlpSubPrograms", result.deletedLosPlpSubPrograms());
+            ok.put("deletedLosPlpPrograms", result.deletedLosPlpPrograms());
+            ok.put("deletedLosPlpAnchors", result.deletedLosPlpAnchors());
+            ok.put("deletedLosPlpMasterRows", result.deletedLosPlpMasterRows());
             ok.put("status", "success");
             return ResponseEntity.ok(ok);
         } catch (Throwable t) {

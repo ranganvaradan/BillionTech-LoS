@@ -1,0 +1,25 @@
+DEMO POLICY / VALIDATION SAMPLE
+KYC & Eligibility
+
+This is a demonstration / validation sample for Decision Policy authoring.
+It is not a real lender KYC policy and is not production authority.
+
+KYC & Eligibility
+
+• PAN must be verified for all applicants.
+• GSTIN must be available for company borrowers.
+• Company borrowers must have valid CIN and GSTIN.
+• Video KYC is mandatory for loans above ₹5 lakh.
+• If PAN name differs from the application name, the case must be referred to KYC Review.
+• If KYC information is incomplete, credit underwriting must not proceed.
+• Physical KYC may be used where Video KYC cannot be completed and the policy permits it.
+• Bank account ownership must be verified before sanction.
+• CKYC download should be completed where available.
+• Aadhaar OTP verification is required for individual borrowers when configured.
+• Udyam verification is required for MSME applicants when Udyam is provided.
+• PEP screening must be completed for all applicants.
+• Company authorised signatory must be verified.
+
+Credit Underwriting
+
+• Bureau score must be equal or above 650 for scored applicants.

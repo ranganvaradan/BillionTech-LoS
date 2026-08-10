@@ -26,16 +26,19 @@ public class EsignEmsignerCompletionService {
     private final EsignSignedDocumentStorageService signedDocumentStorageService;
     private final EsignRequestTrackingService esignRequestTrackingService;
     private final LoanApplicationFlowService loanApplicationFlowService;
+    private final EsignSignedApplicationDocumentService signedApplicationDocumentService;
 
     public EsignEmsignerCompletionService(
             @Qualifier("emsignerESignProvider") IESignProvider emsignerProvider,
             EsignSignedDocumentStorageService signedDocumentStorageService,
             EsignRequestTrackingService esignRequestTrackingService,
-            @Lazy LoanApplicationFlowService loanApplicationFlowService) {
+            @Lazy LoanApplicationFlowService loanApplicationFlowService,
+            EsignSignedApplicationDocumentService signedApplicationDocumentService) {
         this.emsignerProvider = emsignerProvider;
         this.signedDocumentStorageService = signedDocumentStorageService;
         this.esignRequestTrackingService = esignRequestTrackingService;
         this.loanApplicationFlowService = loanApplicationFlowService;
+        this.signedApplicationDocumentService = signedApplicationDocumentService;
     }
 
     /**
@@ -128,6 +131,15 @@ public class EsignEmsignerCompletionService {
                 esignRequestTrackingService.applySignedLocalPath(applicationId, workflowId,
                         null,
                         augment(rawMeta, "downloadWarning", "empty_or_missing_pdf"));
+            }
+
+            try {
+                if (pdfBytes != null && pdfBytes.length > 0) {
+                    signedApplicationDocumentService.registerProviderSignedAgreement(applicationId, pdfBytes);
+                }
+                // KFS / program / sanction SIGNED_* types are registered inside completeESign (mark-complete + simulate).
+            } catch (Exception docEx) {
+                log.warn("[EMSIGNER finalize] Signed agreement document registration failed: {}", docEx.getMessage());
             }
 
             loanApplicationFlowService.completeESign(applicationId, workflowId);

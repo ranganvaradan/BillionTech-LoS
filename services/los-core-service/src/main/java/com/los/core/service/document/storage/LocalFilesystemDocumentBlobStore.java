@@ -1,5 +1,7 @@
 package com.los.core.service.document.storage;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -18,11 +20,23 @@ import java.util.Optional;
 @ConditionalOnProperty(name = "los.document.storage", havingValue = "local")
 public class LocalFilesystemDocumentBlobStore implements DocumentBlobStore {
 
+    private static final Logger log = LoggerFactory.getLogger(LocalFilesystemDocumentBlobStore.class);
+
     private final Path root;
 
     public LocalFilesystemDocumentBlobStore(
             @Value("${file.upload-dir:${los.file-storage.root:./uploads}}") String rootPath) {
         this.root = Path.of(rootPath).toAbsolutePath().normalize();
+        try {
+            Files.createDirectories(this.root);
+            if (!Files.isWritable(this.root)) {
+                log.warn("Document storage root is not writable: {}", this.root);
+            } else {
+                log.info("Document storage root ready: {}", this.root);
+            }
+        } catch (Exception e) {
+            log.warn("Could not create document storage root {}: {}", this.root, e.getMessage());
+        }
     }
 
     @Override

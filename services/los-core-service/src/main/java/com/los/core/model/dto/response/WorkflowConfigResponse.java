@@ -16,7 +16,16 @@ public class WorkflowConfigResponse {
     private String name;
     private String borrowerType;
     private String loanProduct;
+    private String lmsProductCode;
+    private String lmsTenureUnit;
+    private String intakeSegment;
+    private List<Map<String, Object>> intakeIdentitySchema;
+    private Map<String, Object> intakeConfig;
+    private boolean bureauEnabled;
+    private boolean autoPullBureauAfterKycSuccess;
     private List<Map<String, Object>> steps;
+    private List<Map<String, Object>> processNotificationMappings;
+    private List<Map<String, Object>> manualOverridePolicies;
     private List<Map<String, Object>> conditionalRules;
     private List<Map<String, Object>> vkycTriggerCondition;
     private String workflowPosition;

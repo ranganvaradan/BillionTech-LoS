@@ -1,7 +1,9 @@
 package com.los.core.controller;
 
 import com.los.core.model.dto.request.PostCreditRejectRequest;
+import com.los.core.model.dto.request.ManualProcessOverrideRequest;
 import com.los.core.model.dto.response.ApplicationResponse;
+import com.los.core.exception.ForbiddenException;
 import com.los.core.service.loan.LoanApplicationFlowService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -75,6 +77,38 @@ public class LoanApplicationFlowController {
         return ResponseEntity.ok(flowService.completeManualUnderwritingDecision(applicationId, true));
     }
 
+    @GetMapping("/{applicationId}/anchor/due-diligence")
+    @Operation(summary = "Get anchor due diligence checklist and derived credit rating")
+    public ResponseEntity<Map<String, Object>> getAnchorDueDiligence(@PathVariable UUID applicationId) {
+        return ResponseEntity.ok(flowService.getAnchorDueDiligence(applicationId));
+    }
+
+    @PostMapping("/{applicationId}/anchor/due-diligence")
+    @Operation(summary = "Save anchor due diligence answers and compute anchor rating")
+    public ResponseEntity<Map<String, Object>> saveAnchorDueDiligence(
+            @PathVariable UUID applicationId,
+            @RequestBody Map<String, Object> body) {
+        return ResponseEntity.ok(flowService.saveAnchorDueDiligence(applicationId, body != null ? body : Map.of()));
+    }
+
+    @PostMapping("/{applicationId}/anchor/underwrite")
+    @Operation(summary = "Complete anchor underwriting from due diligence (→ SANCTION_PENDING or REJECTED)")
+    public ResponseEntity<Map<String, Object>> completeAnchorUnderwriting(@PathVariable UUID applicationId) {
+        return ResponseEntity.ok(flowService.completeAnchorDueDiligenceUnderwriting(applicationId));
+    }
+
+    @PostMapping("/{applicationId}/anchor/underwriting/approve")
+    @Operation(summary = "Approve anchor after credit rating C manual review")
+    public ResponseEntity<ApplicationResponse> approveAnchorManualReview(@PathVariable UUID applicationId) {
+        return ResponseEntity.ok(flowService.resolveAnchorManualUnderwriting(applicationId, true));
+    }
+
+    @PostMapping("/{applicationId}/anchor/underwriting/reject")
+    @Operation(summary = "Reject anchor after credit rating C manual review")
+    public ResponseEntity<ApplicationResponse> rejectAnchorManualReview(@PathVariable UUID applicationId) {
+        return ResponseEntity.ok(flowService.resolveAnchorManualUnderwriting(applicationId, false));
+    }
+
     @PostMapping("/{applicationId}/underwriting/reject")
     @Operation(summary = "After MANUAL_REVIEW, credit manager rejects (→ REJECTED)")
     public ResponseEntity<ApplicationResponse> rejectAfterManualReview(@PathVariable UUID applicationId) {
@@ -85,8 +119,10 @@ public class LoanApplicationFlowController {
     @Operation(summary = "Step 5: Issue sanction letter + generate KFS (→ SANCTION_ISSUED)")
     public ResponseEntity<Map<String, Object>> sanction(
             @PathVariable UUID applicationId,
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
             @RequestBody(required = false) Map<String, Object> sanctionParams) {
-        return ResponseEntity.ok(flowService.sanctionApplication(applicationId, sanctionParams));
+        UUID actor = userId != null && !userId.isBlank() ? UUID.fromString(userId.trim()) : null;
+        return ResponseEntity.ok(flowService.sanctionApplication(applicationId, sanctionParams, actor));
     }
 
     @PostMapping("/{applicationId}/esign")
@@ -155,5 +191,66 @@ public class LoanApplicationFlowController {
         Map<String, Object> signerInfo = (Map<String, Object>) flowRequest.getOrDefault("signerInfo", Map.of());
 
         return ResponseEntity.ok(flowService.executeFullFlow(applicationId, kycPayload, sanctionParams, signerInfo));
+    }
+
+    @GetMapping("/{applicationId}/override/eligibility")
+    @Operation(summary = "Check whether current user can manually override a failed process")
+    public ResponseEntity<Map<String, Object>> manualOverrideEligibility(
+            @PathVariable UUID applicationId,
+            @RequestParam String processCode,
+            @RequestParam String failureCode,
+            @RequestHeader(value = "X-User-Role", required = false) String userRole,
+            @RequestHeader(value = "X-User-Roles", required = false) String userRolesCsv) {
+        return ResponseEntity.ok(
+                flowService.getManualOverrideEligibility(
+                        applicationId,
+                        processCode,
+                        failureCode,
+                        parseRoles(userRole, userRolesCsv)
+                )
+        );
+    }
+
+    @PostMapping("/{applicationId}/override")
+    @Operation(summary = "Apply manual override on an eligible failed/auto-rejected process")
+    public ResponseEntity<Map<String, Object>> applyManualOverride(
+            @PathVariable UUID applicationId,
+            @RequestBody ManualProcessOverrideRequest request,
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
+            @RequestHeader(value = "X-User-Role", required = false) String userRole,
+            @RequestHeader(value = "X-User-Roles", required = false) String userRolesCsv) {
+        java.util.Set<String> roles = parseRoles(userRole, userRolesCsv);
+        if (roles.isEmpty()) {
+            throw new ForbiddenException("Forbidden: manual override requires authorized role");
+        }
+        UUID actor = null;
+        if (userId != null && !userId.isBlank()) {
+            actor = UUID.fromString(userId);
+        }
+        return ResponseEntity.ok(flowService.applyManualOverride(
+                applicationId,
+                request != null ? request.getProcessCode() : "",
+                request != null ? request.getFailureCode() : "",
+                request != null ? request.getOverrideReason() : "",
+                request != null ? request.getRemarks() : null,
+                request != null ? request.getApprovalReference() : null,
+                request != null ? request.getManualBureauScore() : null,
+                request != null ? request.getCreditRiskScore() : null,
+                actor,
+                roles
+        ));
+    }
+
+    private java.util.Set<String> parseRoles(String userRole, String userRolesCsv) {
+        java.util.Set<String> roles = new java.util.HashSet<>();
+        if (userRole != null && !userRole.isBlank()) {
+            roles.add(userRole.trim());
+        }
+        if (userRolesCsv != null && !userRolesCsv.isBlank()) {
+            for (String r : userRolesCsv.split(",")) {
+                if (!r.isBlank()) roles.add(r.trim());
+            }
+        }
+        return roles;
     }
 }

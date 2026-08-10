@@ -97,4 +97,21 @@ class WorkflowFlowStepOrderResolverTest {
         List<String> order = WorkflowFlowStepOrderResolver.resolve(c, WorkflowResolutionOptions.defaults());
         assertEquals(List.of(FlowStepType.KYC_WORKFLOW, FlowStepType.BUREAU_PULL), order);
     }
+
+    @Test
+    void bureauDisabled_removesBureauStepFromResolvedOrder() {
+        WorkflowConfig c = WorkflowConfig.builder()
+                .id(UUID.randomUUID())
+                .name("no bureau")
+                .borrowerType("INDIVIDUAL")
+                .loanProduct("PERSONAL_LOAN")
+                .bureauEnabled(false)
+                .steps(List.of(
+                        Map.of("step", "PAN_VERIFY", "order", 1),
+                        Map.of("step", "BUREAU_PULL", "order", 2)))
+                .active(true)
+                .version(1)
+                .build();
+        assertEquals(List.of(FlowStepType.KYC_WORKFLOW), WorkflowFlowStepOrderResolver.resolve(c, WorkflowResolutionOptions.defaults()));
+    }
 }

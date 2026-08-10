@@ -1,0 +1,57 @@
+﻿{
+  "_fixtureMeta": {
+    "dataOrigin": "USER_SUPPLIED_SAMPLE",
+    "sanitized": true,
+    "note": "Synthetic-shaped from SurePass ITR structure; income heads deliberately distinct"
+  },
+  "success": true,
+  "status_code": 200,
+  "data": {
+    "doc_id": "itr_fixture_001",
+    "pan": "AAHCB0052H",
+    "status": "completed",
+    "profile": { "pan": "AAHCB0052H", "name": "SAMPLE CO PVT LTD" },
+    "filings": [
+      {
+        "filing_year": "2024-2025",
+        "filing_date": "2025-10-22",
+        "itr_form": "ITR-6",
+        "filing_type": "Original",
+        "acknowledgement_no": "ACK001",
+        "parsed_data": {
+          "ITR": {
+            "ITR6": {
+              "Form_ITR6": { "FormName": "ITR-6", "AssessmentYear": "2025" },
+              "PartB-TI": {
+                "GrossTotalIncome": 5000000,
+                "TotalIncome": 4200000
+              },
+              "TradingAccount": {
+                "total_revenue_from_operations": 81000000
+              }
+            }
+          }
+        }
+      }
+    ],
+    "tds_26as": [
+      {
+        "assessment_year": "2025-2026",
+        "parsed_data": {
+          "partfsum": "100000.00^0.00^0.00",
+          "partA2sum": "50000.00^0.00",
+          "partabtxt": {
+            "detA": [
+              {
+                "nameOfDeductor": "SAMPLE DEDUCTOR",
+                "tanOfDeductor": "ABCD12345E",
+                "amountPaidCredited": "1000000",
+                "totalTaxDeducted": "100000"
+              }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

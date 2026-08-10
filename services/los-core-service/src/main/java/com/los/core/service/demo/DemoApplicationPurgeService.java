@@ -12,11 +12,15 @@ import com.los.core.repository.DocumentRepository;
 import com.los.core.repository.KfsDocumentRepository;
 import com.los.core.repository.KycStepResultRepository;
 import com.los.core.repository.LoanApplicationRepository;
+import com.los.core.repository.LosUserRepository;
 import com.los.core.repository.ManualKycReviewRepository;
 import com.los.core.repository.NachMandateRepository;
 import com.los.core.repository.StepExecutionRecordRepository;
 import com.los.core.repository.TransactionRepository;
 import com.los.core.repository.schema.los2.EsignRequestRepository;
+import com.los.plp.repository.AnchorMasterRepository;
+import com.los.plp.repository.ProgramMasterRepository;
+import com.los.plp.repository.SubProgramMasterRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -27,8 +31,9 @@ import java.util.UUID;
 
 /**
  * Deletes all loan applications and common dependent records for a clean local/demo database.
- * Does not remove workflow configuration or reference master data.
- * Entire method runs in one transaction: any failure rolls back; no partial deletes.
+ * Also removes auto-provisioned borrower {@code los_users} (not seed accounts) and LOS-local
+ * PLP master cache ({@code sub_program_masters}, {@code program_masters}, {@code anchor_masters}).
+ * Does not call the remote PLP app — use PLP's own reset for that.
  */
 @Slf4j
 @Service
@@ -51,6 +56,24 @@ public class DemoApplicationPurgeService {
     private final NachMandateRepository nachMandateRepository;
     private final AaConsentRepository aaConsentRepository;
     private final LoanApplicationRepository loanApplicationRepository;
+    private final LosUserRepository losUserRepository;
+    private final DemoPreservedUserEmails demoPreservedUserEmails;
+    private final SubProgramMasterRepository subProgramMasterRepository;
+    private final ProgramMasterRepository programMasterRepository;
+    private final AnchorMasterRepository anchorMasterRepository;
+
+    @Transactional(rollbackFor = Exception.class)
+    public DemoPurgeResult purgeAllDemoData() {
+        int deletedApplications = deleteAllApplicationsAndDependents();
+        int deletedBorrowers = deleteProvisionedBorrowerUsers();
+        DemoLosPlpMasterPurgeCounts plpMasters = deleteLosPlpMasterEntries();
+        return new DemoPurgeResult(
+                deletedApplications,
+                deletedBorrowers,
+                plpMasters.subPrograms(),
+                plpMasters.programs(),
+                plpMasters.anchors());
+    }
 
     @Transactional(rollbackFor = Exception.class)
     public int deleteAllApplicationsAndDependents() {
@@ -69,9 +92,42 @@ public class DemoApplicationPurgeService {
         return found;
     }
 
+    @Transactional(rollbackFor = Exception.class)
+    public int deleteProvisionedBorrowerUsers() {
+        List<String> preserved = demoPreservedUserEmails.preservedEmailsLower();
+        if (preserved.isEmpty()) {
+            log.warn("No preserved borrower emails configured; skipping borrower user purge");
+            return 0;
+        }
+        int removed = losUserRepository.deleteBorrowersNotInPreservedEmails(preserved);
+        log.info("Deleted {} auto-provisioned borrower user(s); preserved {}", removed, preserved);
+        return removed;
+    }
+
     /**
-     * Permanently removes dependent rows and the given loan application rows (e.g. borrower draft delete).
+     * Removes PLP-linked master rows stored in LOS (sync cache). Applications must be deleted first
+     * because {@code loan_applications.sub_program_id} references {@code sub_program_masters}.
      */
+    @Transactional(rollbackFor = Exception.class)
+    public DemoLosPlpMasterPurgeCounts deleteLosPlpMasterEntries() {
+        long subCount = subProgramMasterRepository.count();
+        long programCount = programMasterRepository.count();
+        long anchorCount = anchorMasterRepository.count();
+        if (subCount + programCount + anchorCount == 0) {
+            log.info("No LOS PLP master rows to delete");
+            return new DemoLosPlpMasterPurgeCounts(0, 0, 0);
+        }
+        subProgramMasterRepository.deleteAllInBatch();
+        programMasterRepository.deleteAllInBatch();
+        anchorMasterRepository.deleteAllInBatch();
+        log.info(
+                "Deleted LOS PLP master cache: {} sub-program(s), {} program(s), {} anchor(s)",
+                subCount,
+                programCount,
+                anchorCount);
+        return new DemoLosPlpMasterPurgeCounts((int) subCount, (int) programCount, (int) anchorCount);
+    }
+
     @Transactional(rollbackFor = Exception.class)
     public void deleteApplicationDependentsByIds(List<UUID> applicationIds) {
         if (applicationIds == null || applicationIds.isEmpty()) {

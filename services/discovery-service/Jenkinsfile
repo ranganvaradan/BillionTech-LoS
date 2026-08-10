@@ -1,0 +1,78 @@
+pipeline {
+    agent {
+        label 'ubuntu24.04-docker-agent-cx42'
+    }
+
+    options {
+        buildDiscarder(logRotator(
+            daysToKeepStr: '10',
+            numToKeepStr: env.BRANCH_NAME == 'main' ? '30' : '10',
+            artifactDaysToKeepStr: '10',
+            artifactNumToKeepStr: '10'
+        ))
+        timestamps()
+        timeout(time: 2, unit: 'HOURS')
+    }
+
+    environment {
+        NEXUS_DOCKER_REGISTRY = "artifacts.billionloans.com:5002"
+        IMAGE_TAG = "artifacts.billionloans.com:5002"
+    } 
+
+    stages {
+        stage('Build and Push Image') {
+            steps {
+                script {
+                    def sanitizedBranchName = env.BRANCH_NAME.replaceAll('/', '-')
+                    def imageTag = "${IMAGE_TAG}/discovery-service:${sanitizedBranchName}-${BUILD_NUMBER}"
+
+                    sh "docker logout || true"
+
+                    withCredentials([
+                        usernamePassword(
+                            credentialsId: 'nexus-admin',
+                            usernameVariable: 'USERNAME',
+                            passwordVariable: 'PASSWORD'
+                        )
+                    ]) {
+                        // sh """
+                        //     echo "\$PASSWORD" | docker login ${NEXUS_DOCKER_REGISTRY} \
+                        //         -u "\$USERNAME" --password-stdin
+
+                        //     docker buildx build \
+                        //         --platform linux/amd64,linux/arm64 \
+                        //         -t ${imageTag} \
+                        //         --push .
+                        // """
+                        sh """
+                            docker buildx create --name multiarch-builder --driver docker-container --use || true
+                            docker buildx inspect --bootstrap
+
+                            echo "\$PASSWORD" | docker login ${env.NEXUS_DOCKER_REGISTRY} -u "\$USERNAME" --password-stdin
+
+                            docker buildx build \
+                                --platform linux/amd64,linux/arm64 \
+                                -t ${imageTag} \
+                                --push .
+                        """
+
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        failure {
+            emailext(
+                body: "${currentBuild.currentResult}: Job ${env.JOB_NAME} build ${env.BUILD_NUMBER}\nMore info at: ${env.BUILD_URL}",
+                recipientProviders: [
+                    [$class: 'DevelopersRecipientProvider'],
+                    [$class: 'CulpritsRecipientProvider'],
+                    [$class: 'RequesterRecipientProvider']
+                ],
+                subject: "Jenkins Build ${currentBuild.currentResult}: Job ${env.JOB_NAME}"
+            )
+        }
+    }
+}

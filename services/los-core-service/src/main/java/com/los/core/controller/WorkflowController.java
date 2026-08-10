@@ -3,6 +3,7 @@ package com.los.core.controller;
 import com.los.core.model.dto.request.WorkflowConfigRequest;
 import com.los.core.model.dto.response.WorkflowConfigResponse;
 import com.los.core.model.enums.BorrowerType;
+import com.los.core.model.enums.IntakeSegment;
 import com.los.core.service.workflow.IWorkflowEngineService;
 import com.los.core.service.workflow.WorkflowEngineServiceImpl;
 import io.swagger.v3.oas.annotations.Operation;
@@ -41,11 +42,12 @@ public class WorkflowController {
     }
 
     @GetMapping("/active")
-    @Operation(summary = "Get active workflow for borrower type and loan product")
+    @Operation(summary = "Get active workflow for borrower type, loan product, and intake segment (defaults to BORROWER)")
     public ResponseEntity<WorkflowConfigResponse> getActive(
             @RequestParam BorrowerType borrowerType,
-            @RequestParam String loanProduct) {
-        return ResponseEntity.ok(workflowEngineService.getActiveWorkflow(borrowerType, loanProduct));
+            @RequestParam String loanProduct,
+            @RequestParam(required = false, defaultValue = "BORROWER") IntakeSegment intakeSegment) {
+        return ResponseEntity.ok(workflowEngineService.getActiveWorkflow(borrowerType, loanProduct, intakeSegment));
     }
 
     @GetMapping

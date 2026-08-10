@@ -1,0 +1,80 @@
+# Profile: staging — isolated CEO / Credit Head review environment.
+# NEVER point at production DB. allow-canonical-authority MUST stay false.
+# Run: mvn -DskipTests spring-boot:run -Dspring-boot.run.profiles=staging
+spring:
+  config:
+    activate:
+      on-profile: staging
+  servlet:
+    multipart:
+      max-file-size: 12MB
+      max-request-size: 14MB
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:los_core_staging}
+    username: ${POSTGRES_USER:los_admin}
+    password: ${POSTGRES_PASSWORD:los_secret_2026}
+  flyway:
+    enabled: true
+  data:
+    redis:
+      repositories:
+        enabled: false
+
+los:
+  security:
+    local-dev-permit-all: true  # staging review only — isolated staging; never production
+  demo:
+    enabled: true
+  plp:
+    enabled: false
+  document:
+    storage: local
+  file-storage:
+    # Staging container bind-mounts uploads at /app/uploads (must be writable by app uid).
+    root: ${LOS_FILE_STORAGE_ROOT:/app/uploads}
+  # Disable external payment/sanction side effects where properties exist
+  integration:
+    ai-los:
+      # do not call production AI-LOS; leave blank or stub
+      ingest-url: ""
+
+eureka:
+  client:
+    enabled: false
+    register-with-eureka: false
+    fetch-registry: false
+
+credit-intelligence:
+  staging-demo:
+    enabled: true
+  shadow-evaluation:
+    enabled: true
+    kyc-shadow-enabled: true
+  foundation:
+    enabled: true
+  validation:
+    enabled: true
+    persist-runs: false
+  policy-studio:
+    enabled: true
+    ai-enabled: false
+    require-maker-checker: true
+  policy-engine:
+    enabled: true
+    dsl-shadow-enabled: true
+  decision-engine:
+    enabled: true
+    shadow-enabled: true
+  ai-underwriter:
+    enabled: true
+    cam-draft-enabled: true
+    scenario-enabled: true
+    provider: stub
+  cutover:
+    enabled: true
+    dual-run-enabled: true
+    quarantine-enabled: true
+    allow-canonical-authority: false
+    min-real-or-stored-cases: 20
+  # canonicalization families can stay false — staging demo uses validation harness stubs
+  internal-token: ${CREDIT_INTELLIGENCE_INTERNAL_TOKEN:}

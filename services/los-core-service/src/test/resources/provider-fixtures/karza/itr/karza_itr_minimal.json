@@ -1,0 +1,39 @@
+{
+  "_fixtureMeta": {
+    "dataOrigin": "SYNTHETIC",
+    "sanitized": true,
+    "note": "Karza ITR with distinct GTI/totalIncome/businessProfessionIncome AND totalRevenue"
+  },
+  "result": {
+    "formDetails": { "assessmentYear": "2025-26", "formName": "ITR-6" },
+    "generalInformation": { "entityName": "SAMPLE CO PVT LTD", "entityPan": "AAHCB0052H" },
+    "financialInformation": [
+      {
+        "assessmentYear": "2025-26",
+        "financialYear": "2024-25",
+        "profitAndLoss": {
+          "totalRevenue": 81000000,
+          "businessProfessionIncome": 5000000,
+          "grossTotalIncome": 4800000,
+          "totalIncome": 4200000,
+          "profitAfterTax": 1026039,
+          "ebitda": 8620512,
+          "interestExpense": 7498893
+        },
+        "balanceSheet": {
+          "totalLiability": 200309002,
+          "totalEquity": 68162682
+        }
+      }
+    ],
+    "itrFilled": [
+      {
+        "annualYear": "2025-26",
+        "fillingDate": "2025-10-22",
+        "itrForm": "ITR-6",
+        "pan": "AAHCB0052H"
+      }
+    ]
+  },
+  "provider": "KARZA"
+}

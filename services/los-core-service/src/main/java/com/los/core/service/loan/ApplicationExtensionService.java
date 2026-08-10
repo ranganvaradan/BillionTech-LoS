@@ -48,6 +48,8 @@ public class ApplicationExtensionService {
                 .requestedAmount(source.getRequestedAmount())
                 .interestRate(source.getInterestRate())
                 .tenureMonths(source.getTenureMonths())
+                .lmsProductCode(source.getLmsProductCode())
+                .lmsTenureUnit(source.getLmsTenureUnit())
                 .personalInfo(source.getPersonalInfo() != null ? new HashMap<>(source.getPersonalInfo()) : null)
                 .businessInfo(source.getBusinessInfo() != null ? new HashMap<>(source.getBusinessInfo()) : null)
                 .financialInfo(source.getFinancialInfo() != null ? new HashMap<>(source.getFinancialInfo()) : null)

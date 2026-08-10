@@ -1,0 +1,27 @@
+package com.los.core.creditintelligence.banking.domain;
+
+public enum TxnCategory {
+    CUSTOMER_RECEIPT,
+    SUPPLIER_PAYMENT,
+    EMI,
+    CASH_DEPOSIT,
+    CASH_WITHDRAWAL,
+    SELF_TRANSFER,
+    LOAN_DISBURSEMENT,
+    CAPITAL_INFUSION,
+    CHEQUE_RETURN,
+    NACH_RETURN,
+    BANK_CHARGE,
+    INTEREST_CREDIT,
+    INTEREST_DEBIT,
+    GST_PAYMENT,
+    TAX_PAYMENT,
+    REFUND,
+    SALARY,
+    OTHER_OPERATING,
+    OTHER_FINANCING,
+    QR_SETTLEMENT,
+    ONLINE_GAMING,
+    INTERCOMPANY,
+    UNKNOWN
+}

@@ -1,0 +1,195 @@
+﻿%PDF-1.3
+3 0 obj
+<< /Filter /FlateDecode /Length 7471 >>
+stream
+'Ofe
+7OOM
+|Jaoc
+vVF.
+%p"huq
+VMc[M@aT
+-BDy
+XxU5
+-gGJ
+PiF6
+tOPH
+iWzfd
+,OoaZ6&75Q:
+xEi'
+'sUc
+cNV2'3P
+hJJf
+kRC:
+`nkB
+Kr-SST
+`]i.eRR
+[sad
+$o\oGp
+eNK%}\O
+!qJW[
+Brb?
+9dbB
+5bQb
+5CZkQ
+4Hda
+<CYS
+endstream
+endobj
+1 0 obj
+<< /Type /Page /Parent 2 0 R /Resources 4 0 R /Contents 3 0 R /MediaBox [0 0 595 842]
+endobj
+4 0 obj
+<< /ProcSet [ /PDF /Text ] /ColorSpace << /Cs1 5 0 R >> /Font << /TT2 7 0 R
+endobj
+12 0 obj
+<< /N 3 /Alternate /DeviceRGB /Length 2612 /Filter /FlateDecode >>
+stream
+)VdT
+yCAP8
+TIj"]&=&
+:dGr
+0j&jaj
+SwBOK/X/_
+-bEDC
+GME{E
+L(sYf
+~5f5wug
+endstream
+endobj
+5 0 obj
+[ /ICCBased 12 0 R ]
+endobj
+2 0 obj
+<< /Type /Pages /MediaBox [0 0 595 842] /Count 1 /Kids [ 1 0 R ] >>
+endobj
+13 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+7 0 obj
+<< /Type /Font /Subtype /TrueType /BaseFont /AAAAAC+Aptos /FontDescriptor
+14 0 R /ToUnicode 15 0 R /FirstChar 33 /LastChar 86 /Widths [ 203 340 589
+endobj
+15 0 obj
+<< /Length 540 /Filter /FlateDecode >>
+stream
+endstream
+endobj
+14 0 obj
+<< /Type /FontDescriptor /FontName /AAAAAC+Aptos /Flags 4 /FontBBox [-500 -275 1182 1010]
+/ItalicAngle 0 /Ascent 939 /Descent -282 /CapHeight 657 /StemV 0 /XHeight
+476 /AvgWidth 561 /MaxWidth 1269 /FontFile2 16 0 R >>
+endobj
+16 0 obj
+<< /Length1 11540 /Length 7886 /Filter /FlateDecode >>
+stream
+yof:
+1cCF
+RPU7
+?DOH
+~RKZ
+dqUeE
+,>Ffa
+$xKx
+JlTPV
+%bqI
+"ASD
+*bPm!Q
+jtYoh9
+2%5{NNVf\l
+o1gJl
+QNp-Z
+~Zrl
+ruxbx"
+xiq1
+edLHE4
+??}r\\ZXz:
+;Ssrrc
+]pZV
+ufdt>
+wSJ,
+YzFE
+y&Eyf
+m~qbb
+endstream
+endobj
+9 0 obj
+<< /Type /Font /Subtype /TrueType /BaseFont /AAAAAE+Aptos-Bold /FontDescriptor
+17 0 R /ToUnicode 18 0 R /FirstChar 33 /LastChar 54 /Widths [ 537 268 556
+endobj
+18 0 obj
+<< /Length 359 /Filter /FlateDecode >>
+stream
+Kapg
+endstream
+endobj
+17 0 obj
+<< /Type /FontDescriptor /FontName /AAAAAE+Aptos-Bold /Flags 4 /FontBBox [-542 -275 1342 1010]
+/ItalicAngle 0 /Ascent 939 /Descent -282 /CapHeight 657 /StemV 0 /XHeight
+477 /AvgWidth 587 /MaxWidth 1420 /FontFile2 19 0 R >>
+endobj
+19 0 obj
+<< /Length1 7952 /Length 5302 /Filter /FlateDecode >>
+stream
+eQq`
+qCqBl
+buaT
+^GMj
+esoOwg
+QZBuk
+"sBu
+XHA]
+EIj;0N
+"aFM
+`OxD
+EBEE
+RWzR!
+_Ccs
+jlYmv9=
+fgS.J
+rEUE
+2kEmuE
+eKWk
+mjyec
+5JRY
++[ZVV
+eaf`0
+fNpjeGIk
+uui=]
+>EiGs<
+=+EVF
+uEEM
+endstream
+endobj
+11 0 obj
+<< /Type /Font /Subtype /TrueType /BaseFont /AAAAAG+ArialMT /FontDescriptor
+20 0 R /ToUnicode 21 0 R /FirstChar 33 /LastChar 33 /Widths [ 278 ] >>
+endobj
+21 0 obj
+<< /Length 223 /Filter /FlateDecode >>
+stream
+endstream
+endobj
+20 0 obj
+<< /Type /FontDescriptor /FontName /AAAAAG+ArialMT /Flags 4 /FontBBox [-665 -325 2000 1039]
+/ItalicAngle 0 /Ascent 905 /Descent -212 /CapHeight 716 /StemV 0 /Leading
+33 /XHeight 519 /AvgWidth 441 /MaxWidth 2000 /FontFile2 22 0 R >>
+endobj
+22 0 obj
+<< /Length1 464 /Length 267 /Filter /FlateDecode >>
+stream
+JFnI
+AEAU 
+endstream
+endobj
+23 0 obj
+<< /Title (Banking BRE) /Producer (macOS Version 14.6.1 \(Build 23G93\) Quartz PDFContext)
+/Author (IPPO607) /Creator (Word) /CreationDate (D:20240910043538Z00'00')
+/ModDate (D:20240910043538Z00'00') >>
+endobj
+xref
+trailer
+<< /Size 24 /Root 13 0 R /Info 23 0 R /ID [ <3198574b2cf0e4d595d655897dcf8a0f>
+<3198574b2cf0e4d595d655897dcf8a0f> ] >>
+startxref
+%%EOF
+

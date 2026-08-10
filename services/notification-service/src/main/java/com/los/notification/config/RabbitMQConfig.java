@@ -1,12 +1,17 @@
 package com.los.notification.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.los.notification.dto.NotificationEvent;
 import org.springframework.amqp.core.*;
 import org.springframework.amqp.rabbit.connection.ConnectionFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.amqp.support.converter.DefaultJackson2JavaTypeMapper;
 import org.springframework.amqp.support.converter.Jackson2JsonMessageConverter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import lombok.extern.slf4j.Slf4j;
+
+import java.util.Map;
 
 @Slf4j
 @Configuration
@@ -69,7 +74,20 @@ public class RabbitMQConfig {
 
     @Bean
     public Jackson2JsonMessageConverter messageConverter() {
-        return new Jackson2JsonMessageConverter();
+        Jackson2JsonMessageConverter converter = new Jackson2JsonMessageConverter(new ObjectMapper());
+        DefaultJackson2JavaTypeMapper typeMapper = new DefaultJackson2JavaTypeMapper();
+        typeMapper.setTrustedPackages("com.los.*", "java.util", "java.lang");
+        typeMapper.setIdClassMapping(Map.of(
+                "com.los.core.service.esign.EsignSigningLinkNotifier$RoutingEmailEvent", NotificationEvent.class,
+                "com.los.core.service.vkyc.VkycLinkNotifier$RoutingEmailEvent", NotificationEvent.class,
+                "com.los.core.service.sanction.SanctionApprovedNotifier$RoutingEmailEvent", NotificationEvent.class,
+                "com.los.plp.service.notification.ProgramApprovalNotifier$RoutingEmailEvent", NotificationEvent.class,
+                "com.los.core.service.borrower.BorrowerIntakeDelegationService$RoutingEmailEvent", NotificationEvent.class,
+                "com.los.core.service.loan.ApplicationReviewService$RoutingEmailEvent", NotificationEvent.class,
+                "com.los.core.service.notification.AnchorKfsSignedNotifier$RoutingEmailEvent", NotificationEvent.class,
+                "com.los.core.service.notification.WelcomeOnboardingNotifier$RoutingEmailEvent", NotificationEvent.class));
+        converter.setJavaTypeMapper(typeMapper);
+        return converter;
     }
 
     @Bean

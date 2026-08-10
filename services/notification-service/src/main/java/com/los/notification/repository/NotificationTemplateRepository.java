@@ -13,9 +13,13 @@ public interface NotificationTemplateRepository extends JpaRepository<Notificati
 
     Optional<NotificationTemplate> findByTemplateCodeAndChannelAndActiveTrue(String templateCode, String channel);
 
+    Optional<NotificationTemplate> findByTemplateCodeAndChannel(String templateCode, String channel);
+
     List<NotificationTemplate> findByTemplateCodeAndActiveTrue(String templateCode);
 
     List<NotificationTemplate> findByChannelAndActiveTrue(String channel);
 
     List<NotificationTemplate> findByActiveTrue();
+
+    List<NotificationTemplate> findAllByOrderByTemplateCodeAscChannelAsc();
 }

@@ -58,4 +58,63 @@ public class ManualCreditInputsRequest {
 
     /** Document ids in the local store linked to this manual credit packet (evidence). */
     private List<UUID> supportingDocumentIds;
+
+    /** Bank statement analytics (scorecard BANK_STATEMENT source). */
+    private BigDecimal avgDailyBalance3m;
+    private Integer avgMonthlyTransactions3m;
+    private BigDecimal avgMonthlySettlements3m;
+    private Integer monthlyTransactions3m;
+    private Integer inwardChequeReturns3m;
+    private BigDecimal avgDailySettlements3m;
+    private Integer noOfTxns60days;
+    private Integer txnMth1;
+    private Integer txnMth2;
+    private Integer txnMth3;
+
+    /** GST statement metrics (scorecard GST_STATEMENT source). */
+    private BigDecimal avgGmv3m;
+    private Integer active90days;
+    private BigDecimal annualGstTurnover;
+
+    /** ITR metrics (scorecard ITR source). */
+    private BigDecimal itrIncome;
+    private BigDecimal pat;
+    private BigDecimal interestCoverage;
+    private BigDecimal debtToEquity;
+    private BigDecimal ebitda;
+    private BigDecimal debtService;
+
+    /** Bank statement analytics extensions (SCF / invoice discounting). */
+    private BigDecimal annualBankingTurnover;
+    private BigDecimal bankingTurnoverPctGst;
+    private BigDecimal abbObligationMultiple;
+    private BigDecimal ccUtilisationPct;
+    private Integer chequeBounces12m;
+    private Integer chequeBounces3m;
+
+    /** Bureau extensions. */
+    private Integer liveUnsecuredLoanCount;
+    private Integer bureauEnquiries3m;
+    private String ntcFlag;
+
+    /** Other manual underwriting fields (scorecard OTHER source). */
+    private String residenceOwned;
+    private BigDecimal residenceStability;
+    private BigDecimal businessStability;
+    private String existingLoanTrackRecordAll;
+    private String existingLoanTrackRecord15d;
+    private String qrTxnEDI;
+    private String eligibleOnePointFiveX;
+    private BigDecimal existingFbLimits;
+    private BigDecimal existingNfbLimits;
+    private BigDecimal tolTnw;
+    private String officeOwned;
+
+    /** Scorecard-context computed / declared ratios. */
+    private BigDecimal dscr;
+
+    /**
+     * Additional scorecard parameters (custom OTHER rows) — keys match scorecard parameter codes.
+     */
+    private Map<String, Object> scorecardMetrics;
 }

@@ -57,16 +57,22 @@ public class HypervergeVkycClient {
                 Map<String, Object> requestPayload = new LinkedHashMap<>(req);
                 Object inputsObj = requestPayload.get("inputs");
                 if (inputsObj instanceof Map<?, ?> inputsMapRaw) {
-                    Map<String, Object> inputs = new LinkedHashMap<>();
+                    Map<String, Object> allInputs = new LinkedHashMap<>();
                     for (Map.Entry<?, ?> e : inputsMapRaw.entrySet()) {
                         if (e.getKey() != null) {
-                            inputs.put(String.valueOf(e.getKey()), e.getValue());
+                            allInputs.put(String.valueOf(e.getKey()), e.getValue());
                         }
                     }
-                    // New LOS rule for now: do not send Aadhaar fields until OKYC extraction is integrated.
-                    inputs.remove("aadhaarName");
-                    inputs.remove("aadhaarCreatedDate");
-                    inputs.remove("aadhaarImage");
+
+                    // Only send mandatory fields to HyperVerge
+                    Map<String, Object> inputs = new LinkedHashMap<>();
+                    inputs.put("panNumber", allInputs.getOrDefault("panNumber", ""));
+                    inputs.put("aadhaarName", "NA");
+                    inputs.put("aadhaarCreatedDate", "NA");
+                    inputs.put("aadhaarImage", "NA");
+                    inputs.put("address", allInputs.getOrDefault("address", ""));
+                    inputs.put("pincode", allInputs.getOrDefault("pincode", ""));
+                    inputs.put("dob", allInputs.getOrDefault("dob", ""));
                     requestPayload.put("inputs", inputs);
 
                     log.info("workflowId : {}", requestPayload.get("workflowId"));

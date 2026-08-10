@@ -1,0 +1,4 @@
+# Dev/docker-compose.dev: PLP gateway published on host :8180. From los_core container use host.docker.internal.
+los:
+  plp:
+    base-url: ${PLP_BASE_URL:http://host.docker.internal:8180}

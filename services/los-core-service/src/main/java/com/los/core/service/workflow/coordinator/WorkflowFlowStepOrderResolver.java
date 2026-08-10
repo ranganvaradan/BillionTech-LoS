@@ -44,12 +44,14 @@ public final class WorkflowFlowStepOrderResolver {
             if (vkyc(m)) {
                 out.add(FlowStepType.VKYC);
             }
-            if (bureauPull(m)) {
+            if (bureauEnabled(config) && bureauPull(m)) {
                 out.add(FlowStepType.BUREAU_PULL);
                 break;
             }
         }
-        if (options.addBureauWhenMissingFromConfig() && out.stream().noneMatch(FlowStepType.BUREAU_PULL::equals)) {
+        if (bureauEnabled(config)
+                && options.addBureauWhenMissingFromConfig()
+                && out.stream().noneMatch(FlowStepType.BUREAU_PULL::equals)) {
             out.add(FlowStepType.BUREAU_PULL);
         }
         return dedupeOrder(out);
@@ -85,6 +87,10 @@ public final class WorkflowFlowStepOrderResolver {
 
     private static boolean bureauPull(Map<String, Object> m) {
         return FlowStepType.BUREAU_PULL.equals(stepKey(m));
+    }
+
+    private static boolean bureauEnabled(WorkflowConfig config) {
+        return config == null || config.isBureauEnabled();
     }
 
     private static boolean vkyc(Map<String, Object> m) {

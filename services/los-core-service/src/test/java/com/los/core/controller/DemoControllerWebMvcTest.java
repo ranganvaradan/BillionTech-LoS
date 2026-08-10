@@ -4,6 +4,7 @@ import com.los.core.config.WebSecurityConfig;
 import com.los.core.repository.LoanApplicationRepository;
 import com.los.core.service.demo.DemoApplicationPurgeService;
 import com.los.core.service.demo.DemoModeService;
+import com.los.core.service.demo.DemoPurgeResult;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -51,14 +52,16 @@ class DemoControllerWebMvcTest {
     @Test
     void deleteApplications_invokesPurgeService_andReturnsSuccess() throws Exception {
         when(demoModeService.isDemoModeEnabled()).thenReturn(true);
-        when(demoApplicationPurgeService.deleteAllApplicationsAndDependents()).thenReturn(2);
+        when(demoApplicationPurgeService.purgeAllDemoData()).thenReturn(new DemoPurgeResult(2, 1, 3, 2, 1));
 
         mockMvc.perform(delete("/api/v1/demo/applications").accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.deletedApplications").value(2))
+                .andExpect(jsonPath("$.deletedBorrowerUsers").value(1))
+                .andExpect(jsonPath("$.deletedLosPlpMasterRows").value(6))
                 .andExpect(jsonPath("$.status").value("success"));
 
-        verify(demoApplicationPurgeService).deleteAllApplicationsAndDependents();
+        verify(demoApplicationPurgeService).purgeAllDemoData();
     }
 
     @Test
@@ -73,7 +76,7 @@ class DemoControllerWebMvcTest {
     @Test
     void deleteApplications_returns500_whenPurgeThrows() throws Exception {
         when(demoModeService.isDemoModeEnabled()).thenReturn(true);
-        when(demoApplicationPurgeService.deleteAllApplicationsAndDependents())
+        when(demoApplicationPurgeService.purgeAllDemoData())
                 .thenThrow(new RuntimeException("simulated FK error"));
 
         mockMvc.perform(delete("/api/v1/demo/applications").accept(MediaType.APPLICATION_JSON))

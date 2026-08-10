@@ -1,0 +1,37 @@
+{
+  "caseCode": "CASE_B_LEGACY_DEFAULT",
+  "dataOrigin": "REPRESENTATIVE_PROVIDER_FIXTURE",
+  "sources": {
+    "gst": "provider-fixtures/surepass/gst/gst_monthly_minimal.json",
+    "itr": "provider-fixtures/karza/itr/karza_itr_minimal.json"
+  },
+  "metricStubs": {
+    "gst.turnover.trailing_12m": "1200000",
+    "itr.turnover.trailing_12m": "1100000"
+  },
+  "legacyScorecardStub": {
+    "LIVE_UNSECURED_LOAN_COUNT": 2,
+    "ANNUAL_GST_TURNOVER": 52000000,
+    "ANNUAL_BANKING_TURNOVER": 41000000,
+    "AVERAGE_BANK_BALANCE": 120000,
+    "EMI_OBLIGATION": 15000,
+    "ITR_INCOME": 450000,
+    "PAT": 500000,
+    "TOL": 3500000,
+    "TNW": 5000000,
+    "OBLIGATION_RATIO": 25,
+    "PROVIDER_GAP_DEFAULT_ACTIVE": 1
+  },
+  "declaredEmi": null,
+  "metadata": {
+    "description": "Thin sources (no bureau tradelines / banking). Legacy gap-defaults LIVE_UNSECURED=2, SCF GST turnover, ABB, EMI. Canonical path DATA_INSUFFICIENT for missing critical inputs.",
+    "missingSources": ["bureau", "bank"],
+    "legacyDefaultKeys": [
+      "LIVE_UNSECURED_LOAN_COUNT",
+      "ANNUAL_GST_TURNOVER",
+      "AVERAGE_BANK_BALANCE",
+      "EMI_OBLIGATION",
+      "ANNUAL_BANKING_TURNOVER"
+    ]
+  }
+}

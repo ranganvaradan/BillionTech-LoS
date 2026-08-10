@@ -88,8 +88,8 @@ public class AssignmentRuleSetAdminService {
         AssignmentRole role = AssignmentRole.fromString(ar);
         if (role == null) {
             throw new BusinessRuleException(
-                    "Invalid assignment role. Allowed: SALES_OFFICER, CREDIT_OFFICER, CREDIT_MANAGER, "
-                            + "OPERATIONS, ADMINISTRATOR, ACCOUNTS",
+                    "Invalid assignment role. Allowed: SALES_OFFICER, RELATIONSHIP_MANAGER, CREDIT_OFFICER, "
+                            + "CREDIT_MANAGER, OPERATIONS, ADMINISTRATOR, ACCOUNTS",
                     "ASSIGNMENT_ROLE_INVALID",
                     "CHOOSE_ROLE",
                     null);

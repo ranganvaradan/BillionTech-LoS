@@ -12,11 +12,15 @@ import com.los.core.repository.DocumentRepository;
 import com.los.core.repository.KfsDocumentRepository;
 import com.los.core.repository.KycStepResultRepository;
 import com.los.core.repository.LoanApplicationRepository;
+import com.los.core.repository.LosUserRepository;
 import com.los.core.repository.ManualKycReviewRepository;
 import com.los.core.repository.NachMandateRepository;
 import com.los.core.repository.StepExecutionRecordRepository;
 import com.los.core.repository.TransactionRepository;
 import com.los.core.repository.schema.los2.EsignRequestRepository;
+import com.los.plp.repository.AnchorMasterRepository;
+import com.los.plp.repository.ProgramMasterRepository;
+import com.los.plp.repository.SubProgramMasterRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -69,6 +73,16 @@ class DemoApplicationPurgeServiceTest {
     private AaConsentRepository aaConsentRepository;
     @Mock
     private LoanApplicationRepository loanApplicationRepository;
+    @Mock
+    private LosUserRepository losUserRepository;
+    @Mock
+    private DemoPreservedUserEmails demoPreservedUserEmails;
+    @Mock
+    private SubProgramMasterRepository subProgramMasterRepository;
+    @Mock
+    private ProgramMasterRepository programMasterRepository;
+    @Mock
+    private AnchorMasterRepository anchorMasterRepository;
 
     private DemoApplicationPurgeService demoApplicationPurgeService;
 
@@ -90,57 +104,58 @@ class DemoApplicationPurgeServiceTest {
                 transactionRepository,
                 nachMandateRepository,
                 aaConsentRepository,
-                loanApplicationRepository);
+                loanApplicationRepository,
+                losUserRepository,
+                demoPreservedUserEmails,
+                subProgramMasterRepository,
+                programMasterRepository,
+                anchorMasterRepository);
     }
 
     @Test
-    void whenNoApplications_returnsZeroAndDoesNotCallDeletes() {
+    void whenNoApplications_stillPurgesBorrowersAndLosPlpMasters() {
         when(loanApplicationRepository.findAll()).thenReturn(List.of());
-        assertThat(demoApplicationPurgeService.deleteAllApplicationsAndDependents()).isZero();
-        verify(applicationStatusHistoryRepository, never()).deleteByApplicationIdIn(anyList());
-        verify(stepExecutionRecordRepository, never()).deleteByApplicationIdIn(anyList());
-        verify(loanApplicationRepository, never()).deleteAllByIdInBatch(anyList());
+        when(demoPreservedUserEmails.preservedEmailsLower()).thenReturn(List.of("alwyn@billionloans.com"));
+        when(losUserRepository.deleteBorrowersNotInPreservedEmails(List.of("alwyn@billionloans.com"))).thenReturn(2);
+        when(subProgramMasterRepository.count()).thenReturn(1L);
+        when(programMasterRepository.count()).thenReturn(2L);
+        when(anchorMasterRepository.count()).thenReturn(1L);
+
+        DemoPurgeResult result = demoApplicationPurgeService.purgeAllDemoData();
+
+        assertThat(result.deletedApplications()).isZero();
+        assertThat(result.deletedBorrowerUsers()).isEqualTo(2);
+        assertThat(result.deletedLosPlpSubPrograms()).isEqualTo(1);
+        assertThat(result.deletedLosPlpPrograms()).isEqualTo(2);
+        assertThat(result.deletedLosPlpAnchors()).isEqualTo(1);
+        verify(subProgramMasterRepository).deleteAllInBatch();
+        verify(programMasterRepository).deleteAllInBatch();
+        verify(anchorMasterRepository).deleteAllInBatch();
     }
 
     @Test
-    void whenApplicationsExist_deletesDependentsBeforeApplications() {
+    void whenApplicationsExist_deletesInOrderThenLosPlpMasters() {
         UUID id1 = UUID.fromString("00000000-0000-0000-0000-000000000001");
         LoanApplication app = new LoanApplication();
         app.setId(id1);
         when(loanApplicationRepository.findAll()).thenReturn(List.of(app));
+        when(demoPreservedUserEmails.preservedEmailsLower()).thenReturn(List.of("alwyn@billionloans.com"));
+        when(losUserRepository.deleteBorrowersNotInPreservedEmails(List.of("alwyn@billionloans.com"))).thenReturn(1);
+        when(subProgramMasterRepository.count()).thenReturn(0L);
+        when(programMasterRepository.count()).thenReturn(0L);
+        when(anchorMasterRepository.count()).thenReturn(0L);
+
         InOrder o = inOrder(
                 applicationStatusHistoryRepository,
-                stepExecutionRecordRepository,
-                kycStepResultRepository,
-                documentRepository,
-                apiAuditLogRepository,
-                auditEventRepository,
-                esignRequestRepository,
-                applicationNoteRepository,
-                manualKycReviewRepository,
-                kfsDocumentRepository,
-                coLendingAllocationRepository,
-                collateralValuationRepository,
-                transactionRepository,
-                nachMandateRepository,
-                aaConsentRepository,
-                loanApplicationRepository);
-        assertThat(demoApplicationPurgeService.deleteAllApplicationsAndDependents()).isEqualTo(1);
-        o.verify(applicationStatusHistoryRepository).deleteByApplicationIdIn(List.of(id1));
-        o.verify(stepExecutionRecordRepository).deleteByApplicationIdIn(List.of(id1));
-        o.verify(kycStepResultRepository).deleteByApplicationIdIn(List.of(id1));
-        o.verify(documentRepository).deleteByApplicationIdIn(List.of(id1));
-        o.verify(apiAuditLogRepository).deleteByApplicationIdIn(List.of(id1));
-        o.verify(auditEventRepository).deleteByApplicationIdIn(List.of(id1));
-        o.verify(esignRequestRepository).deleteByApplicationIdIn(List.of(id1));
-        o.verify(applicationNoteRepository).deleteByApplicationIdIn(List.of(id1));
-        o.verify(manualKycReviewRepository).deleteByApplicationIdIn(List.of(id1));
-        o.verify(kfsDocumentRepository).deleteByApplicationIdIn(List.of(id1));
-        o.verify(coLendingAllocationRepository).deleteByApplicationIdIn(List.of(id1));
-        o.verify(collateralValuationRepository).deleteByApplicationIdIn(List.of(id1));
-        o.verify(transactionRepository).deleteByApplicationIdIn(List.of(id1));
-        o.verify(nachMandateRepository).deleteByApplicationIdIn(List.of(id1));
-        o.verify(aaConsentRepository).deleteByApplicationIdIn(List.of(id1));
+                loanApplicationRepository,
+                losUserRepository,
+                subProgramMasterRepository,
+                programMasterRepository,
+                anchorMasterRepository);
+        DemoPurgeResult result = demoApplicationPurgeService.purgeAllDemoData();
+        assertThat(result.deletedApplications()).isEqualTo(1);
         o.verify(loanApplicationRepository).deleteAllByIdInBatch(List.of(id1));
+        o.verify(losUserRepository).deleteBorrowersNotInPreservedEmails(anyList());
+        verify(subProgramMasterRepository, never()).deleteAllInBatch();
     }
 }

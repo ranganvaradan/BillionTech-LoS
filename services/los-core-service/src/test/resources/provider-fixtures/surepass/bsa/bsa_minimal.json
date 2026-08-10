@@ -1,0 +1,63 @@
+﻿{
+  "_fixtureMeta": {
+    "dataOrigin": "USER_SUPPLIED_SAMPLE",
+    "sanitized": true,
+    "note": "Trimmed from TESTED_SUREPASS_BSA_JSON_RESPONSE; PII/account hashed in adapter"
+  },
+  "success": true,
+  "status_code": 200,
+  "message": "Processing completed successfully",
+  "data": {
+    "doc_id": "bsa_fixture_001",
+    "client_id": "bank_statement_fixture",
+    "status": "completed",
+    "account_info": {
+      "bank_name": "hdfc",
+      "account_holder_name": "SAMPLE HOLDER",
+      "account_number": "50100477064381",
+      "ifsc": "HDFC0009374",
+      "account_type": "Savings",
+      "statement_period": { "from": "01-06-25", "to": "31-08-25" }
+    },
+    "transactions": [
+      {
+        "sr_no": 1,
+        "txn_date": "01-06-25",
+        "value_date": "01-06-25",
+        "reference_no": "REF001",
+        "description": "UPI-SAMPLE-MERCHANT",
+        "txn_type": "Dr.",
+        "credit": "",
+        "debit": 17.0,
+        "balance": 45835.05
+      },
+      {
+        "sr_no": 2,
+        "txn_date": "02-06-25",
+        "value_date": "02-06-25",
+        "reference_no": "REF002",
+        "description": "NEFT CREDIT SAMPLE",
+        "txn_type": "Cr.",
+        "credit": "1000.00",
+        "debit": null,
+        "balance": 46835.05
+      },
+      {
+        "sr_no": 3,
+        "txn_date": "03-06-25",
+        "value_date": "03-06-25",
+        "reference_no": "REF003",
+        "description": "ZERO CREDIT EDGE",
+        "txn_type": "Cr.",
+        "credit": 0,
+        "debit": "",
+        "balance": 46835.05
+      }
+    ],
+    "mismatched_sequence_date": [],
+    "negative_balance": [],
+    "discrepancies": { "notes": [] },
+    "analysis_completed": true,
+    "analysis_result": { "avg_balance": 45000, "provider_risk_flag": "LOW" }
+  }
+}

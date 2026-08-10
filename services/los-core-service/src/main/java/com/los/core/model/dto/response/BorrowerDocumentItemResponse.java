@@ -10,6 +10,10 @@ import java.util.UUID;
 @Builder
 public class BorrowerDocumentItemResponse {
     UUID id;
+    /** UPLOAD = documents table; ESIGN = signed PDF from esign_requests. */
+    String source;
+    /** KYC or SIGNED — for borrower portal grouping. */
+    String category;
     String documentType;
     String fileName;
     String contentType;

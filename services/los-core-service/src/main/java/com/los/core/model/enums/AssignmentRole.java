@@ -13,6 +13,7 @@ import java.util.stream.Collectors;
  */
 public enum AssignmentRole {
     SALES_OFFICER,
+    RELATIONSHIP_MANAGER,
     CREDIT_OFFICER,
     CREDIT_MANAGER,
     OPERATIONS,
@@ -52,6 +53,7 @@ public enum AssignmentRole {
     public String getDisplayLabel() {
         return switch (this) {
             case SALES_OFFICER -> "Sales Officer";
+            case RELATIONSHIP_MANAGER -> "Relationship Manager";
             case CREDIT_OFFICER -> "Credit Officer";
             case CREDIT_MANAGER -> "Credit Manager";
             case OPERATIONS -> "Operations";

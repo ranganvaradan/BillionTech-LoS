@@ -1,31 +1,59 @@
 ﻿# Build output
 target/
+**/target/
 *.jar
+*.war
 *.class
+/org/
+**/org/
 
-# Maven local repo
-C:/
+# Frontend build
+**/node_modules/
+**/dist/
+**/dist-ssr/
+*.tar.gz
+ui-dist*.tar.gz
+
+# Maven / local junk
+.m2/
+*.sha1
 
 # IDE
 .metadata/
 .idea/
 *.iml
+.classpath
+.project
+.settings/
+.vscode/
+!.vscode/extensions.json
 
-# Env files
+# Secrets / local env (keep *.example)
 .env
+.env.*
+!.env.example
+!**/.env.example
+!**/.env.staging.example
 .env.dev
 .env.prod
+.env.staging
 
-# Local documents and uploads
+# Runtime uploads / borrower documents
 uploads/
 .los-local-documents/
+**/data/documents/
+data/documents/
 
-# Node
-node_modules/
-
-# Logs
+# Logs / crash dumps
 *.log
-*.sha1
-*.m2
-.m2/
+hs_err_pid*
+replay_pid*
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local machine path noise (legacy)
+C:/
 Users/

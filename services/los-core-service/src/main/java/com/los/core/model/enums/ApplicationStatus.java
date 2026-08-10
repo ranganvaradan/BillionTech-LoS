@@ -3,6 +3,12 @@ package com.los.core.model.enums;
 public enum ApplicationStatus {
     DRAFT,
     CONSENT_PENDING,
+    BORROWER_SUBMITTED,
+    /** RM handed off to credit officer — awaiting CO accept or send-back */
+    PENDING_CREDIT_OFFICER,
+    /** CO sent application back to relationship manager */
+    SENT_BACK_TO_RM,
+    BORROWER_SENT_BACK,
     KYC_IN_PROGRESS,
     KYC_FAILED,
     UNDERWRITING,
@@ -14,6 +20,8 @@ public enum ApplicationStatus {
     /** Credit approved; CAM generated / awaiting review */
     UNDERWRITING_COMPLETED,
     CAM_READY,
+    /** Credit manager sent CAM back to credit officer for rework */
+    CAM_SENT_BACK,
     CAM_REVIEWED,
     SANCTION_PENDING,
     SANCTIONED,

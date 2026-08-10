@@ -2,12 +2,14 @@ package com.los.core.service.assignment;
 
 import com.los.core.exception.BusinessRuleException;
 import com.los.core.exception.ResourceNotFoundException;
+import com.los.core.config.LosAuthProperties;
 import com.los.core.model.dto.request.LosUserRequest;
 import com.los.core.model.dto.response.LosUserResponse;
 import com.los.core.model.entity.LosUser;
 import com.los.core.repository.LosUserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Sort;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,6 +23,8 @@ import java.util.stream.Collectors;
 public class LosUserService {
 
     private final LosUserRepository repository;
+    private final PasswordEncoder passwordEncoder;
+    private final LosAuthProperties losAuthProperties;
 
     public List<LosUserResponse> list(String role) {
         if (role != null && !role.isBlank()) {
@@ -45,6 +49,8 @@ public class LosUserService {
         }
         LosUser e = new LosUser();
         copy(r, e);
+        e.setPasswordHash(passwordEncoder.encode(losAuthProperties.getDefaultTemporaryPassword()));
+        e.setPasswordResetRequired(true);
         return toResponse(repository.save(e));
     }
 

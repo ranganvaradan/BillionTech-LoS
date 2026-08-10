@@ -5,6 +5,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,6 +56,12 @@ public class GlobalExceptionHandler {
         return buildResponse(HttpStatus.BAD_REQUEST, errors);
     }
 
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<Map<String, Object>> handleMaxUpload(MaxUploadSizeExceededException ex) {
+        log.warn("Upload rejected — file exceeds allowed size");
+        return buildResponse(HttpStatus.PAYLOAD_TOO_LARGE, "File exceeds allowed size");
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, Object>> handleIllegalArgument(IllegalArgumentException ex) {
         return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
@@ -63,11 +70,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Map<String, Object>> handleGeneral(Exception ex) {
         log.error("Unhandled exception", ex);
-        String msg = ex.getMessage();
-        if (msg == null || msg.isBlank()) {
-            msg = "An unexpected error occurred";
-        }
-        return buildResponse(HttpStatus.INTERNAL_SERVER_ERROR, msg);
+        // Never expose JVM/framework exception text (e.g. ClassCastException) to business clients.
+        Map<String, Object> body = buildResponseBody(
+                HttpStatus.INTERNAL_SERVER_ERROR,
+                "An unexpected error occurred");
+        body.put("errorClass", ex.getClass().getSimpleName());
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(body);
     }
 
     private ResponseEntity<Map<String, Object>> buildResponse(HttpStatus status, String message) {

@@ -6,6 +6,7 @@ import com.los.core.config.IntegrationProperties;
 import com.los.core.model.entity.ApiAuditLog;
 import com.los.core.model.enums.KycStepType;
 import com.los.core.repository.ApiAuditLogRepository;
+import com.los.core.service.audit.IntegrationApiAuditService;
 import com.los.core.service.integration.providers.IKycProvider;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -123,9 +124,11 @@ log.info("[Karza][RESPONSE] Body: {}", response.body());
 log.info("[Karza][RESPONSE] Time Taken: {} ms", durationMs);
 
             // Audit log
-            saveAuditLog("KARZA", "KARZA_" + stepType.name(), requestBody,
+            String auditProvider = IntegrationApiAuditService.auditProviderFromPayload(payload, "KARZA");
+            saveAuditLog(auditProvider, auditProvider + "_" + stepType.name(), requestBody,
                     response.body(), response.statusCode() == 200 ? "SUCCESS" : "FAILED",
-                    response.statusCode(), null, transactionId, requestTime, responseTime, durationMs);
+                    response.statusCode(), null, transactionId, requestTime, responseTime, durationMs,
+                    IntegrationApiAuditService.applicationIdFromPayload(payload));
 
             if (response.statusCode() == 200) {
                 return parseKarzaResponse(stepType, response.body(), transactionId);
@@ -136,9 +139,11 @@ log.info("[Karza][RESPONSE] Time Taken: {} ms", durationMs);
 
         } catch (Exception e) {
             log.error("[Karza] API call failed for {}: {}", stepType, e.getMessage(), e);
-            saveAuditLog("KARZA", "KARZA_" + stepType.name(), requestBody,
+            String auditProvider = IntegrationApiAuditService.auditProviderFromPayload(payload, "KARZA");
+            saveAuditLog(auditProvider, auditProvider + "_" + stepType.name(), requestBody,
                     null, "ERROR", null, e.getMessage(), transactionId,
-                    requestTime, Instant.now(), null);
+                    requestTime, Instant.now(), null,
+                    IntegrationApiAuditService.applicationIdFromPayload(payload));
             return new KycVerificationResult(false, 0.0, null, transactionId,
                     "Karza API error: " + e.getMessage());
         }
@@ -159,7 +164,7 @@ log.info("[Karza][RESPONSE] Time Taken: {} ms", durationMs);
                 yield mapWithConsent("udyamRegistrationNo", udyam.toUpperCase(Locale.ROOT));
             }
             case DL_VERIFY -> {
-                String dlNo = requiredString(payload, "dlNo", "drivingLicenseNumber");
+                String dlNo = requiredString(payload, "dlNo", "drivingLicenseNumber", "dlNumber");
                 String dob = requiredString(payload, "dob", "dateOfBirth", "drivingLicenseDob");
                 Map<String, Object> dlRequest = mapWithConsent("dlNo", dlNo.toUpperCase(Locale.ROOT));
                 dlRequest.put("dob", dob);
@@ -370,6 +375,7 @@ log.info("[Karza][RESPONSE] Time Taken: {} ms", durationMs);
      */
     private KycVerificationResult simulatedFallback(KycStepType stepType, Map<String, Object> payload, String transactionId) {
         log.info("[Karza] Returning simulated response for {} (no API key configured)", stepType);
+        Instant requestTime = Instant.now();
         Map<String, Object> parsed = new LinkedHashMap<>();
         parsed.put("simulated", true);
 
@@ -401,12 +407,32 @@ log.info("[Karza][RESPONSE] Time Taken: {} ms", durationMs);
             default -> parsed.put("verified", true);
         }
 
+        Instant responseTime = Instant.now();
+        String auditProvider = IntegrationApiAuditService.auditProviderFromPayload(payload, "KARZA");
+        try {
+            saveAuditLog(
+                    auditProvider,
+                    auditProvider + "_" + stepType.name(),
+                    objectMapper.writeValueAsString(payload),
+                    objectMapper.writeValueAsString(parsed),
+                    "SUCCESS",
+                    200,
+                    null,
+                    transactionId,
+                    requestTime,
+                    responseTime,
+                    Duration.between(requestTime, responseTime).toMillis(),
+                    IntegrationApiAuditService.applicationIdFromPayload(payload));
+        } catch (Exception e) {
+            log.warn("[Karza] Failed to audit simulated response: {}", e.getMessage());
+        }
+
         return new KycVerificationResult(true, 0.95, parsed, transactionId, null);
     }
 
     private void saveAuditLog(String provider, String apiName, String request, String response,
                                String status, Integer httpStatus, String errorMsg, String txnId,
-                               Instant reqTime, Instant resTime, Long durationMs) {
+                               Instant reqTime, Instant resTime, Long durationMs, UUID applicationId) {
         try {
             ApiAuditLog audit = ApiAuditLog.builder()
                     .providerName(provider)
@@ -417,6 +443,7 @@ log.info("[Karza][RESPONSE] Time Taken: {} ms", durationMs);
                     .httpStatusCode(httpStatus)
                     .errorMessage(errorMsg)
                     .transactionId(txnId)
+                    .applicationId(applicationId)
                     .requestTime(reqTime)
                     .responseTime(resTime)
                     .durationMs(durationMs)

@@ -7,6 +7,15 @@ spring:
       on-profile: local
 
 los:
+  plp:
+    # Base URL must reach the PLP ingress that exposes both POST /api/v1/auth/login and /api/v1/integrations/los/** (API gateway JWT).
+    # Set PLP_INTEGRATION_EMAIL + PLP_INTEGRATION_PASSWORD for an ACTIVE PLP IAM lender user so LOS can obtain a Bearer JWT.
+    enabled: ${PLP_SYNC_ENABLED:true}
+    # Local PLP gateway on host :8180 (no /plp-api). In Docker use host.docker.internal; on host IDE use localhost.
+    base-url: ${PLP_BASE_URL:http://host.docker.internal:8180}
+    lender-id: ${PLP_LENDER_ID:2d6e05e3-423f-4946-8027-8cbb4f01aefa}
+    integration-email: ${PLP_INTEGRATION_EMAIL:admin@plp.com}
+    integration-password: ${PLP_INTEGRATION_PASSWORD:Admin@PLP2026}
   security:
     local-dev-permit-all: true
   demo:
@@ -14,3 +23,10 @@ los:
   # UI + API on one machine without running MinIO — files under file-storage.root
   document:
     storage: local
+  integration:
+    karza:
+      # ITR / GST analysis Karza product key (not identity KARZA_API_KEY). Override with KARZA_GST_API_KEY if needed.
+      gst-karza-key: ${KARZA_GST_API_KEY:WGkAnHahXC3KeAiK}
+      itr-return-forms-url: ${KARZA_ITR_RETURN_FORMS_URL:https://api.karza.in/itr/uat/v1/itr-return-forms}
+      gst-docs-upload-url: ${KARZA_GST_DOCS_UPLOAD_URL:https://api.karza.in/gst/uat/v2/docs-upload-advance}
+      gst-docs-read-timeout-ms: ${KARZA_GST_DOCS_READ_TIMEOUT:300000}

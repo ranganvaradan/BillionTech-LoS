@@ -39,4 +39,10 @@ public class BorrowerApplicationDetailResponse {
     List<BorrowerTimelineStepResponse> timeline;
     /** Borrower-submitted collateral (intake) — no internal credit remarks. */
     List<BorrowerLabelValueItem> collateralSummary;
+    /** Invoice discounting borrower onboarding — no term loan or KFS tab in portal. */
+    boolean invoiceDiscountingBorrower;
+    BigDecimal sanctionedAmount;
+    BigDecimal interestRate;
+    Integer tenureMonths;
+    boolean termsDocumentAvailable;
 }

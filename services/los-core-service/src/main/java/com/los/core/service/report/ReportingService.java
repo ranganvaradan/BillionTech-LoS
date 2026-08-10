@@ -284,6 +284,129 @@ public class ReportingService {
         return apps.stream().filter(a -> a.getStatus() == status).count();
     }
 
+    /**
+     * Operations report for admin UI: funnel, products, intake segments, handoff & pipeline queues.
+     */
+    public Map<String, Object> getOperationsReport(String period) {
+        List<LoanApplication> fetched = applicationRepository.findAll();
+        final List<LoanApplication> allApps =
+                (period != null && !period.isBlank() && !"ALL".equalsIgnoreCase(period))
+                        ? filterByPeriod(fetched, period)
+                        : fetched;
+
+        List<Map<String, Object>> statusCounts = Arrays.stream(ApplicationStatus.values())
+                .map(s -> {
+                    long c = countByStatus(allApps, s);
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("status", s.name());
+                    row.put("count", c);
+                    return row;
+                })
+                .filter(r -> ((Number) r.get("count")).longValue() > 0)
+                .collect(Collectors.toList());
+
+        Map<String, Long> byProduct = allApps.stream()
+                .collect(Collectors.groupingBy(
+                        a -> a.getLoanProduct() != null ? a.getLoanProduct() : "Unknown",
+                        Collectors.counting()));
+        List<Map<String, Object>> productCounts = byProduct.entrySet().stream()
+                .map(e -> {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("product", e.getKey());
+                    row.put("count", e.getValue());
+                    return row;
+                })
+                .sorted((a, b) -> Long.compare((Long) b.get("count"), (Long) a.get("count")))
+                .collect(Collectors.toList());
+
+        Map<String, Long> bySegment = allApps.stream()
+                .collect(Collectors.groupingBy(
+                        a -> a.getIntakeSegment() != null ? a.getIntakeSegment().name() : "UNKNOWN",
+                        Collectors.counting()));
+        List<Map<String, Object>> intakeSegmentCounts = bySegment.entrySet().stream()
+                .map(e -> {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("segment", e.getKey());
+                    row.put("count", e.getValue());
+                    return row;
+                })
+                .collect(Collectors.toList());
+
+        List<ApplicationStatus> handoff = List.of(
+                ApplicationStatus.BORROWER_SUBMITTED,
+                ApplicationStatus.PENDING_CREDIT_OFFICER,
+                ApplicationStatus.SENT_BACK_TO_RM,
+                ApplicationStatus.BORROWER_SENT_BACK);
+        List<Map<String, Object>> handoffQueue = handoff.stream()
+                .map(s -> {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("status", s.name());
+                    row.put("count", countByStatus(allApps, s));
+                    return row;
+                })
+                .collect(Collectors.toList());
+
+        List<ApplicationStatus> kycUw = List.of(
+                ApplicationStatus.KYC_IN_PROGRESS,
+                ApplicationStatus.KYC_FAILED,
+                ApplicationStatus.UNDERWRITING,
+                ApplicationStatus.CAM_READY,
+                ApplicationStatus.CAM_REVIEWED);
+        List<Map<String, Object>> kycAndUnderwriting = kycUw.stream()
+                .map(s -> {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("status", s.name());
+                    row.put("count", countByStatus(allApps, s));
+                    return row;
+                })
+                .collect(Collectors.toList());
+
+        List<ApplicationStatus> sanctionEsign = List.of(
+                ApplicationStatus.SANCTION_PENDING,
+                ApplicationStatus.SANCTIONED,
+                ApplicationStatus.SANCTION_ISSUED,
+                ApplicationStatus.KFS_GENERATED,
+                ApplicationStatus.ESIGN_PENDING,
+                ApplicationStatus.ESIGN_COMPLETED);
+        List<Map<String, Object>> sanctionAndEsign = sanctionEsign.stream()
+                .map(s -> {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("status", s.name());
+                    row.put("count", countByStatus(allApps, s));
+                    return row;
+                })
+                .collect(Collectors.toList());
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("period", period != null ? period : "ALL");
+        out.put("statusCounts", statusCounts);
+        out.put("productCounts", productCounts);
+        out.put("intakeSegmentCounts", intakeSegmentCounts);
+        out.put("handoffQueue", handoffQueue);
+        out.put("kycAndUnderwriting", kycAndUnderwriting);
+        out.put("sanctionAndEsign", sanctionAndEsign);
+        return out;
+    }
+
+    private List<LoanApplication> filterByPeriod(List<LoanApplication> apps, String period) {
+        LocalDate end = LocalDate.now().plusDays(1);
+        LocalDate start = switch (period.toUpperCase()) {
+            case "7D", "WEEK" -> LocalDate.now().minusDays(7);
+            case "30D", "MONTH" -> LocalDate.now().minusDays(30);
+            case "90D", "QUARTER" -> LocalDate.now().minusDays(90);
+            case "YTD" -> LocalDate.now().withDayOfYear(1);
+            default -> null;
+        };
+        if (start == null) {
+            return apps;
+        }
+        Instant from = start.atStartOfDay(ZoneId.systemDefault()).toInstant();
+        Instant to = end.atStartOfDay(ZoneId.systemDefault()).toInstant();
+        return apps.stream()
+                .filter(a -> a.getCreatedAt() != null && !a.getCreatedAt().isBefore(from) && a.getCreatedAt().isBefore(to))
+                .collect(Collectors.toList());
+    }
+
     private String extractBorrowerName(LoanApplication app) {
         if (app.getPersonalInfo() != null && app.getPersonalInfo().containsKey("name")) {
             return String.valueOf(app.getPersonalInfo().get("name"));
@@ -293,7 +416,8 @@ public class ReportingService {
 
     private String determineKycStatus(LoanApplication app) {
         return switch (app.getStatus()) {
-            case DRAFT, CONSENT_PENDING -> "NOT_STARTED";
+            case DRAFT, CONSENT_PENDING, BORROWER_SENT_BACK -> "NOT_STARTED";
+            case BORROWER_SUBMITTED, PENDING_CREDIT_OFFICER, SENT_BACK_TO_RM -> "AWAITING_REVIEW";
             case KYC_IN_PROGRESS -> "IN_PROGRESS";
             case KYC_FAILED -> "FAILED";
             default -> "COMPLETED";

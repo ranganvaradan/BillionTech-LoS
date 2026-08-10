@@ -1,5 +1,6 @@
 package com.los.core.service.underwriting;
 
+import com.los.core.audit.AdminConfigAuditSupport;
 import com.los.core.exception.BusinessRuleException;
 import com.los.core.exception.ResourceNotFoundException;
 import com.los.core.model.dto.request.UnderwritingRuleSetRequest;
@@ -21,6 +22,7 @@ import java.util.stream.Collectors;
 public class UnderwritingRuleSetAdminService {
 
     private final UnderwritingRuleSetRepository repository;
+    private final AdminConfigAuditSupport adminConfigAuditSupport;
 
     public List<UnderwritingRuleSetResponse> list() {
         return repository.findAll().stream().map(this::toResponse).collect(Collectors.toList());
@@ -32,16 +34,21 @@ public class UnderwritingRuleSetAdminService {
         applyRequest(e, r);
         e.setActive(false);
         e.setUpdatedAt(Instant.now());
-        return toResponse(repository.save(e));
+        UnderwritingRuleSetResponse saved = toResponse(repository.save(e));
+        adminConfigAuditSupport.captureCreate("UNDERWRITING_RULE_SET", saved.getId().toString(), saved, "Underwriting rule set created");
+        return saved;
     }
 
     @Transactional
     public UnderwritingRuleSetResponse update(UUID id, UnderwritingRuleSetRequest r) {
         UnderwritingRuleSet e = repository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Underwriting rule set not found: " + id));
+        UnderwritingRuleSetResponse before = toResponse(e);
         applyRequest(e, r);
         e.setUpdatedAt(Instant.now());
-        return toResponse(repository.save(e));
+        UnderwritingRuleSetResponse after = toResponse(repository.save(e));
+        adminConfigAuditSupport.captureUpdate("UNDERWRITING_RULE_SET", id.toString(), before, after, "Underwriting rule set updated");
+        return after;
     }
 
     @Transactional
@@ -55,25 +62,31 @@ public class UnderwritingRuleSetAdminService {
                     "DEACTIVATE_FIRST",
                     null);
         }
+        UnderwritingRuleSetResponse before = toResponse(e);
         repository.delete(e);
+        adminConfigAuditSupport.captureDelete("UNDERWRITING_RULE_SET", id.toString(), before, "Underwriting rule set deleted");
     }
 
     @Transactional
     public void activate(UUID id) {
         UnderwritingRuleSet e = repository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Underwriting rule set not found: " + id));
+        UnderwritingRuleSetResponse before = toResponse(e);
         e.setActive(true);
         e.setUpdatedAt(Instant.now());
         repository.save(e);
+        adminConfigAuditSupport.captureAction("UNDERWRITING_RULE_SET", id.toString(), "ACTIVATE", before, toResponse(e), "Underwriting rule set activated");
     }
 
     @Transactional
     public void deactivate(UUID id) {
         UnderwritingRuleSet e = repository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Underwriting rule set not found: " + id));
+        UnderwritingRuleSetResponse before = toResponse(e);
         e.setActive(false);
         e.setUpdatedAt(Instant.now());
         repository.save(e);
+        adminConfigAuditSupport.captureAction("UNDERWRITING_RULE_SET", id.toString(), "DEACTIVATE", before, toResponse(e), "Underwriting rule set deactivated");
     }
 
     private void applyRequest(UnderwritingRuleSet e, UnderwritingRuleSetRequest r) {

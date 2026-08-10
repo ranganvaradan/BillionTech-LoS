@@ -1,5 +1,6 @@
 package com.los.core.service.loan;
 
+import com.los.core.creditintelligence.service.CreditIntelligenceFoundationService;
 import com.los.core.exception.BusinessRuleException;
 import com.los.core.model.dto.response.ApplicationResponse;
 import com.los.core.model.entity.LoanApplication;
@@ -51,6 +52,8 @@ class PostCreditFlowTransitionsTest {
     @Mock private CreditControlService creditControlService;
     @Mock private UnderwritingEvaluationService underwritingEvaluationService;
     @Mock private AssignmentRuleApplicationService assignmentRuleApplicationService;
+    @Mock private CreditIntelligenceFoundationService creditIntelligenceFoundationService;
+    @Mock private com.los.core.service.vkyc.VkycWorkflowService vkycWorkflowService;
 
     @InjectMocks
     private LoanApplicationFlowService flowService;

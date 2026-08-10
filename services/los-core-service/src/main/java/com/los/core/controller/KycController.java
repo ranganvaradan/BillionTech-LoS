@@ -9,10 +9,12 @@ import com.los.core.exception.ForbiddenException;
 import com.los.core.service.kyc.IKycOrchestrationService;
 import com.los.core.service.kyc.IKycManualReviewService;
 import com.los.core.service.audit.AuditService;
+import com.los.core.service.flow.event.AutoBureauPullRequestedEvent;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -29,6 +31,7 @@ public class KycController {
     private final IKycOrchestrationService kycOrchestrationService;
     private final IKycManualReviewService kycManualReviewService;
     private final AuditService auditService;
+    private final ApplicationEventPublisher eventPublisher;
 
     private static final java.util.Set<String> MANUAL_KYC_ALLOWED_ROLES = java.util.Set.of(
             "ADMIN",
@@ -121,6 +124,12 @@ public class KycController {
                 ),
                 "Manual KYC saved for step " + stepType.name()
         );
+
+        Map<String, Object> outcome = kycOrchestrationService.computeKycOutcome(applicationId);
+        if ("PASS".equalsIgnoreCase(String.valueOf(outcome.getOrDefault("outcome", "INCOMPLETE")))) {
+            eventPublisher.publishEvent(
+                    new AutoBureauPullRequestedEvent(applicationId, "MANUAL_KYC_REVIEW_PASS"));
+        }
 
         return ResponseEntity.ok(saved);
     }

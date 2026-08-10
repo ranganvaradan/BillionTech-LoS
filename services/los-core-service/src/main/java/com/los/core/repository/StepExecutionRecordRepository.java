@@ -9,11 +9,13 @@ import org.springframework.data.repository.query.Param;
 import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
+import com.los.core.model.enums.StepExecutionStatus;
 
 public interface StepExecutionRecordRepository extends JpaRepository<StepExecutionRecord, UUID> {
 
     List<StepExecutionRecord> findByApplicationIdOrderByStartedAtDesc(UUID applicationId);
     List<StepExecutionRecord> findByApplicationIdAndStepTypeStartingWithOrderByStartedAtAsc(UUID applicationId, String stepTypePrefix);
+    boolean existsByApplicationIdAndStepTypeAndStatus(UUID applicationId, String stepType, StepExecutionStatus status);
 
     @Modifying
     @Query("delete from StepExecutionRecord s where s.applicationId in :ids")

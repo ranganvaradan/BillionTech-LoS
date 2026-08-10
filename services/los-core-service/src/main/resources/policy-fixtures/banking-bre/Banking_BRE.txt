@@ -1,0 +1,39 @@
+ 
+Fields Required in Excel Report 
+- Average Daily Balance of last 3 months. 
+- Average monthly transaction for last 3 months. 
+- Average Daily QR Settlement for lats 3 months. 
+- Average Monthly Settlement count for last 3 months. 
+- Inward Cheque / ECS / ENACH Returns both in percentage and number of returns 
+separately. 
+- Intercompany / Within Merchant group transactions. 
+- Loans disbursed by Financial Institutions in last 3 months with the name of the Bank 
+/ Financial institution. 
+- Party wise Large credits with name and amount of transaction. 
+- EMI bounces in last 3 months. 
+- Any Debits / Credits with respect to online gaming to be shown separately with 
+number & value of transactions in last 3 months. 
+ 
+Banking BRE Rules 
+- Last 3 months Average Daily Balance should be equal or above the proposed EDI 
+amount for Starter Loans Product. 
+- One fifth of last 3 months Average Daily Balance should be equal or above the 
+proposed EDI amount for DigiLeap Loans Product. 
+- Last 3 months monthly average transactions must be minimum of 20 transactions for 
+DigiLeap Loans Product. 
+- One tenth of last 3 months Average Daily Settlements should be equal or above the 
+proposed EDI amount for Smart Switch Product. 
+- Last 3 months monthly average number of settlements must be minimum of 20 
+Settlements for Smart Switch Loans Product. 
+- One fifth of last 3 months Average Daily Balance should be equal or above the 
+proposed EDI amount for Reboost Loans Product specific to loan amount above 
+Rs.60,000. 
+- Last 3 months monthly average transactions must be minimum of 30 transactions for 
+ReBoost Loans Product specific to loan amount above Rs.60,000. 
+- Inward Cheque Return of 5% if transactions are more than 100 in last 3 months or 5 if 
+the transactions are less than 100 for all the bank statement based products. 
+- Any Loans disbursed in last 3 months to be removed from Average Daily Balance 
+calculation. 
+- Any credits from online gaming to be removed from Average Daily Balance calculation. 
+- Any bulk deposition by merchant which is more than 10 times of average depositions in 
+last 3 months to be removed from Average Daily Balance calculation. 

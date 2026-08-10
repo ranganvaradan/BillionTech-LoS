@@ -8,12 +8,14 @@ import com.los.core.model.entity.CreditAppraisalMemo;
 import com.los.core.model.entity.LoanApplication;
 import com.los.core.model.entity.UnderwritingScorecard;
 import com.los.core.model.entity.UnderwritingEvaluation;
+import com.los.core.model.enums.ApplicationStatus;
 import com.los.core.repository.CreditAppraisalMemoRepository;
 import com.los.core.repository.LoanApplicationRepository;
 import com.los.core.repository.UnderwritingEvaluationRepository;
 import com.los.core.repository.UnderwritingScorecardRepository;
 import com.los.core.service.credit.CreditControlKeys;
 import com.los.core.service.credit.CreditControlService;
+import com.los.core.service.credit.LimitSizingService;
 import com.los.core.service.kyc.IKycOrchestrationService;
 import com.lowagie.text.Chunk;
 import com.lowagie.text.Document;
@@ -54,6 +56,7 @@ public class CreditAppraisalService {
     private final UnderwritingScorecardRepository scorecardRepository;
     private final IKycOrchestrationService kycOrchestrationService;
     private final CreditControlService creditControlService;
+    private final LimitSizingService limitSizingService;
 
     private static final DateTimeFormatter ZONED_TS =
             DateTimeFormatter.ofPattern("dd MMM yyyy, HH:mm z").withZone(ZoneId.systemDefault());
@@ -63,11 +66,19 @@ public class CreditAppraisalService {
                 .orElseThrow(() -> new ResourceNotFoundException("Application not found: " + applicationId));
         CreditAppraisalMemo cam = camRepository.findByApplicationId(applicationId)
                 .orElseThrow(() -> new ResourceNotFoundException("CAM not generated yet for: " + applicationId));
+        if (applyRequestedSanctionDefaultsIfMissing(cam, app)) {
+            cam = camRepository.save(cam);
+        }
         return toResponse(cam, app);
     }
 
     @Transactional
     public CamResponse updateCam(UUID applicationId, CamUpdateRequest req) {
+        return updateCam(applicationId, req, null);
+    }
+
+    @Transactional
+    public CamResponse updateCam(UUID applicationId, CamUpdateRequest req, UUID actorUserId) {
         CreditAppraisalMemo cam = camRepository.findByApplicationId(applicationId)
                 .orElseThrow(() -> new ResourceNotFoundException("CAM not found: " + applicationId));
         String cst = cam.getCamStatus() != null ? cam.getCamStatus() : "DRAFT";
@@ -91,13 +102,32 @@ public class CreditAppraisalService {
             cam.setRecommendedDecision(req.getRecommendedDecision().trim().toUpperCase(Locale.ROOT));
         }
         if (req.getRecommendedAmount() != null) {
-            cam.setRecommendedAmount(req.getRecommendedAmount());
+            LoanApplication appForCap = applicationRepository.findById(applicationId).orElse(null);
+            BigDecimal recommended = req.getRecommendedAmount();
+            if (appForCap != null) {
+                recommended = limitSizingService.capRecommendedIfConfigured(appForCap, recommended);
+            }
+            cam.setRecommendedAmount(recommended);
         }
         if (req.getRecommendedTenureMonths() != null) {
             cam.setRecommendedTenureMonths(req.getRecommendedTenureMonths());
         }
         if (req.getRecommendedRate() != null) {
             cam.setRecommendedRate(req.getRecommendedRate());
+        }
+        if (req.getInterestType() != null) {
+            String it = req.getInterestType().trim().toUpperCase(Locale.ROOT);
+            if (it.isEmpty()) {
+                cam.setInterestType(null);
+            } else if ("UPFRONT".equals(it) || "REDUCING".equals(it)) {
+                cam.setInterestType(it);
+            } else {
+                throw new BusinessRuleException(
+                        "Interest type must be UPFRONT or REDUCING",
+                        "CAM_INTEREST_TYPE_INVALID",
+                        "OPEN_CAM",
+                        Map.of("interestType", req.getInterestType()));
+            }
         }
         if (req.getConditionsPrecedent() != null) {
             cam.setConditionsPrecedentJson(new ArrayList<>(req.getConditionsPrecedent()));
@@ -121,8 +151,50 @@ public class CreditAppraisalService {
             cam.setCamStatus("DRAFT");
         }
         cam = camRepository.save(cam);
+        applyCamSanctionBasisToApplication(applicationId, cam);
         LoanApplication app = applicationRepository.findById(applicationId).orElseThrow();
         return toResponse(cam, app);
+    }
+
+    /**
+     * Propagate CAM sanction basis (rate, amount, tenure) to the application for downstream sanction/KFS.
+     */
+    @Transactional
+    public void applyCamSanctionBasisToApplication(UUID applicationId) {
+        LoanApplication app = applicationRepository.findById(applicationId).orElse(null);
+        if (app == null) {
+            return;
+        }
+        camRepository.findByApplicationId(applicationId)
+                .ifPresent(cam -> applyCamSanctionBasisToApplication(applicationId, cam));
+    }
+
+    private void applyCamSanctionBasisToApplication(UUID applicationId, CreditAppraisalMemo cam) {
+        LoanApplication app = applicationRepository.findById(applicationId).orElse(null);
+        if (app == null || cam == null) {
+            return;
+        }
+        boolean changed = false;
+        if (cam.getRecommendedRate() != null) {
+            app.setApprovedRate(cam.getRecommendedRate());
+            app.setInterestRate(cam.getRecommendedRate());
+            changed = true;
+        }
+        if (cam.getRecommendedAmount() != null && app.getSanctionedAmount() == null) {
+            app.setSanctionedAmount(
+                    limitSizingService.capRecommendedIfConfigured(app, cam.getRecommendedAmount()));
+            changed = true;
+        }
+        if (limitSizingService.applySanctionCapIfConfigured(app)) {
+            changed = true;
+        }
+        if (cam.getRecommendedTenureMonths() != null) {
+            app.setTenureMonths(cam.getRecommendedTenureMonths());
+            changed = true;
+        }
+        if (changed) {
+            applicationRepository.save(app);
+        }
     }
 
     /**
@@ -130,6 +202,11 @@ public class CreditAppraisalService {
      */
     @Transactional
     public CamResponse submitCam(UUID applicationId) {
+        return submitCam(applicationId, null);
+    }
+
+    @Transactional
+    public CamResponse submitCam(UUID applicationId, UUID actorUserId) {
         CreditAppraisalMemo cam = camRepository.findByApplicationId(applicationId)
                 .orElseThrow(() -> new ResourceNotFoundException("CAM not found: " + applicationId));
         String st = cam.getCamStatus() != null ? cam.getCamStatus() : "DRAFT";
@@ -140,31 +217,61 @@ public class CreditAppraisalService {
                     "OPEN_CAM",
                     Map.of("camStatus", st));
         }
+        requireSanctionBasisComplete(cam);
         cam.setCamStatus("SUBMITTED");
         cam.setSubmittedAt(Instant.now());
         cam = camRepository.save(cam);
         LoanApplication app = applicationRepository.findById(applicationId).orElseThrow();
+        // Re-submit after send-back returns the case to CAM_READY for manager queue.
+        if (app.getStatus() == ApplicationStatus.CAM_SENT_BACK) {
+            app.setStatus(ApplicationStatus.CAM_READY);
+            app = applicationRepository.save(app);
+        }
         return toResponse(cam, app);
     }
 
     /**
-     * Credit manager sends the CAM back to the officer (SUBMITTED → SENT_BACK). Application status unchanged.
+     * Credit manager returns CAM to the officer (SUBMITTED or APPROVED → SENT_BACK).
+     * APPROVED return is the maker-checker revision path — does not silently edit locked terms.
      */
     @Transactional
     public CamResponse sendBackCam(UUID applicationId) {
+        return sendBackCam(applicationId, null, null);
+    }
+
+    @Transactional
+    public CamResponse sendBackCam(UUID applicationId, UUID actorUserId, String remarks) {
         CreditAppraisalMemo cam = camRepository.findByApplicationId(applicationId)
                 .orElseThrow(() -> new ResourceNotFoundException("CAM not found: " + applicationId));
         String st = cam.getCamStatus() != null ? cam.getCamStatus() : "DRAFT";
-        if (!"SUBMITTED".equals(st)) {
+        if (!"SUBMITTED".equals(st) && !"APPROVED".equals(st)) {
             throw new BusinessRuleException(
-                    "Send back is only for SUBMITTED CAM. Current: " + st,
+                    "Send back is only for SUBMITTED or APPROVED CAM. Current: " + st,
                     "CAM_SENDBACK_INVALID",
                     "OPEN_CAM",
                     Map.of("camStatus", st));
         }
+        boolean fromApproved = "APPROVED".equals(st);
         cam.setCamStatus("SENT_BACK");
+        cam.setCamReviewed(false);
+        if (fromApproved) {
+            int v = cam.getCamVersion() != null ? cam.getCamVersion() : 1;
+            cam.setCamVersion(v + 1);
+            cam.setApprovedAt(null);
+            cam.setApprovedByUserId(null);
+        }
+        if (remarks != null && !remarks.isBlank()) {
+            cam.setCreditManagerRemarks(remarks.trim());
+        }
         cam = camRepository.save(cam);
         LoanApplication app = applicationRepository.findById(applicationId).orElseThrow();
+        if (app.getStatus() == ApplicationStatus.CAM_READY
+                || app.getStatus() == ApplicationStatus.CAM_REVIEWED
+                || app.getStatus() == ApplicationStatus.SANCTION_PENDING
+                || app.getStatus() == ApplicationStatus.APPROVED) {
+            app.setStatus(ApplicationStatus.CAM_SENT_BACK);
+            app = applicationRepository.save(app);
+        }
         return toResponse(cam, app);
     }
 
@@ -173,6 +280,11 @@ public class CreditAppraisalService {
      */
     @Transactional
     public CamResponse rejectMemorandum(UUID applicationId) {
+        return rejectMemorandum(applicationId, null);
+    }
+
+    @Transactional
+    public CamResponse rejectMemorandum(UUID applicationId, UUID actorUserId) {
         CreditAppraisalMemo cam = camRepository.findByApplicationId(applicationId)
                 .orElseThrow(() -> new ResourceNotFoundException("CAM not found: " + applicationId));
         String st = cam.getCamStatus() != null ? cam.getCamStatus() : "DRAFT";
@@ -201,10 +313,46 @@ public class CreditAppraisalService {
         if (cam.getCamStatus() == null) {
             cam.setCamStatus("DRAFT");
         }
+        applyRequestedSanctionDefaultsIfMissing(cam, app);
+        return camRepository.save(cam);
+    }
+
+    /**
+     * Pre-populates credit-officer sanctioning fields from anchor/borrower intake when not yet entered.
+     *
+     * @return {@code true} if any field was updated
+     */
+    private boolean applyRequestedSanctionDefaultsIfMissing(CreditAppraisalMemo cam, LoanApplication app) {
+        boolean changed = false;
         if (cam.getRecommendedDecision() == null) {
             cam.setRecommendedDecision(suggestDecision(app));
+            changed = true;
         }
-        return camRepository.save(cam);
+        if (cam.getRecommendedAmount() == null && app.getRequestedAmount() != null) {
+            cam.setRecommendedAmount(
+                    limitSizingService.capRecommendedIfConfigured(app, app.getRequestedAmount()));
+            changed = true;
+        }
+        if (cam.getRecommendedTenureMonths() == null && app.getTenureMonths() != null) {
+            cam.setRecommendedTenureMonths(app.getTenureMonths());
+            changed = true;
+        }
+        if (cam.getRecommendedRate() == null && app.getInterestRate() != null) {
+            cam.setRecommendedRate(app.getInterestRate());
+            changed = true;
+        }
+        return changed;
+    }
+
+    /** True when CAM is submitted and waiting for credit-manager review. */
+    @Transactional(readOnly = true)
+    public boolean isCamAwaitingManagerReview(UUID applicationId) {
+        return camRepository.findByApplicationId(applicationId)
+                .map(cam -> {
+                    String st = cam.getCamStatus() != null ? cam.getCamStatus() : "DRAFT";
+                    return "SUBMITTED".equalsIgnoreCase(st) && !cam.isCamReviewed();
+                })
+                .orElse(false);
     }
 
     @Transactional
@@ -216,6 +364,7 @@ public class CreditAppraisalService {
             throw new BusinessRuleException(
                     "CAM is already approved", "CAM_ALREADY_APPROVED", "OPEN_CAM", Map.of("camStatus", st));
         }
+        requireSanctionBasisComplete(cam);
         cam.setCamReviewed(true);
         cam.setCamStatus("APPROVED");
         cam.setApprovedAt(Instant.now());
@@ -223,6 +372,31 @@ public class CreditAppraisalService {
             cam.setApprovedByUserId(approvedByUserId);
         }
         camRepository.save(cam);
+        applyCamSanctionBasisToApplication(applicationId, cam);
+    }
+
+    /**
+     * Amount, tenure and proposed rate must be on the CAM before submit or manager approval.
+     * Interest type is optional commercially but persisted when provided.
+     */
+    private void requireSanctionBasisComplete(CreditAppraisalMemo cam) {
+        List<String> missing = new ArrayList<>();
+        if (cam.getRecommendedAmount() == null || cam.getRecommendedAmount().compareTo(BigDecimal.ZERO) <= 0) {
+            missing.add("Proposed amount");
+        }
+        if (cam.getRecommendedTenureMonths() == null || cam.getRecommendedTenureMonths() <= 0) {
+            missing.add("Proposed tenure");
+        }
+        if (cam.getRecommendedRate() == null || cam.getRecommendedRate().compareTo(BigDecimal.ZERO) < 0) {
+            missing.add("Proposed rate (% p.a.)");
+        }
+        if (!missing.isEmpty()) {
+            throw new BusinessRuleException(
+                    "Complete credit officer sanctioning basis before this action: " + String.join(", ", missing),
+                    "CAM_SANCTION_BASIS_INCOMPLETE",
+                    "OPEN_CAM",
+                    Map.of("missing", missing));
+        }
     }
 
     public byte[] renderCamPdf(UUID applicationId) {
@@ -716,9 +890,13 @@ public class CreditAppraisalService {
                 .camReviewed(cam.isCamReviewed())
                 .camVersion(cam.getCamVersion() != null ? cam.getCamVersion() : 1)
                 .camStatus(cam.getCamStatus() != null ? cam.getCamStatus() : "DRAFT")
-                .recommendedAmount(cam.getRecommendedAmount())
-                .recommendedTenureMonths(cam.getRecommendedTenureMonths())
-                .recommendedRate(cam.getRecommendedRate())
+                .recommendedAmount(
+                        cam.getRecommendedAmount() != null ? cam.getRecommendedAmount() : app.getRequestedAmount())
+                .recommendedTenureMonths(
+                        cam.getRecommendedTenureMonths() != null ? cam.getRecommendedTenureMonths() : app.getTenureMonths())
+                .recommendedRate(
+                        cam.getRecommendedRate() != null ? cam.getRecommendedRate() : app.getInterestRate())
+                .interestType(cam.getInterestType())
                 .conditionsPrecedent(cam.getConditionsPrecedentJson())
                 .conditionsSubsequent(cam.getConditionsSubsequentJson())
                 .creditOfficerRemarks(cam.getCreditOfficerRemarks())

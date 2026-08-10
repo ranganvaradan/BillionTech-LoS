@@ -6,6 +6,7 @@ import com.los.core.model.dto.auth.LoginRequest;
 import com.los.core.model.dto.auth.ResetPasswordRequest;
 import com.los.core.model.entity.LosUser;
 import com.los.core.repository.LosUserRepository;
+import com.los.core.service.borrower.BorrowerApplicationOwnershipService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -33,6 +34,9 @@ class DemoAuthServiceTest {
     @Mock
     private LosUserRepository losUserRepository;
 
+    @Mock
+    private BorrowerApplicationOwnershipService borrowerApplicationOwnershipService;
+
     private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
 
     private DemoAuthService demoAuthService;
@@ -42,7 +46,7 @@ class DemoAuthServiceTest {
     @BeforeEach
     void wireEncoder() {
         userId = UUID.fromString("a1000000-0000-0000-0000-000000000002");
-        demoAuthService = new DemoAuthService(losUserRepository, encoder);
+        demoAuthService = new DemoAuthService(losUserRepository, encoder, borrowerApplicationOwnershipService);
     }
 
     @Test
@@ -61,6 +65,24 @@ class DemoAuthServiceTest {
         assertEquals(userId, res.getUserId());
         assertEquals("CREDIT_MANAGER", res.getRole());
         assertEquals(DemoAuthService.DEMO_INSTITUTION, res.getInstitution());
+    }
+
+    @Test
+    void login_borrower_reconcilesApplicationOwnership() {
+        LosUser u = LosUser.builder()
+                .id(userId)
+                .name("Test Borrower")
+                .email("borrower@test.com")
+                .active(true)
+                .passwordHash(encoder.encode("Bltest@123"))
+                .primaryLosRole("BORROWER")
+                .build();
+        when(losUserRepository.findByEmailIgnoreCase("borrower@test.com")).thenReturn(Optional.of(u));
+
+        var res = demoAuthService.login(login("borrower@test.com", "Bltest@123"));
+
+        assertEquals("BORROWER", res.getRole());
+        verify(borrowerApplicationOwnershipService).reconcileCustomerId(userId);
     }
 
     @Test

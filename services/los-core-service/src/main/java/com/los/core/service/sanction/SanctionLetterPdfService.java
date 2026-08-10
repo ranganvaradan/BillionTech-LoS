@@ -3,6 +3,8 @@ package com.los.core.service.sanction;
 import com.los.core.exception.BusinessRuleException;
 import com.los.core.model.entity.LoanApplication;
 import com.los.core.model.entity.SanctionRecord;
+import com.los.core.service.kfs.KfsPdfGenerationService;
+import com.los.core.service.loan.InvoiceDiscountingApplicationRules;
 import com.lowagie.text.Chunk;
 import com.lowagie.text.Document;
 import com.lowagie.text.DocumentException;
@@ -10,6 +12,7 @@ import com.lowagie.text.Font;
 import com.lowagie.text.PageSize;
 import com.lowagie.text.Paragraph;
 import com.lowagie.text.pdf.PdfWriter;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.awt.Color;
@@ -23,11 +26,27 @@ import java.time.format.DateTimeFormatter;
  * In-memory PDF for sanction in principle / sanction letter.
  */
 @Service
+@RequiredArgsConstructor
 public class SanctionLetterPdfService {
 
     private static final DateTimeFormatter FMT = DateTimeFormatter.ISO_OFFSET_DATE_TIME;
 
+    private final KfsPdfGenerationService kfsPdfGenerationService;
+
     public byte[] render(LoanApplication app, SanctionRecord r) {
+        if (InvoiceDiscountingApplicationRules.isBorrowerFlow(app)) {
+            return kfsPdfGenerationService.generateInvoiceDiscountingTermsPdfForApplication(app.getId());
+        }
+        return renderStandardSanction(app, r);
+    }
+
+    /** @deprecated use {@link KfsPdfGenerationService#generateInvoiceDiscountingTermsPdfForApplication} */
+    @Deprecated
+    public byte[] renderInvoiceDiscountingBorrowerTerms(LoanApplication app, SanctionRecord r) {
+        return render(app, r);
+    }
+
+    private byte[] renderStandardSanction(LoanApplication app, SanctionRecord r) {
         try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
             Document document = new Document(PageSize.A4, 40, 40, 40, 40);
             PdfWriter.getInstance(document, baos);

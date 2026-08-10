@@ -3,6 +3,16 @@ package com.los.core.service.kfs;
 import com.lowagie.text.*;
 import com.lowagie.text.pdf.*;
 import com.los.core.model.entity.KfsDocument;
+import com.los.core.model.entity.LoanApplication;
+import com.los.core.model.entity.SanctionRecord;
+import com.los.core.repository.KfsDocumentRepository;
+import com.los.core.repository.LoanApplicationRepository;
+import com.los.core.repository.SanctionRecordRepository;
+import com.los.core.config.EdiKfsProperties;
+import com.los.core.service.kfs.edi.EdiKfsDocxPdfService;
+import com.los.core.service.loan.ApplicationPartyResolver;
+import com.los.core.service.loan.InvoiceDiscountingApplicationRules;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -13,6 +23,8 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 
 /**
  * KFS PDF Generation Service — generates Key Fact Statement PDFs
@@ -27,7 +39,15 @@ import java.util.Map;
  */
 @Slf4j
 @Service
+@RequiredArgsConstructor
 public class KfsPdfGenerationService {
+
+    private final LoanApplicationRepository applicationRepository;
+    private final SanctionRecordRepository sanctionRecordRepository;
+    private final KfsDocumentRepository kfsDocumentRepository;
+    private final EdiKfsDocxPdfService ediKfsDocxPdfService;
+    private final EdiKfsProperties ediKfsProperties;
+    private final AnchorProgramTermsPdfService anchorProgramTermsPdfService;
 
     private static final DateTimeFormatter DATE_FMT =
             DateTimeFormatter.ofPattern("dd-MMM-yyyy").withZone(ZoneId.of("Asia/Kolkata"));
@@ -40,12 +60,48 @@ public class KfsPdfGenerationService {
     private static final Font DISCLAIMER_FONT = new Font(Font.HELVETICA, 9, Font.NORMAL, new Color(100, 100, 100));
 
     /**
+     * Internal LMS JSON blobs stored on {@link KfsDocument#getAdditionalTerms()} for reconciliation
+     * and EDI schedule resolution — omitted from standard (non-EDI) OpenPDF section 7 to keep KFS at 2 pages.
+     */
+    private static final Set<String> STANDARD_KFS_PDF_SUPPRESSED_TERM_KEYS = Set.of(
+            "encorePreOpenSummaryJson",
+            "encoreRepaymentScheduleJson");
+
+    /**
      * Generate a KFS PDF document from a KfsDocument entity.
      *
      * @param kfs The KFS document entity with all loan terms
      * @return byte array containing the PDF
      */
     public byte[] generateKfsPdf(KfsDocument kfs) {
+        if (isAnchorProgramTermsDocument(kfs)) {
+            LoanApplication app = applicationRepository.findById(kfs.getApplicationId()).orElse(null);
+            return anchorProgramTermsPdfService.generate(kfs, app);
+        }
+        if (isInvoiceDiscountingTermsDocument(kfs)) {
+            LoanApplication app = applicationRepository.findById(kfs.getApplicationId()).orElse(null);
+            return generateInvoiceDiscountingTermsPdf(kfs, app);
+        }
+        LoanApplication app = applicationRepository.findById(kfs.getApplicationId()).orElse(null);
+        if (app != null && ediKfsDocxPdfService.shouldUseEdiTemplate(app)) {
+            try {
+                byte[] ediPdf = ediKfsDocxPdfService.generatePdf(kfs, app);
+                log.info("EDI KFS PDF (BL template) generated for application {} — size={}KB",
+                        kfs.getApplicationId(), ediPdf.length / 1024);
+                return ediPdf;
+            } catch (Exception e) {
+                log.warn(
+                        "EDI DOCX KFS generation failed for application {} — falling back to standard OpenPDF KFS. Cause: {}",
+                        kfs.getApplicationId(), e.getMessage());
+                if (!ediKfsProperties.isFallbackToOpenPdfOnFailure()) {
+                    throw new RuntimeException("EDI KFS PDF generation failed: " + e.getMessage(), e);
+                }
+            }
+        }
+        return generateStandardOpenPdfKfs(kfs);
+    }
+
+    private byte[] generateStandardOpenPdfKfs(KfsDocument kfs) {
         try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
             Document document = new Document(PageSize.A4, 50, 50, 60, 50);
             PdfWriter writer = PdfWriter.getInstance(document, baos);
@@ -128,6 +184,199 @@ public class KfsPdfGenerationService {
         }
     }
 
+    /**
+     * Two-page sanction terms PDF for invoice discounting borrowers — same layout, margins, and
+     * signature block placement as the standard KFS so EmSigner templates match.
+     */
+    public byte[] generateInvoiceDiscountingTermsPdf(KfsDocument kfs, LoanApplication app) {
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
+            Document document = new Document(PageSize.A4, 50, 50, 60, 50);
+            PdfWriter writer = PdfWriter.getInstance(document, baos);
+            writer.setPageEvent(new KfsPageEventHelper());
+
+            document.open();
+
+            String partyName = app != null ? ApplicationPartyResolver.resolveDisplayName(app) : "Borrower";
+            String appNo = app != null ? app.getApplicationNumber() : String.valueOf(kfs.getApplicationId());
+
+            Paragraph title = new Paragraph("KEY FACT STATEMENT (KFS)", TITLE_FONT);
+            title.setAlignment(Element.ALIGN_CENTER);
+            title.setSpacingAfter(5);
+            document.add(title);
+
+            Paragraph subtitle = new Paragraph(
+                    "Invoice Discounting — Sanction Terms & Conditions (Program facility)", SMALL_FONT);
+            subtitle.setAlignment(Element.ALIGN_CENTER);
+            subtitle.setSpacingAfter(10);
+            document.add(subtitle);
+
+            Paragraph meta = new Paragraph(
+                    "Date: " + DATE_FMT.format(Instant.now()) + "  |  Application: " + appNo
+                            + "  |  Version: " + kfs.getVersion(),
+                    SMALL_FONT);
+            meta.setAlignment(Element.ALIGN_RIGHT);
+            meta.setSpacingAfter(10);
+            document.add(meta);
+
+            document.add(sectionHeader("1. Sanction / Facility Details"));
+            document.add(invoiceDiscountingFacilityTable(kfs, partyName));
+            document.add(Chunk.NEWLINE);
+
+            document.add(sectionHeader("2. Cost of Facility"));
+            document.add(invoiceDiscountingCostTable(kfs));
+            document.add(Chunk.NEWLINE);
+
+            document.add(sectionHeader("3. Charges and Fees"));
+            document.add(chargesTable(kfs));
+            document.add(Chunk.NEWLINE);
+
+            document.add(sectionHeader("4. Cooling-Off Period / Look-Up Period"));
+            document.add(coolingOffParagraph(kfs));
+            document.add(Chunk.NEWLINE);
+
+            document.newPage();
+
+            document.add(sectionHeader("5. Grievance Redressal Mechanism"));
+            document.add(grievanceParagraph(kfs));
+            document.add(Chunk.NEWLINE);
+
+            document.add(sectionHeader("6. LSP / DLA Disclosure"));
+            document.add(lspDisclosureParagraph(kfs));
+            document.add(Chunk.NEWLINE);
+
+            document.add(sectionHeader("7. Sanction Terms and Conditions"));
+            document.add(invoiceDiscountingTermsParagraph(kfs));
+            document.add(Chunk.NEWLINE);
+
+            document.add(disclaimerParagraph());
+            document.add(invoiceDiscountingFacilityNote());
+
+            document.add(Chunk.NEWLINE);
+            document.add(signatureBlock());
+
+            document.close();
+
+            log.info("Invoice discounting terms PDF for application {} — version={}, pages=2, size={}KB",
+                    kfs.getApplicationId(), kfs.getVersion(), baos.size() / 1024);
+            return baos.toByteArray();
+        } catch (Exception e) {
+            log.error("Failed to generate invoice discounting terms PDF for {}: {}",
+                    kfs.getApplicationId(), e.getMessage(), e);
+            throw new RuntimeException("Invoice discounting terms PDF generation failed: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * Fallback when eSign runs before a KFS row exists (legacy SANCTIONED-only applications).
+     */
+    public byte[] generateInvoiceDiscountingTermsPdfForApplication(UUID applicationId) {
+        LoanApplication app = applicationRepository.findById(applicationId)
+                .orElseThrow(() -> new RuntimeException("Application not found: " + applicationId));
+        if (!InvoiceDiscountingApplicationRules.isBorrowerFlow(app)) {
+            throw new RuntimeException("Not an invoice discounting borrower application");
+        }
+        return kfsDocumentRepository.findFirstByApplicationIdOrderByCreatedAtDesc(applicationId)
+                .map(k -> generateInvoiceDiscountingTermsPdf(k, app))
+                .orElseGet(() -> {
+                    SanctionRecord rec = sanctionRecordRepository
+                            .findTopByApplicationIdOrderByCreatedAtDesc(applicationId)
+                            .orElseThrow(() -> new RuntimeException("No sanction record for application " + applicationId));
+                    KfsDocument probe = KfsDocument.builder()
+                            .applicationId(applicationId)
+                            .version("v1")
+                            .sanctionedAmount(rec.getApprovedAmount())
+                            .interestRate(rec.getInterestRate())
+                            .apr(rec.getInterestRate())
+                            .tenureMonths(rec.getApprovedTenure() != null ? rec.getApprovedTenure() : 12)
+                            .emiAmount(BigDecimal.ZERO)
+                            .totalInterest(BigDecimal.ZERO)
+                            .totalRepayment(rec.getApprovedAmount())
+                            .processingFee(rec.getProcessingFee())
+                            .coolingOffHours(72)
+                            .grievanceMechanism(null)
+                            .lspDisclosure(null)
+                            .additionalTerms(Map.of(
+                                    "documentKind", KfsService.DOCUMENT_KIND_INVOICE_DISCOUNTING_TERMS,
+                                    "conditionsText", rec.getConditionsText() != null ? rec.getConditionsText() : "",
+                                    "remarks", rec.getRemarks() != null ? rec.getRemarks() : ""))
+                            .build();
+                    return generateInvoiceDiscountingTermsPdf(probe, app);
+                });
+    }
+
+    private boolean isAnchorProgramTermsDocument(KfsDocument kfs) {
+        if (kfs.getAdditionalTerms() == null) {
+            return false;
+        }
+        Object kind = kfs.getAdditionalTerms().get("documentKind");
+        return KfsService.DOCUMENT_KIND_ANCHOR_PROGRAM_TERMS.equals(String.valueOf(kind));
+    }
+
+    private boolean isInvoiceDiscountingTermsDocument(KfsDocument kfs) {
+        if (kfs.getAdditionalTerms() == null) {
+            return false;
+        }
+        Object kind = kfs.getAdditionalTerms().get("documentKind");
+        return KfsService.DOCUMENT_KIND_INVOICE_DISCOUNTING_TERMS.equals(String.valueOf(kind));
+    }
+
+    private PdfPTable invoiceDiscountingFacilityTable(KfsDocument kfs, String partyName) throws DocumentException {
+        PdfPTable table = createKeyValueTable();
+        addRow(table, "Borrower / Purchaser", partyName);
+        addRow(table, "Sanctioned facility limit", formatCurrency(kfs.getSanctionedAmount()));
+        addRow(table, "Discount / interest rate (p.a.)", kfs.getInterestRate() != null
+                ? kfs.getInterestRate().toPlainString() + "%" : "N/A");
+        addRow(table, "Facility validity (months)", kfs.getTenureMonths() + " months (program reference)");
+        addRow(table, "Repayment model", "Per invoice / program terms — not a term loan EMI");
+        addRow(table, "Document type", "Invoice discounting sanction terms (no LMS loan account)");
+        return table;
+    }
+
+    private PdfPTable invoiceDiscountingCostTable(KfsDocument kfs) throws DocumentException {
+        PdfPTable table = createKeyValueTable();
+        addRow(table, "Annual Percentage Rate (APR)", kfs.getApr() != null
+                ? kfs.getApr().toPlainString() + "%" : "N/A");
+        addRow(table, "Processing fee", formatCurrency(kfs.getProcessingFee()));
+        addRow(table, "Total cost of credit (fees)", formatCurrency(kfs.getTotalCostOfCredit()));
+        addRow(table, "Sanctioned limit available", formatCurrency(kfs.getSanctionedAmount()));
+        return table;
+    }
+
+    private Paragraph invoiceDiscountingTermsParagraph(KfsDocument kfs) {
+        Map<String, Object> terms = kfs.getAdditionalTerms();
+        String conditions = terms != null && terms.get("conditionsText") != null
+                ? String.valueOf(terms.get("conditionsText")).trim() : "";
+        String remarks = terms != null && terms.get("remarks") != null
+                ? String.valueOf(terms.get("remarks")).trim() : "";
+        String approvedBy = terms != null && terms.get("approvedBy") != null
+                ? String.valueOf(terms.get("approvedBy")).trim() : "";
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("1. This document records the sanction terms between the anchor program and the borrower ")
+                .append("for invoice discounting. It is not a loan account statement.\n");
+        sb.append("2. Drawdowns are against eligible invoices within the sanctioned limit and program rules.\n");
+        sb.append("3. The borrower confirms having read and understood all terms disclosed herein.\n");
+        if (!conditions.isBlank()) {
+            sb.append("4. Special conditions: ").append(conditions).append('\n');
+        } else {
+            sb.append("4. Standard program terms and anchor-to-borrower conditions apply.\n");
+        }
+        if (!remarks.isBlank()) {
+            sb.append("5. Remarks: ").append(remarks).append('\n');
+        }
+        if (!approvedBy.isBlank()) {
+            sb.append("6. Sanctioned by: ").append(approvedBy).append('\n');
+        }
+        return new Paragraph(sb.toString(), VALUE_FONT);
+    }
+
+    private Paragraph invoiceDiscountingFacilityNote() {
+        return new Paragraph(
+                "NOTE: This facility is operated under invoice discounting program rules. No individual LMS loan "
+                        + "is created at sanction; limits and terms govern subsequent invoice financing.",
+                SMALL_FONT);
+    }
+
     private Paragraph sectionHeader(String text) {
         Paragraph header = new Paragraph(text, HEADER_FONT);
         header.setSpacingBefore(8);
@@ -141,8 +390,8 @@ public class KfsPdfGenerationService {
         addRow(table, "Sanctioned Amount", formatCurrency(kfs.getSanctionedAmount()));
         addRow(table, "Interest Rate (p.a.)", kfs.getInterestRate() != null
                 ? kfs.getInterestRate().toPlainString() + "% (reducing balance)" : "N/A");
-        addRow(table, "Tenure", kfs.getTenureMonths() + " months");
-        addRow(table, "EMI Amount", formatCurrency(kfs.getEmiAmount()));
+        addRow(table, "Tenure", kfs.getTenureMonths() + " " + tenureUnitSuffix(kfs));
+        addRow(table, installmentLabel(kfs) + " Amount", formatCurrency(kfs.getEmiAmount()));
         addRow(table, "Repayment Frequency", "Monthly");
         addRow(table, "Interest Computation", "Daily reducing balance");
 
@@ -243,19 +492,32 @@ public class KfsPdfGenerationService {
             StringBuilder sb = new StringBuilder();
             int i = 1;
             for (Map.Entry<String, Object> entry : terms.entrySet()) {
+                if (!includeInStandardKfsPdfAdditionalTerms(entry.getKey())) {
+                    continue;
+                }
                 sb.append(i++).append(". ").append(entry.getKey()).append(": ")
                         .append(entry.getValue()).append("\n");
             }
-            termsText = sb.toString();
+            termsText = sb.isEmpty()
+                    ? defaultAdditionalTermsText()
+                    : sb.toString();
         } else {
-            termsText = "1. The borrower confirms having read and understood all terms.\n" +
-                    "2. Interest rate is subject to reset as per lender's policy for floating rate loans.\n" +
-                    "3. Loan disbursement shall be directly to the borrower's bank account.\n" +
-                    "4. Borrower's personal data will be processed as per the lender's privacy policy.\n" +
-                    "5. This KFS is an integral part of the loan agreement.";
+            termsText = defaultAdditionalTermsText();
         }
 
         return new Paragraph(termsText, VALUE_FONT);
+    }
+
+    private static boolean includeInStandardKfsPdfAdditionalTerms(String key) {
+        return key != null && !STANDARD_KFS_PDF_SUPPRESSED_TERM_KEYS.contains(key);
+    }
+
+    private static String defaultAdditionalTermsText() {
+        return "1. The borrower confirms having read and understood all terms.\n" +
+                "2. Interest rate is subject to reset as per lender's policy for floating rate loans.\n" +
+                "3. Loan disbursement shall be directly to the borrower's bank account.\n" +
+                "4. Borrower's personal data will be processed as per the lender's privacy policy.\n" +
+                "5. This KFS is an integral part of the loan agreement.";
     }
 
     private Paragraph disclaimerParagraph() {
@@ -343,6 +605,28 @@ public class KfsPdfGenerationService {
     private String formatCurrency(BigDecimal amount) {
         if (amount == null) return "N/A";
         return "\u20B9 " + String.format("%,.2f", amount);
+    }
+
+    private static String installmentLabel(KfsDocument kfs) {
+        if (kfs.getAdditionalTerms() != null) {
+            Object label = kfs.getAdditionalTerms().get("installmentLabel");
+            if (label != null && !String.valueOf(label).isBlank()) {
+                return String.valueOf(label).trim();
+            }
+        }
+        return "EMI";
+    }
+
+    private static String tenureUnitSuffix(KfsDocument kfs) {
+        if (kfs.getAdditionalTerms() != null) {
+            Object unit = kfs.getAdditionalTerms().get("lmsTenureUnit");
+            if (unit != null) {
+                String u = String.valueOf(unit).trim().toLowerCase();
+                if ("day".equals(u)) return "days";
+                if ("week".equals(u)) return "weeks";
+            }
+        }
+        return "months";
     }
 
     /**

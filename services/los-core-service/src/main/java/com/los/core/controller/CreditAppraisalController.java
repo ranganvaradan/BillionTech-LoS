@@ -1,6 +1,7 @@
 package com.los.core.controller;
 
 import com.los.core.model.dto.request.CamUpdateRequest;
+import com.los.core.model.dto.request.ReviewNotesRequest;
 import com.los.core.model.dto.response.CamResponse;
 import com.los.core.service.cam.CreditAppraisalService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -31,26 +32,39 @@ public class CreditAppraisalController {
     @PutMapping
     @Operation(summary = "Update CAM remarks and recommendation")
     public ResponseEntity<CamResponse> update(
-            @PathVariable UUID applicationId, @Valid @RequestBody CamUpdateRequest request) {
-        return ResponseEntity.ok(creditAppraisalService.updateCam(applicationId, request));
+            @PathVariable UUID applicationId,
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
+            @Valid @RequestBody CamUpdateRequest request) {
+        return ResponseEntity.ok(creditAppraisalService.updateCam(applicationId, request, parseUserId(userId)));
     }
 
     @PostMapping("/submit")
     @Operation(summary = "Officer submits CAM to credit manager (DRAFT/SENT_BACK/REJECTED → SUBMITTED)")
-    public ResponseEntity<CamResponse> submit(@PathVariable UUID applicationId) {
-        return ResponseEntity.ok(creditAppraisalService.submitCam(applicationId));
+    public ResponseEntity<CamResponse> submit(
+            @PathVariable UUID applicationId,
+            @RequestHeader(value = "X-User-Id", required = false) String userId) {
+        return ResponseEntity.ok(creditAppraisalService.submitCam(applicationId, parseUserId(userId)));
     }
 
     @PostMapping("/send-back")
-    @Operation(summary = "Manager sends CAM back to officer (SUBMITTED → SENT_BACK)")
-    public ResponseEntity<CamResponse> sendBack(@PathVariable UUID applicationId) {
-        return ResponseEntity.ok(creditAppraisalService.sendBackCam(applicationId));
+    @Operation(summary = "Manager returns CAM to officer (SUBMITTED or APPROVED → SENT_BACK for revision)")
+    public ResponseEntity<CamResponse> sendBack(
+            @PathVariable UUID applicationId,
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
+            @RequestBody(required = false) ReviewNotesRequest body) {
+        String remarks = null;
+        if (body != null) {
+            remarks = body.getNotes() != null ? body.getNotes() : body.getRemarks();
+        }
+        return ResponseEntity.ok(creditAppraisalService.sendBackCam(applicationId, parseUserId(userId), remarks));
     }
 
     @PostMapping("/reject")
     @Operation(summary = "Manager rejects the memorandum at review (SUBMITTED → REJECTED; application stays CAM_READY)")
-    public ResponseEntity<CamResponse> rejectMemorandum(@PathVariable UUID applicationId) {
-        return ResponseEntity.ok(creditAppraisalService.rejectMemorandum(applicationId));
+    public ResponseEntity<CamResponse> rejectMemorandum(
+            @PathVariable UUID applicationId,
+            @RequestHeader(value = "X-User-Id", required = false) String userId) {
+        return ResponseEntity.ok(creditAppraisalService.rejectMemorandum(applicationId, parseUserId(userId)));
     }
 
     @GetMapping(value = "/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
@@ -60,5 +74,12 @@ public class CreditAppraisalController {
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"CAM-" + applicationId + ".pdf\"")
                 .body(pdf);
+    }
+
+    private static UUID parseUserId(String userId) {
+        if (userId == null || userId.isBlank()) {
+            return null;
+        }
+        return UUID.fromString(userId.trim());
     }
 }

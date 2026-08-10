@@ -1,0 +1,27 @@
+{
+  "caseCode": "CASE_C_TURNOVER_CONFLICT",
+  "dataOrigin": "REPRESENTATIVE_PROVIDER_FIXTURE",
+  "sources": {
+    "gst": "provider-fixtures/surepass/gst/gst_monthly_minimal.json",
+    "itr": "provider-fixtures/surepass/itr/itr_income_heads_distinct.json",
+    "bank": "provider-fixtures/surepass/bsa/bsa_minimal.json",
+    "bureau": "provider-fixtures/equifax/equifax_accounts_minimal.xml"
+  },
+  "metricStubs": {
+    "gst.turnover.trailing_12m": "100000000",
+    "itr.turnover.trailing_12m": "90000000",
+    "bank.turnover.trailing_12m": "60000000",
+    "bureau.emi.monthly": "80000",
+    "bank.emi.monthly": "78000"
+  },
+  "legacyScorecardStub": {
+    "ANNUAL_GST_TURNOVER": 100000000,
+    "ANNUAL_BANKING_TURNOVER": 60000000,
+    "ITR_INCOME": 4200000,
+    "EMI_OBLIGATION": 80000
+  },
+  "declaredEmi": null,
+  "metadata": {
+    "description": "GST 10Cr vs Bank 6Cr vs ITR 9Cr — material turnover variance; expect REFER/MATERIAL_VARIANCE not automatic fraud"
+  }
+}

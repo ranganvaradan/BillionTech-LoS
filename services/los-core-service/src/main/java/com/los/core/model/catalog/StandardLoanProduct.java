@@ -31,6 +31,9 @@ public final class StandardLoanProduct {
     public static final Set<String> SECURED = Set.of(
             LOAN_AGAINST_PROPERTY, LOAN_AGAINST_SECURITIES, LOAN_AGAINST_GOLD);
 
+    /** Loan products permitted for {@link com.los.core.model.enums.IntakeSegment#ANCHOR} intake. */
+    public static final Set<String> ANCHOR_INTAKE_ALLOWED_PRODUCTS = Set.of(BUSINESS_WC_INVOICE_DISCOUNTING);
+
     private StandardLoanProduct() {
     }
 }

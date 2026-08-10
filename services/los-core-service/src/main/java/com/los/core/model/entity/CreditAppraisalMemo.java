@@ -72,6 +72,10 @@ public class CreditAppraisalMemo {
     @Column(name = "recommended_rate", precision = 5, scale = 2)
     private BigDecimal recommendedRate;
 
+    /** UPFRONT | REDUCING */
+    @Column(name = "interest_type", length = 20)
+    private String interestType;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "conditions_precedent_json", columnDefinition = "jsonb")
     private List<String> conditionsPrecedentJson;

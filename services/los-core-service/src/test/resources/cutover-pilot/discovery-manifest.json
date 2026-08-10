@@ -1,0 +1,50 @@
+{
+  "version": "G0.1_DISCOVERY_MANIFEST_V1",
+  "piiExcluded": true,
+  "honestyNote": "No live production pulls. C6 bundles are REPRESENTATIVE_FIXTURE and do not count toward minRealOrStoredCases.",
+  "datasets": [
+    {
+      "id": "validation-bundle:CASE_A",
+      "origin": "REPRESENTATIVE_FIXTURE",
+      "product": "DIGILEAP",
+      "sources": ["bureau", "gst", "bank", "itr"],
+      "countsTowardRealStoredMinimum": false
+    },
+    {
+      "id": "validation-bundle:CASE_B",
+      "origin": "REPRESENTATIVE_FIXTURE",
+      "product": "DIGILEAP",
+      "sources": ["bureau", "gst", "bank", "itr"],
+      "countsTowardRealStoredMinimum": false
+    },
+    {
+      "id": "validation-bundle:CASE_C",
+      "origin": "REPRESENTATIVE_FIXTURE",
+      "product": "DIGILEAP",
+      "sources": ["bureau", "gst", "bank", "itr"],
+      "countsTowardRealStoredMinimum": false
+    },
+    {
+      "id": "validation-bundle:CASE_D",
+      "origin": "REPRESENTATIVE_FIXTURE",
+      "product": "DIGILEAP",
+      "sources": ["bureau", "gst", "bank", "itr"],
+      "countsTowardRealStoredMinimum": false
+    },
+    {
+      "id": "validation-bundle:CASE_E",
+      "origin": "REPRESENTATIVE_FIXTURE",
+      "product": "DIGILEAP",
+      "sources": ["bureau", "gst", "bank", "itr"],
+      "countsTowardRealStoredMinimum": false
+    },
+    {
+      "id": "provider-fixtures/**/ORIGIN.md",
+      "origin": "CLASSIFIED_FROM_ORIGIN_MD",
+      "note": "See CutoverValidationDataClassifier scan; typically USER_SUPPLIED_SAMPLE → REPRESENTATIVE_FIXTURE or SYNTHETIC",
+      "countsTowardRealStoredMinimum": false
+    }
+  ],
+  "realStoredCaseCount": 0,
+  "minRealOrStoredCasesConfigured": 20
+}

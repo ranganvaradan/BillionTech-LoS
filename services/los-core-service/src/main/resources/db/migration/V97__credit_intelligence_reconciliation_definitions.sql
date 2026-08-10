@@ -1,0 +1,135 @@
+-- Phase C5: Reconciliation definitions, fact paths, evidence-strength metric
+
+INSERT INTO ci_reconciliation_definition (
+    reconciliation_code, version, name, description, category,
+    left_operand_definition, right_operand_definition,
+    period_alignment_strategy, normalization_strategy, variance_method,
+    warning_tolerance, material_tolerance, minimum_completeness, minimum_confidence,
+    missing_data_policy, explanation_strategy_version, dependency_metric_codes, status, metadata
+) VALUES
+('XSRC_GST_ITR_TURNOVER', 'V1', 'GST vs ITR turnover',
+ 'Compare GST qualifying turnover with ITR business turnover / gross receipts',
+ 'TURNOVER',
+ '{"metricCode":"gst.turnover.trailing_12m","fallback":["gst.turnover.current_fy_ytd"]}'::jsonb,
+ '{"metricCode":"itr.business.turnover.latest_fy","fallback":[]}'::jsonb,
+ 'COMMON_OVERLAP', 'ANNUALIZE_IF_NEEDED', 'SYMMETRIC_PERCENT_DIFFERENCE',
+ 5.0, 15.0, 0.50, 0.40, 'DATA_INSUFFICIENT', 'RECON_EXPLANATION_V1',
+ '["gst.turnover.trailing_12m","itr.business.turnover.latest_fy"]'::jsonb, 'ACTIVE',
+ '{"toleranceProfile":"turnover"}'::jsonb),
+
+('XSRC_GST_BANK_TURNOVER', 'V1', 'GST vs Bank adjusted credits',
+ 'Compare GST turnover with banking adjusted business credits',
+ 'TURNOVER',
+ '{"metricCode":"gst.turnover.trailing_12m"}'::jsonb,
+ '{"metricCode":"banking.adjusted_business_credits_12m","fallback":["banking.adjusted_business_credits_6m"]}'::jsonb,
+ 'COMMON_OVERLAP', 'ANNUALIZE_IF_NEEDED', 'SYMMETRIC_PERCENT_DIFFERENCE',
+ 5.0, 15.0, 0.50, 0.40, 'DATA_INSUFFICIENT', 'RECON_EXPLANATION_V1',
+ '["gst.turnover.trailing_12m","banking.adjusted_business_credits_12m"]'::jsonb, 'ACTIVE',
+ '{"toleranceProfile":"turnover"}'::jsonb),
+
+('XSRC_ITR_BANK_TURNOVER', 'V1', 'ITR vs Bank adjusted credits',
+ 'Compare ITR business turnover with banking adjusted business credits',
+ 'TURNOVER',
+ '{"metricCode":"itr.business.turnover.latest_fy"}'::jsonb,
+ '{"metricCode":"banking.adjusted_business_credits_12m","fallback":["banking.adjusted_business_credits_6m"]}'::jsonb,
+ 'FINANCIAL_YEAR', 'ANNUALIZE_IF_NEEDED', 'SYMMETRIC_PERCENT_DIFFERENCE',
+ 5.0, 15.0, 0.50, 0.40, 'DATA_INSUFFICIENT', 'RECON_EXPLANATION_V1',
+ '["itr.business.turnover.latest_fy","banking.adjusted_business_credits_12m"]'::jsonb, 'ACTIVE',
+ '{"toleranceProfile":"turnover"}'::jsonb),
+
+('XSRC_BUREAU_BANK_OBLIGATION', 'V1', 'Bureau vs Bank monthly obligation',
+ 'Compare bureau total monthly obligation with bank-detected EMI/obligations',
+ 'OBLIGATION',
+ '{"metricCode":"bureau.total_monthly_obligation"}'::jsonb,
+ '{"metricCode":"banking.monthly_obligation"}'::jsonb,
+ 'EXACT_PERIOD', 'NONE', 'SYMMETRIC_PERCENT_DIFFERENCE',
+ 5.0, 20.0, 0.30, 0.40, 'DATA_INSUFFICIENT', 'RECON_EXPLANATION_V1',
+ '["bureau.total_monthly_obligation","banking.monthly_obligation"]'::jsonb, 'ACTIVE',
+ '{"toleranceProfile":"obligation","lenderLevel":true}'::jsonb),
+
+('XSRC_DECLARED_BUREAU_OBLIGATION', 'V1', 'Declared vs Bureau obligation',
+ 'Compare declared/manual EMI obligation with bureau monthly obligation',
+ 'OBLIGATION',
+ '{"factPath":"compat.EMI_OBLIGATION","fallbackFactPaths":["compat.MONTHLY_OBLIGATION"]}'::jsonb,
+ '{"metricCode":"bureau.total_monthly_obligation"}'::jsonb,
+ 'EXACT_PERIOD', 'NONE', 'SYMMETRIC_PERCENT_DIFFERENCE',
+ 5.0, 20.0, 0.30, 0.40, 'DATA_INSUFFICIENT', 'RECON_EXPLANATION_V1',
+ '["bureau.total_monthly_obligation"]'::jsonb, 'ACTIVE',
+ '{"toleranceProfile":"obligation"}'::jsonb),
+
+('XSRC_DECLARED_BANK_OBLIGATION', 'V1', 'Declared vs Bank obligation',
+ 'Compare declared/manual EMI obligation with bank-detected monthly obligation',
+ 'OBLIGATION',
+ '{"factPath":"compat.EMI_OBLIGATION","fallbackFactPaths":["compat.MONTHLY_OBLIGATION"]}'::jsonb,
+ '{"metricCode":"banking.monthly_obligation"}'::jsonb,
+ 'EXACT_PERIOD', 'NONE', 'SYMMETRIC_PERCENT_DIFFERENCE',
+ 5.0, 20.0, 0.30, 0.40, 'DATA_INSUFFICIENT', 'RECON_EXPLANATION_V1',
+ '["banking.monthly_obligation"]'::jsonb, 'ACTIVE',
+ '{"toleranceProfile":"obligation"}'::jsonb),
+
+('XSRC_ITR_AIS_INCOME', 'V1', 'ITR vs AIS income (migrated from C4)',
+ 'Compare ITR total income with AIS reported income total',
+ 'INCOME',
+ '{"metricCode":"itr.total_income.latest_fy"}'::jsonb,
+ '{"factPath":"ais.reported_income_total"}'::jsonb,
+ 'FINANCIAL_YEAR', 'NONE', 'PERCENT_OF_RIGHT',
+ 10.0, 25.0, 0.40, 0.40, 'DATA_INSUFFICIENT', 'RECON_EXPLANATION_V1',
+ '["itr.total_income.latest_fy","xsrc.itr_ais_income_variance"]'::jsonb, 'ACTIVE',
+ '{"migratedFrom":"C4","legacyMetricCode":"xsrc.itr_ais_income_variance","toleranceProfile":"tax"}'::jsonb),
+
+('XSRC_ITR_26AS_TDS', 'V1', 'ITR vs 26AS TDS (migrated from C4)',
+ 'Compare ITR TDS with Form 26AS TDS total',
+ 'TAX',
+ '{"metricCode":"itr.tax.tds","fallback":[]}'::jsonb,
+ '{"factPath":"form26as.tds_total"}'::jsonb,
+ 'FINANCIAL_YEAR', 'NONE', 'PERCENT_OF_RIGHT',
+ 10.0, 25.0, 0.40, 0.40, 'DATA_INSUFFICIENT', 'RECON_EXPLANATION_V1',
+ '["xsrc.itr_26as_tds_variance"]'::jsonb, 'ACTIVE',
+ '{"migratedFrom":"C4","legacyMetricCode":"xsrc.itr_26as_tds_variance","toleranceProfile":"tax"}'::jsonb),
+
+('XSRC_GSTR1_GSTR3B_TURNOVER', 'V1', 'GSTR-1 vs GSTR-3B turnover (migrated from C2)',
+ 'Compare GSTR-1 and GSTR-3B overlapping period turnover',
+ 'TURNOVER',
+ '{"metricCode":"gst.gstr1_gstr3b_turnover_variance","role":"LEFT_FROM_EVIDENCE"}'::jsonb,
+ '{"metricCode":"gst.gstr1_gstr3b_turnover_variance","role":"RIGHT_FROM_EVIDENCE"}'::jsonb,
+ 'COMMON_OVERLAP', 'NONE', 'PERCENT_OF_MAX',
+ 5.0, 15.0, 0.50, 0.40, 'DATA_INSUFFICIENT', 'RECON_EXPLANATION_V1',
+ '["gst.gstr1_gstr3b_turnover_variance"]'::jsonb, 'ACTIVE',
+ '{"migratedFrom":"C2","legacyMetricCode":"gst.gstr1_gstr3b_turnover_variance","toleranceProfile":"turnover"}'::jsonb),
+
+('TURNOVER_TRIANGULATION', 'V1', 'Three-way GST/ITR/Bank turnover synthesis',
+ 'Higher-order synthesis of GST, ITR and banking turnover alignment',
+ 'TURNOVER',
+ '{"inputs":["gst.turnover.trailing_12m","itr.business.turnover.latest_fy","banking.adjusted_business_credits_12m"]}'::jsonb,
+ '{"synthesis":"TURNOVER_TRIANGULATION_V1"}'::jsonb,
+ 'COMMON_OVERLAP', 'ANNUALIZE_IF_NEEDED', 'SYMMETRIC_PERCENT_DIFFERENCE',
+ 5.0, 15.0, 0.50, 0.40, 'DATA_INSUFFICIENT', 'RECON_EXPLANATION_V1',
+ '["gst.turnover.trailing_12m","itr.business.turnover.latest_fy","banking.adjusted_business_credits_12m"]'::jsonb, 'ACTIVE',
+ '{"method":"TURNOVER_TRIANGULATION_V1"}'::jsonb)
+ON CONFLICT (reconciliation_code, version) DO NOTHING;
+
+INSERT INTO ci_fact_definition (canonical_path, version, description, value_type, domain, repeatable, sensitive, allowed_classifications, status)
+VALUES
+('reconciliation.gst_itr_turnover.outcome', 1, 'GST↔ITR turnover outcome', 'STRING', 'RECONCILIATION', false, false, '["RECONCILED"]'::jsonb, 'ACTIVE'),
+('reconciliation.gst_itr_turnover.variance_pct', 1, 'GST↔ITR turnover variance %', 'DECIMAL', 'RECONCILIATION', false, false, '["RECONCILED"]'::jsonb, 'ACTIVE'),
+('reconciliation.gst_bank_turnover.outcome', 1, 'GST↔Bank turnover outcome', 'STRING', 'RECONCILIATION', false, false, '["RECONCILED"]'::jsonb, 'ACTIVE'),
+('reconciliation.gst_bank_turnover.variance_pct', 1, 'GST↔Bank turnover variance %', 'DECIMAL', 'RECONCILIATION', false, false, '["RECONCILED"]'::jsonb, 'ACTIVE'),
+('reconciliation.itr_bank_turnover.outcome', 1, 'ITR↔Bank turnover outcome', 'STRING', 'RECONCILIATION', false, false, '["RECONCILED"]'::jsonb, 'ACTIVE'),
+('reconciliation.itr_bank_turnover.variance_pct', 1, 'ITR↔Bank turnover variance %', 'DECIMAL', 'RECONCILIATION', false, false, '["RECONCILED"]'::jsonb, 'ACTIVE'),
+('reconciliation.bureau_bank_obligation.outcome', 1, 'Bureau↔Bank obligation outcome', 'STRING', 'RECONCILIATION', false, false, '["RECONCILED"]'::jsonb, 'ACTIVE'),
+('reconciliation.bureau_bank_obligation.variance_pct', 1, 'Bureau↔Bank obligation variance %', 'DECIMAL', 'RECONCILIATION', false, false, '["RECONCILED"]'::jsonb, 'ACTIVE'),
+('reconciliation.declared_bureau_obligation.outcome', 1, 'Declared↔Bureau obligation outcome', 'STRING', 'RECONCILIATION', false, false, '["RECONCILED"]'::jsonb, 'ACTIVE'),
+('reconciliation.declared_bank_obligation.outcome', 1, 'Declared↔Bank obligation outcome', 'STRING', 'RECONCILIATION', false, false, '["RECONCILED"]'::jsonb, 'ACTIVE'),
+('reconciliation.turnover_triangulation.status', 1, 'Turnover triangulation status', 'STRING', 'RECONCILIATION', false, false, '["RECONCILED"]'::jsonb, 'ACTIVE'),
+('reconciliation.turnover_triangulation.confidence', 1, 'Turnover triangulation confidence', 'DECIMAL', 'RECONCILIATION', false, false, '["RECONCILED"]'::jsonb, 'ACTIVE'),
+('credit.evidence_strength_score', 1, 'Evidence strength score 0-100 (not credit risk)', 'DECIMAL', 'RECONCILIATION', false, false, '["DERIVED","RECONCILED"]'::jsonb, 'ACTIVE'),
+('credit.evidence_strength_grade', 1, 'Evidence strength grade', 'STRING', 'RECONCILIATION', false, false, '["DERIVED","RECONCILED"]'::jsonb, 'ACTIVE')
+ON CONFLICT (canonical_path, version) DO NOTHING;
+
+INSERT INTO ci_metric_definition (metric_code, version, description, domain, status, definition_json)
+VALUES
+('credit.evidence_strength_score', 'V1', 'Deterministic evidence strength 0-100', 'RECONCILIATION', 'ACTIVE',
+ '{"method":"EVIDENCE_STRENGTH_V1","notCreditRiskScore":true}'::jsonb),
+('reconciliation.turnover_triangulation', 'V1', 'Three-way turnover synthesis', 'RECONCILIATION', 'ACTIVE',
+ '{"method":"TURNOVER_TRIANGULATION_V1"}'::jsonb)
+ON CONFLICT (metric_code, version) DO NOTHING;

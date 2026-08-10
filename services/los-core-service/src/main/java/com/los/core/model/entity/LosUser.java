@@ -51,6 +51,14 @@ public class LosUser {
     @Column(name = "password_reset_token_expires_at")
     private Instant passwordResetTokenExpiresAt;
 
+    /**
+     * True when the account was created with a temporary password (e.g. a borrower auto-provisioned
+     * from staff application submission) and the user must set a new password before continuing.
+     */
+    @Column(name = "password_reset_required", nullable = false)
+    @Builder.Default
+    private boolean passwordResetRequired = false;
+
     @Column(name = "primary_los_role", length = 50)
     private String primaryLosRole;
 }

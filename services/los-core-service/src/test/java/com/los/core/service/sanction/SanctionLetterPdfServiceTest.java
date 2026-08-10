@@ -3,18 +3,30 @@ package com.los.core.service.sanction;
 import com.los.core.model.entity.LoanApplication;
 import com.los.core.model.entity.SanctionRecord;
 import com.los.core.model.enums.BorrowerType;
+import com.los.core.service.kfs.KfsPdfGenerationService;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.verifyNoInteractions;
 
+@ExtendWith(MockitoExtension.class)
 class SanctionLetterPdfServiceTest {
+
+    @Mock
+    private KfsPdfGenerationService kfsPdfGenerationService;
+
+    @InjectMocks
+    private SanctionLetterPdfService svc;
 
     @Test
     void render_returnsNonEmptyPdf() {
-        SanctionLetterPdfService svc = new SanctionLetterPdfService();
         UUID appId = UUID.randomUUID();
         LoanApplication app = LoanApplication.builder()
                 .id(appId)
@@ -38,5 +50,6 @@ class SanctionLetterPdfServiceTest {
         byte[] pdf = svc.render(app, r);
 
         assertTrue(pdf != null && pdf.length > 100);
+        verifyNoInteractions(kfsPdfGenerationService);
     }
 }

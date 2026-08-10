@@ -163,6 +163,16 @@ public class UnderwritingRuleEngine {
 
     private MultiRuleEvalResult.PerRuleEval evaluateOne(UnderwritingRuleSet rule, LoanApplication app, EffectiveUnderwritingContext ctx, String kycMeta) {
         Map<String, Object> j = rule.getRulesJson() != null ? rule.getRulesJson() : Map.of();
+        @SuppressWarnings("unchecked")
+        Map<String, Map<String, Object>> parameterDefs = j.get("parameterDefs") instanceof Map<?, ?> defs
+                ? defs.entrySet().stream()
+                        .filter(e -> e.getKey() != null && e.getValue() instanceof Map<?, ?>)
+                        .collect(java.util.stream.Collectors.toMap(
+                                e -> String.valueOf(e.getKey()).trim(),
+                                e -> new LinkedHashMap<>((Map<String, Object>) e.getValue()),
+                                (a, b) -> b,
+                                LinkedHashMap::new))
+                : Map.of();
         List<String> outReasons = new ArrayList<>();
         List<String> fromJson = toReasonList(j.get("reasons"));
         if (!fromJson.isEmpty()) {
@@ -183,6 +193,38 @@ public class UnderwritingRuleEngine {
         }
         Map<String, Object> src = new LinkedHashMap<>(ctx.toMap());
         src.put("kycOutcomeForRules", kycMeta);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> hardRules = j.get("hardRules") instanceof List<?> list
+                ? list.stream().filter(Map.class::isInstance).map(x -> (Map<String, Object>) x).toList()
+                : List.of();
+        for (Map<String, Object> hardRule : hardRules) {
+            String parameter = str(hardRule.get("parameter"));
+            String source = str(hardRule.get("source"));
+            String condition = str(hardRule.get("condition"));
+            BigDecimal value = ScorecardPolicyEngine.resolve(source, parameter, app, ctx);
+            if (value == null && "COMPUTED".equalsIgnoreCase(source)) {
+                value = ScorecardPolicyEngine.resolveComputed(parameter, parameterDefs, app, ctx);
+            }
+            if (!ScorecardPolicyEngine.dependencyGroupMatches(hardRule.get("dependsOn"), parameterDefs, app, ctx)) {
+                continue;
+            }
+            if (!ScorecardPolicyEngine.conditionMatchesWithRef(condition, value, app, ctx)) {
+                continue;
+            }
+            String dec = str(hardRule.get("decision"));
+            String msg = str(hardRule.get("message"));
+            if (msg == null || msg.isBlank()) {
+                msg = "Hard rule triggered on " + parameter;
+            }
+            msg = ScorecardPolicyEngine.hardRuleFailureMessage(parameter, condition, value, msg);
+            if ("REJECT".equalsIgnoreCase(dec) || "REJECTED".equalsIgnoreCase(dec)) {
+                return perRuleFrom(rule, "REJECT", "REJECTED", 0, List.of(msg), "HARD_RULE", matched, src);
+            }
+            if ("MANUAL_REVIEW".equalsIgnoreCase(dec) || "MANUAL".equalsIgnoreCase(dec)) {
+                return perRuleFrom(rule, "MANUAL_REVIEW", "MANUAL_REVIEW", 50, List.of(msg), "HARD_RULE", matched, src);
+            }
+        }
 
         Integer minBureau = intOrNull(j.get("minBureauScore"));
         if (minBureau != null) {

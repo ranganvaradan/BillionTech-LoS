@@ -147,7 +147,7 @@ public class NotificationService {
         try {
             log.info("[NOTIFICATION_SEND] template rendering started templateCode={} channel={} effectiveChannel={} recipient={}",
                     event.getTemplateCode(), event.getChannel(), effectiveChannel, maskRecipient(event.getRecipient()));
-            deliverNotification(effectiveChannel, event.getRecipient(), renderedSubject, renderedBody);
+            deliverNotification(effectiveChannel, event.getRecipient(), renderedSubject, renderedBody, event.getTemplateData());
             notifLog.setStatus("SENT");
             notifLog.setSentAt(Instant.now());
             log.info("[NOTIFICATION_SEND] success channel={} templateCode={} recipient={}",
@@ -213,7 +213,7 @@ public class NotificationService {
                 String body = templateEngine.render(notifLog.getTemplateCode(), notifLog.getChannel(), notifLog.getTemplateData());
                 String subject = templateEngine.renderSubject(notifLog.getTemplateCode(), notifLog.getTemplateData());
 
-                deliverNotification(notifLog.getChannel(), notifLog.getRecipient(), subject, body);
+                deliverNotification(notifLog.getChannel(), notifLog.getRecipient(), subject, body, notifLog.getTemplateData());
 
                 notifLog.setStatus("SENT");
                 notifLog.setSentAt(Instant.now());
@@ -285,7 +285,7 @@ public class NotificationService {
             String body = templateEngine.render(notifLog.getTemplateCode(), notifLog.getChannel(), notifLog.getTemplateData());
             String subject = templateEngine.renderSubject(notifLog.getTemplateCode(), notifLog.getTemplateData());
 
-            deliverNotification(notifLog.getChannel(), notifLog.getRecipient(), subject, body);
+            deliverNotification(notifLog.getChannel(), notifLog.getRecipient(), subject, body, notifLog.getTemplateData());
 
             notifLog.setStatus("SENT");
             notifLog.setSentAt(Instant.now());
@@ -396,9 +396,14 @@ public class NotificationService {
     }
 
     private void deliverNotification(String channel, String recipient, String subject, String body) {
+        deliverNotification(channel, recipient, subject, body, null);
+    }
+
+    private void deliverNotification(String channel, String recipient, String subject, String body,
+                                     Map<String, Object> templateData) {
         switch (channel.toUpperCase()) {
             case "SMS" -> deliverSms(recipient, body);
-            case "EMAIL" -> deliverEmail(recipient, subject, body);
+            case "EMAIL" -> deliverEmail(recipient, subject, body, templateData);
             case "WHATSAPP" -> deliverWhatsApp(recipient, body);
             default -> log.warn("Unknown channel: {}", channel);
         }
@@ -521,7 +526,7 @@ public class NotificationService {
      * Email delivery via Spring JavaMailSender (SMTP) or SendGrid API.
      * Falls back to console logging when credentials not configured.
      */
-    private void deliverEmail(String recipient, String subject, String body) {
+    private void deliverEmail(String recipient, String subject, String body, Map<String, Object> templateData) {
         NotificationProperties.EmailProperties emailConfig = notificationProperties.getEmail();
         log.info("[EMAIL_DELIVERY_PATH] provider={} usingSender={} recipient={}",
                 emailConfig.getProvider(),
@@ -529,9 +534,9 @@ public class NotificationService {
                 maskRecipient(recipient));
 
         if ("SENDGRID".equalsIgnoreCase(emailConfig.getProvider())) {
-            deliverEmailSendGrid(recipient, subject, body, emailConfig);
+            deliverEmailSendGrid(recipient, subject, body, emailConfig, templateData);
         } else {
-            deliverEmailSmtp(recipient, subject, body, emailConfig);
+            deliverEmailSmtp(recipient, subject, body, emailConfig, templateData);
         }
     }
 
@@ -539,7 +544,8 @@ public class NotificationService {
      * SMTP Email delivery via Spring JavaMailSender.
      */
     private void deliverEmailSmtp(String recipient, String subject, String body,
-                                    NotificationProperties.EmailProperties config) {
+                                    NotificationProperties.EmailProperties config,
+                                    Map<String, Object> templateData) {
         log.info("[ESIGN_EMAIL] Preparing SMTP mail for borrower");
         if (mailSender instanceof org.springframework.mail.javamail.JavaMailSenderImpl impl) {
             log.info("[EMAIL_SMTP] connecting host={} port={} recipient={} applicationFlow=esign",
@@ -605,6 +611,7 @@ public class NotificationService {
                         body != null ? body.length() : 0);
                 log.warn("[EMAIL_SMTP] plain text path executed mode=text fallbackReason=renderedBodyNotHtml");
             }
+            attachFromTemplateData(helper, templateData);
             message.saveChanges();
             log.info("[EMAIL_SMTP] contentType={} mimeVersion={}",
                     message.getContentType(),
@@ -656,7 +663,8 @@ public class NotificationService {
      * POST https://api.sendgrid.com/v3/mail/send
      */
     private void deliverEmailSendGrid(String recipient, String subject, String body,
-                                        NotificationProperties.EmailProperties config) {
+                                        NotificationProperties.EmailProperties config,
+                                        Map<String, Object> templateData) {
         String apiKey = config.getSendgrid().getApiKey();
         if (apiKey == null || apiKey.isBlank()) {
             log.info("[EMAIL-SIM] SendGrid credentials not configured — simulated email to {} — Subject: {}",
@@ -665,15 +673,19 @@ public class NotificationService {
         }
 
         try {
+            String attachmentsJson = buildSendGridAttachmentsJson(templateData);
+            String contentType = looksLikeHtml(body) ? "text/html" : "text/plain";
             String payload = String.format(
                     "{\"personalizations\":[{\"to\":[{\"email\":\"%s\"}]}]," +
                     "\"from\":{\"email\":\"%s\",\"name\":\"%s\"}," +
                     "\"subject\":\"%s\"," +
-                    "\"content\":[{\"type\":\"text/html\",\"value\":\"%s\"}]}",
+                    "\"content\":[{\"type\":\"%s\",\"value\":\"%s\"}]%s}",
                     escapeJson(recipient),
                     escapeJson(config.getFromAddress()), escapeJson(config.getFromName()),
                     subject != null ? escapeJson(subject) : "LOS Notification",
-                    escapeJson(body));
+                    contentType,
+                    escapeJson(body != null ? body : ""),
+                    attachmentsJson);
 
             HttpClient client = HttpClient.newBuilder()
                     .connectTimeout(Duration.ofSeconds(10))
@@ -871,6 +883,42 @@ public class NotificationService {
         } catch (MessagingException ex) {
             return "";
         }
+    }
+
+    private void attachFromTemplateData(MimeMessageHelper helper, Map<String, Object> templateData) {
+        if (templateData == null) {
+            return;
+        }
+        Object b64 = templateData.get("attachmentBase64");
+        if (b64 == null || String.valueOf(b64).isBlank()) {
+            return;
+        }
+        try {
+            byte[] bytes = java.util.Base64.getDecoder().decode(String.valueOf(b64).trim());
+            String fileName = templateData.get("attachmentFileName") != null
+                    ? String.valueOf(templateData.get("attachmentFileName"))
+                    : "attachment.pdf";
+            helper.addAttachment(fileName, new org.springframework.core.io.ByteArrayResource(bytes));
+            log.info("[EMAIL_ATTACHMENT] attached fileName={} bytes={}", fileName, bytes.length);
+        } catch (Exception e) {
+            log.warn("[EMAIL_ATTACHMENT] failed to attach: {}", e.getMessage());
+        }
+    }
+
+    private static String buildSendGridAttachmentsJson(Map<String, Object> templateData) {
+        if (templateData == null) {
+            return "";
+        }
+        Object b64 = templateData.get("attachmentBase64");
+        if (b64 == null || String.valueOf(b64).isBlank()) {
+            return "";
+        }
+        String fileName = templateData.get("attachmentFileName") != null
+                ? String.valueOf(templateData.get("attachmentFileName"))
+                : "attachment.pdf";
+        return ",\"attachments\":[{\"content\":\"" + escapeJson(String.valueOf(b64).trim())
+                + "\",\"type\":\"application/pdf\",\"filename\":\"" + escapeJson(fileName)
+                + "\",\"disposition\":\"attachment\"}]";
     }
 
     private static String printableChars(String value) {

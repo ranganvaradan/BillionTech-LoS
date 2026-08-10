@@ -7,11 +7,14 @@ import com.los.core.model.entity.ManualKycReview;
 import com.los.core.model.entity.KycStepResult;
 import com.los.core.model.entity.LoanApplication;
 import com.los.core.model.enums.*;
+import com.los.core.model.entity.AuditEvent;
+import com.los.core.repository.AuditEventRepository;
 import com.los.core.repository.KycStepResultRepository;
 import com.los.core.repository.LoanApplicationRepository;
 import com.los.core.repository.ManualKycReviewRepository;
 import com.los.core.service.audit.AuditService;
 import com.los.core.service.integration.IIntegrationRouterService;
+import com.los.core.service.loan.ApplicantIdentityResolver;
 import com.los.core.service.workflow.IWorkflowEngineService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,6 +25,8 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -36,6 +41,7 @@ public class KycOrchestrationServiceImpl implements IKycOrchestrationService {
     private final IIntegrationRouterService integrationRouter;
     private final IWorkflowEngineService workflowEngine;
     private final AuditService auditService;
+    private final AuditEventRepository auditEventRepository;
 
     @Override
     @Transactional
@@ -51,13 +57,54 @@ public class KycOrchestrationServiceImpl implements IKycOrchestrationService {
             throw new BusinessRuleException("Application must be in KYC_IN_PROGRESS or KYC_FAILED status. Current: " + app.getStatus());
         }
 
+        // Same identity enrichment as executeWorkflow — intake stores mobile/phone, providers expect aliases.
+        Map<String, Object> enrichedPayload = ApplicantIdentityResolver.enrichKycPayload(app, payload);
+        payload = enrichedPayload;
+
         // Determine attempt number
         int attemptNumber = kycStepResultRepository
                 .findTopByApplicationIdAndStepTypeOrderByCreatedAtDesc(applicationId, stepType)
                 .map(r -> r.getAttemptNumber() + 1)
                 .orElse(1);
 
+        if (stepType == KycStepType.VIDEO_KYC && app.getVkycCompletionMode() == VkycCompletionMode.PKYC) {
+            log.info("Skipping HyperVerge VKYC link generation because PKYC completion detected for applicationId={}", applicationId);
+            auditService.logEvent(applicationId, "VKYC", "HYPERVERGE_BYPASSED_DUE_TO_PKYC", null, null,
+                    Map.of("step", "VIDEO_KYC", "vkycCompletionMode", VkycCompletionMode.PKYC.name()),
+                    "VIDEO_KYC KYC sub-step skipped — application completed through Physical KYC");
+            KycStepResult stepResult = KycStepResult.builder()
+                    .applicationId(applicationId)
+                    .stepType(stepType)
+                    .provider(ProviderType.HYPERVERGE)
+                    .outcome(StepOutcome.SUCCESS)
+                    .attemptNumber(attemptNumber)
+                    .confidenceScore(1.0)
+                    .parsedData(Map.of(
+                            "skippedReason", "PKYC_COMPLETED",
+                            "message", "Video KYC satisfied via Physical KYC — HyperVerge not invoked"))
+                    .transactionId(null)
+                    .completedAt(Instant.now())
+                    .build();
+            stepResult = kycStepResultRepository.save(stepResult);
+            log.info("KYC step {} for application {} completed with outcome: {}",
+                    stepType, applicationId, stepResult.getOutcome());
+            auditService.logEvent(applicationId, "KYC", stepType.name() + " " + stepResult.getOutcome(),
+                    null, null,
+                    Map.of("stepType", stepType.name(), "outcome", stepResult.getOutcome().name(),
+                            "provider", stepResult.getProvider().name(), "pkycBypass", true),
+                    "KYC step executed (PKYC bypass)");
+            auditKycOutcomeIfChanged(applicationId);
+            return toResponse(stepResult);
+        }
+
         // Create pending step result
+        if (stepType == KycStepType.ITR_RETURN_FORMS) {
+            return handleItrReturnFormsStaffReuse(applicationId, attemptNumber);
+        }
+        if (stepType == KycStepType.GST_ANALYSIS) {
+            return handleGstAnalysisStaffReuse(applicationId, attemptNumber);
+        }
+
         KycStepResult stepResult = KycStepResult.builder()
                 .applicationId(applicationId)
                 .stepType(stepType)
@@ -103,6 +150,8 @@ public class KycOrchestrationServiceImpl implements IKycOrchestrationService {
                         "provider", stepResult.getProvider().name()),
                 "KYC step executed");
 
+        auditKycOutcomeIfChanged(applicationId);
+
         return toResponse(stepResult);
     }
 
@@ -136,6 +185,8 @@ public class KycOrchestrationServiceImpl implements IKycOrchestrationService {
                 Map.of("overridden", true, "reason", reason),
                 "KYC step manually overridden: " + reason);
 
+        auditKycOutcomeIfChanged(stepResult.getApplicationId());
+
         return toResponse(stepResult);
     }
 
@@ -146,15 +197,23 @@ public class KycOrchestrationServiceImpl implements IKycOrchestrationService {
                 .orElseThrow(() -> new ResourceNotFoundException("Application not found: " + applicationId));
 
         // Get the active workflow for this borrower type and product
-        var workflowConfig = workflowEngine.getActiveWorkflow(app.getBorrowerType(), app.getLoanProduct());
+        IntakeSegment segment = app.getIntakeSegment() != null ? app.getIntakeSegment() : IntakeSegment.BORROWER;
+        var workflowConfig = workflowEngine.getActiveWorkflow(app.getBorrowerType(), app.getLoanProduct(), segment);
 
         List<Map<String, Object>> steps = workflowConfig.getSteps();
         List<KycStepResultResponse> results = new java.util.ArrayList<>();
+        Map<String, Object> mergedPayload = ApplicantIdentityResolver.enrichKycPayload(app, payload);
+        Map<String, Object> intakeConfig = workflowConfig.getIntakeConfig();
 
         for (Map<String, Object> step : steps) {
             String stepName = (String) step.get("step");
             if (!KycIdentityWorkflow.isKycIdentitySubStepName(stepName)) {
                 log.debug("Skipping non-KYC-identity step {} in KYC sub-workflow (bureau / eSign run as separate flow steps)", stepName);
+                continue;
+            }
+            if (KycMandatoryGroupEvaluator.shouldSkipForMissingPayload(stepName, intakeConfig, mergedPayload)) {
+                log.info("Skipping KYC step {} for application {} — no input provided (optional member of ANY mandatory group)",
+                        stepName, applicationId);
                 continue;
             }
             boolean mandatory = (boolean) step.getOrDefault("mandatory", true);
@@ -163,11 +222,12 @@ public class KycOrchestrationServiceImpl implements IKycOrchestrationService {
             try {
                 KycStepType stepType = KycStepType.valueOf(stepName);
                 KycStepResultResponse result =
-                        executeStep(applicationId, stepType, payload, workflowPreferredProvider);
+                        executeStep(applicationId, stepType, mergedPayload, workflowPreferredProvider);
                 results.add(result);
 
-                // If mandatory step failed and not overridden, stop workflow
-                if (mandatory && result.getOutcome() == StepOutcome.FAILURE && !result.isOverridden()) {
+                // If mandatory step failed and not overridden, stop workflow (unless in ANY group)
+                if (mandatory && result.getOutcome() == StepOutcome.FAILURE && !result.isOverridden()
+                        && KycMandatoryGroupEvaluator.shouldHaltOnMandatoryFailure(stepName, intakeConfig)) {
                     log.warn("Mandatory KYC step {} failed for application {}. Halting workflow.", stepName, applicationId);
                     break;
                 }
@@ -179,18 +239,20 @@ public class KycOrchestrationServiceImpl implements IKycOrchestrationService {
             }
         }
 
-        boolean mandatoryFailure = false;
+        Map<String, StepOutcome> effectiveByStep = new HashMap<>();
         for (KycStepResultResponse r : results) {
-            if (r.getOutcome() == StepOutcome.FAILURE && !r.isOverridden()) {
-                mandatoryFailure = true;
-                break;
+            if (r.getStepType() != null) {
+                effectiveByStep.put(r.getStepType().name(), r.getOutcome());
             }
         }
+        boolean mandatoryFailure = KycMandatoryGroupEvaluator.hasMandatoryFailure(effectiveByStep, steps, intakeConfig);
 
         if (mandatoryFailure) {
             app.setStatus(ApplicationStatus.KYC_FAILED);
             loanApplicationRepository.save(app);
         }
+
+        auditKycOutcomeIfChanged(applicationId);
 
         return results;
     }
@@ -200,8 +262,10 @@ public class KycOrchestrationServiceImpl implements IKycOrchestrationService {
         LoanApplication app = loanApplicationRepository.findById(applicationId)
                 .orElseThrow(() -> new ResourceNotFoundException("Application not found: " + applicationId));
 
-        var workflowConfig = workflowEngine.getActiveWorkflow(app.getBorrowerType(), app.getLoanProduct());
+        IntakeSegment segment = app.getIntakeSegment() != null ? app.getIntakeSegment() : IntakeSegment.BORROWER;
+        var workflowConfig = workflowEngine.getActiveWorkflow(app.getBorrowerType(), app.getLoanProduct(), segment);
         List<Map<String, Object>> steps = workflowConfig.getSteps();
+        Map<String, Object> intakeConfig = workflowConfig.getIntakeConfig();
         List<KycStepResultResponse> results = getStepResults(applicationId);
 
         Map<String, KycStepResultResponse> latestByStep = new HashMap<>();
@@ -211,6 +275,7 @@ public class KycOrchestrationServiceImpl implements IKycOrchestrationService {
 
         boolean anyFail = false;
         boolean anyIncomplete = false;
+        Map<String, StepOutcome> effectiveOutcomes = new HashMap<>();
 
         java.util.List<Map<String, Object>> summary = new java.util.ArrayList<>();
 
@@ -272,19 +337,30 @@ public class KycOrchestrationServiceImpl implements IKycOrchestrationService {
                 }
             }
 
-            if (effectiveOutcome == StepOutcome.FAILURE) {
+            if (stepName != null && effectiveOutcome != null) {
+                effectiveOutcomes.put(stepName, effectiveOutcome);
+            }
+
+            Set<String> groupedSteps = KycMandatoryGroupEvaluator.stepsInAnyGroups(intakeConfig);
+            boolean inAnyGroup = stepName != null && groupedSteps.contains(stepName.toUpperCase());
+
+            if (effectiveOutcome == StepOutcome.FAILURE && !inAnyGroup) {
                 anyFail = true;
             }
 
             if (effectiveOutcome == null) {
-                anyIncomplete = true;
+                if (!inAnyGroup) {
+                    anyIncomplete = true;
+                }
             } else if (effectiveOutcome == StepOutcome.ERROR
                     || effectiveOutcome == StepOutcome.PENDING
                     || effectiveOutcome == StepOutcome.MANUAL_REVIEW) {
-                anyIncomplete = true;
+                if (!inAnyGroup) {
+                    anyIncomplete = true;
+                }
             }
 
-            if (mandatory) {
+            if (mandatory && !inAnyGroup) {
                 if (effectiveOutcome == null) {
                     anyIncomplete = true;
                 } else if (effectiveOutcome != StepOutcome.SUCCESS && effectiveOutcome != StepOutcome.FAILURE) {
@@ -303,13 +379,41 @@ public class KycOrchestrationServiceImpl implements IKycOrchestrationService {
             ));
         }
 
+        if (KycMandatoryGroupEvaluator.hasMandatoryFailure(effectiveOutcomes, steps, intakeConfig)) {
+            anyFail = true;
+            anyIncomplete = false;
+        } else if (!anyFail) {
+            for (KycMandatoryGroupEvaluator.AnyGroup group : KycMandatoryGroupEvaluator.anyGroups(intakeConfig)) {
+                boolean anyMandatory = false;
+                boolean anySuccess = false;
+                for (String member : group.steps()) {
+                    Boolean m = null;
+                    for (Map<String, Object> step : steps) {
+                        if (member.equalsIgnoreCase(stepNameFromMap(step))) {
+                            m = (boolean) step.getOrDefault("mandatory", true);
+                            break;
+                        }
+                    }
+                    if (m == null || !m) {
+                        continue;
+                    }
+                    anyMandatory = true;
+                    StepOutcome o = effectiveOutcomes.get(member);
+                    if (o == StepOutcome.SUCCESS) {
+                        anySuccess = true;
+                        break;
+                    }
+                }
+                if (anyMandatory && !anySuccess) {
+                    anyIncomplete = true;
+                }
+            }
+        }
+
         String computed = anyFail ? "FAIL" : (anyIncomplete ? "INCOMPLETE" : "PASS");
 
-        auditService.logEvent(applicationId, "KYC_OUTCOME_COMPUTED", "KYC_OUTCOME_COMPUTED",
-                null,
-                null,
-                Map.of("outcome", computed, "steps", summary),
-                "KYC outcome computed: " + computed);
+        // Do not audit here — computeKycOutcome is called on reads and unrelated flows.
+        // Mutations call auditKycOutcomeIfChanged() so only real outcome transitions are logged.
 
         return Map.of(
                 "applicationId", applicationId,
@@ -319,14 +423,119 @@ public class KycOrchestrationServiceImpl implements IKycOrchestrationService {
     }
 
     /**
-     * {@code steps[].provider} in workflow JSON (e.g. "AUTHBRIDGE", "EQUIFAX" for a step row).
+     * Persists a KYC_OUTCOME_COMPUTED audit only when the computed outcome differs from the last logged one.
      */
+    private void auditKycOutcomeIfChanged(UUID applicationId) {
+        Map<String, Object> outcome = computeKycOutcome(applicationId);
+        String computed = String.valueOf(outcome.getOrDefault("outcome", "INCOMPLETE"));
+        String previous = lastLoggedKycOutcome(applicationId);
+        if (computed.equals(previous)) {
+            return;
+        }
+        Object stepSummary = outcome.getOrDefault("stepSummary", List.of());
+        auditService.logEvent(
+                applicationId,
+                "KYC_OUTCOME_COMPUTED",
+                "KYC_OUTCOME_COMPUTED",
+                null,
+                previous == null ? null : Map.of("outcome", previous),
+                Map.of("outcome", computed, "steps", stepSummary),
+                "KYC outcome computed: " + computed);
+    }
+
+    private String lastLoggedKycOutcome(UUID applicationId) {
+        Optional<AuditEvent> last = auditEventRepository
+                .findTopByApplicationIdAndEventTypeOrderByCreatedAtDesc(applicationId, "KYC_OUTCOME_COMPUTED");
+        if (last.isEmpty() || last.get().getNewState() == null) {
+            return null;
+        }
+        Object o = last.get().getNewState().get("outcome");
+        return o == null ? null : String.valueOf(o);
+    }
+
+    private static String stepNameFromMap(Map<String, Object> step) {
+        Object v = step.get("step");
+        return v == null ? "" : String.valueOf(v).trim();
+    }
+
     private static String parseWorkflowProvider(Object value) {
         if (value == null) {
             return null;
         }
         String s = value.toString().trim();
         return s.isEmpty() ? null : s;
+    }
+
+    /**
+     * ITR credentials/password are never available on staff Run KYC.
+     * Reuse borrower SUCCESS (or prior FAILURE) without re-calling Karza.
+     */
+    private KycStepResultResponse handleItrReturnFormsStaffReuse(UUID applicationId, int attemptNumber) {
+        Optional<KycStepResult> latest = kycStepResultRepository
+                .findTopByApplicationIdAndStepTypeOrderByCreatedAtDesc(applicationId, KycStepType.ITR_RETURN_FORMS);
+        if (latest.isPresent()) {
+            KycStepResult existing = latest.get();
+            log.info("Reusing borrower ITR_RETURN_FORMS result {} for application {} (staff run, no password re-call)",
+                    existing.getOutcome(), applicationId);
+            return toResponse(existing);
+        }
+        KycStepResult stepResult = KycStepResult.builder()
+                .applicationId(applicationId)
+                .stepType(KycStepType.ITR_RETURN_FORMS)
+                .provider(ProviderType.KARZA)
+                .outcome(StepOutcome.FAILURE)
+                .attemptNumber(attemptNumber)
+                .errorMessage("ITR login must be completed by the borrower on the portal (username/password never stored)")
+                .parsedData(Map.of(
+                        "message", "Borrower must complete ITR return-forms verification with consent",
+                        "borrowerOnly", true))
+                .completedAt(Instant.now())
+                .build();
+        stepResult = kycStepResultRepository.save(stepResult);
+        auditService.logEvent(applicationId, "KYC", "ITR_RETURN_FORMS FAILURE",
+                null, null,
+                Map.of("stepType", KycStepType.ITR_RETURN_FORMS.name(), "outcome", StepOutcome.FAILURE.name(),
+                        "borrowerOnly", true),
+                "ITR step missing — staff run cannot supply credentials");
+        auditKycOutcomeIfChanged(applicationId);
+        return toResponse(stepResult);
+    }
+
+    /**
+     * GST analysis upload/report is driven by borrower prepare + admin actions, not Run KYC form payload.
+     */
+    private KycStepResultResponse handleGstAnalysisStaffReuse(UUID applicationId, int attemptNumber) {
+        Optional<KycStepResult> latest = kycStepResultRepository
+                .findTopByApplicationIdAndStepTypeOrderByCreatedAtDesc(applicationId, KycStepType.GST_ANALYSIS);
+        if (latest.isPresent()) {
+            KycStepResult existing = latest.get();
+            log.info("Reusing GST_ANALYSIS result {} phase={} for application {} (staff run, no re-call)",
+                    existing.getOutcome(),
+                    existing.getParsedData() != null ? existing.getParsedData().get("phase") : null,
+                    applicationId);
+            return toResponse(existing);
+        }
+        KycStepResult stepResult = KycStepResult.builder()
+                .applicationId(applicationId)
+                .stepType(KycStepType.GST_ANALYSIS)
+                .provider(ProviderType.KARZA)
+                .outcome(StepOutcome.FAILURE)
+                .attemptNumber(attemptNumber)
+                .errorMessage("GST analysis must be prepared by the borrower (PDFs + GSTIN + consent); admin generates report after upload")
+                .parsedData(Map.of(
+                        "message", "Borrower must upload GST return PDFs, GSTIN, and consent on the portal",
+                        "borrowerOnly", true,
+                        "phase", "PREPARE"))
+                .completedAt(Instant.now())
+                .build();
+        stepResult = kycStepResultRepository.save(stepResult);
+        auditService.logEvent(applicationId, "KYC", "GST_ANALYSIS FAILURE",
+                null, null,
+                Map.of("stepType", KycStepType.GST_ANALYSIS.name(), "outcome", StepOutcome.FAILURE.name(),
+                        "borrowerOnly", true),
+                "GST analysis missing — staff run cannot supply documents");
+        auditKycOutcomeIfChanged(applicationId);
+        return toResponse(stepResult);
     }
 
     private KycStepResultResponse toResponse(KycStepResult result) {

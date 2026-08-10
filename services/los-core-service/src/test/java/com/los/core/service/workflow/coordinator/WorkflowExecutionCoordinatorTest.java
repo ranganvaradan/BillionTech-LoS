@@ -5,10 +5,10 @@ import com.los.core.model.entity.LoanApplication;
 import com.los.core.model.entity.WorkflowConfig;
 import com.los.core.model.enums.BorrowerType;
 import com.los.core.repository.LoanApplicationRepository;
-import com.los.core.repository.WorkflowConfigRepository;
 import com.los.core.service.flow.step.FlowStepType;
 import com.los.core.service.flow.step.StepExecutionRecordingService;
 import com.los.core.service.flow.step.StepResult;
+import com.los.core.service.workflow.ActiveWorkflowConfigService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -33,7 +33,7 @@ class WorkflowExecutionCoordinatorTest {
     @Mock
     private LoanApplicationRepository loanApplicationRepository;
     @Mock
-    private WorkflowConfigRepository workflowConfigRepository;
+    private ActiveWorkflowConfigService activeWorkflowConfigService;
     @Mock
     private StepExecutionRecordingService stepExecutionRecordingService;
 
@@ -57,11 +57,12 @@ class WorkflowExecutionCoordinatorTest {
                 .name("w")
                 .borrowerType("INDIVIDUAL")
                 .loanProduct("PERSONAL_LOAN")
+                .intakeSegment("BORROWER")
                 .steps(List.of(Map.of("step", "PAN_VERIFY", "order", 1)))
                 .active(true)
                 .version(1)
                 .build();
-        when(workflowConfigRepository.findByBorrowerTypeAndLoanProductAndActiveTrue("INDIVIDUAL", "PERSONAL_LOAN"))
+        when(activeWorkflowConfigService.findActiveForApplication(any(LoanApplication.class)))
                 .thenReturn(Optional.of(cfg));
 
         WorkflowExecutionCoordinator c = newWorkflowCoordinator(false, WorkflowResolutionOptions.defaults());
@@ -90,11 +91,12 @@ class WorkflowExecutionCoordinatorTest {
                 .name("w")
                 .borrowerType("INDIVIDUAL")
                 .loanProduct("PERSONAL_LOAN")
+                .intakeSegment("BORROWER")
                 .steps(List.of(Map.of("step", "PAN_VERIFY", "order", 1)))
                 .active(true)
                 .version(1)
                 .build();
-        when(workflowConfigRepository.findByBorrowerTypeAndLoanProductAndActiveTrue("INDIVIDUAL", "PERSONAL_LOAN"))
+        when(activeWorkflowConfigService.findActiveForApplication(any(LoanApplication.class)))
                 .thenReturn(Optional.of(cfg));
         // No BUREAU in JSON + addBureauWhenMissingFromConfig = false  -> resolved [KYC_WORKFLOW] only
         var noBureau = new WorkflowResolutionOptions(false, List.of(FlowStepType.KYC_WORKFLOW, FlowStepType.BUREAU_PULL));
@@ -113,7 +115,7 @@ class WorkflowExecutionCoordinatorTest {
 
     @Test
     void strictMode_noConfigRow_allowsKyc() {
-        when(workflowConfigRepository.findByBorrowerTypeAndLoanProductAndActiveTrue("INDIVIDUAL", "PERSONAL_LOAN"))
+        when(activeWorkflowConfigService.findActiveForApplication(any(LoanApplication.class)))
                 .thenReturn(Optional.empty());
         when(stepExecutionRecordingService.executeWithRecording(
                 eq(FlowStepType.KYC_WORKFLOW), eq(id), anyMap()))
@@ -124,7 +126,7 @@ class WorkflowExecutionCoordinatorTest {
 
     private WorkflowExecutionCoordinator newWorkflowCoordinator(boolean strict, WorkflowResolutionOptions options) {
         WorkflowExecutionCoordinator c = new WorkflowExecutionCoordinator(
-                loanApplicationRepository, workflowConfigRepository, stepExecutionRecordingService, options);
+                loanApplicationRepository, activeWorkflowConfigService, stepExecutionRecordingService, options);
         ReflectionTestUtils.setField(c, "stepValidationStrict", strict);
         return c;
     }

@@ -67,7 +67,9 @@ public class BorrowerApplicationStatusService {
 
     private static String kycLabel(ApplicationStatus s) {
         return switch (s) {
-            case DRAFT, CONSENT_PENDING -> "Not started";
+            case DRAFT, CONSENT_PENDING, BORROWER_SENT_BACK -> "Not started";
+            case BORROWER_SUBMITTED, PENDING_CREDIT_OFFICER, SENT_BACK_TO_RM ->
+                    "Submitted — awaiting lender review";
             case KYC_IN_PROGRESS -> "Verification in progress";
             case KYC_FAILED -> "Verification could not be completed";
             case REJECTED, WITHDRAWN -> "Closed";
@@ -85,7 +87,12 @@ public class BorrowerApplicationStatusService {
             }
             return "Documents received";
         }
-        if (s.compareTo(ApplicationStatus.UNDERWRITING) < 0 && s != ApplicationStatus.CONSENT_PENDING) {
+        if (s.compareTo(ApplicationStatus.UNDERWRITING) < 0
+                && s != ApplicationStatus.CONSENT_PENDING
+                && s != ApplicationStatus.BORROWER_SENT_BACK
+                && s != ApplicationStatus.BORROWER_SUBMITTED
+                && s != ApplicationStatus.PENDING_CREDIT_OFFICER
+                && s != ApplicationStatus.SENT_BACK_TO_RM) {
             return documentCount == 0 ? "Documents pending" : "Under review with your file";
         }
         return "With your application file";
@@ -93,8 +100,9 @@ public class BorrowerApplicationStatusService {
 
     private static String sanctionLabel(ApplicationStatus s) {
         return switch (s) {
-            case DRAFT, CONSENT_PENDING, KYC_IN_PROGRESS, KYC_FAILED, UNDERWRITING, UNDERWRITING_COMPLETED, CAM_READY,
-                    CAM_REVIEWED -> "Pending";
+            case DRAFT, CONSENT_PENDING, BORROWER_SUBMITTED, PENDING_CREDIT_OFFICER, SENT_BACK_TO_RM,
+                    BORROWER_SENT_BACK, KYC_IN_PROGRESS, KYC_FAILED,
+                    UNDERWRITING, UNDERWRITING_COMPLETED, CAM_READY, CAM_SENT_BACK, CAM_REVIEWED -> "Pending";
             case REJECTED, WITHDRAWN -> "Not applicable";
             case SANCTION_PENDING -> "In review";
             case SANCTIONED, KFS_GENERATED, SANCTION_ISSUED, ESIGN_PENDING, ESIGN_COMPLETED, APPROVED, READY_FOR_DISBURSEMENT,
@@ -104,8 +112,10 @@ public class BorrowerApplicationStatusService {
 
     private static String kfsLabel(ApplicationStatus s) {
         return switch (s) {
-            case DRAFT, CONSENT_PENDING, KYC_IN_PROGRESS, KYC_FAILED, UNDERWRITING, UNDERWRITING_COMPLETED, CAM_READY,
-                    CAM_REVIEWED, SANCTION_PENDING, SANCTIONED, APPROVED -> "Pending";
+            case DRAFT, CONSENT_PENDING, BORROWER_SUBMITTED, PENDING_CREDIT_OFFICER, SENT_BACK_TO_RM,
+                    BORROWER_SENT_BACK, KYC_IN_PROGRESS, KYC_FAILED,
+                    UNDERWRITING, UNDERWRITING_COMPLETED, CAM_READY, CAM_SENT_BACK, CAM_REVIEWED, SANCTION_PENDING, SANCTIONED,
+                    APPROVED -> "Pending";
             case REJECTED, WITHDRAWN -> "Not applicable";
             case KFS_GENERATED, ESIGN_PENDING, ESIGN_COMPLETED, READY_FOR_DISBURSEMENT, DISBURSEMENT_PENDING, DISBURSED,
                     SANCTION_ISSUED, ON_HOLD -> "Available";
@@ -116,7 +126,9 @@ public class BorrowerApplicationStatusService {
         if (s == ApplicationStatus.REJECTED || s == ApplicationStatus.WITHDRAWN) {
             return "Not applicable";
         }
-        if (s == ApplicationStatus.DRAFT || s == ApplicationStatus.CONSENT_PENDING) {
+        if (s == ApplicationStatus.DRAFT
+                || s == ApplicationStatus.CONSENT_PENDING
+                || s == ApplicationStatus.BORROWER_SENT_BACK) {
             return "Not started";
         }
         if (s == ApplicationStatus.KYC_IN_PROGRESS

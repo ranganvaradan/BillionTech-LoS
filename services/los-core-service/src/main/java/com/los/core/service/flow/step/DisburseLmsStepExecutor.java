@@ -5,7 +5,14 @@ import com.los.core.model.entity.LoanApplication;
 import com.los.core.model.enums.ApplicationStatus;
 import com.los.core.repository.LoanApplicationRepository;
 import com.los.core.service.audit.AuditService;
-import com.los.core.service.integration.LmsAdapterClient;
+import com.los.core.service.loan.InvoiceDiscountingLosLoanGuard;
+import com.los.lms.dto.LoanHandoverRequest;
+import com.los.lms.dto.LoanHandoverResponse;
+import com.los.lms.entity.WorkflowLmsProductMapping;
+import com.los.lms.service.LmsApplicationConfigResolver;
+import com.los.lms.service.LmsProgramResolver;
+import com.los.lms.service.LmsService;
+import com.los.lms.service.WorkflowLmsProductResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -16,14 +23,14 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
- * {@link FlowStepType#DISBURSE} — LMS handover and DISBURSED status (same as legacy flow).
+ * {@link FlowStepType#DISBURSE} — LMS handover and DISBURSED status.
  * <p>
- * {@link com.los.core.service.transaction.ITransactionService#triggerDisbursement} is not used here
- * because it requires {@link ApplicationStatus#DISBURSEMENT_PENDING} and a different code path; keeping
- * this executor aligned with the previous {@code LoanApplicationFlowService#disburseAndHandoverToLms} behavior.
+ * Populates all bl-core parity fields from the LoanApplication, product mapping config,
+ * and borrower/collateral metadata into the {@link LoanHandoverRequest}.
  */
 @Slf4j
 @Component
@@ -31,8 +38,12 @@ import java.util.UUID;
 public class DisburseLmsStepExecutor implements IStepExecutor {
 
     private final LoanApplicationRepository applicationRepository;
-    private final LmsAdapterClient lmsAdapterClient;
+    private final LmsService lmsService;
+    private final WorkflowLmsProductResolver workflowLmsProductResolver;
+    private final LmsProgramResolver lmsProgramResolver;
+    private final LmsApplicationConfigResolver lmsApplicationConfigResolver;
     private final AuditService auditService;
+    private final InvoiceDiscountingLosLoanGuard invoiceDiscountingLosLoanGuard;
 
     @Override
     public boolean supports(String stepType) {
@@ -44,6 +55,19 @@ public class DisburseLmsStepExecutor implements IStepExecutor {
     public StepResult execute(UUID applicationId, Map<String, Object> context) {
         LoanApplication app = applicationRepository.findById(applicationId)
                 .orElseThrow(() -> new com.los.core.exception.ResourceNotFoundException("Application not found: " + applicationId));
+        if (invoiceDiscountingLosLoanGuard.skipsLosTermLoanCreation(app)) {
+            auditService.logEvent(applicationId, "PREREQUISITE_BLOCK", "DISBURSEMENT_BLOCKED",
+                    null,
+                    Map.of("status", app.getStatus().name(), "reason", "INVOICE_DISCOUNTING_BORROWER", "action", "DISBURSE"),
+                    null,
+                    "Disbursement blocked: invoice discounting borrower onboarding does not create a term loan");
+            throw new BusinessRuleException(
+                    "Invoice discounting borrower onboarding is complete after sanction and eSign — no term loan disbursement applies.",
+                    "INVOICE_DISCOUNTING_NO_TERM_LOAN",
+                    "DISBURSE",
+                    Map.of("status", app.getStatus().name())
+            );
+        }
         if (app.getStatus() != ApplicationStatus.READY_FOR_DISBURSEMENT
                 && app.getStatus() != ApplicationStatus.DISBURSEMENT_PENDING
                 && app.getStatus() != ApplicationStatus.ESIGN_COMPLETED) {
@@ -65,25 +89,71 @@ public class DisburseLmsStepExecutor implements IStepExecutor {
         BigDecimal rate = app.getApprovedRate() != null ? app.getApprovedRate() : app.getInterestRate();
         BigDecimal emiAmount = calculateEmi(disbursementAmount, rate, app.getTenureMonths());
 
-        String borrowerName = "";
-        if (app.getPersonalInfo() != null) {
-            Object name = app.getPersonalInfo().get("fullName");
-            if (name == null) name = app.getPersonalInfo().get("name");
-            if (name == null) {
-                String first = (String) app.getPersonalInfo().getOrDefault("firstName", "");
-                String last = (String) app.getPersonalInfo().getOrDefault("lastName", "");
-                name = (first + " " + last).trim();
-            }
-            borrowerName = name.toString();
+        String borrowerName = com.los.core.service.loan.ApplicationPartyResolver.resolveDisplayName(app);
+        String loanProduct = app.getLoanProduct() != null ? app.getLoanProduct() : "";
+
+        // Resolve partner code from context or application metadata
+        String partnerCode = extractString(context, "partnerCode");
+        if (partnerCode == null && app.getBusinessInfo() != null) {
+            partnerCode = extractString(app.getBusinessInfo(), "partnerCode", "partner_code", "partnerId");
         }
 
-        Map<String, Object> lmsResult = lmsAdapterClient.handoverLoan(
-                applicationId, app.getApplicationNumber(),
-                borrowerName, app.getBorrowerType().name(),
-                app.getLoanProduct(), disbursementAmount,
-                rate, app.getTenureMonths(), emiAmount,
-                app.getPersonalInfo()
-        );
+        String encoreProductCode = lmsProgramResolver.resolveEncoreProductCode(app, loanProduct);
+        String tenureUnit = lmsApplicationConfigResolver.resolveTenureUnit(app);
+        log.info("[LMS-DISBURSE] Encore product code {} tenureUnit {} for DISBURSE step (app={}, loanProduct={})",
+                encoreProductCode, tenureUnit, app.getApplicationNumber(), loanProduct);
+        Optional<WorkflowLmsProductMapping> fullMapping = workflowLmsProductResolver.resolveFullMapping(
+                partnerCode, app.getBorrowerType(), loanProduct);
+
+        // Build handover request with all bl-core parity fields
+        LoanHandoverRequest.LoanHandoverRequestBuilder builder = LoanHandoverRequest.builder()
+                .applicationId(applicationId)
+                .applicationNumber(app.getApplicationNumber())
+                .borrowerName(borrowerName)
+                .borrowerType(app.getBorrowerType().name())
+                .loanProduct(loanProduct)
+                .encorePartyOrCustomerId(app.getLmsEncoreCustomerId())
+                .productCode(encoreProductCode)
+                .partnerCode(partnerCode)
+                .sanctionedAmount(disbursementAmount)
+                .interestRate(rate)
+                .tenureMonths(app.getTenureMonths())
+                .numberOfInstallments(app.getTenureMonths())
+                .tenureUnit(tenureUnit)
+                .emiAmount(emiAmount)
+                .borrowerDetails(com.los.core.service.loan.ApplicationPartyResolver.buildIntegrationPartyMap(app));
+
+        // Populate from product mapping config when available
+        fullMapping.ifPresent(m -> {
+            if (m.getBranchSetCode() != null) {
+                builder.encoreBranchCode(m.getBranchSetCode());
+            }
+            if (m.getPenalInterestRate() != null) {
+                builder.penalInterestRate(m.getPenalInterestRate());
+            }
+            if (m.getMoratoriumType() != null) {
+                builder.moratoriumType(m.getMoratoriumType());
+            }
+            if (m.getMoratoriumPeriodMagnitude() != null) {
+                builder.moratoriumPeriodMagnitude(m.getMoratoriumPeriodMagnitude());
+            }
+            if (m.getMoratoriumPeriodUnit() != null) {
+                builder.moratoriumPeriodUnit(m.getMoratoriumPeriodUnit());
+            }
+        });
+
+        // Override from context if workflow step provides explicit values
+        overrideFromContext(builder, context);
+
+        // User ID for Encore transaction posting
+        String userId = extractString(context, "userId", "user_id", "loggedInUserId");
+        if (userId != null) {
+            builder.userId(userId);
+        }
+
+        LoanHandoverRequest handoverRequest = builder.build();
+        LoanHandoverResponse handoverResponse = lmsService.handoverLoan(handoverRequest);
+        Map<String, Object> lmsResult = handoverResponseToMap(handoverResponse);
 
         String lmsStatus = String.valueOf(lmsResult.getOrDefault("status", "UNKNOWN"));
         String lmsReferenceId = String.valueOf(lmsResult.getOrDefault("lmsReferenceId", ""));
@@ -118,6 +188,81 @@ public class DisburseLmsStepExecutor implements IStepExecutor {
         response.put("lmsStatus", lmsStatus);
         response.put("lmsDetails", lmsResult);
         return StepResult.ok(response);
+    }
+
+    private static String extractBorrowerName(LoanApplication app) {
+        if (app.getPersonalInfo() == null) return "";
+        Map<String, Object> pi = app.getPersonalInfo();
+        Object name = pi.get("fullName");
+        if (name == null) name = pi.get("name");
+        if (name == null) {
+            String first = String.valueOf(pi.getOrDefault("firstName", ""));
+            String last = String.valueOf(pi.getOrDefault("lastName", ""));
+            name = (first + " " + last).trim();
+        }
+        return name.toString();
+    }
+
+    private static void overrideFromContext(LoanHandoverRequest.LoanHandoverRequestBuilder builder,
+                                             Map<String, Object> context) {
+        if (context == null) return;
+        String branchCode = extractString(context, "encoreBranchCode", "branchCode");
+        if (branchCode != null) builder.encoreBranchCode(branchCode);
+
+        String disbDate = extractString(context, "disbursementDate");
+        if (disbDate != null) builder.disbursementDate(disbDate);
+
+        String trancheId = extractString(context, "trancheId", "tranche_id");
+        if (trancheId != null) builder.trancheId(trancheId);
+
+        String colending = extractString(context, "colendingApplicable");
+        if (colending != null) builder.colendingApplicable(colending);
+
+        String colenderProduct = extractString(context, "colenderProductCode");
+        if (colenderProduct != null) builder.colenderProductCode(colenderProduct);
+
+        String colenderId = extractString(context, "colenderId");
+        if (colenderId != null) builder.colenderId(colenderId);
+
+        String colenderRatio = extractString(context, "colenderLendingRatio");
+        if (colenderRatio != null) builder.colenderLendingRatio(colenderRatio);
+
+        String colenderRate = extractString(context, "colenderNormalInterestRate");
+        if (colenderRate != null) builder.colenderNormalInterestRate(colenderRate);
+    }
+
+    @SafeVarargs
+    private static String extractString(Map<String, Object>... sources) {
+        return null;
+    }
+
+    private static String extractString(Map<String, Object> map, String... keys) {
+        if (map == null) return null;
+        for (String key : keys) {
+            Object v = map.get(key);
+            if (v != null) {
+                String s = String.valueOf(v).trim();
+                if (!s.isEmpty()) return s;
+            }
+        }
+        return null;
+    }
+
+    private static Map<String, Object> handoverResponseToMap(LoanHandoverResponse resp) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        if (resp.getHandoverId() != null) {
+            m.put("handoverId", resp.getHandoverId().toString());
+        }
+        m.put("applicationNumber", resp.getApplicationNumber());
+        m.put("lmsReferenceId", resp.getLmsReferenceId());
+        m.put("status", resp.getStatus());
+        m.put("message", resp.getMessage());
+        if (resp.getFirstEmiDate() != null) {
+            m.put("firstEmiDate", resp.getFirstEmiDate().toString());
+        }
+        m.put("emiAmount", resp.getEmiAmount());
+        m.put("totalEmis", resp.getTotalEmis());
+        return m;
     }
 
     private static BigDecimal calculateEmi(BigDecimal principal, BigDecimal annualRate, Integer tenureMonths) {

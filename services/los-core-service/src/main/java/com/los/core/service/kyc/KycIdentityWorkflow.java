@@ -3,6 +3,7 @@ package com.los.core.service.kyc;
 import com.los.core.model.enums.KycStepType;
 
 import java.util.EnumSet;
+import java.util.Locale;
 import java.util.Set;
 
 /**
@@ -24,6 +25,9 @@ public final class KycIdentityWorkflow {
             KycStepType.ESIGN_AGREEMENT
     );
 
+    /** Workflow JSON aliases that are not synchronous Run KYC identity checks. */
+    private static final Set<String> NON_IDENTITY_ALIASES = Set.of("VKYC");
+
     private KycIdentityWorkflow() {
     }
 
@@ -35,8 +39,12 @@ public final class KycIdentityWorkflow {
         if (stepName == null || stepName.isBlank()) {
             return false;
         }
+        String normalized = stepName.trim().toUpperCase(Locale.ROOT);
+        if (NON_IDENTITY_ALIASES.contains(normalized)) {
+            return false;
+        }
         try {
-            return isKycIdentitySubStep(KycStepType.valueOf(stepName.trim()));
+            return isKycIdentitySubStep(KycStepType.valueOf(normalized));
         } catch (IllegalArgumentException e) {
             // Unknown name: not bureau/eSign; let {@code executeWorkflow} attempt / fail as before.
             return true;

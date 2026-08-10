@@ -1,27 +1,25 @@
-# ─── Stage 1: Build ─────────────────────────────────────
-FROM maven:3.9-eclipse-temurin-17-alpine AS builder
+FROM maven:3.9.9-eclipse-temurin-17 AS build
 WORKDIR /build
+COPY parent-pom.xml .
+COPY pom.xml .
+COPY src ./src
+RUN mvn install -N -f parent-pom.xml -q
+RUN mvn package -f pom.xml -DskipTests
 
-COPY pom.xml ./pom.xml
-COPY services/discovery-service/pom.xml ./services/discovery-service/pom.xml
-COPY services/api-gateway/pom.xml ./services/api-gateway/pom.xml
-COPY services/iam-service/pom.xml ./services/iam-service/pom.xml
-COPY services/enrollment-service/pom.xml ./services/enrollment-service/pom.xml
-COPY services/los-core-service/pom.xml ./services/los-core-service/pom.xml
-COPY services/notification-service/pom.xml ./services/notification-service/pom.xml
-COPY services/lms-adapter-service/pom.xml ./services/lms-adapter-service/pom.xml
-
-RUN mvn dependency:go-offline -pl services/los-core-service -am -q 2>/dev/null || true
-
-COPY services/discovery-service/src ./services/discovery-service/src
-COPY services/los-core-service/src ./services/los-core-service/src
-RUN mvn package -pl services/los-core-service -am -DskipTests -q
-
-# ─── Stage 2: Runtime ───────────────────────────────────
-FROM eclipse-temurin:17-jre-alpine
-LABEL maintainer="BillionTech LOS"
+FROM eclipse-temurin:17-jre
 WORKDIR /app
-COPY --from=builder /build/services/los-core-service/target/*.jar app.jar
+# RUN apt-get add --no-cache wget \
+#     && addgroup -S app && adduser -S app -G app \
+#     && mkdir -p /data/documents && chown -R app:app /data /app
+
+RUN apt-get update && \
+    apt-get install -y wget && \
+    groupadd -r app && \
+    useradd -r -g app app && \
+    mkdir -p /data/documents && \
+    chown -R app:app /data /app && \
+    rm -rf /var/lib/apt/lists/*
+COPY --from=build --chown=app:app /build/target/*.jar app.jar
+USER app
 EXPOSE 8083
-ENV JAVA_OPTS="-XX:+UseZGC -XX:MaxRAMPercentage=75.0"
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -Djava.net.preferIPv4Stack=true -jar /app/app.jar"]

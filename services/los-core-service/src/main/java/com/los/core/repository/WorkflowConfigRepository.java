@@ -5,13 +5,18 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
 
 @Repository
 public interface WorkflowConfigRepository extends JpaRepository<WorkflowConfig, UUID> {
 
-    Optional<WorkflowConfig> findByBorrowerTypeAndLoanProductAndActiveTrue(String borrowerType, String loanProduct);
+    /**
+     * Active workflows for a resolution key, highest version first.
+     * Multiple active rows for the same key are allowed (see V84).
+     */
+    List<WorkflowConfig> findByBorrowerTypeAndLoanProductAndIntakeSegmentAndActiveTrueOrderByVersionDesc(
+            String borrowerType, String loanProduct, String intakeSegment);
 
     List<WorkflowConfig> findByActiveTrue();
+
 }

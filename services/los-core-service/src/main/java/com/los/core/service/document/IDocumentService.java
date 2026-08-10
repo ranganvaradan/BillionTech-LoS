@@ -15,6 +15,16 @@ public interface IDocumentService {
 
     DocumentResponse uploadDocument(UUID applicationId, String documentType, MultipartFile file, KycStepType kycStepType);
 
+    /**
+     * Persist raw bytes as an application document (service-side uploads such as bureau reports / signed PDFs).
+     */
+    DocumentResponse storeDocumentBytes(
+            UUID applicationId,
+            String documentType,
+            String fileName,
+            String contentType,
+            byte[] bytes);
+
     List<DocumentResponse> getDocuments(UUID applicationId);
 
     byte[] downloadDocument(UUID documentId);

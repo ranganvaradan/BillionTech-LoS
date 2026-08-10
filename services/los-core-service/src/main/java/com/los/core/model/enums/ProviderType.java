@@ -10,5 +10,8 @@ public enum ProviderType {
     AUTHBRIDGE_ESIGN,
     SMS_GATEWAY,
     CKYC_REGISTRY,
-    ACCOUNT_AGGREGATOR
+    ACCOUNT_AGGREGATOR,
+    VAHAN,
+    SETU_AA,
+    CERSAI
 }

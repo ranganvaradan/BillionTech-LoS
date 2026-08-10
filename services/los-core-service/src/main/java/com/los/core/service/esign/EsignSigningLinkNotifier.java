@@ -1,6 +1,7 @@
 package com.los.core.service.esign;
 
 import com.los.core.config.RabbitMQConfig;
+import com.los.core.service.workflow.WorkflowNotificationResolverService;
 import lombok.Builder;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +27,7 @@ public class EsignSigningLinkNotifier {
     public static final String TEMPLATE_ESIGN_PENDING = "ESIGN_PENDING";
 
     private final RabbitTemplate rabbitTemplate;
+    private final WorkflowNotificationResolverService workflowNotificationResolverService;
 
     /**
      * @param recipientEmails validated non-blank borrower email(s)
@@ -61,42 +63,52 @@ public class EsignSigningLinkNotifier {
         templateData.put("eventType", "ESIGN_LINK");
 
         String code = templateCode != null && !templateCode.isBlank() ? templateCode : TEMPLATE_ESIGN_PENDING;
-        String routingKey = "notification.email.esign_link";
         String exchange = RabbitMQConfig.EXCHANGE;
+        var actions = workflowNotificationResolverService.resolveForApplication(
+                applicationId,
+                "ESIGN_KFS",
+                "ESIGN_LINK",
+                to,
+                code,
+                "EMAIL");
         log.info("[ESIGN_EMAIL] trigger started applicationId={} applicationNumber={} templateCode={} recipientCount={} recipients={} reusedSigningUrl={}",
                 applicationId, maskAppNumber(applicationNumber),
                 code, to.size(),
                 maskEmails(to),
                 reusedSigningUrl);
 
-        String tc = code;
-        for (String recipient : to) {
-            RoutingEmailEvent ev = RoutingEmailEvent.builder()
-                    .channel("EMAIL")
-                    .recipient(recipient)
-                    .templateCode(tc)
-                    .eventType("ESIGN_LINK")
-                    .applicationId(applicationId)
-                    .templateData(templateData)
-                    .build();
-            try {
-                log.info("[ESIGN_EMAIL_PUBLISH_PAYLOAD] templateCode={} eventType={} channel={} recipient={} applicationId={} templateData={}",
-                        ev.getTemplateCode(),
-                        ev.getEventType(),
-                        ev.getChannel(),
-                        recipient,
-                        ev.getApplicationId(),
-                        templateData);
-                rabbitTemplate.convertAndSend(exchange, routingKey, ev);
-                log.info("[ESIGN_EMAIL] queued exchange={} routingKey={} applicationId={} recipient={}",
-                        exchange, routingKey, applicationId, maskEmail(recipient));
-            } catch (Exception e) {
-                log.error("[ESIGN_EMAIL][ERROR] RabbitMQ routing failed exchange={} routingKey={} applicationId={} recipient={}: {}",
-                        exchange, routingKey, applicationId, maskEmail(recipient), e.getMessage(), e);
+        for (var action : actions) {
+            String routingKey = "notification." + action.getChannel().toLowerCase() + "."
+                    + action.getEventType().toLowerCase();
+            for (String recipient : action.getRecipients()) {
+                RoutingEmailEvent ev = RoutingEmailEvent.builder()
+                        .channel(action.getChannel())
+                        .recipient(recipient)
+                        .templateCode(action.getTemplateCode())
+                        .eventType(action.getEventType())
+                        .applicationId(applicationId)
+                        .templateData(templateData)
+                        .build();
+                try {
+                    log.info("[ESIGN_NOTIFICATION_PUBLISH] templateCode={} eventType={} channel={} recipient={} applicationId={} routingKey={} templateData={}",
+                            ev.getTemplateCode(),
+                            ev.getEventType(),
+                            ev.getChannel(),
+                            recipient,
+                            ev.getApplicationId(),
+                            routingKey,
+                            templateData);
+                    rabbitTemplate.convertAndSend(exchange, routingKey, ev);
+                    log.info("[ESIGN_NOTIFICATION] queued exchange={} routingKey={} applicationId={} recipient={}",
+                            exchange, routingKey, applicationId, maskEmail(recipient));
+                } catch (Exception e) {
+                    log.error("[ESIGN_EMAIL][ERROR] RabbitMQ routing failed exchange={} routingKey={} applicationId={} recipient={}: {}",
+                            exchange, routingKey, applicationId, maskEmail(recipient), e.getMessage(), e);
+                }
             }
         }
-        log.info("[ESIGN_EMAIL] publish batch finished applicationId={} count={} (delivery via notification-service)",
-                applicationId, to.size());
+        log.info("[ESIGN_EMAIL] publish batch finished applicationId={} configuredActionCount={} (delivery via notification-service)",
+                applicationId, actions.size());
     }
 
     private static String maskAppNumber(String applicationNumber) {

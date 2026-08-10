@@ -1,0 +1,21 @@
+package com.los.core.creditintelligence.domain;
+
+public enum SourceType {
+    APPLICATION,
+    MANUAL_DECLARATION,
+    KYC,
+    CONSUMER_BUREAU,
+    COMMERCIAL_BUREAU,
+    GST,
+    ITR,
+    AIS,
+    FORM_26AS,
+    TIS,
+    BANK_STATEMENT,
+    ACCOUNT_AGGREGATOR,
+    FINANCIAL_STATEMENT,
+    COLLATERAL,
+    PRODUCT_CONFIGURATION,
+    POLICY_CONFIGURATION,
+    LEGACY_CONTEXT
+}

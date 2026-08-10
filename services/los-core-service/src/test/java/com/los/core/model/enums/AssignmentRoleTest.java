@@ -13,6 +13,8 @@ class AssignmentRoleTest {
     void fromStringAcceptsCodeAndName() {
         assertEquals(AssignmentRole.CREDIT_OFFICER, AssignmentRole.fromString("CREDIT_OFFICER"));
         assertEquals(AssignmentRole.SALES_OFFICER, AssignmentRole.fromString("sales_officer"));
+        assertEquals(AssignmentRole.RELATIONSHIP_MANAGER, AssignmentRole.fromString("RELATIONSHIP_MANAGER"));
+        assertEquals(AssignmentRole.RELATIONSHIP_MANAGER, AssignmentRole.fromString("relationship_manager"));
     }
 
     @Test

@@ -15,4 +15,7 @@ public class LoginResponse {
     String email;
     String role;
     String institution;
+    /** True when the user signed in with a temporary password and must set a new one before continuing. */
+    @JsonProperty("passwordResetRequired")
+    boolean passwordResetRequired;
 }

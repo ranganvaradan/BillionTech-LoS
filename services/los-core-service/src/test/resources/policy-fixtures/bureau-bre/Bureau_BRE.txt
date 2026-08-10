@@ -1,0 +1,37 @@
+Bureau BRE 
+ 
+• Bureau Score of -1, NTC and 650 & above only will be allowed. 
+ 
+• No Loan Write-Offs are allowed, except for Credit Cards. 
+ 
+• No Loan Overdue payments are allowed, except for Credit Cards, subject to the rules defined 
+for Overdue below. 
+ 
+• Overdue Rule – If the case passes all below (1 to 4) rules, the case will be considered, else 
+will be rejected. 
+ 
+1. Overdue loan reporting date is greater than 1 year from the date of application. 
+2. Customer took new loans after the overdue loan reporting date. 
+3. These new loans have at least 6 months data with CLEAN string. 
+4. The overdue amount is less than Rs.1,500. 
+ 
+• Any credit card overdue amounts greater than Rs.5,000 will result in rejection. 
+ 
+• Any loan account or credit card with a Days Past Due (DPD) greater than 30 in the last 6 
+months will be rejected. 
+ 
+• Loan accounts with a “Settled” or “Restructured” status will be rejected. 
+ 
+• Customers who have Loan accounts or credit cards with any legal suit filed against them will be 
+rejected. 
+ 
+• Any loan account with a “DBT”, “PWOS” or “LSS” string in the credit report will result in 
+rejection. 
+ 
+• Credit reports with multiple Permanent Account Number (PAN) numbers will result in rejection. 
+ 
+• Any credit report with more than three inquiries in the current month will be rejected. 
+ 
+• Loan accounts or credit cards with “Account Sold” status will be rejected. 
+ 
+ 

@@ -70,11 +70,30 @@ public class ApplicationCustomerIdResolver {
                 continue;
             }
             Optional<LosUser> u = findByMobileDigits(digits);
-            if (u.isPresent()) {
+            if (u.isPresent() && mobileMatchAllowed(pi, u.get())) {
                 return Optional.of(u.get().getId());
             }
         }
         return Optional.empty();
+    }
+
+    /**
+     * At create time, personalInfo may only contain mobile (email collected on a later intake step).
+     * Do not bind a new application to an existing borrower when the request already carries a different email.
+     */
+    private static boolean mobileMatchAllowed(Map<String, Object> personalInfo, LosUser matched) {
+        for (String key : new String[] {"email", "contactEmail", "borrowerEmail"}) {
+            String requested = str(personalInfo.get(key));
+            if (requested == null) {
+                continue;
+            }
+            String normalized = requested.trim().toLowerCase();
+            String existing = matched.getEmail() != null ? matched.getEmail().trim().toLowerCase() : "";
+            if (!normalized.equals(existing)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private Optional<LosUser> findByMobileDigits(String tenPlusDigits) {

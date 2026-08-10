@@ -2,9 +2,11 @@ package com.los.core.repository;
 
 import com.los.core.model.entity.LosUser;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -32,4 +34,15 @@ public interface LosUserRepository extends JpaRepository<LosUser, UUID> {
 
     /** Used to match a prospect phone to a {@link LosUser} without DB-specific phone normalization. */
     List<LosUser> findByMobileIsNotNull();
+
+    /**
+     * Removes auto-provisioned borrower accounts while preserving seeded demo borrowers.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+            DELETE FROM LosUser u
+            WHERE u.primaryLosRole = 'BORROWER'
+              AND lower(trim(u.email)) NOT IN :preservedEmails
+            """)
+    int deleteBorrowersNotInPreservedEmails(@Param("preservedEmails") Collection<String> preservedEmails);
 }

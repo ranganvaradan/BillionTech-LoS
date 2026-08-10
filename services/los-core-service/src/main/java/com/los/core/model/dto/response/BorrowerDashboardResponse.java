@@ -19,4 +19,9 @@ public class BorrowerDashboardResponse {
     String secondLoanWarning;
     /** First disbursed application id (for post-disbursement loan menu links; demo). */
     UUID primaryDisbursedApplicationId;
+    /** True when this borrower has a synced PLP identity on an invoice-discounting application. */
+    boolean invoiceDiscountingLinked;
+    boolean purchaseBillDiscountingLinked;
+    boolean salesBillDiscountingLinked;
+    boolean purchaseOrderDiscountingLinked;
 }

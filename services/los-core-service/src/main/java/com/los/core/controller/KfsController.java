@@ -2,8 +2,11 @@ package com.los.core.controller;
 
 import com.los.core.model.entity.KfsDocument;
 import com.los.core.model.entity.KfsTemplate;
+import com.los.core.model.entity.LoanApplication;
+import com.los.core.repository.LoanApplicationRepository;
 import com.los.core.service.kfs.KfsPdfGenerationService;
 import com.los.core.service.kfs.KfsService;
+import com.los.core.service.loan.InvoiceDiscountingApplicationRules;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -25,6 +28,7 @@ public class KfsController {
 
     private final KfsService kfsService;
     private final KfsPdfGenerationService kfsPdfGenerationService;
+    private final LoanApplicationRepository loanApplicationRepository;
 
     @PostMapping("/generate/{applicationId}")
     @Operation(summary = "Generate KFS for an application after sanction")
@@ -112,9 +116,21 @@ public class KfsController {
     @GetMapping("/application/{applicationId}/pdf")
     @Operation(summary = "Download KFS as PDF (RBI DLD 2025 compliant)")
     public ResponseEntity<byte[]> downloadKfsPdf(@PathVariable UUID applicationId) {
-        KfsDocument kfs = kfsService.getLatestKfs(applicationId);
-        byte[] pdf = kfsPdfGenerationService.generateKfsPdf(kfs);
-        String filename = "KFS-" + applicationId + "-v" + kfs.getVersion() + ".pdf";
+        byte[] pdf;
+        String filename;
+        try {
+            KfsDocument kfs = kfsService.getLatestKfs(applicationId);
+            pdf = kfsPdfGenerationService.generateKfsPdf(kfs);
+            filename = "KFS-" + applicationId + "-v" + kfs.getVersion() + ".pdf";
+        } catch (com.los.core.exception.ResourceNotFoundException ex) {
+            LoanApplication app = loanApplicationRepository.findById(applicationId)
+                    .orElseThrow(() -> ex);
+            if (!InvoiceDiscountingApplicationRules.isBorrowerFlow(app)) {
+                throw ex;
+            }
+            pdf = kfsPdfGenerationService.generateInvoiceDiscountingTermsPdfForApplication(applicationId);
+            filename = "Invoice-Discounting-Terms-" + applicationId + ".pdf";
+        }
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
                 .contentType(MediaType.APPLICATION_PDF)
