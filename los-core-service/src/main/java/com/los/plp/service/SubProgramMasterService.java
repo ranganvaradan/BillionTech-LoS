@@ -1,12 +1,15 @@
 package com.los.plp.service;
 
 import com.los.plp.config.PlpProperties;
+import com.los.plp.event.PlpMasterSyncRequestedEvent;
+import com.los.plp.event.PlpMasterSyncType;
 import com.los.plp.model.dto.SubProgramMasterRequest;
 import com.los.plp.model.entity.SubProgramMaster;
 import com.los.plp.model.enums.PlpSyncStatus;
 import com.los.plp.repository.SubProgramMasterRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,8 +22,8 @@ import java.util.UUID;
 public class SubProgramMasterService {
 
     private final SubProgramMasterRepository subProgramMasterRepository;
-    private final PlpSubProgramSyncService plpSubProgramSyncService;
     private final PlpProperties plpProperties;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public SubProgramMaster create(SubProgramMasterRequest request) {
@@ -36,14 +39,7 @@ public class SubProgramMasterService {
                 .plpSubProgramSyncStatus(PlpSyncStatus.NOT_SYNCED)
                 .build();
         subProgram = subProgramMasterRepository.save(subProgram);
-        if (plpProperties.isEnabled()) {
-            try {
-                plpSubProgramSyncService.sync(subProgram.getId());
-            } catch (Exception e) {
-                log.error("PLP sub-program sync failed after create for {}: {}", subProgram.getId(), e.getMessage(), e);
-            }
-            return subProgramMasterRepository.findById(subProgram.getId()).orElse(subProgram);
-        }
+        publishSyncAfterCommit(subProgram.getId());
         return subProgram;
     }
 
@@ -60,14 +56,7 @@ public class SubProgramMasterService {
         subProgram.setBorrowerRole(request.getBorrowerRole());
         subProgram.setSubProgramLimit(request.getSubProgramLimit());
         subProgram = subProgramMasterRepository.save(subProgram);
-        if (plpProperties.isEnabled()) {
-            try {
-                plpSubProgramSyncService.sync(subProgram.getId());
-            } catch (Exception e) {
-                log.error("PLP sub-program sync failed after update for {}: {}", subProgram.getId(), e.getMessage(), e);
-            }
-            return subProgramMasterRepository.findById(subProgram.getId()).orElse(subProgram);
-        }
+        publishSyncAfterCommit(subProgram.getId());
         return subProgram;
     }
 
@@ -80,5 +69,12 @@ public class SubProgramMasterService {
     @Transactional(readOnly = true)
     public List<SubProgramMaster> list() {
         return subProgramMasterRepository.findAll();
+    }
+
+    private void publishSyncAfterCommit(UUID subProgramId) {
+        if (!plpProperties.isEnabled()) {
+            return;
+        }
+        eventPublisher.publishEvent(new PlpMasterSyncRequestedEvent(PlpMasterSyncType.SUB_PROGRAM, subProgramId));
     }
 }

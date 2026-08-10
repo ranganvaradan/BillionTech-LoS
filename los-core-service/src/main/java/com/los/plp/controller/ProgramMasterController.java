@@ -25,7 +25,8 @@ public class ProgramMasterController {
     @PostMapping
     @Operation(summary = "Create program master and sync to PLP")
     public ResponseEntity<ProgramMaster> create(@Valid @RequestBody ProgramMasterRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(programMasterService.create(request));
+        ProgramMaster created = programMasterService.create(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(programMasterService.get(created.getId()));
     }
 
     @PutMapping("/{programId}")
@@ -33,7 +34,8 @@ public class ProgramMasterController {
     public ResponseEntity<ProgramMaster> update(
             @PathVariable UUID programId,
             @Valid @RequestBody ProgramMasterRequest request) {
-        return ResponseEntity.ok(programMasterService.update(programId, request));
+        ProgramMaster updated = programMasterService.update(programId, request);
+        return ResponseEntity.ok(programMasterService.get(updated.getId()));
     }
 
     @GetMapping("/{programId}")

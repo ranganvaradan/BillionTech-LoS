@@ -1,12 +1,15 @@
 package com.los.plp.service;
 
 import com.los.plp.config.PlpProperties;
+import com.los.plp.event.PlpMasterSyncRequestedEvent;
+import com.los.plp.event.PlpMasterSyncType;
 import com.los.plp.model.dto.AnchorMasterRequest;
 import com.los.plp.model.entity.AnchorMaster;
 import com.los.plp.model.enums.PlpSyncStatus;
 import com.los.plp.repository.AnchorMasterRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,8 +22,8 @@ import java.util.UUID;
 public class AnchorMasterService {
 
     private final AnchorMasterRepository anchorMasterRepository;
-    private final PlpAnchorSyncService plpAnchorSyncService;
     private final PlpProperties plpProperties;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public AnchorMaster create(AnchorMasterRequest request) {
@@ -36,14 +39,7 @@ public class AnchorMasterService {
                 .plpAnchorSyncStatus(PlpSyncStatus.NOT_SYNCED)
                 .build();
         anchor = anchorMasterRepository.save(anchor);
-        if (plpProperties.isEnabled()) {
-            try {
-                plpAnchorSyncService.sync(anchor.getId());
-            } catch (Exception e) {
-                log.error("PLP anchor sync failed after create for {}: {}", anchor.getId(), e.getMessage(), e);
-            }
-            return anchorMasterRepository.findById(anchor.getId()).orElse(anchor);
-        }
+        publishSyncAfterCommit(anchor.getId());
         return anchor;
     }
 
@@ -60,14 +56,7 @@ public class AnchorMasterService {
         anchor.setAddress(request.getAddress());
         anchor.setSourceAnchorApplicationId(request.getSourceAnchorApplicationId());
         anchor = anchorMasterRepository.save(anchor);
-        if (plpProperties.isEnabled()) {
-            try {
-                plpAnchorSyncService.sync(anchor.getId());
-            } catch (Exception e) {
-                log.error("PLP anchor sync failed after update for {}: {}", anchor.getId(), e.getMessage(), e);
-            }
-            return anchorMasterRepository.findById(anchor.getId()).orElse(anchor);
-        }
+        publishSyncAfterCommit(anchor.getId());
         return anchor;
     }
 
@@ -85,5 +74,12 @@ public class AnchorMasterService {
     @Transactional(readOnly = true)
     public List<AnchorMaster> listSyncedToPlp() {
         return anchorMasterRepository.findByPlpAnchorSyncStatus(PlpSyncStatus.SYNC_SUCCESS);
+    }
+
+    private void publishSyncAfterCommit(UUID anchorId) {
+        if (!plpProperties.isEnabled()) {
+            return;
+        }
+        eventPublisher.publishEvent(new PlpMasterSyncRequestedEvent(PlpMasterSyncType.ANCHOR, anchorId));
     }
 }

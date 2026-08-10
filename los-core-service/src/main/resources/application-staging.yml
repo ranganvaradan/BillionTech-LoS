@@ -26,7 +26,12 @@ los:
   demo:
     enabled: true
   plp:
-    enabled: false
+    # Default off for safety; enable staging integration via LOS_PLP_ENABLED=true
+    enabled: ${LOS_PLP_ENABLED:false}
+    base-url: ${PLP_BASE_URL:http://plp-gateway:8080}
+    lender-id: ${PLP_LENDER_ID:}
+    integration-email: ${PLP_INTEGRATION_EMAIL:}
+    integration-password: ${PLP_INTEGRATION_PASSWORD:}
   document:
     storage: local
   file-storage:

@@ -25,7 +25,9 @@ public class AnchorMasterController {
     @PostMapping
     @Operation(summary = "Create anchor master and sync to PLP")
     public ResponseEntity<AnchorMaster> create(@Valid @RequestBody AnchorMasterRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(anchorMasterService.create(request));
+        // Reload after create: after-commit PLP sync runs before the transactional create returns.
+        AnchorMaster created = anchorMasterService.create(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(anchorMasterService.get(created.getId()));
     }
 
     @PutMapping("/{anchorId}")
@@ -33,7 +35,8 @@ public class AnchorMasterController {
     public ResponseEntity<AnchorMaster> update(
             @PathVariable UUID anchorId,
             @Valid @RequestBody AnchorMasterRequest request) {
-        return ResponseEntity.ok(anchorMasterService.update(anchorId, request));
+        AnchorMaster updated = anchorMasterService.update(anchorId, request);
+        return ResponseEntity.ok(anchorMasterService.get(updated.getId()));
     }
 
     @GetMapping("/{anchorId}")

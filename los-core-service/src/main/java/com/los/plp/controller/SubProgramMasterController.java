@@ -25,7 +25,8 @@ public class SubProgramMasterController {
     @PostMapping
     @Operation(summary = "Create sub-program master and sync to PLP")
     public ResponseEntity<SubProgramMaster> create(@Valid @RequestBody SubProgramMasterRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(subProgramMasterService.create(request));
+        SubProgramMaster created = subProgramMasterService.create(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(subProgramMasterService.get(created.getId()));
     }
 
     @PutMapping("/{subProgramId}")
@@ -33,7 +34,8 @@ public class SubProgramMasterController {
     public ResponseEntity<SubProgramMaster> update(
             @PathVariable UUID subProgramId,
             @Valid @RequestBody SubProgramMasterRequest request) {
-        return ResponseEntity.ok(subProgramMasterService.update(subProgramId, request));
+        SubProgramMaster updated = subProgramMasterService.update(subProgramId, request);
+        return ResponseEntity.ok(subProgramMasterService.get(updated.getId()));
     }
 
     @GetMapping("/{subProgramId}")
