@@ -1,0 +1,321 @@
+# PLP full stack for Docker Desktop (runs alongside LOS on remapped host ports).
+# Usage:  docker compose up -d --build
+# UI:     http://localhost:3100/plp/     API: http://localhost:8180
+
+name: plp
+
+x-eureka-env: &eureka-env
+  EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://discovery-service:8761/eureka/
+  EUREKA_INSTANCE_PREFER_IP_ADDRESS: "true"
+
+x-db-env: &db-env
+  SPRING_DATASOURCE_USERNAME: plp_admin
+  SPRING_DATASOURCE_PASSWORD: plp_secret_2026
+
+x-redis-env: &redis-env
+  SPRING_DATA_REDIS_HOST: redis
+  SPRING_DATA_REDIS_PORT: "6379"
+  SPRING_DATA_REDIS_PASSWORD: plp_redis_2026
+
+x-rabbit-env: &rabbit-env
+  SPRING_RABBITMQ_HOST: rabbitmq
+  SPRING_RABBITMQ_PORT: "5672"
+  SPRING_RABBITMQ_USERNAME: plp_rabbit
+  SPRING_RABBITMQ_PASSWORD: plp_rabbit_2026
+
+x-common-env: &common-env
+  PAYU_MERCHANT_KEY: g8yc8J
+  PAYU_MERCHANT_SALT: BBc2U41mOZPLuteAYBW9wJ2Lnm9V9rQV
+  PAYU_GATEWAY_URL: https://test.payu.in/_payment
+  PLP_PUBLIC_API_BASE_URL: https://plp.billiontech.in/plp-api
+  PLP_BORROWER_UI_URL: https://plp.billiontech.in/plp-borrower
+  LOS_BORROWER_UI_URL: https://los.billiontech.in/los/borrower
+  PLP_DEV_RESET_ENABLED: "true"
+  PLP_STORAGE_MINIO_ENABLED: "true"
+  MINIO_ACCESS_KEY: plp_minio_admin
+  MINIO_SECRET_KEY: plp_minio_secret_2026
+  PLP_STORAGE_MINIO_ENDPOINT: http://minio:9000
+  PLP_STORAGE_LOCAL_ROOT: /data/digital-invoices
+
+
+
+services:
+  # ─── Infrastructure (host ports avoid LOS: 5432, 6379, 5672, 9000) ───
+  postgres:
+    image: postgres:16-alpine
+    container_name: plp-postgres
+    environment:
+      POSTGRES_USER: plp_admin
+      POSTGRES_PASSWORD: plp_secret_2026
+      POSTGRES_DB: plp_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - plp_postgres_data:/var/lib/postgresql/data
+      - ./init-databases.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U plp_admin -d plp_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - plp_nw
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: plp-redis
+    command: redis-server --requirepass plp_redis_2026 --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6380:6379"
+    volumes:
+      - plp_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "plp_redis_2026", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - plp_nw
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: plp-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: plp_rabbit
+      RABBITMQ_DEFAULT_PASS: plp_rabbit_2026
+    ports:
+      - "5673:5672"
+      - "15673:15672"
+    # Named volume (Docker-managed perms) avoids the .erlang.cookie eacces seen with tmpfs/anonymous volumes.
+    volumes:
+      - plp_rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 40s
+    networks:
+      - plp_nw
+
+  minio:
+    image: minio/minio:latest
+    container_name: plp-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: plp_minio_admin
+      MINIO_ROOT_PASSWORD: plp_minio_secret_2026
+    ports:
+      - "9010:9000"
+      - "9011:9001"
+    volumes:
+      - plp_minio_data:/data
+    networks:
+      - plp_nw
+
+  # ─── Microservices (internal ports 8761/808x; host 8861/818x) ───
+  discovery-service:
+    image: artifacts.billionloans.com:5001/discovery-service:main-1
+    container_name: plp-discovery
+    ports:
+      - "8861:8761"
+    environment:
+      <<: [*eureka-env, *common-env]
+    networks:
+      - plp_nw
+    restart: unless-stopped
+
+  iam-service:
+    image: artifacts.billionloans.com:5001/iam-service:main-1
+    container_name: plp-iam
+    ports:
+      - "8181:8081"
+    environment:
+      <<: [*eureka-env, *db-env, *redis-env, *common-env]
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/plp_db?currentSchema=plp_iam
+      PLP_LOS_INTEGRATION_API_KEY: plp-los-integration-dev-key
+      PLP_INTEGRATION_DEFAULT_USER_PASSWORD: ChangeMe@PLP2026
+      # UAT/sandbox: set PLP_DEV_RESET_ENABLED=true. Local docker defaults to true for demo workflows.
+      PLP_DEV_RESET_ENABLED: ${PLP_DEV_RESET_ENABLED:-true}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      discovery-service:
+        condition: service_started
+    networks:
+      - plp_nw
+    restart: unless-stopped
+
+  program-service:
+    image: artifacts.billionloans.com:5001/program-service:main-1
+    container_name: plp-program
+    ports:
+      - "8182:8082"
+    environment:
+      <<: [*eureka-env, *db-env, *redis-env, *rabbit-env, *common-env]
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/plp_db?currentSchema=plp_program
+      PLP_STORAGE_MINIO_ENABLED: ${PLP_STORAGE_MINIO_ENABLED:-true}
+      PLP_STORAGE_MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-plp_minio_admin}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-plp_minio_secret_2026}
+      PLP_STORAGE_LOCAL_ROOT: /data/digital-invoices
+      PLP_IAM_BASE_URL: http://iam-service:8081
+      PLP_LENDING_BASE_URL: http://lending-service:8083
+      PLP_LOS_INTEGRATION_API_KEY: plp-los-integration-dev-key
+      PLP_DEV_RESET_ENABLED: ${PLP_DEV_RESET_ENABLED:-true}
+    volumes:
+      - plp_digital_invoices:/data/digital-invoices
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      discovery-service:
+        condition: service_started
+      minio:
+        condition: service_started
+    networks:
+      - plp_nw
+    restart: unless-stopped
+
+  lending-service:
+    image: artifacts.billionloans.com:5001/lending-service:main-1
+    container_name: plp-lending
+    ports:
+      - "8183:8083"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      <<: [*eureka-env, *db-env, *redis-env, *rabbit-env, *common-env]
+      # Credinnov sandbox Encore (team server on host :8091; UI at /encore-client/)
+      # ENCORE_BASE_URL: ${ENCORE_BASE_URL:-http://credinnov-sandbox.senseitech.com/credinnov-encore-server/}
+      ENCORE_BASE_URL: https://core.dev.billionloans.com/encore/
+      ENCORE_API_USERNAME: ${ENCORE_API_USERNAME:-admin}
+      ENCORE_API_PASSWORD: ${ENCORE_API_PASSWORD:-password1}
+      ENCORE_ADMIN_BRANCH: ${ENCORE_ADMIN_BRANCH:-MGPP}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/plp_db?currentSchema=plp_lending
+      PLP_DEV_RESET_ENABLED: ${PLP_DEV_RESET_ENABLED:-true}
+      PAYU_MERCHANT_KEY: ${PAYU_MERCHANT_KEY:-g8yc8J}
+      PAYU_MERCHANT_SALT: ${PAYU_MERCHANT_SALT:-BBc2U41mOZPLuteAYBW9wJ2Lnm9V9rQV}
+      PAYU_GATEWAY_URL: ${PAYU_GATEWAY_URL:-https://test.payu.in/_payment}
+      # Local Docker default. On Credinnov EC2 use docker-compose.sandbox.yml or .env (see .env.example).
+      PLP_PUBLIC_API_BASE_URL: ${PLP_PUBLIC_API_BASE_URL:-https://plp.billiontech.in/plp-api}
+      PLP_BORROWER_UI_URL: ${PLP_BORROWER_UI_URL:-https://plp.billiontech.in/plp-borrower}
+      LOS_BORROWER_UI_URL: ${LOS_BORROWER_UI_URL:-https://los.billiontech.in/los/borrower}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      discovery-service:
+        condition: service_started
+    networks:
+      - plp_nw
+    restart: unless-stopped
+
+  integration-service:
+    image: artifacts.billionloans.com:5001/integration-service:main-1
+    container_name: plp-integration
+    ports:
+      - "8184:8084"
+    environment:
+      <<: [*eureka-env, *db-env, *rabbit-env, *common-env]
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/plp_db?currentSchema=plp_integration
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      discovery-service:
+        condition: service_started
+    networks:
+      - plp_nw
+    restart: unless-stopped
+
+  notification-service:
+    image: artifacts.billionloans.com:5001/notification-service:main-1
+    container_name: plp-notification
+    ports:
+      - "8185:8085"
+    environment:
+      <<: [*eureka-env, *db-env, *rabbit-env, *common-env]
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/plp_db?currentSchema=plp_notification
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-billiontechuat@gmail.com}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-lqwt apmk jusw hcyo}
+      SPRING_MAIL_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SPRING_MAIL_PORT: ${SMTP_PORT:-587}
+      SPRING_MAIL_USERNAME: ${SMTP_USERNAME:-billiontechuat@gmail.com}
+      SPRING_MAIL_PASSWORD: ${SMTP_PASSWORD:-lqwt apmk jusw hcyo}
+      EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-billiontechuat@gmail.com}
+      EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-PLP Platform}
+      EMAIL_SIMULATION_ENABLED: ${EMAIL_SIMULATION_ENABLED:-false}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      discovery-service:
+        condition: service_started
+    networks:
+      - plp_nw
+    restart: unless-stopped
+
+  report-service:
+    image: artifacts.billionloans.com:5001/report-service:main-1
+    container_name: plp-report
+    ports:
+      - "8186:8086"
+    environment:
+      <<: [*eureka-env, *db-env, *rabbit-env, *common-env]
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/plp_db?currentSchema=plp_report&stringtype=unspecified
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      discovery-service:
+        condition: service_started
+    networks:
+      - plp_nw
+    restart: unless-stopped
+
+  api-gateway:
+    image: artifacts.billionloans.com:5001/api-gateway:main-10
+    container_name: plp-gateway
+    ports:
+      - "8180:8080"
+    environment:
+      <<: [*eureka-env, *redis-env, *common-env]
+    depends_on:
+      discovery-service:
+        condition: service_started
+      iam-service:
+        condition: service_started
+      program-service:
+        condition: service_started
+      lending-service:
+        condition: service_started
+    networks:
+      - plp_nw
+    restart: unless-stopped
+
+networks:
+  plp_nw:
+    driver: bridge
+    external: true
+
+
+volumes:
+  plp_postgres_data:
+  plp_redis_data:
+  plp_minio_data:
+  plp_digital_invoices:
+  plp_rabbitmq_data:

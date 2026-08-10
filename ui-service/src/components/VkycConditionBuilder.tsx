@@ -311,77 +311,81 @@ export function VkycConditionBuilder({
           const error = errors[r.id]
           return (
             <li key={r.id} className="rounded-md border border-slate-200 bg-white p-2">
-              <div className="grid gap-2 sm:grid-cols-12 sm:items-end">
-                <div className="sm:col-span-1 sm:pb-2">
-                  <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-700">
-                    {idx === 0 ? 'WHERE' : 'AND'}
-                  </span>
-                </div>
-                <label className="block sm:col-span-3">
-                  <span className="mb-1 block text-xs font-medium text-slate-500">Field</span>
-                  <select
-                    className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
-                    value={r.field}
-                    onChange={(e) => onFieldChange(r.id, e.target.value)}
-                  >
-                    {FIELD_DEFS.map((d) => (
-                      <option key={d.value} value={d.value}>
-                        {d.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                {def.type === 'custom' ? (
-                  <label className="block sm:col-span-3">
-                    <span className="mb-1 block text-xs font-medium text-slate-500">financialInfo key</span>
-                    <input
-                      className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
-                      value={r.customField}
-                      onChange={(e) => update(r.id, { customField: e.target.value })}
-                      placeholder="e.g. employmentType"
-                    />
+              <div className="min-w-0 space-y-2">
+                <div className="flex min-w-0 flex-wrap items-end gap-2">
+                  <div className="flex shrink-0 items-center self-end pb-2">
+                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs font-medium text-slate-700">
+                      {idx === 0 ? 'WHERE' : 'AND'}
+                    </span>
+                  </div>
+                  <label className="block min-w-0 w-full shrink-0 sm:w-[min(100%,13rem)] sm:flex-none">
+                    <span className="mb-1 block text-xs font-medium text-slate-500">Field</span>
+                    <select
+                      className="w-full min-w-0 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                      value={r.field}
+                      onChange={(e) => onFieldChange(r.id, e.target.value)}
+                    >
+                      {FIELD_DEFS.map((d) => (
+                        <option key={d.value} value={d.value}>
+                          {d.label}
+                        </option>
+                      ))}
+                    </select>
                   </label>
-                ) : null}
-                <label className={`block ${def.type === 'custom' ? 'sm:col-span-2' : 'sm:col-span-3'}`}>
-                  <span className="mb-1 block text-xs font-medium text-slate-500">Operator</span>
-                  <select
-                    className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
-                    value={r.operator}
-                    onChange={(e) => update(r.id, { operator: e.target.value })}
-                  >
-                    {operators.map((op) => (
-                      <option key={op} value={op}>
-                        {OPERATOR_LABELS[op] ?? op}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <div className={`block ${def.type === 'custom' ? 'sm:col-span-2' : 'sm:col-span-4'}`}>
-                  {isSetOp ? (
-                    <label className="block">
-                      <span className="mb-1 block text-xs font-medium text-slate-500">Values (comma-separated)</span>
-                      <ValuesInput
-                        type={def.type}
-                        value={r.values}
-                        onChange={(next) => update(r.id, { values: next })}
+                  {def.type === 'custom' ? (
+                    <label className="block min-w-0 w-full shrink-0 sm:w-[min(100%,12rem)] sm:flex-1">
+                      <span className="mb-1 block text-xs font-medium text-slate-500">financialInfo key</span>
+                      <input
+                        className="w-full min-w-0 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                        value={r.customField}
+                        onChange={(e) => update(r.id, { customField: e.target.value })}
+                        placeholder="e.g. employmentType"
                       />
                     </label>
-                  ) : (
-                    <label className="block">
-                      <span className="mb-1 block text-xs font-medium text-slate-500">Value</span>
-                      <ValueInput
-                        type={def.type}
-                        value={r.value}
-                        onChange={(next) => update(r.id, { value: next })}
-                      />
-                    </label>
-                  )}
+                  ) : null}
+                  <label className="block min-w-0 w-full shrink-0 sm:w-[min(100%,12rem)] sm:flex-1">
+                    <span className="mb-1 block text-xs font-medium text-slate-500">Operator</span>
+                    <select
+                      className="w-full min-w-0 rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                      value={r.operator}
+                      onChange={(e) => update(r.id, { operator: e.target.value })}
+                    >
+                      {operators.map((op) => (
+                        <option key={op} value={op}>
+                          {OPERATOR_LABELS[op] ?? op}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <div className="block min-w-0 w-full flex-1 basis-full sm:basis-0 sm:min-w-[10rem]">
+                    {isSetOp ? (
+                      <label className="block min-w-0">
+                        <span className="mb-1 block text-xs font-medium text-slate-500">
+                          Values (comma-separated)
+                        </span>
+                        <ValuesInput
+                          type={def.type}
+                          value={r.values}
+                          onChange={(next) => update(r.id, { values: next })}
+                        />
+                      </label>
+                    ) : (
+                      <label className="block min-w-0">
+                        <span className="mb-1 block text-xs font-medium text-slate-500">Value</span>
+                        <ValueInput
+                          type={def.type}
+                          value={r.value}
+                          onChange={(next) => update(r.id, { value: next })}
+                        />
+                      </label>
+                    )}
+                  </div>
                 </div>
-                <div className="sm:col-span-1 sm:pb-1">
+                <div className="flex justify-end border-t border-slate-100 pt-2">
                   <button
                     type="button"
                     onClick={() => onRemove(r.id)}
-                    className="rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
+                    className="shrink-0 rounded border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 hover:bg-slate-50"
                     aria-label="Remove condition"
                   >
                     Remove

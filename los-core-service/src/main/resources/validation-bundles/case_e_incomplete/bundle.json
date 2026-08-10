@@ -1,0 +1,25 @@
+{
+  "caseCode": "CASE_E_INCOMPLETE",
+  "dataOrigin": "REPRESENTATIVE_PROVIDER_FIXTURE",
+  "sources": {
+    "gst": "provider-fixtures/karza/gst/karza_gst_minimal.json",
+    "itr": "provider-fixtures/surepass/itr/itr_income_heads_distinct.json"
+  },
+  "metricStubs": {
+    "gst.turnover.trailing_12m": "35000000",
+    "itr.turnover.trailing_12m": "34000000"
+  },
+  "legacyScorecardStub": {
+    "ANNUAL_GST_TURNOVER": 35000000,
+    "ITR_INCOME": 4200000,
+    "ANNUAL_BANKING_TURNOVER": 41000000,
+    "AVERAGE_BANK_BALANCE": 120000,
+    "EMI_OBLIGATION": 15000,
+    "PROVIDER_GAP_DEFAULT_ACTIVE": 1
+  },
+  "declaredEmi": null,
+  "metadata": {
+    "description": "GST+ITR present, banking absent — canonical DATA_INSUFFICIENT for bank-dependent rules; no fabricated pass",
+    "missingSources": ["bank", "bureau"]
+  }
+}

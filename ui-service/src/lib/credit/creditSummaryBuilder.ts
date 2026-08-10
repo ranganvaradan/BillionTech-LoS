@@ -1,9 +1,11 @@
+import { remapPartySnapshotKeys } from '@/lib/applicationPartyLabels'
 import { requiresCollateral } from '@/lib/intake/securedProducts'
 import type { ApplicationResponse } from '@/types/application'
 import { mergeDemoIncomeSummaryLines } from '@/lib/credit/demoBankIncomeDisplay'
 import { getVisibleUnderwritingFields, normalizeBorrowerType } from '@/lib/credit/underwritingFieldVisibility'
 
 const BORROWER_INTAKE = 'borrowerIntake' as const
+const BUREAU_EFFECTIVE_POLICY_KEYS = new Set(['LIVE_UNSECURED_LOAN_COUNT', 'BUREAU_ENQUIRIES_3M', 'NTC_FLAG'])
 
 function str(v: unknown): string | null {
   if (v == null) return null
@@ -91,6 +93,7 @@ export function buildCreditSummary(input: {
       ? ((cc as Record<string, unknown>).manual as Record<string, unknown>)
       : null
   const incomeSummary: Record<string, string> = {}
+  const bureauEffectiveSummary: Record<string, string> = {}
   if (str(pi?.monthlyNetIncome)) {
     incomeSummary['Declared monthly income'] = str(pi?.monthlyNetIncome) as string
   }
@@ -125,6 +128,10 @@ export function buildCreditSummary(input: {
       if (!uwVis.showGstIncome && upper === 'GST_INCOME') {
         continue
       }
+      if (BUREAU_EFFECTIVE_POLICY_KEYS.has(upper)) {
+        bureauEffectiveSummary[`${k.replace(/_/g, ' ')} (effective policy)`] = v
+        continue
+      }
       if (!incomeSummary[k]) {
         incomeSummary[`${k.replace(/_/g, ' ')} (effective policy)`] = v
       }
@@ -151,7 +158,8 @@ export function buildCreditSummary(input: {
     }
   }
 
-  const borrowerSnapshot: Record<string, string> = {
+  const borrowerSnapshot = remapPartySnapshotKeys(
+    {
     'Borrower type': normalizeBorrowerType(app.borrowerType).replaceAll('_', ' '),
     'Primary name': name ?? '—',
     'Mobile': str(pi?.mobile) ?? str(pi?.phoneNumber) ?? '—',
@@ -161,7 +169,9 @@ export function buildCreditSummary(input: {
       .filter(Boolean)
       .join(' · ') || '—',
     'Turnover (if captured)': str(bi?.annualTurnover) ?? '—',
-  }
+    },
+    app.intakeSegment,
+  )
 
   const kycSummary: Record<string, string> = {
     'KYC outcome': str(kycOutcome?.outcome) ?? '—',
@@ -181,6 +191,7 @@ export function buildCreditSummary(input: {
     'Provider automated score (on file)': app.bureauScore != null ? String(app.bureauScore) : '—',
     'Manual bureau score (override)': app.manualBureauScore != null ? String(app.manualBureauScore) : '—',
     'Data source (effective)': str(eff?.bureauScoreSource) ?? '—',
+    ...bureauEffectiveSummary,
   }
 
   const uwMeta = fi?.underwritingMeta as
@@ -207,10 +218,13 @@ export function buildCreditSummary(input: {
     })
   }
   const params = ev?.parameterResults
+  const seenMissingParams = new Set<string>()
   if (Array.isArray(params)) {
     for (const p of params as Array<Record<string, unknown>>) {
       if (p?.matched === false && (p.valueUsed == null || p.valueUsed === '')) {
         const par = str(p.parameter) ?? 'parameter'
+        if (seenMissingParams.has(par)) continue
+        seenMissingParams.add(par)
         riskFlags.push({
           code: 'MISSING_SCORE_PARAM',
           label: `Scorecard is missing a value for ${par} — add source input or link evidence.`,
@@ -235,6 +249,7 @@ export function buildCreditSummary(input: {
   }
 
   const missingItems: string[] = []
+  const seenMissingItems = new Set<string>()
   if (!name) missingItems.push('Complete borrower / business name on profile')
   if (bureauUsed == null || bureauUsed <= 0) missingItems.push('Bureau score (pull or permitted manual entry)')
   if (kycOut == null || kycOut === 'UNAVAILABLE' || kycOut === 'INCOMPLETE') {
@@ -244,7 +259,10 @@ export function buildCreditSummary(input: {
     for (const p of params as Array<Record<string, unknown>>) {
       if (p?.matched === false && (p.valueUsed == null || p.valueUsed === '')) {
         const par = str(p.parameter)
-        if (par) missingItems.push(`Input for score parameter: ${par}`)
+        if (par && !seenMissingItems.has(par)) {
+          seenMissingItems.add(par)
+          missingItems.push(`Input for score parameter: ${par}`)
+        }
       }
     }
   }

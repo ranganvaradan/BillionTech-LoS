@@ -29,8 +29,32 @@ describe('intakeValidation', () => {
       borrowerType: 'INDIVIDUAL',
       loanProduct: 'PERSONAL_LOAN',
       requestedAmount: '10000',
+      loanPurpose: 'EDUCATION',
+      purpose: 'Education',
     }
     const workflows: WorkflowConfigResponse[] = [wf({ loanProduct: 'PERSONAL_LOAN', borrowerType: 'INDIVIDUAL', active: true })]
+    const err = validateProductStep(s, 'BORROWER_SELF_SERVICE', workflows)
+    expect(err).toBeNull()
+  })
+
+  it('accepts invoice discounting on borrower portal without staff onboarding type selection', () => {
+    const s: IntakeFormState = {
+      ...createEmptyIntakeFormState(),
+      borrowerType: 'INDIVIDUAL',
+      loanProduct: 'BUSINESS_WC_INVOICE_DISCOUNTING',
+      requestedAmount: '10000',
+      invoiceOnboardingChoice: '',
+      loanPurpose: 'BUSINESS_PURPOSE',
+      purpose: 'Business Purpose',
+    }
+    const workflows: WorkflowConfigResponse[] = [
+      wf({
+        loanProduct: 'BUSINESS_WC_INVOICE_DISCOUNTING',
+        borrowerType: 'INDIVIDUAL',
+        active: true,
+        intakeSegment: 'BORROWER',
+      }),
+    ]
     const err = validateProductStep(s, 'BORROWER_SELF_SERVICE', workflows)
     expect(err).toBeNull()
   })

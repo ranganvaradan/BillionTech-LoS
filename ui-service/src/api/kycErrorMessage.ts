@@ -49,7 +49,7 @@ export function messageFromKycRunOutput(
   const results = out.results
   if (!Array.isArray(results) || results.length === 0) {
     if (out.failureCount != null && Number(out.failureCount) > 0) {
-      return 'One or more KYC steps failed. Expand “Last flow response” for details.'
+      return 'One or more KYC steps could not be completed. Expand “Last flow response” for details.'
     }
     return null
   }
@@ -58,13 +58,48 @@ export function messageFromKycRunOutput(
     if (!isRecord(r)) continue
     if (String(r.outcome) !== 'FAILURE') continue
     const step = typeof r.stepType === 'string' ? r.stepType : 'step'
+    const em = typeof r.errorMessage === 'string' ? r.errorMessage : ''
+    if (step === 'MOBILE_OTP') {
+      if (/required for verification/i.test(em)) {
+        return 'Mobile verification could not be completed. Save a valid mobile number on the application and try again.'
+      }
+      if (/invalid mobile/i.test(em)) {
+        return 'Mobile verification could not be completed. Check the mobile number and try again.'
+      }
+      return 'Mobile verification could not be completed.'
+    }
+    const label = businessKycStepLabel(step)
     const prov = typeof r.provider === 'string' && r.provider ? ` (${r.provider})` : ''
-    const em = typeof r.errorMessage === 'string' && r.errorMessage ? `: ${r.errorMessage}` : ''
-    return `KYC step ${step}${prov} failed${em}`
+    const detail = em ? `: ${em}` : ''
+    return `${label}${prov} failed${detail}`
   }
 
   if (out.failureCount != null && Number(out.failureCount) > 0) {
-    return 'One or more KYC steps failed. See “Last flow response” for provider details.'
+    return 'One or more KYC steps could not be completed. See “Last flow response” for details.'
   }
   return null
+}
+
+export function businessKycStepLabel(stepType: string): string {
+  const s = String(stepType ?? '').toUpperCase()
+  const map: Record<string, string> = {
+    PAN_VERIFY: 'PAN Verification',
+    MOBILE_OTP: 'Mobile Verification',
+    AADHAAR_OTP: 'Aadhaar Verification',
+    GSTIN_VERIFY: 'GST Verification',
+    BANK_PENNY_DROP: 'Bank Verification',
+    MNRL: 'Mobile Number Risk Check',
+  }
+  return map[s] ?? s
+}
+
+export function businessKycOutcomeLabel(outcome: string): string {
+  const o = String(outcome ?? '').toUpperCase()
+  if (o === 'SUCCESS') return 'Verified'
+  if (o === 'FAILURE') return 'Could not be completed'
+  if (o === 'PENDING' || o === 'IN_PROGRESS') return 'Pending'
+  if (o === 'MANUAL_REVIEW') return 'Manual review'
+  if (o === 'ERROR') return 'Service unavailable'
+  if (o === 'SKIPPED') return 'Not required'
+  return outcome || '—'
 }

@@ -1,0 +1,131 @@
+package com.los.lms.controller;
+
+import com.los.lms.dto.*;
+import com.los.lms.service.LmsService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.Map;
+
+@Slf4j
+@RestController
+@RequestMapping("/api/v1/lms")
+@RequiredArgsConstructor
+@Tag(name = "LMS Adapter", description = "Loan Management System integration")
+public class LmsAdapterController {
+
+    private final LmsService lmsService;
+
+    @PostMapping("/handover")
+    @Operation(summary = "Handover disbursed loan to LMS for servicing")
+    public ResponseEntity<LoanHandoverResponse> handoverLoan(@RequestBody LoanHandoverRequest request) {
+        log.info("Loan handover request for application: {}", request.getApplicationNumber());
+        return ResponseEntity.ok(lmsService.handoverLoan(request));
+    }
+
+    @GetMapping("/status/{applicationNumber}")
+    @Operation(summary = "Get loan account summary from LMS")
+    public ResponseEntity<LoanAccountSummary> getAccountSummary(@PathVariable String applicationNumber) {
+        return ResponseEntity.ok(lmsService.getAccountSummary(applicationNumber));
+    }
+
+    @GetMapping("/schedule/{applicationNumber}")
+    @Operation(summary = "Get full repayment schedule for a loan")
+    public ResponseEntity<RepaymentScheduleResponse> getRepaymentSchedule(@PathVariable String applicationNumber) {
+        return ResponseEntity.ok(lmsService.getRepaymentSchedule(applicationNumber));
+    }
+
+    @PostMapping("/callback/repayment")
+    @Operation(summary = "Receive repayment callback from LMS")
+    public ResponseEntity<Map<String, Object>> repaymentCallback(
+            @RequestBody RepaymentCallbackRequest callback,
+            @RequestHeader(value = "X-LMS-Signature", required = false) String lmsSignature) {
+        log.info("Repayment callback for: {} installment #{}", callback.getApplicationNumber(), callback.getInstallmentNumber());
+        return ResponseEntity.ok(lmsService.processRepaymentCallback(callback, lmsSignature));
+    }
+
+    @GetMapping("/payments/{applicationNumber}")
+    @Operation(summary = "Get payment history for a loan")
+    public ResponseEntity<List<RepaymentCallbackRequest>> getPaymentHistory(@PathVariable String applicationNumber) {
+        return ResponseEntity.ok(lmsService.getPaymentHistory(applicationNumber));
+    }
+
+    @GetMapping("/accounts")
+    @Operation(summary = "Get all active loan accounts")
+    public ResponseEntity<List<LoanAccountSummary>> getAllAccounts() {
+        return ResponseEntity.ok(lmsService.getAllAccounts());
+    }
+
+    @PostMapping("/npa/{applicationNumber}")
+    @Operation(summary = "Update NPA status based on DPD (BR-11.4)")
+    public ResponseEntity<Map<String, Object>> updateNpaStatus(
+            @PathVariable String applicationNumber,
+            @RequestParam int currentDpd) {
+        return ResponseEntity.ok(lmsService.updateNpaStatus(applicationNumber, currentDpd));
+    }
+
+    @GetMapping("/collection-summary")
+    @Operation(summary = "Get collection summary with DPD buckets and NPA metrics")
+    public ResponseEntity<Map<String, Object>> getCollectionSummary() {
+        return ResponseEntity.ok(lmsService.getCollectionSummary());
+    }
+
+    @PostMapping("/prepayment/{applicationNumber}")
+    @Operation(summary = "BR-11.5: Process prepayment (partial or foreclosure)")
+    public ResponseEntity<Map<String, Object>> processPrepayment(
+            @PathVariable String applicationNumber,
+            @RequestParam java.math.BigDecimal amount,
+            @RequestParam(defaultValue = "PARTIAL") String type) {
+        return ResponseEntity.ok(lmsService.processPrepayment(applicationNumber, amount, type));
+    }
+
+    @PostMapping("/tranche/{applicationNumber}")
+    @Operation(summary = "BR-9.7: Multi-tranche disbursement")
+    public ResponseEntity<Map<String, Object>> trancheDisbursement(
+            @PathVariable String applicationNumber,
+            @RequestParam java.math.BigDecimal trancheAmount,
+            @RequestParam int trancheNumber,
+            @RequestParam int totalTranches) {
+        return ResponseEntity.ok(lmsService.processTrancheDisbursement(
+                applicationNumber, trancheAmount, trancheNumber, totalTranches));
+    }
+
+    @GetMapping("/encore/statement/{applicationNumber}")
+    @Operation(summary = "Get Encore account statement for a loan")
+    public ResponseEntity<List<Map<String, Object>>> getEncoreAccountStatement(
+            @PathVariable String applicationNumber,
+            @RequestParam(required = false) String fromDate,
+            @RequestParam(required = false) String toDate) {
+        return ResponseEntity.ok(lmsService.getEncoreAccountStatement(applicationNumber, fromDate, toDate));
+    }
+
+    /**
+     * Raw Encore {@code findLoanInfo} JSON for the account linked after LMS handover.
+     * Repayments in bl-core may use SOAP/JAR {@code processRepayment}; los-core posting uses HTTP {@code postTransactions}
+     * where applicable — see {@code docs/encore-bl-core-parity-spec.md}.
+     */
+    @GetMapping("/encore/loan-info/{applicationNumber}")
+    @Operation(summary = "Raw Encore findLoanInfo JSON for handovered application")
+    public ResponseEntity<String> getEncoreLoanInfoRaw(@PathVariable String applicationNumber) {
+        return ResponseEntity.ok(lmsService.getEncoreLoanInfoRaw(applicationNumber));
+    }
+
+    @GetMapping("/encore/customer-accounts/{customerId}")
+    @Operation(summary = "Raw Encore findLoanOdAccounts JSON array for customer id")
+    public ResponseEntity<String> getEncoreCustomerAccountsRaw(@PathVariable long customerId) {
+        return ResponseEntity.ok(lmsService.getEncoreLoanAccountsForCustomerRaw(customerId));
+    }
+
+    @GetMapping("/encore/preclose/{applicationNumber}")
+    @Operation(summary = "Raw Encore preclosure amount as of value date (dd-MM-yyyy or ISO)")
+    public ResponseEntity<String> getEncorePrecloseRaw(
+            @PathVariable String applicationNumber,
+            @RequestParam String valueDate) {
+        return ResponseEntity.ok(lmsService.getEncorePrecloseAmountRaw(applicationNumber, valueDate));
+    }
+}

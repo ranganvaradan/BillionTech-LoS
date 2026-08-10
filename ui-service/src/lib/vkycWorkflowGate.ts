@@ -9,6 +9,7 @@ type ApplicationTabId =
   | 'kyc'
   | 'vkyc'
   | 'documents'
+  | 'bankData'
   | 'underwriting'
   | 'cam'
   | 'sanction'

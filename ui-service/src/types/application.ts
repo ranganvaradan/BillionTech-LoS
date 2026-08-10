@@ -4,6 +4,10 @@
 export type ApplicationStatus =
   | 'DRAFT'
   | 'CONSENT_PENDING'
+  | 'BORROWER_SUBMITTED'
+  | 'PENDING_CREDIT_OFFICER'
+  | 'SENT_BACK_TO_RM'
+  | 'BORROWER_SENT_BACK'
   | 'KYC_IN_PROGRESS'
   | 'KYC_FAILED'
   | 'UNDERWRITING'
@@ -11,6 +15,7 @@ export type ApplicationStatus =
   | 'APPROVED'
   | 'REJECTED'
   | 'CAM_READY'
+  | 'CAM_SENT_BACK'
   | 'CAM_REVIEWED'
   | 'SANCTION_PENDING'
   | 'SANCTIONED'
@@ -24,15 +29,58 @@ export type ApplicationStatus =
   | 'WITHDRAWN'
   | 'ON_HOLD'
 
+export type ApplicationIntakeSegment = 'BORROWER' | 'ANCHOR'
+
+export type ApplicationPartyRole = 'PRIMARY' | 'CO_APPLICANT'
+
+export type PartyIntakeStatus =
+  | 'DRAFT'
+  | 'INVITED'
+  | 'IN_PROGRESS'
+  | 'SUBMITTED'
+  | 'KYC_COMPLETE'
+  | 'ESIGN_PENDING'
+  | 'ESIGN_COMPLETE'
+
+export type PartyKycStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETE' | 'FAILED'
+
+export type PartyEsignStatus = 'NOT_STARTED' | 'PENDING' | 'COMPLETE' | 'FAILED'
+
+export interface ApplicationPartyResponse {
+  id: string
+  applicationId: string
+  role: ApplicationPartyRole
+  sequenceNo: number
+  userId?: string | null
+  personalInfo?: Record<string, unknown> | null
+  intakeStatus?: PartyIntakeStatus | null
+  kycStatus?: PartyKycStatus | null
+  esignStatus?: PartyEsignStatus | null
+  requiredForDisbursement: boolean
+  createdAt?: string | null
+  updatedAt?: string | null
+  displayName?: string | null
+  email?: string | null
+  mobile?: string | null
+}
+
 export interface ApplicationResponse {
   id: string
   applicationNumber: string
   customerId: string
   borrowerType: string
   loanProduct: string
+  /** Omitted in older rows — borrower loan origination. */
+  intakeSegment?: ApplicationIntakeSegment | null
+  intakeOwner?: 'STAFF' | 'BORROWER' | null
+  intakeCompletedStep?: number | null
+  borrowerSentBackNotes?: string | null
   requestedAmount: number | null
   interestRate: number | null
   tenureMonths: number | null
+  lmsProductCode?: string | null
+  lmsTenureUnit?: string | null
+  workflowId?: string | null
   status: ApplicationStatus
   personalInfo: Record<string, unknown> | null
   businessInfo: Record<string, unknown> | null
@@ -85,6 +133,12 @@ export interface ApplicationResponse {
   vkycVideoUrl?: string | null
   vkycPanImageUrl?: string | null
   vkycFaceImageUrl?: string | null
+  vkycCompletionMode?: 'PKYC' | null
+  pkycReason?: string | null
+  pkycComments?: string | null
+  pkycDocumentId?: string | null
+  pkycVerifiedBy?: string | null
+  pkycVerifiedAt?: string | null
   amlHit?: boolean | null
   bureauScore: number | null
   manualBureauScore: number | null
@@ -95,7 +149,21 @@ export interface ApplicationResponse {
   createdAt: string | null
   updatedAt: string | null
   submittedAt: string | null
+  subProgramId?: string | null
+  plpBorrowerId?: string | null
+  plpSubProgramBorrowerId?: string | null
+  plpBorrowerProgramMappingId?: string | null
+  plpProgramSyncStatus?: 'NOT_SYNCED' | 'SYNC_SUCCESS' | 'SYNC_FAILED' | null
+  plpProgramSyncError?: string | null
+  plpProgramSyncedAt?: string | null
+  plpBorrowerSyncStatus?: 'NOT_SYNCED' | 'SYNC_SUCCESS' | 'SYNC_FAILED' | null
+  plpBorrowerSyncedAt?: string | null
+  plpLinkSyncStatus?: 'NOT_SYNCED' | 'SYNC_SUCCESS' | 'SYNC_FAILED' | null
+  plpLinkSyncedAt?: string | null
+  plpMappingSyncStatus?: 'NOT_SYNCED' | 'SYNC_SUCCESS' | 'SYNC_FAILED' | null
+  plpMappingSyncedAt?: string | null
   /** Merged in GET /applications/{id}: provider vs manual + effective. */
   creditControlView?: Record<string, unknown> | null
   latestUnderwritingEvaluation?: Record<string, unknown> | null
+  camStatus?: 'DRAFT' | 'SUBMITTED' | 'SENT_BACK' | 'REJECTED' | 'APPROVED' | null
 }

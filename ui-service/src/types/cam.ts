@@ -20,6 +20,8 @@ export interface CamResponse {
   recommendedAmount: number | null
   recommendedTenureMonths: number | null
   recommendedRate: number | null
+  /** UPFRONT | REDUCING */
+  interestType: string | null
   conditionsPrecedent: string[] | null
   conditionsSubsequent: string[] | null
   creditOfficerRemarks: string | null
@@ -41,6 +43,8 @@ export interface CamUpdateRequest {
   recommendedAmount?: number
   recommendedTenureMonths?: number
   recommendedRate?: number
+  /** UPFRONT | REDUCING */
+  interestType?: string
   conditionsPrecedent?: string[]
   conditionsSubsequent?: string[]
   creditOfficerRemarks?: string

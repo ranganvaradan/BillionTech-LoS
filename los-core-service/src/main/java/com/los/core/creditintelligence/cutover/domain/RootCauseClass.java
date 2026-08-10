@@ -1,0 +1,16 @@
+package com.los.core.creditintelligence.cutover.domain;
+
+public enum RootCauseClass {
+    INPUT_DIFFERENCE,
+    DEFAULT_REMOVAL,
+    PERIOD_DIFFERENCE,
+    SOURCE_PRECEDENCE,
+    METRIC_FORMULA,
+    POLICY_SEMANTICS,
+    SCORECARD_SEMANTICS,
+    DECISION_STRATEGY,
+    DATA_INSUFFICIENT,
+    PROVIDER_MAPPING,
+    BUG,
+    EXPECTED_POLICY_CHANGE
+}

@@ -1,0 +1,37 @@
+{
+  "caseCode": "CASE_A_STRONG",
+  "dataOrigin": "REPRESENTATIVE_PROVIDER_FIXTURE",
+  "sources": {
+    "gst": "provider-fixtures/surepass/gst/gst_monthly_minimal.json",
+    "itr": "provider-fixtures/surepass/itr/itr_income_heads_distinct.json",
+    "bank": "provider-fixtures/surepass/bsa/bsa_minimal.json",
+    "bureau": "provider-fixtures/surepass/cibil/cibil_minimal.json",
+    "tis": "provider-fixtures/surepass/tis/tis_amounts_distinct.json"
+  },
+  "metricStubs": {
+    "gst.turnover.trailing_12m": "84000000",
+    "itr.turnover.trailing_12m": "81000000",
+    "bank.turnover.trailing_12m": "77000000",
+    "bureau.emi.monthly": "95000",
+    "bank.emi.monthly": "94000",
+    "bureau.live_unsecured_count": "1",
+    "bank.abb.average": "185000",
+    "itr.income.total": "4200000",
+    "itr.income.gti": "5000000",
+    "itr.income.business_profession": "5000000"
+  },
+  "legacyScorecardStub": {
+    "LIVE_UNSECURED_LOAN_COUNT": 1,
+    "ANNUAL_GST_TURNOVER": 84000000,
+    "ANNUAL_BANKING_TURNOVER": 77000000,
+    "AVERAGE_BANK_BALANCE": 185000,
+    "EMI_OBLIGATION": 95000,
+    "ITR_INCOME": 4200000,
+    "OBLIGATION_RATIO": 22
+  },
+  "declaredEmi": null,
+  "metadata": {
+    "description": "Aligned GST/ITR/Bank turnover; bureau EMI ≈ bank EMI",
+    "composedFrom": "USER_SUPPLIED_SAMPLE fixtures + REPRESENTATIVE metric stubs"
+  }
+}

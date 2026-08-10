@@ -16,7 +16,7 @@ describe('postLogin', () => {
         name: 'Test',
         email: 't@b.com',
         role: 'BORROWER',
-        institution: 'Billionloans Financial Services Pvt Ltd',
+        institution: 'BillionTech',
       },
     })
     const u = await postLogin('t@b.com', 'x')

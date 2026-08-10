@@ -1,0 +1,13 @@
+package com.los.core.creditintelligence.validation.domain;
+
+public enum PolicyDifferenceClass {
+    MATCH,
+    CANONICAL_STRICTER,
+    CANONICAL_MORE_PERMISSIVE,
+    CANONICAL_DATA_INSUFFICIENT,
+    LEGACY_DEFAULT_DEPENDENT,
+    LEGACY_MANUAL_DEPENDENT,
+    CANONICAL_EVIDENCE_CONFLICT,
+    POLICY_BINDING_MISSING,
+    OTHER
+}

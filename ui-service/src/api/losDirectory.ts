@@ -2,6 +2,7 @@ import { http } from './http'
 
 export const ASSIGNMENT_ROLE_CODES = [
   'SALES_OFFICER',
+  'RELATIONSHIP_MANAGER',
   'CREDIT_OFFICER',
   'CREDIT_MANAGER',
   'OPERATIONS',
@@ -13,6 +14,7 @@ export type AssignmentRoleCode = (typeof ASSIGNMENT_ROLE_CODES)[number]
 
 export const ASSIGNMENT_ROLE_LABELS: Record<AssignmentRoleCode, string> = {
   SALES_OFFICER: 'Sales Officer',
+  RELATIONSHIP_MANAGER: 'Relationship Manager',
   CREDIT_OFFICER: 'Credit Officer',
   CREDIT_MANAGER: 'Credit Manager',
   OPERATIONS: 'Operations',

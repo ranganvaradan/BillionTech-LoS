@@ -7,17 +7,23 @@ export interface LoginResponseBody {
   email: string
   role: string
   institution: string
+  passwordResetRequired?: boolean
 }
 
-export async function postLogin(email: string, password: string): Promise<SessionUser> {
-  const { data } = await http.post<LoginResponseBody>('/auth/login', { email, password })
+function toSessionUser(data: LoginResponseBody): SessionUser {
   return {
     userId: data.userId,
     name: data.name,
     email: data.email,
     role: data.role,
     institution: data.institution,
+    passwordResetRequired: Boolean(data.passwordResetRequired),
   }
+}
+
+export async function postLogin(email: string, password: string): Promise<SessionUser> {
+  const { data } = await http.post<LoginResponseBody>('/auth/login', { email, password })
+  return toSessionUser(data)
 }
 
 export interface RegisterRequestBody {
@@ -30,13 +36,19 @@ export interface RegisterRequestBody {
 
 export async function postRegister(body: RegisterRequestBody): Promise<SessionUser> {
   const { data } = await http.post<LoginResponseBody>('/auth/register', body)
-  return {
-    userId: data.userId,
-    name: data.name,
-    email: data.email,
-    role: data.role,
-    institution: data.institution,
-  }
+  return toSessionUser(data)
+}
+
+export interface ChangePasswordRequestBody {
+  currentPassword: string
+  newPassword: string
+  confirmPassword: string
+}
+
+/** Authenticated password change (used by the forced first-login reset). Uses the session X-User-Id header. */
+export async function postChangePassword(body: ChangePasswordRequestBody): Promise<SessionUser> {
+  const { data } = await http.post<LoginResponseBody>('/auth/change-password', body)
+  return toSessionUser(data)
 }
 
 export interface ForgotPasswordResponseBody {

@@ -7,12 +7,17 @@ import {
   uploadDocument,
 } from '@/api/documents'
 import { ErrorState } from '@/components/ErrorState'
+import { applicationPartyLabels } from '@/lib/applicationPartyLabels'
+import { isInvoiceDiscountingAnchorApp } from '@/lib/invoiceDiscountingFlow'
 import { formatInstant } from '@/lib/format'
+import type { ApplicationIntakeSegment } from '@/types/application'
 import type { DocumentResponse } from '@/types/document'
 
 const PRESET_DOC_TYPES = [
   { value: 'PAN_CARD', label: 'PAN card' },
   { value: 'AADHAAR', label: 'Aadhaar' },
+  { value: 'VOTER_ID', label: 'Voter ID card' },
+  { value: 'DRIVING_LICENSE', label: 'Driving licence' },
   { value: 'BANK_STATEMENT', label: 'Bank statement' },
   { value: 'PHOTOGRAPH', label: 'Photograph' },
   { value: 'INCOME_PROOF', label: 'Income proof (salary / ITR)' },
@@ -21,8 +26,28 @@ const PRESET_DOC_TYPES = [
   { value: 'SALARY_SLIP', label: 'Salary slip' },
   { value: 'GST_RETURNS', label: 'GST returns' },
   { value: 'GST_RETURN', label: 'GST return (GSTR)' },
+  { value: 'GST_STATEMENT', label: 'GST analysis report' },
   { value: 'BUSINESS_PROOF', label: 'Business proof (Udyam / license)' },
   { value: 'ITR', label: 'ITR / tax return' },
+  { value: 'CONSTITUTION_DOCS', label: 'Constitution documents' },
+  { value: 'CC_STATEMENT', label: 'CC / OD statement' },
+  { value: 'PAYABLES_RECEIVABLES_AGEING', label: 'Payables / receivables ageing' },
+  { value: 'PROPERTY_OWNERSHIP_PROOF', label: 'Property ownership proof' },
+  { value: 'EXISTING_FACILITY_SANCTION', label: 'Existing facility sanction letter' },
+  { value: 'EXISTING_FACILITY_STATEMENT', label: 'Existing facility statement' },
+  { value: 'PDC', label: 'PDC' },
+  { value: 'NACH_MANDATE', label: 'NACH mandate' },
+  { value: 'BUREAU_REPORT', label: 'Bureau report' },
+  { value: 'COMMERCIAL_BUREAU_REPORT', label: 'Commercial bureau report' },
+  { value: 'BOARD_RESOLUTION', label: 'Board resolution' },
+  { value: 'PURCHASE_ORDER', label: 'Purchase order' },
+  { value: 'DELIVERY_GRN', label: 'Delivery / GRN' },
+  { value: 'TRADE_PAYMENT_RECORD', label: 'Trade payment record' },
+  { value: 'BUYER_NOC', label: 'Buyer NOC' },
+  { value: 'SIGNED_AGREEMENT', label: 'Signed agreement' },
+  { value: 'SIGNED_KFS', label: 'Signed KFS' },
+  { value: 'SIGNED_PROGRAM_TERMS', label: 'Signed program terms' },
+  { value: 'SIGNED_SANCTION_TERMS', label: 'Signed sanction terms' },
   { value: 'PROPERTY_DOCUMENT', label: 'Property document (title / deed)' },
   { value: 'PROPERTY_VALUATION', label: 'Property valuation' },
   { value: 'SHARE_HOLDING_STATEMENT', label: 'Share / demat holding statement' },
@@ -35,11 +60,75 @@ const PRESET_DOC_TYPES = [
 const OTHER = 'OTHER'
 
 const DOC_TYPE_LABEL: Record<string, string> = Object.fromEntries(PRESET_DOC_TYPES.map((d) => [d.value, d.label]))
+const SCF_BORROWER_FIRST_DOC_TYPES = [
+  'CONSTITUTION_DOCS',
+  'GST_RETURN',
+  'ITR',
+  'BANK_STATEMENT',
+  'CC_STATEMENT',
+  'PAYABLES_RECEIVABLES_AGEING',
+  'PROPERTY_OWNERSHIP_PROOF',
+  'EXISTING_FACILITY_SANCTION',
+  'EXISTING_FACILITY_STATEMENT',
+  'PDC',
+  'NACH_MANDATE',
+  'BUREAU_REPORT',
+  'COMMERCIAL_BUREAU_REPORT',
+  'BOARD_RESOLUTION',
+  'PURCHASE_ORDER',
+  'DELIVERY_GRN',
+  'TRADE_PAYMENT_RECORD',
+  'BUYER_NOC',
+]
 
-function documentTypeLabel(code: string): string {
+function documentTypeLabel(code: string, intakeSegment?: ApplicationIntakeSegment | null, kycStepType?: string | null): string {
+  const step = String(kycStepType ?? '').toUpperCase()
+  if (step === 'GST_ANALYSIS' && (code === 'GST_RETURN' || code === 'GST_RETURNS')) {
+    return 'GST analysis (input PDF)'
+  }
+  if (code === 'GST_STATEMENT') return 'GST analysis report'
+  if (code === 'BORROWER_KYC') return applicationPartyLabels(intakeSegment).kycDocumentPreset
   if (DOC_TYPE_LABEL[code]) return DOC_TYPE_LABEL[code]
   if (code.startsWith('OTHER_')) return `Other (${code.replace(/^OTHER_/, '')})`
+  if (code.startsWith('ANCHOR_DD_')) {
+    return `Anchor due diligence (${code.replace(/^ANCHOR_DD_/, '').replaceAll('_', ' ')})`
+  }
+  if (code.startsWith('SIGNED_')) return code.replaceAll('_', ' ')
   return code.replaceAll('_', ' ')
+}
+
+type DocGroupKey = 'gst_analysis_input' | 'gst_analysis_report' | 'other'
+
+function groupDocuments(docs: DocumentResponse[]): { key: DocGroupKey; title: string; items: DocumentResponse[] }[] {
+  const gstInput: DocumentResponse[] = []
+  const gstReport: DocumentResponse[] = []
+  const other: DocumentResponse[] = []
+  for (const d of docs) {
+    const type = String(d.documentType ?? '').toUpperCase()
+    const step = String(d.kycStepType ?? '').toUpperCase()
+    if (type === 'GST_STATEMENT' || (type.startsWith('GST_') && String(d.fileName ?? '').startsWith('GST_ANALYSIS_'))) {
+      gstReport.push(d)
+    } else if (step === 'GST_ANALYSIS' || ((type === 'GST_RETURN' || type === 'GST_RETURNS') && step === 'GST_ANALYSIS')) {
+      gstInput.push(d)
+    } else if (step === 'GST_ANALYSIS') {
+      gstInput.push(d)
+    } else {
+      other.push(d)
+    }
+  }
+  // Untagged GST returns that are likely analysis inputs when a GST_ANALYSIS doc set exists already
+  // stay in "other" under their usual type unless kycStepType is set — preferred path tags them.
+  const groups: { key: DocGroupKey; title: string; items: DocumentResponse[] }[] = []
+  if (gstInput.length) {
+    groups.push({ key: 'gst_analysis_input', title: 'GST analysis — input returns', items: gstInput })
+  }
+  if (gstReport.length) {
+    groups.push({ key: 'gst_analysis_report', title: 'GST analysis — generated reports', items: gstReport })
+  }
+  if (other.length) {
+    groups.push({ key: 'other', title: gstInput.length || gstReport.length ? 'Other documents' : 'Documents', items: other })
+  }
+  return groups
 }
 
 function formatBytes(n: number): string {
@@ -106,10 +195,49 @@ function buildDocumentType(preset: string, otherLabel: string): string {
     : 'OTHER'
 }
 
-export function DocumentsSection({ applicationId }: { applicationId: string }) {
+export function DocumentsSection({
+  applicationId,
+  intakeSegment,
+  appStatus: _appStatus,
+  loanProduct,
+}: {
+  applicationId: string
+  intakeSegment?: ApplicationIntakeSegment | null
+  appStatus?: string
+  loanProduct?: string
+}) {
+  const isAnchor = isInvoiceDiscountingAnchorApp({ intakeSegment: intakeSegment ?? 'BORROWER', loanProduct: loanProduct ?? '' })
+  const isInvoiceDiscountingBorrower =
+    !isAnchor && (loanProduct ?? '').toUpperCase() === 'BUSINESS_WC_INVOICE_DISCOUNTING'
+  const presetDocTypes = useMemo(() => {
+    const kycLabel = applicationPartyLabels(intakeSegment).kycDocumentPreset
+    const base = PRESET_DOC_TYPES.map((p) => (p.value === 'BORROWER_KYC' ? { ...p, label: kycLabel } : p))
+    if (isInvoiceDiscountingBorrower) {
+      return [...base].sort((a, b) => {
+        const ai = SCF_BORROWER_FIRST_DOC_TYPES.indexOf(a.value)
+        const bi = SCF_BORROWER_FIRST_DOC_TYPES.indexOf(b.value)
+        if (ai === -1 && bi === -1) return 0
+        if (ai === -1) return 1
+        if (bi === -1) return -1
+        return ai - bi
+      })
+    }
+    if (isAnchor) {
+      const anchorFirst = ['BOARD_RESOLUTION', 'SIGNED_AGREEMENT', 'GST_RETURN', 'BUSINESS_PROOF', 'PAN_CARD', 'BANK_STATEMENT']
+      return [...base].sort((a, b) => {
+        const ai = anchorFirst.indexOf(a.value)
+        const bi = anchorFirst.indexOf(b.value)
+        if (ai === -1 && bi === -1) return 0
+        if (ai === -1) return 1
+        if (bi === -1) return -1
+        return ai - bi
+      })
+    }
+    return base
+  }, [intakeSegment, isAnchor, isInvoiceDiscountingBorrower])
   const [docs, setDocs] = useState<DocumentResponse[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [preset, setPreset] = useState<string>(PRESET_DOC_TYPES[0].value)
+  const [preset, setPreset] = useState<string>(presetDocTypes[0].value)
   const [otherLabel, setOtherLabel] = useState('')
   const [uploading, setUploading] = useState(false)
   const [previewLoading, setPreviewLoading] = useState(false)
@@ -243,7 +371,7 @@ export function DocumentsSection({ applicationId }: { applicationId: string }) {
         </div>
       ) : null}
       {actionError ? <ErrorState message={actionError} /> : null}
-      <div className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+      <div className="flex flex-wrap items-end gap-3 bt-section-card bt-section-card--hero p-4">
         <label className="block text-sm text-slate-700">
           <span className="mb-1 block text-xs font-medium text-slate-500">Document type</span>
           <select
@@ -254,7 +382,7 @@ export function DocumentsSection({ applicationId }: { applicationId: string }) {
               setActionError(null)
             }}
           >
-            {PRESET_DOC_TYPES.map((d) => (
+            {presetDocTypes.map((d) => (
               <option key={d.value} value={d.value}>
                 {d.label}
               </option>
@@ -285,60 +413,79 @@ export function DocumentsSection({ applicationId }: { applicationId: string }) {
       {docs.length === 0 ? (
         <p className="text-sm text-slate-600">No documents uploaded yet.</p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-          <table className="min-w-full text-left text-sm">
-            <thead className="border-b border-slate-200 bg-slate-50 text-xs font-medium text-slate-600">
-              <tr>
-                <th className="px-3 py-2">Name</th>
-                <th className="px-3 py-2">Type</th>
-                <th className="px-3 py-2">Size</th>
-                <th className="px-3 py-2">Uploaded</th>
-                <th className="px-3 py-2"> </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {docs.map((d) => (
-                <tr key={d.id}>
-                  <td className="px-3 py-2 text-slate-900">{d.fileName}</td>
-                  <td className="px-3 py-2 text-slate-600">{documentTypeLabel(d.documentType)}</td>
-                  <td className="px-3 py-2 tabular-nums text-slate-600">{formatBytes(d.fileSize)}</td>
-                  <td className="px-3 py-2 text-slate-600">{formatInstant(d.createdAt)}</td>
-                  <td className="px-3 py-2">
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => void onPreview(d)}
-                        disabled={previewLoading}
-                        className="inline-flex items-center justify-center text-slate-800 disabled:opacity-50"
-                        title="Preview"
-                        aria-label="Preview"
-                      >
-                        <IconEye className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void onDownload(d)}
-                        className="inline-flex items-center justify-center text-slate-800"
-                        title="Download"
-                        aria-label="Download"
-                      >
-                        <IconDownload className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void onDelete(d.id)}
-                        className="inline-flex items-center justify-center text-red-700"
-                        title="Delete"
-                        aria-label="Delete"
-                      >
-                        <IconTrash className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="space-y-4">
+          {groupDocuments(docs).map((group) => (
+            <div key={group.key} className="bt-card overflow-x-auto">
+              <div className="border-b border-slate-100 bg-slate-50 px-3 py-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-600">{group.title}</h3>
+                {group.key === 'gst_analysis_input' ? (
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    PDFs the borrower uploaded for GST analysis (KYC step GST_ANALYSIS).
+                  </p>
+                ) : null}
+                {group.key === 'gst_analysis_report' ? (
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    PDF/Excel produced after admin generates the GST analysis report.
+                  </p>
+                ) : null}
+              </div>
+              <table className="bt-table min-w-full">
+                <thead className="border-b border-slate-200 bg-white text-xs font-medium text-slate-600">
+                  <tr>
+                    <th className="px-3 py-2">Name</th>
+                    <th className="px-3 py-2">Type</th>
+                    <th className="px-3 py-2">Size</th>
+                    <th className="px-3 py-2">Uploaded</th>
+                    <th className="px-3 py-2"> </th>
+                  </tr>
+                </thead>
+                <tbody className="">
+                  {group.items.map((d) => (
+                    <tr key={d.id}>
+                      <td className="px-3 py-2 text-slate-900">{d.fileName}</td>
+                      <td className="px-3 py-2 text-slate-600">
+                        {documentTypeLabel(d.documentType, intakeSegment, d.kycStepType)}
+                      </td>
+                      <td className="px-3 py-2 tabular-nums text-slate-600">{formatBytes(d.fileSize)}</td>
+                      <td className="px-3 py-2 text-slate-600">{formatInstant(d.createdAt)}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void onPreview(d)}
+                            disabled={previewLoading}
+                            className="inline-flex items-center justify-center text-slate-800 disabled:opacity-50"
+                            title="Preview"
+                            aria-label="Preview"
+                          >
+                            <IconEye className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void onDownload(d)}
+                            className="inline-flex items-center justify-center text-slate-800"
+                            title="Download"
+                            aria-label="Download"
+                          >
+                            <IconDownload className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void onDelete(d.id)}
+                            className="inline-flex items-center justify-center text-red-700"
+                            title="Delete"
+                            aria-label="Delete"
+                          >
+                            <IconTrash className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
         </div>
       )}
       {preview ? (

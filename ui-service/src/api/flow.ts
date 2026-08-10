@@ -45,6 +45,34 @@ export async function rejectManualUnderwritingFlow(applicationId: string): Promi
   return data
 }
 
+export async function getAnchorDueDiligenceFlow(applicationId: string): Promise<Record<string, unknown>> {
+  const { data } = await http.get<Record<string, unknown>>(`/flow/${applicationId}/anchor/due-diligence`)
+  return data
+}
+
+export async function saveAnchorDueDiligenceFlow(
+  applicationId: string,
+  payload: { answers: Record<string, string>; comments?: Record<string, string> },
+): Promise<Record<string, unknown>> {
+  const { data } = await http.post<Record<string, unknown>>(`/flow/${applicationId}/anchor/due-diligence`, payload)
+  return data
+}
+
+export async function completeAnchorUnderwritingFlow(applicationId: string): Promise<Record<string, unknown>> {
+  const { data } = await http.post<Record<string, unknown>>(`/flow/${applicationId}/anchor/underwrite`)
+  return data
+}
+
+export async function approveAnchorManualUnderwritingFlow(applicationId: string): Promise<ApplicationResponse> {
+  const { data } = await http.post<ApplicationResponse>(`/flow/${applicationId}/anchor/underwriting/approve`)
+  return data
+}
+
+export async function rejectAnchorManualUnderwritingFlow(applicationId: string): Promise<ApplicationResponse> {
+  const { data } = await http.post<ApplicationResponse>(`/flow/${applicationId}/anchor/underwriting/reject`)
+  return data
+}
+
 export async function markCamReviewedFlow(applicationId: string): Promise<ApplicationResponse> {
   const { data } = await http.post<ApplicationResponse>(`/flow/${applicationId}/cam/reviewed`)
   return data
@@ -117,5 +145,34 @@ export async function disburseApplicationFlow(
   const { data } = await http.post<Record<string, unknown>>(
     `/flow/${applicationId}/disburse`,
   )
+  return data
+}
+
+export interface ManualOverrideRequest {
+  processCode: string
+  failureCode: string
+  overrideReason: string
+  remarks?: string
+  approvalReference?: string
+  manualBureauScore?: number
+  creditRiskScore?: number
+}
+
+export async function getManualOverrideEligibility(
+  applicationId: string,
+  processCode: string,
+  failureCode: string,
+): Promise<Record<string, unknown>> {
+  const { data } = await http.get<Record<string, unknown>>(`/flow/${applicationId}/override/eligibility`, {
+    params: { processCode, failureCode },
+  })
+  return data
+}
+
+export async function applyManualOverride(
+  applicationId: string,
+  payload: ManualOverrideRequest,
+): Promise<Record<string, unknown>> {
+  const { data } = await http.post<Record<string, unknown>>(`/flow/${applicationId}/override`, payload)
   return data
 }

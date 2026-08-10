@@ -1,0 +1,38 @@
+{
+  "_fixtureMeta": {
+    "dataOrigin": "SYNTHETIC",
+    "sanitized": true,
+    "note": "Minimal AA FI Account/Transactions shape for SetuAaAdapter"
+  },
+  "provider": "SETU",
+  "type": "deposit",
+  "Account": {
+    "type": "SAVINGS",
+    "bank": "HDFC",
+    "maskedAccNumber": "XXXX5678",
+    "currentBalance": "125000.00",
+    "currency": "INR"
+  },
+  "Transactions": {
+    "Transaction": [
+      {
+        "txnId": "TXN-001",
+        "amount": "5000.00",
+        "type": "CREDIT",
+        "narration": "UPI CR SAMPLE",
+        "mode": "UPI",
+        "valueDate": "2026-01-15",
+        "currentBalance": "130000.00"
+      },
+      {
+        "txnId": "TXN-002",
+        "amount": "2500.00",
+        "type": "DEBIT",
+        "narration": "EMI SAMPLE BANK",
+        "mode": "NACH",
+        "valueDate": "2026-01-20",
+        "currentBalance": "127500.00"
+      }
+    ]
+  }
+}

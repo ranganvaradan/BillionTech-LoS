@@ -9,9 +9,10 @@ export async function listWorkflows(): Promise<WorkflowConfigResponse[]> {
 export async function getActiveWorkflow(
   borrowerType: string,
   loanProduct: string,
+  intakeSegment: string = 'BORROWER',
 ): Promise<WorkflowConfigResponse> {
   const { data } = await http.get<WorkflowConfigResponse>('/workflows/active', {
-    params: { borrowerType, loanProduct },
+    params: { borrowerType, loanProduct, intakeSegment },
   })
   return data
 }

@@ -1,31 +1,46 @@
-﻿# Build output
-target/
+﻿# Build
+**/target/
+**/node_modules/
+**/dist/
+**/dist-ssr/
 *.jar
+*.war
 *.class
+**/org/
 
-# Maven local repo
-C:/
+# Deploy / archive junk
+*.tar.gz
+ui-dist*.tar.gz
+
+# Secrets (keep examples)
+.env
+.env.*
+!.env.example
+!**/.env.example
+!**/.env.staging.example
+
+# Borrower documents / uploads
+**/data/documents/
+**/.los-local-documents/
+uploads/
+.los-local-documents/
+
+# Logs / crashes
+*.log
+hs_err_pid*
+replay_pid*
+logs/
 
 # IDE
 .metadata/
 .idea/
 *.iml
+.classpath
+.project
+.settings/
+.vscode/
+!.vscode/extensions.json
 
-# Env files
-.env
-.env.dev
-.env.prod
-
-# Local documents and uploads
-uploads/
-.los-local-documents/
-
-# Node
-node_modules/
-
-# Logs
-*.log
-*.sha1
-*.m2
-.m2/
-Users/
+# OS
+.DS_Store
+Thumbs.db

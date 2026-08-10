@@ -1,0 +1,40 @@
+﻿{
+  "_fixtureMeta": { "dataOrigin": "USER_SUPPLIED_SAMPLE", "sanitized": true },
+  "success": true,
+  "status_code": 200,
+  "message_code": "success",
+  "data": {
+    "client_id": "cibil_fixture_001",
+    "pan": "ABCDE1234F",
+    "name": "SAMPLE PERSON",
+    "credit_score": "752",
+    "credit_report": [
+      {
+        "control_number": "CTRL001",
+        "scores": [{ "score": "752", "scoreCardName": "CIBILTUSC3", "scoreDate": "2025-01-15" }],
+        "accounts": [
+          {
+            "accountNumber": "XXXX1234",
+            "accountType": "10",
+            "openDate": "2020-01-01",
+            "dateReported": "2025-01-01",
+            "currentBalance": "50000",
+            "amountPastDue": "0",
+            "emiAmount": "5000",
+            "paymentHistory": "000000000000",
+            "accountStatus": "11"
+          }
+        ],
+        "enquiries": [
+          { "enquiryDate": "2024-12-01", "enquiryAmount": "100000", "enquiryPurpose": "05" }
+        ],
+        "response": {
+          "consumerSummaryresp": {
+            "accountSummary": { "totalAccounts": "1", "currentBalance": "50000", "overdueAccounts": "0" },
+            "inquirySummary": { "totalInquiry": "1", "inquiryPast30Days": "0", "inquiryPast12Months": "1" }
+          }
+        }
+      }
+    ]
+  }
+}

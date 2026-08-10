@@ -6,16 +6,29 @@ yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
+hs_err_pid*
 
+# Dependencies / build
 node_modules
 dist
 dist-ssr
 *.local
 
+# Deploy/build tarballs
+*.tar.gz
+ui-dist*.tar.gz
+
+# Secrets / local env
+.env
+.env.*
+!.env.example
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
 .idea
+.project
+.settings/
 .DS_Store
 *.suo
 *.ntvs*

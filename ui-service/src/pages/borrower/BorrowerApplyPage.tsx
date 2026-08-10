@@ -1,11 +1,9 @@
-import { BorrowerIntakeWizard } from '@/components/intake/BorrowerIntakeWizard'
+import { ApplicationIntakeWizard } from '@/components/intake/ApplicationIntakeWizard'
 
 /**
- * Borrower self-service loan application: six steps (loan → personal/address → bank & KYC →
- * income → consents → review) with optional document uploads and local draft save/resume.
- * Staff flows use `ApplicationIntakeWizard` on `/applications/new` and `/sales/applications/new`;
- * all paths share the same create/update API and `intakeMode` metadata for ownership.
+ * Borrower self-service loan application — same wizard as staff intake
+ * (workflow-driven fields, KYC visibility, document slots) with borrower portal resume/delegation.
  */
 export function BorrowerApplyPage() {
-  return <BorrowerIntakeWizard />
+  return <ApplicationIntakeWizard mode="BORROWER_SELF_SERVICE" variant="borrower" />
 }

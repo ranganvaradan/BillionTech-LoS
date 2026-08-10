@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { createEmptyIntakeFormState } from '@/lib/intake/intakeTypes'
 import {
   validateBorrowerBankKycStep,
@@ -7,6 +7,7 @@ import {
   validateBorrowerProductStep,
   validateConsentStep,
 } from '@/lib/intake/intakeValidation'
+import { resetGeoMasterClientCache, seedGeoMasterClientCacheForTests } from '@/lib/intake/masterGeoClientCache'
 import type { WorkflowConfigResponse } from '@/types/workflow'
 
 const mockWf: WorkflowConfigResponse[] = [
@@ -31,9 +32,11 @@ describe('validateBorrowerProductStep', () => {
   it('requires purpose and existing-loan choice', () => {
     const f = baseForm()
     f.requestedAmount = '100000'
+    f.loanPurpose = ''
     f.purpose = ''
     f.hasExistingLoans = 'no'
     expect(validateBorrowerProductStep(f, mockWf)).toMatch(/purpose/i)
+    f.loanPurpose = 'EDUCATION'
     f.purpose = 'Education'
     f.hasExistingLoans = ''
     expect(validateBorrowerProductStep(f, mockWf)).toMatch(/other loans running/i)
@@ -42,7 +45,8 @@ describe('validateBorrowerProductStep', () => {
   it('requires details when existing loans is yes', () => {
     const f = baseForm()
     f.requestedAmount = '100000'
-    f.purpose = 'Home'
+    f.loanPurpose = 'HOUSE_REPAIR'
+    f.purpose = 'House Repair'
     f.hasExistingLoans = 'yes'
     f.existingLoansDetails = ''
     expect(validateBorrowerProductStep(f, mockWf)).toMatch(/describe|existing/i)
@@ -50,7 +54,15 @@ describe('validateBorrowerProductStep', () => {
 })
 
 describe('validateBorrowerPersonalAddressStep', () => {
+  afterEach(() => {
+    resetGeoMasterClientCache()
+  })
+
   it('accepts a complete individual address', () => {
+    seedGeoMasterClientCacheForTests(
+      [{ id: '00000000-0000-4000-8000-000000000001', stateCode: 'MH', stateName: 'Maharashtra' }],
+      { Maharashtra: ['Mumbai'] },
+    )
     const f = baseForm()
     f.fullName = 'Test User'
     f.mobile = '9876543210'
@@ -60,10 +72,51 @@ describe('validateBorrowerPersonalAddressStep', () => {
     f.maritalStatus = 'SINGLE'
     f.addressLine = '1 Main St'
     f.city = 'Mumbai'
-    f.state = 'MH'
+    f.state = 'Maharashtra'
     f.pincode = '400001'
     f.addressProofType = 'UTILITY_BILL'
+    f.occupation = 'SALARIED_PRIVATE'
     expect(validateBorrowerPersonalAddressStep(f)).toBeNull()
+  })
+
+  it('requires email', () => {
+    seedGeoMasterClientCacheForTests(
+      [{ id: '00000000-0000-4000-8000-000000000001', stateCode: 'MH', stateName: 'Maharashtra' }],
+      { Maharashtra: ['Mumbai'] },
+    )
+    const f = baseForm()
+    f.fullName = 'Test User'
+    f.mobile = '9876543210'
+    f.email = ''
+    f.dateOfBirth = '1990-01-01'
+    f.gender = 'FEMALE'
+    f.maritalStatus = 'SINGLE'
+    f.addressLine = '1 Main St'
+    f.city = 'Mumbai'
+    f.state = 'Maharashtra'
+    f.pincode = '400001'
+    f.addressProofType = 'UTILITY_BILL'
+    expect(validateBorrowerPersonalAddressStep(f)).toBe('Email is required.')
+  })
+
+  it('requires valid email format', () => {
+    seedGeoMasterClientCacheForTests(
+      [{ id: '00000000-0000-4000-8000-000000000001', stateCode: 'MH', stateName: 'Maharashtra' }],
+      { Maharashtra: ['Mumbai'] },
+    )
+    const f = baseForm()
+    f.fullName = 'Test User'
+    f.mobile = '9876543210'
+    f.email = 'invalid-email'
+    f.dateOfBirth = '1990-01-01'
+    f.gender = 'FEMALE'
+    f.maritalStatus = 'SINGLE'
+    f.addressLine = '1 Main St'
+    f.city = 'Mumbai'
+    f.state = 'Maharashtra'
+    f.pincode = '400001'
+    f.addressProofType = 'UTILITY_BILL'
+    expect(validateBorrowerPersonalAddressStep(f)).toBe('Please enter a valid email address.')
   })
 })
 

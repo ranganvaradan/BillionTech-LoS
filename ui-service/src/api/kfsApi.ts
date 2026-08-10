@@ -20,6 +20,7 @@ export interface KfsDocumentView {
   status: string
   createdAt: string | null
   updatedAt: string | null
+  additionalTerms?: Record<string, unknown> | null
 }
 
 export async function getLatestKfs(applicationId: string): Promise<KfsDocumentView> {

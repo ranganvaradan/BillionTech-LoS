@@ -1,0 +1,508 @@
+server:
+  port: 8083
+
+spring:
+  cloud:
+    discovery:
+      enabled: false
+  
+  application:
+    name: los-core-service
+  autoconfigure:
+    exclude:
+      # We use a custom SecurityFilterChain (permitAll) — do not create a default form-login user.
+      - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/los_core
+    username: ${POSTGRES_USER:los_admin}
+    password: ${POSTGRES_PASSWORD:los_secret_2026}
+    hikari:
+      minimum-idle: 5
+      maximum-pool-size: 30
+      idle-timeout: 300000
+      max-lifetime: 600000
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: false
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:los_redis_2026}
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:los_rabbit}
+    password: ${RABBITMQ_PASSWORD:los_rabbit_2026}
+
+los:
+  auth:
+    default-temporary-password: ${LOS_DEFAULT_TEMPORARY_PASSWORD:Temp@123}
+  # Local: use spring.profiles.active=local (see application-local.yml) so the UI can call /api without 401.
+  # Production: leave false; replace permitAll in WebSecurityConfig with authenticated() when IAM is ready.
+  security:
+    local-dev-permit-all: false
+  # Set true in local profile or a secure env; enables DELETE /api/v1/demo/applications. Never in prod default.
+  demo:
+    enabled: ${LOS_DEMO_ENABLED:false}
+    preserved-user-emails: ${LOS_DEMO_PRESERVED_USER_EMAILS:alwyn@billionloans.com,mohit@billionloans.com,sahil@gmail.com}
+
+  payu:
+    merchant-key: ${PAYU_MERCHANT_KEY:g8yc8J}
+    merchant-salt: ${PAYU_MERCHANT_SALT:BBc2U41mOZPLuteAYBW9wJ2Lnm9V9rQV}
+    gateway-url: ${PAYU_GATEWAY_URL:https://test.payu.in/_payment}
+    verify-command: ${PAYU_VERIFY_COMMAND:verify_payment}
+    post-service-url: ${PAYU_POST_SERVICE_URL:}
+    transaction-id-suffix: ${PAYU_TXN_SUFFIX:LOS}
+    callback-base-url: ${LOS_PUBLIC_API_BASE_URL:http://localhost:8083}
+    borrower-ui-url: ${LOS_BORROWER_UI_URL:http://localhost:5173/los/borrower}
+
+  # minio: object storage for documents (default). Use storage: local + file-storage.root for demo without MinIO.
+  document:
+    storage: ${LOS_DOCUMENT_STORAGE:local}
+  file-storage:
+    root: ${LOS_FILE_STORAGE_ROOT:${FILE_UPLOAD_DIR:./uploads}}
+
+  minio:
+    endpoint: ${S3_ENDPOINT:${MINIO_ENDPOINT:http://127.0.0.1:9000}}
+    access-key: ${S3_ACCESS_KEY:${MINIO_ACCESS_KEY:los_minio_admin}}
+    secret-key: ${S3_SECRET_KEY:${MINIO_SECRET_KEY:los_minio_secret_2026}}
+    bucket-documents: ${S3_BUCKET_DOCUMENTS:${S3_BUCKET:los-documents}}
+    bucket-signed-docs: ${S3_BUCKET_SIGNED_DOCS:los-signed-docs}
+
+  workflow:
+    # When true, KYC_WORKFLOW / BUREAU_PULL must appear in the resolved order from workflow_configs.steps
+    step-validation-strict: false
+
+  esign:
+    notification:
+      enabled: ${LOS_ESIGN_EMAIL_ENABLED:true}
+      template-code: ESIGN_PENDING
+      link-expiry-hours: 72
+    emsigner:
+      enabled: true
+      base-url: https://api.emsigner.com
+      app-name: BLPROD
+      secret-key: fbf62903-0ff5-4cf9-9774-e398a9ac2e4c
+      access-token-url: /api/AuthorizeApp
+      initiate-api-url: /api/InitiateEmbeddedSigning
+      list-templates-api-url: /api/ListTemplates
+      download-api-url: /api/DownloadWorkflowDocuments
+      auth-type: BASIC
+      fallback-to-db: false
+
+  sanction:
+    notification:
+      enabled: ${LOS_SANCTION_EMAIL_ENABLED:true}
+      anchor-portal-url: ${ANCHOR_PORTAL_URL:http://localhost:3200/plp-anchor/}
+      default-temporary-password: ${PLP_INTEGRATION_DEFAULT_USER_PASSWORD:ChangeMe@PLP2026}
+
+  integration:
+    # Notification-service (read-only proxy for workflow template catalog)
+    notification:
+      base-url: ${LOS_NOTIFICATION_URL:http://localhost:8084}
+
+    # Karza KYC Provider (PAN, Aadhaar, GSTIN, DL, Voter ID, Bank Verification)
+    # Plus financial products: ITR return-forms + GST Analysis (docs-upload-advance).
+    karza:
+      base-url: ${KARZA_BASE_URL:https://api.karza.in}
+      # Identity KYC only — not used for ITR or GST Analysis
+      api-key: ${KARZA_API_KEY:xbAUwrvXGNGN2ea}
+      gstn-url: ${KARZA_GSTN_URL:https://api.karza.in/gst/prod/v2/gst-verification}
+      # GST product key for ITR + GST Analysis. Empty → built-in simulated responses.
+      gst-karza-key: ${KARZA_GST_API_KEY:WGkAnHahXC3KeAiK}
+      itr-return-forms-url: ${KARZA_ITR_RETURN_FORMS_URL:https://api.karza.in/itr/uat/v1/itr-return-forms}
+      itr-api-version: ${KARZA_ITR_API_VERSION:1.0.2}
+      itr-number-of-years: ${KARZA_ITR_NUMBER_OF_YEARS:3}
+      connect-timeout-ms: ${KARZA_CONNECT_TIMEOUT:10000}
+      itr-read-timeout-ms: ${KARZA_ITR_READ_TIMEOUT:300000}
+      gst-docs-upload-url: ${KARZA_GST_DOCS_UPLOAD_URL:https://api.karza.in/gst/uat/v2/docs-upload-advance}
+      gst-docs-read-timeout-ms: ${KARZA_GST_DOCS_READ_TIMEOUT:300000}
+      read-timeout-ms: ${KARZA_READ_TIMEOUT:30000}
+
+    # Phase 2 — Vehicle RC verification (Karza/Vahan)
+    vahan:
+      base-url: ${VAHAN_BASE_URL:https://api.karza.in/v2}
+      api-key: ${KARZA_API_KEY:}
+      simulation: ${VAHAN_SIMULATION:true}
+      connect-timeout-ms: ${VAHAN_CONNECT_TIMEOUT:10000}
+      read-timeout-ms: ${VAHAN_READ_TIMEOUT:30000}
+
+    # Phase 2 — Property encumbrance certificate (Karza)
+    property-ec:
+      provider: ${PROPERTY_EC_PROVIDER:KARZA}
+      base-url: ${PROPERTY_EC_BASE_URL:https://api.karza.in/v3}
+      api-key: ${KARZA_API_KEY:}
+      simulation: ${PROPERTY_EC_SIMULATION:true}
+      connect-timeout-ms: ${PROPERTY_EC_CONNECT_TIMEOUT:10000}
+      read-timeout-ms: ${PROPERTY_EC_READ_TIMEOUT:30000}
+
+    # Phase 2 — Central KYC Registry (CKYC upload)
+    ckyc:
+      provider: ${CKYC_PROVIDER:KARZA}
+      upload-url: ${CKYC_UPLOAD_URL:}
+      api-key: ${CKYC_API_KEY:}
+      simulation: ${CKYC_SIMULATION:true}
+      fi-code: ${CKYC_FI_CODE:}
+      branch-code: ${CKYC_BRANCH_CODE:001}
+      connect-timeout-ms: ${CKYC_CONNECT_TIMEOUT:10000}
+      read-timeout-ms: ${CKYC_READ_TIMEOUT:60000}
+
+    # Phase 2 — Property geo-tagging (Google Geocoding)
+    google-maps:
+      api-key: ${GOOGLE_MAPS_API_KEY:}
+      simulation: ${GEO_SIMULATION:true}
+      geocode-url: ${GOOGLE_GEOCODE_URL:https://maps.googleapis.com/maps/api/geocode/json}
+      connect-timeout-ms: ${GOOGLE_MAPS_CONNECT_TIMEOUT:10000}
+      read-timeout-ms: ${GOOGLE_MAPS_READ_TIMEOUT:30000}
+
+    # Phase 2 — Live gold rate (MCX/IBJA) with simulation fallback
+    gold-rate:
+      provider: ${GOLD_RATE_PROVIDER:SIMULATION}
+      api-key: ${GOLD_RATE_API_KEY:}
+      simulation: ${GOLD_SIMULATION:true}
+      rate-url: ${GOLD_RATE_URL:https://api.mcxindia.com/gold-rate}
+      simulation-rate-per-gram: ${GOLD_SIMULATION_RATE:6500}
+      manual-rate-per-gram: ${GOLD_MANUAL_RATE:6500}
+      connect-timeout-ms: ${GOLD_RATE_CONNECT_TIMEOUT:10000}
+      read-timeout-ms: ${GOLD_RATE_READ_TIMEOUT:30000}
+
+    # Phase 2 — Account Aggregator (Setu AA)
+    setu-aa:
+      base-url: ${SETU_AA_URL:https://fiu-uat.setu.co}
+      auth-url: ${SETU_AA_AUTH_URL:https://orgs.setu.co/api/v1/users/login}
+      client-id: ${SETU_CLIENT_ID:}
+      client-secret: ${SETU_CLIENT_SECRET:}
+      product-instance-id: ${SETU_PRODUCT_INSTANCE_ID:}
+      redirect-url: ${SETU_REDIRECT_URL:https://los.billiontech.ai/aa/callback}
+      simulation: ${SETU_SIMULATION:true}
+      connect-timeout-ms: ${SETU_AA_CONNECT_TIMEOUT:10000}
+      read-timeout-ms: ${SETU_AA_READ_TIMEOUT:60000}
+
+    # Phase 2 — CERSAI security interest search & registration
+    cersai:
+      base-url: ${CERSAI_URL:}
+      institution-id: ${CERSAI_INSTITUTION_ID:}
+      api-key: ${CERSAI_API_KEY:}
+      simulation: ${CERSAI_SIMULATION:true}
+      search-path: ${CERSAI_SEARCH_PATH:/v1/security-interest/search}
+      register-path: ${CERSAI_REGISTER_PATH:/v1/security-interest/register}
+      lender-name: ${CERSAI_LENDER_NAME:Billion Loans NBFC}
+      lender-cin: ${CERSAI_LENDER_CIN:}
+      connect-timeout-ms: ${CERSAI_CONNECT_TIMEOUT:10000}
+      read-timeout-ms: ${CERSAI_READ_TIMEOUT:60000}
+
+    # Equifax Credit Bureau Provider (SOAP XML API)
+    equifax:
+      url: ${EQUIFAX_URL:https://cais.equifax.co.in/cais/equifax/enquiry}
+      customer-id: ${EQUIFAX_CUSTOMER_ID:}
+      user-id: ${EQUIFAX_USER_ID:}
+      password: ${EQUIFAX_PASSWORD:}
+      member-number: ${EQUIFAX_MEMBER_NUMBER:}
+      security-code: ${EQUIFAX_SECURITY_CODE:}
+      product-version: ${EQUIFAX_PRODUCT_VERSION:2.2}
+      report-format: ${EQUIFAX_REPORT_FORMAT:XML}
+      product-code: ${EQUIFAX_PRODUCT_CODE:CCR}
+      connect-timeout-ms: ${EQUIFAX_CONNECT_TIMEOUT:15000}
+      read-timeout-ms: ${EQUIFAX_READ_TIMEOUT:60000}
+
+    # Emsigner Digital Signing Provider
+    emsigner:
+      url: ${EMSIGNER_URL:https://emsigner.com/v3/gateway}
+      auth-token: ${EMSIGNER_AUTH_TOKEN:}
+      public-key-path: ${EMSIGNER_PUBLIC_KEY_PATH:classpath:keys/emsigner-public.pem}
+      success-callback-url: ${EMSIGNER_SUCCESS_URL:}
+      failure-callback-url: ${EMSIGNER_FAILURE_URL:}
+      cancel-callback-url: ${EMSIGNER_CANCEL_URL:}
+      connect-timeout-ms: ${EMSIGNER_CONNECT_TIMEOUT:10000}
+      read-timeout-ms: ${EMSIGNER_READ_TIMEOUT:60000}
+
+    # Hyperverge Video KYC Provider
+    # NOTE: defaults below MUST mirror IntegrationProperties.HypervergeProperties Java field defaults.
+    # Using `${VAR:}` (empty default) silently overrides those Java defaults with "" when the env
+    # var is unset, which previously caused the runtime "DOB missing for VKYC" / blank workflowId
+    # symptoms. The placeholders are still env-overridable; the defaults just preserve the
+    # configured-in-code fallback when no env var is provided.
+    hyperverge:
+      generate-link-url: ${HYPERVERGE_GENERATE_LINK_URL:https://ind.idv.hyperverge.co/v1/link-kyc/start}
+      generate-link-api-url: ${HYPERVERGE_GENERATE_LINK_API_URL:https://ind.idv.hyperverge.co/v1/link-kyc/start}
+      result-api-url: ${HYPERVERGE_RESULT_API_URL:https://ind.idv.hyperverge.co/v1/link-kyc/results}
+      app-id: ${HYPERVERGE_APP_ID:zje07z}
+      app-key: ${HYPERVERGE_APP_KEY:efvnk7kpewjtroma151y}
+      workflow-id: ${HYPERVERGE_WORKFLOW_ID:billion_loans_vkyc}
+      connect-timeout-ms: ${HYPERVERGE_CONNECT_TIMEOUT:10000}
+      read-timeout-ms: ${HYPERVERGE_READ_TIMEOUT:30000}
+
+    ai-los:
+      ingest-url: ${AI_LOS_INGEST_URL:https://ai-los.billiontech.ai/api/los/ingest}
+      ui-base-url: ${AI_LOS_UI_BASE_URL:https://ai-los.billiontech.ai}
+      jwt-secret: ${AI_LOS_JWT_SECRET:dev_secret}
+      jwt-subject: ${AI_LOS_JWT_SUBJECT:java-los}
+      jwt-role: ${AI_LOS_JWT_ROLE:integration}
+      source-los: ${AI_LOS_SOURCE:java-los}
+      review-path: ${AI_LOS_REVIEW_PATH:}
+      what-if-path: ${AI_LOS_WHATIF_PATH:/what-if}
+      connect-timeout-ms: ${AI_LOS_CONNECT_TIMEOUT:8000}
+      read-timeout-ms: ${AI_LOS_READ_TIMEOUT:15000}
+
+  # Phase 2 — Collateral valuation defaults (gold LTV / haircut)
+  collateral:
+    gold:
+      haircut: ${COLLATERAL_GOLD_HAIRCUT:0.25}
+      max-ltv: ${COLLATERAL_GOLD_MAX_LTV:75}
+
+  # EDI (daily tenure) KFS — BL sanction letter Word template + DOCX→PDF conversion
+  kfs:
+    edi:
+      enabled: ${LOS_KFS_EDI_ENABLED:true}
+      template: classpath:kfs/templates/BL_SanctionLetter_Template_V3.docx
+      pdf-converter: ${LOS_KFS_EDI_PDF_CONVERTER:embedded}
+      libre-office-path: ${LOS_KFS_EDI_LIBREOFFICE_PATH:libreoffice}
+      fallback-to-open-pdf-on-failure: ${LOS_KFS_EDI_FALLBACK_OPENPDF:true}
+      holidays: []
+
+  # Encore LMS — HTTP from los-core to remote Encore API (ENCORE_BASE_URL + Basic Auth).
+  lms:
+    encore:
+      # Spring ${key:default} uses the first ':' only — never use ':-' here (e.g. :-10000 parses as -10000 → PT-10S).
+      base-url: ${ENCORE_BASE_URL:http://credinnov-sandbox.senseitech.com/credinnov-encore-server/}
+      schema: ${ENCORE_SCHEMA:http}
+      hostname: ${ENCORE_HOSTNAME:encore.bl-internal.com}
+      port: ${ENCORE_PORT:8080}
+      api-username: ${ENCORE_API_USERNAME:admin}
+      api-password: ${ENCORE_API_PASSWORD:password1}
+      rest-auth-token: ${ENCORE_REST_AUTH_TOKEN:}
+      api:
+        create-loan-account: webservices/loans/accounts/openAccount
+        post-transactions: webservices/loans/accounts/postTransactions
+        reverse-transactions: webservices/loans/accounts/reverseTransactions
+        find-summaries: webservices/loans/accounts/findSummaries
+        find-summary: webservices/loans/accounts/findSummary
+        find-accounts: webservices/loans/accounts/findLoanOdAccounts
+        find-working-date: webservices/loans/accounts/findBankWorkingDate
+        create-product: webservices/v2/createLoanProduct
+        find-account-statement: webservices/loans/accounts/findAccountStatements
+        get-preclose-amt-by-value-dt: webservices/loans/accounts/findPreclosureAmountAsOfDate
+        find-od-product-info: webservices/loans/accounts/findLoanOdProduct
+        find-pre-open-summary: webservices/findPreOpenSummary
+        find-loan-info: webservices/findLoanInfo
+        loan-od-account-details: api/loan-od-accounts
+      currency: ${ENCORE_CURRENCY:INR}
+      admin-branch: ${ENCORE_ADMIN_BRANCH:MGPP}
+      casa-branch-code: ${ENCORE_CASA_BRANCH_CODE:MGPP}
+      casa-product-code: ${ENCORE_CASA_PRODUCT_CODE:C100}
+      loan-product-type: ${ENCORE_LOAN_PRODUCT_TYPE:Loans}
+      investment-account-id: ${ENCORE_INVESTMENT_ACCOUNT_ID:000010000001}
+      connect-timeout-ms: ${ENCORE_CONNECT_TIMEOUT:10000}
+      read-timeout-ms: ${ENCORE_READ_TIMEOUT:30000}
+      max-retries-for-get: ${ENCORE_GET_RETRIES:2}
+      retry-backoff-ms: ${ENCORE_RETRY_BACKOFF_MS:500}
+      # bl-core Encore behavior toggles (see docs/encore-bl-core-parity-spec.md)
+      bl-core-parity:
+        extended-open-loan-payload: ${ENCORE_BL_CORE_EXTENDED_OPEN_LOAN:false}
+        schedule-via-find-summary: ${ENCORE_BL_CORE_SCHEDULE_VIA_FIND_SUMMARY:true}
+        validate-bank-working-date-before-mutations: ${ENCORE_BL_CORE_VALIDATE_WORKING_DATE:false}
+        pre-open-summary-for-kfs: ${ENCORE_BL_CORE_PREOPEN_KFS:false}
+      sync:
+        enabled: ${LMS_ENCORE_SYNC_ENABLED:false}
+        cron: ${LMS_ENCORE_SYNC_CRON:0 0 2 * * *}
+    # When true, DISBURSE step resolves Encore productCode from workflow_lms_product_mapping (see Flyway V45).
+    workflow-mapping:
+      enabled: ${LMS_WORKFLOW_MAPPING_ENABLED:false}
+    callback:
+      hmac-secret: ${LMS_CALLBACK_HMAC_SECRET:}
+
+  plp:
+    enabled: ${PLP_SYNC_ENABLED:true}
+    base-url: ${PLP_BASE_URL:http://host.docker.internal:8180}
+    lender-id: ${PLP_LENDER_ID:2d6e05e3-423f-4946-8027-8cbb4f01aefa}
+    # PLP API gateway rejects /api/v1/integrations/los/** without JWT — use IAM active user credentials.
+    integration-email: ${PLP_INTEGRATION_EMAIL:admin@credinnov.com}
+    integration-password: ${PLP_INTEGRATION_PASSWORD:Bltest@123}
+    token-expiry-skew-seconds: ${PLP_TOKEN_EXPIRY_SKEW_SECONDS:120}
+    connect-timeout-ms: ${PLP_CONNECT_TIMEOUT:10000}
+    read-timeout-ms: ${PLP_READ_TIMEOUT_MS:120000}
+
+eureka:
+  client:
+    enabled: false
+    register-with-eureka: false
+    fetch-registry: false
+    service-url:
+      defaultZone: http://${EUREKA_HOST:localhost}:${EUREKA_PORT:8761}/eureka/
+  instance:
+    prefer-ip-address: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  level:
+    com.los.core: DEBUG
+    com.los.lms: DEBUG
+    com.los.plp: DEBUG
+
+# Credit Intelligence Phase F — defaults safe (off). Enable per environment.
+credit-intelligence:
+  foundation:
+    enabled: false
+  shadow-evaluation:
+    enabled: false
+    tenant-ids: []
+    product-codes: []
+    async: false
+  source-registry:
+    enabled: false
+  canonicalization:
+    bureau:
+      enabled: false
+      tenant-ids: []
+      product-codes: []
+      use-for-shadow-rules: false
+      persist-tradelines: true
+      freshness-days: 365
+      live-unsecured-threshold: 6
+    gst:
+      enabled: false
+      tenant-ids: []
+      product-codes: []
+      use-for-shadow-rules: false
+      persist-periods: true
+      min-months-for-annualization: 6
+      gstr1-gstr3b-variance-warning-pct: 5.0
+      gstr1-gstr3b-variance-material-pct: 15.0
+      min-completeness-for-trailing-12m: 0.75
+      filing-lag-days: 20
+      turnover-eligibility-threshold: 50000000
+    banking:
+      enabled: false
+      tenant-ids: []
+      product-codes: []
+      use-for-shadow-rules: false
+      persist-transactions: true
+      min-statement-completeness: 0.7
+      min-classification-coverage: 0.5
+      emi-min-occurrences: 3
+      emi-regularity-threshold: 0.7
+      od-utilisation-warning-pct: 90
+      cash-deposit-ratio-warning-pct: 0.3
+      abb-minimum:
+      cheque-return-max-3m: 0
+      nach-return-max-3m: 0
+    tax:
+      enabled: false
+      tenant-ids: []
+      product-codes: []
+      use-for-shadow-rules: false
+      persist-detail: true
+      min-years-for-growth: 2
+      itr26as-variance-warning-pct: 10.0
+      itr26as-variance-material-pct: 25.0
+      itr-ais-variance-warning-pct: 10.0
+      itr-ais-variance-material-pct: 25.0
+      min-income-threshold: 300000
+      min-turnover-threshold:
+      min-pat-positive: true
+  reconciliation:
+    enabled: false
+    tenant-ids: []
+    product-codes: []
+    use-for-shadow-rules: false
+    evidence-strength:
+      enabled: false
+    turnover:
+      match-pct: 1.0
+      warning-pct: 5.0
+      material-pct: 15.0
+      tolerance-version: TURNOVER_TOLERANCE_V1
+    obligation:
+      match-pct: 2.0
+      warning-pct: 5.0
+      material-pct: 20.0
+      tolerance-version: OBLIGATION_TOLERANCE_V1
+    tax:
+      match-pct: 1.0
+      warning-pct: 10.0
+      material-pct: 25.0
+      tolerance-version: TAX_TOLERANCE_V1
+  # C5.1 evaluation purity (all default false except tenant.dev-mode for local/tests)
+  evaluation-context:
+    enabled: false
+  frozen-policy-execution:
+    enabled: false
+  config-freeze:
+    enabled: false
+  provider-spi:
+    enabled: false
+  provider-observations:
+    enabled: false
+  tenant:
+    require-explicit: false
+    # tests/local only — set false in real multi-tenant deployments
+    dev-mode: true
+  validation:
+    enabled: false
+    persist-runs: true
+    run-performance-harness: false
+  policy-studio:
+    enabled: false
+    ai-enabled: false
+    tenant-ids: []
+    require-maker-checker: true
+  policy-engine:
+    enabled: false
+    dsl-shadow-enabled: false
+    tenant-ids: []
+    product-codes: []
+    historical-replay-enabled: false
+  decision-engine:
+    enabled: false
+    shadow-enabled: false
+    tenant-ids: []
+    product-codes: []
+    historical-replay-enabled: false
+  ai-underwriter:
+    enabled: false
+    tenant-ids: []
+    cam-draft-enabled: false
+    scenario-enabled: false
+    provider: stub
+    http-base-url: ""
+  # G0 / G0.1 — cutover readiness (never ACTIVE / CANONICAL). All flags default false.
+  cutover:
+    enabled: false
+    dual-run-enabled: false
+    quarantine-enabled: false
+    tenant-ids: []
+    product-codes: []
+    allow-canonical-authority: false
+    min-real-or-stored-cases: 20
+    evidence-weighting-enabled: true
+  # When non-blank, /api/v1/internal/credit-intelligence requires X-Internal-Token.
+  internal-token: ${CREDIT_INTELLIGENCE_INTERNAL_TOKEN:}
+  default-tenant-id: "00000000-0000-0000-0000-000000000001"

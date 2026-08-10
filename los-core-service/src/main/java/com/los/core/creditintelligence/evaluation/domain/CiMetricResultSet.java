@@ -1,0 +1,55 @@
+package com.los.core.creditintelligence.evaluation.domain;
+
+import jakarta.persistence.*;
+import lombok.*;
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
+
+@Entity
+@Table(name = "ci_metric_result_set")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class CiMetricResultSet {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+
+    @Column(name = "tenant_id", nullable = false)
+    private UUID tenantId;
+
+    @Column(name = "application_id", nullable = false)
+    private UUID applicationId;
+
+    @Column(name = "fact_snapshot_id")
+    private UUID factSnapshotId;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "metric_result_ids", columnDefinition = "jsonb", nullable = false)
+    @Builder.Default
+    private List<UUID> metricResultIds = List.of();
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "metric_codes", columnDefinition = "jsonb", nullable = false)
+    @Builder.Default
+    private List<String> metricCodes = List.of();
+
+    @Column(name = "content_hash", nullable = false, length = 128)
+    private String contentHash;
+
+    @Column(name = "schema_version", nullable = false, length = 40)
+    @Builder.Default
+    private String schemaVersion = "METRIC_RESULT_SET_V1";
+
+    @CreationTimestamp
+    @Column(name = "created_at", updatable = false, nullable = false)
+    private Instant createdAt;
+}

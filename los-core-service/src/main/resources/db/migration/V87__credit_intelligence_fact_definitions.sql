@@ -1,0 +1,41 @@
+-- Phase F: seed minimal fact definitions used by production underwriting path
+
+INSERT INTO ci_fact_definition (canonical_path, version, description, value_type, domain, repeatable, sensitive, allowed_classifications, status)
+VALUES
+('application.requested_amount', 1, 'Requested loan amount', 'DECIMAL', 'APPLICATION', false, false, '["DECLARED","MANUAL","VERIFIED"]'::jsonb, 'ACTIVE'),
+('application.requested_tenure_months', 1, 'Requested tenure months', 'INTEGER', 'APPLICATION', false, false, '["DECLARED","MANUAL","VERIFIED"]'::jsonb, 'ACTIVE'),
+('application.loan_purpose', 1, 'Loan purpose', 'STRING', 'APPLICATION', false, false, '["DECLARED","MANUAL"]'::jsonb, 'ACTIVE'),
+('applicant.business_vintage_months', 1, 'Business vintage months', 'INTEGER', 'APPLICANT', false, false, '["DECLARED","MANUAL","DEFAULTED","VERIFIED"]'::jsonb, 'ACTIVE'),
+('applicant.declared_annual_income', 1, 'Declared annual income', 'DECIMAL', 'APPLICANT', false, true, '["DECLARED","MANUAL","DEFAULTED"]'::jsonb, 'ACTIVE'),
+('applicant.verified_annual_income', 1, 'Verified annual income (effective)', 'DECIMAL', 'APPLICANT', false, true, '["VERIFIED","EXTRACTED","DEFAULTED","RECONCILED"]'::jsonb, 'ACTIVE'),
+('kyc.pan_verified', 1, 'PAN verification flag', 'BOOLEAN', 'KYC', false, false, '["VERIFIED","DECLARED","DEFAULTED"]'::jsonb, 'ACTIVE'),
+('kyc.identity_verified', 1, 'Identity verification success', 'BOOLEAN', 'KYC', false, false, '["VERIFIED","DEFAULTED"]'::jsonb, 'ACTIVE'),
+('kyc.gst_available', 1, 'GST available flag', 'BOOLEAN', 'KYC', false, false, '["VERIFIED","EXTRACTED","DEFAULTED"]'::jsonb, 'ACTIVE'),
+('bureau.consumer.score', 1, 'Consumer bureau score', 'INTEGER', 'BUREAU', false, false, '["VERIFIED","EXTRACTED","DEFAULTED","MANUAL"]'::jsonb, 'ACTIVE'),
+('bureau.live_unsecured_loan_count', 1, 'Live unsecured loan count', 'INTEGER', 'BUREAU', false, false, '["MANUAL","DEFAULTED","VERIFIED"]'::jsonb, 'ACTIVE'),
+('bureau.total_live_exposure', 1, 'Total live exposure', 'DECIMAL', 'BUREAU', false, false, '["MANUAL","DEFAULTED","VERIFIED","EXTRACTED"]'::jsonb, 'ACTIVE'),
+('bureau.total_monthly_obligation', 1, 'Total monthly obligation', 'DECIMAL', 'BUREAU', false, false, '["MANUAL","DEFAULTED","VERIFIED","EXTRACTED"]'::jsonb, 'ACTIVE'),
+('bureau.max_dpd', 1, 'Max DPD', 'INTEGER', 'BUREAU', false, false, '["MANUAL","DEFAULTED","VERIFIED","EXTRACTED"]'::jsonb, 'ACTIVE'),
+('bureau.source_available', 1, 'Bureau source available', 'BOOLEAN', 'BUREAU', false, false, '["DERIVED","VERIFIED"]'::jsonb, 'ACTIVE'),
+('banking.monthly_credit', 1, 'Monthly credit (banking)', 'DECIMAL', 'BANKING', false, true, '["EXTRACTED","MANUAL","DEFAULTED"]'::jsonb, 'ACTIVE'),
+('banking.average_balance', 1, 'Average balance', 'DECIMAL', 'BANKING', false, true, '["EXTRACTED","MANUAL","DEFAULTED"]'::jsonb, 'ACTIVE'),
+('banking.existing_emi', 1, 'Existing EMI', 'DECIMAL', 'BANKING', false, false, '["EXTRACTED","MANUAL","DEFAULTED"]'::jsonb, 'ACTIVE'),
+('obligations.monthly_emi_total', 1, 'Monthly EMI total', 'DECIMAL', 'OBLIGATIONS', false, false, '["MANUAL","DEFAULTED","DERIVED","VERIFIED"]'::jsonb, 'ACTIVE'),
+('collateral.market_value', 1, 'Collateral market value', 'DECIMAL', 'COLLATERAL', false, false, '["MANUAL","DECLARED","DEFAULTED","VERIFIED"]'::jsonb, 'ACTIVE'),
+('metrics.foir', 1, 'FOIR metric', 'DECIMAL', 'METRICS', false, false, '["DERIVED","DEFAULTED"]'::jsonb, 'ACTIVE'),
+('metrics.ltv', 1, 'LTV metric', 'DECIMAL', 'METRICS', false, false, '["DERIVED","DEFAULTED"]'::jsonb, 'ACTIVE'),
+('limit.requested_amount', 1, 'Requested amount for limit', 'DECIMAL', 'LIMIT', false, false, '["DECLARED","DERIVED"]'::jsonb, 'ACTIVE'),
+('limit.computed_eligible_amount', 1, 'Computed eligible amount', 'DECIMAL', 'LIMIT', false, false, '["DERIVED"]'::jsonb, 'ACTIVE'),
+('limit.sanction_cap', 1, 'Sanction cap', 'DECIMAL', 'LIMIT', false, false, '["DERIVED","DEFAULTED"]'::jsonb, 'ACTIVE'),
+-- Compatibility flat params used by rule/scorecard engines
+('compat.BUREAU_SCORE', 1, 'Flat BUREAU_SCORE', 'INTEGER', 'COMPAT', false, false, '["VERIFIED","DEFAULTED","MANUAL"]'::jsonb, 'ACTIVE'),
+('compat.MONTHLY_INCOME', 1, 'Flat MONTHLY_INCOME', 'DECIMAL', 'COMPAT', false, true, '["VERIFIED","DEFAULTED","MANUAL"]'::jsonb, 'ACTIVE'),
+('compat.MONTHLY_OBLIGATION', 1, 'Flat MONTHLY_OBLIGATION', 'DECIMAL', 'COMPAT', false, false, '["MANUAL","DEFAULTED","VERIFIED"]'::jsonb, 'ACTIVE'),
+('compat.LIVE_UNSECURED_LOAN_COUNT', 1, 'Flat LIVE_UNSECURED_LOAN_COUNT', 'INTEGER', 'COMPAT', false, false, '["MANUAL","DEFAULTED"]'::jsonb, 'ACTIVE'),
+('compat.BUREAU_ENQUIRIES_3M', 1, 'Flat BUREAU_ENQUIRIES_3M', 'INTEGER', 'COMPAT', false, false, '["MANUAL","DEFAULTED"]'::jsonb, 'ACTIVE'),
+('compat.FOIR', 1, 'Flat FOIR', 'DECIMAL', 'COMPAT', false, false, '["DERIVED","DEFAULTED"]'::jsonb, 'ACTIVE'),
+('compat.LTV', 1, 'Flat LTV', 'DECIMAL', 'COMPAT', false, false, '["DERIVED","DEFAULTED"]'::jsonb, 'ACTIVE'),
+('compat.BUSINESS_VINTAGE_MONTHS', 1, 'Flat BUSINESS_VINTAGE_MONTHS', 'INTEGER', 'COMPAT', false, false, '["MANUAL","DEFAULTED","DECLARED"]'::jsonb, 'ACTIVE'),
+('compat.KYC_SUCCESS', 1, 'Flat KYC_SUCCESS', 'BOOLEAN', 'COMPAT', false, false, '["VERIFIED","DEFAULTED"]'::jsonb, 'ACTIVE'),
+('compat.GST_AVAILABLE', 1, 'Flat GST_AVAILABLE', 'BOOLEAN', 'COMPAT', false, false, '["VERIFIED","DEFAULTED"]'::jsonb, 'ACTIVE')
+ON CONFLICT (canonical_path, version) DO NOTHING;

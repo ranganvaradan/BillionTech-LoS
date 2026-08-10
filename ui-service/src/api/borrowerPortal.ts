@@ -16,6 +16,10 @@ export interface BorrowerDashboard {
   recentApplications: BorrowerAppSummary[]
   secondLoanWarning: string | null
   primaryDisbursedApplicationId: string | null
+  invoiceDiscountingLinked: boolean
+  purchaseBillDiscountingLinked: boolean
+  salesBillDiscountingLinked: boolean
+  purchaseOrderDiscountingLinked: boolean
 }
 
 export interface BorrowerAppSummary {
@@ -26,6 +30,8 @@ export interface BorrowerAppSummary {
   status: ApplicationStatus
   createdAt: string | null
   updatedAt: string | null
+  partyId?: string | null
+  partyRole?: string | null
 }
 
 export interface BorrowerTimelineStep {
@@ -61,6 +67,12 @@ export interface BorrowerApplicationDetail {
   timeline: BorrowerTimelineStep[]
   /** Borrower-submitted collateral summary (intake) — no internal credit remarks. */
   collateralSummary?: { label: string; value: string }[]
+  /** Invoice discounting borrower onboarding — overview only, no KFS/loan tabs. */
+  invoiceDiscountingBorrower?: boolean
+  sanctionedAmount?: number | null
+  interestRate?: number | null
+  tenureMonths?: number | null
+  termsDocumentAvailable?: boolean
 }
 
 export async function getBorrowerDashboard(): Promise<BorrowerDashboard> {
@@ -78,6 +90,42 @@ export async function listBorrowerApplications(page = 0, size = 20) {
 
 export async function getBorrowerApplicationDetail(id: string): Promise<BorrowerApplicationDetail> {
   const { data } = await http.get<BorrowerApplicationDetail>(`/borrower/applications/${id}`)
+  return data
+}
+
+export interface BorrowerDocumentItem {
+  id: string
+  source: 'UPLOAD' | 'ESIGN'
+  category: 'KYC' | 'SIGNED'
+  documentType: string
+  fileName: string
+  contentType: string
+  fileSize: number
+  createdAt: string | null
+}
+
+export async function listBorrowerDocuments(applicationId: string): Promise<BorrowerDocumentItem[]> {
+  const { data } = await http.get<BorrowerDocumentItem[]>(`/borrower/applications/${applicationId}/documents`)
+  return data ?? []
+}
+
+/** Inline preview for borrower-visible documents (upload or eSign signed PDF). */
+export async function fetchBorrowerDocumentPreviewBlob(
+  applicationId: string,
+  doc: BorrowerDocumentItem,
+): Promise<Blob> {
+  const path =
+    doc.source === 'ESIGN'
+      ? `/borrower/applications/${applicationId}/documents/esign/${doc.id}/content`
+      : `/borrower/applications/${applicationId}/documents/${doc.id}/content`
+  const { data } = await http.get<Blob>(path, { responseType: 'blob' })
+  return data
+}
+
+export async function downloadInvoiceDiscountingTermsPdf(applicationId: string): Promise<Blob> {
+  const { data } = await http.get<Blob>(`/borrower/applications/${applicationId}/terms/pdf`, {
+    responseType: 'blob',
+  })
   return data
 }
 
@@ -139,17 +187,167 @@ export interface TransactionRow {
   type: string
 }
 
-export async function getRepaymentScheduleDemo(loanId: string): Promise<RepaymentRow[]> {
-  const { data } = await http.get<RepaymentRow[]>(`/borrower/loans/${loanId}/repayment-schedule`)
+export interface BorrowerLoanAccount {
+  loanAccountNumber: string
+  loanStatus: string
+  sanctionedAmount: number | null
+  disbursedAmount: number | null
+  outstandingPrincipal: number | null
+  totalPaid: number | null
+  overdueAmount: number | null
+  totalEmis: number
+  paidEmis: number
+  overdueEmis: number
+  nextEmiDate: string | null
+  nextEmiAmount: number | null
+  lastPaymentDate: string | null
+  dpd: number
+  servicingActive: boolean
+  loanProduct?: string | null
+  repaymentMechanism?: string | null
+  payuCheckoutAvailable?: boolean
+}
+
+/** Loan account summary after disbursement (LMS-backed with local fallback). */
+export async function getLoanAccount(loanId: string): Promise<BorrowerLoanAccount> {
+  const { data } = await http.get<BorrowerLoanAccount>(`/borrower/loans/${loanId}/account`)
   return data
 }
 
-export async function getStatementDemo(loanId: string): Promise<StatementRow[]> {
-  const { data } = await http.get<StatementRow[]>(`/borrower/loans/${loanId}/statement`)
+/** Make a repayment against a disbursed loan; returns the refreshed account. */
+export async function postRepayment(loanId: string, amount: number): Promise<BorrowerLoanAccount> {
+  const { data } = await http.post<BorrowerLoanAccount>(`/borrower/loans/${loanId}/repay`, { amount })
   return data
 }
 
-export async function getTransactionsDemo(loanId: string): Promise<TransactionRow[]> {
-  const { data } = await http.get<TransactionRow[]>(`/borrower/loans/${loanId}/transactions`)
+export interface LoanPayuInitiatePayload {
+  baseUrl: string
+  key: string
+  txnid: string
+  amount: string
+  productinfo: string
+  firstname: string
+  email: string
+  phone?: string | null
+  udf1?: string
+  udf2?: string
+  surl: string
+  furl: string
+  hash: string
+  transactionId: string
+  applicationId?: string
+}
+
+export async function initiateLoanPayuPayment(
+  loanId: string,
+  amount: number,
+): Promise<LoanPayuInitiatePayload> {
+  const { data } = await http.post<LoanPayuInitiatePayload>(
+    `/borrower/loans/${loanId}/payments/payu/initiate`,
+    { amount },
+  )
+  return data
+}
+
+/** Provenance of post-disbursement servicing data. */
+export type ServicingSource = 'LMS' | 'LOCAL'
+
+export interface ServicingData<T> {
+  source: ServicingSource
+  rows: T[]
+}
+
+export async function getRepaymentSchedule(loanId: string): Promise<ServicingData<RepaymentRow>> {
+  const { data } = await http.get<ServicingData<RepaymentRow>>(
+    `/borrower/loans/${loanId}/repayment-schedule`,
+  )
+  return data
+}
+
+/** Submit ITD username/password for Karza ITR pull (password never stored server-side). */
+export async function submitBorrowerItrReturnForms(
+  applicationId: string,
+  body: { username: string; password: string; consent: boolean },
+): Promise<{
+  outcome: string
+  errorMessage?: string | null
+  parsedData?: Record<string, unknown> | null
+  transactionId?: string | null
+}> {
+  // Align with backend Karza ITR + GST analysis HTTP wait (5 minutes).
+  const { data } = await http.post(`/borrower/applications/${applicationId}/itr-return-forms`, body, {
+    timeout: 300_000,
+  })
+  return data as {
+    outcome: string
+    errorMessage?: string | null
+    parsedData?: Record<string, unknown> | null
+    transactionId?: string | null
+  }
+}
+
+export async function getBorrowerItrReturnFormsStatus(applicationId: string): Promise<{
+  required: boolean
+  success: boolean
+  status: string
+  errorMessage?: string | null
+  mappedMetrics?: Record<string, unknown>
+}> {
+  const { data } = await http.get<{
+    required: boolean
+    success: boolean
+    status: string
+    errorMessage?: string | null
+    mappedMetrics?: Record<string, unknown>
+  }>(`/borrower/applications/${applicationId}/itr-return-forms/status`)
+  return data
+}
+
+export type GstAnalysisStatus = {
+  applicationId?: string
+  onWorkflow?: boolean
+  required?: boolean
+  gstin?: string | null
+  consent?: boolean
+  documentCount?: number
+  status?: string
+  phase?: string | null
+  success?: boolean
+  uploadSuccess?: boolean
+  reportSuccess?: boolean
+  errorMessage?: string | null
+  requestId?: string | null
+  fullResponse?: unknown
+  uploadResult?: unknown
+  mappedMetrics?: Record<string, unknown>
+}
+
+export async function prepareBorrowerGstAnalysis(
+  applicationId: string,
+  body: { gstin: string; consent: boolean },
+): Promise<GstAnalysisStatus> {
+  const { data } = await http.post<GstAnalysisStatus>(
+    `/borrower/applications/${applicationId}/gst-analysis/prepare`,
+    body,
+  )
+  return data
+}
+
+export async function getBorrowerGstAnalysisStatus(applicationId: string): Promise<GstAnalysisStatus> {
+  const { data } = await http.get<GstAnalysisStatus>(
+    `/borrower/applications/${applicationId}/gst-analysis/status`,
+  )
+  return data
+}
+
+export async function getStatement(loanId: string): Promise<ServicingData<StatementRow>> {
+  const { data } = await http.get<ServicingData<StatementRow>>(`/borrower/loans/${loanId}/statement`)
+  return data
+}
+
+export async function getTransactions(loanId: string): Promise<ServicingData<TransactionRow>> {
+  const { data } = await http.get<ServicingData<TransactionRow>>(
+    `/borrower/loans/${loanId}/transactions`,
+  )
   return data
 }

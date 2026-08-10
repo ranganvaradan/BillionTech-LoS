@@ -1,0 +1,15 @@
+%% AI-LOS assistive loop
+sequenceDiagram
+  participant LOS as BillionTechLOS
+  participant AI as AI-LOS
+  participant HUM as Analyst
+
+  LOS->>LOS: FactSnapshot created
+  LOS->>AI: POST analysis request refs + consent
+  AI-->>LOS: AI outputs envelope
+  LOS->>HUM: Review queue
+  HUM->>LOS: accept FACT_CANDIDATE
+  LOS->>LOS: AI_ACCEPTED fact + new snapshot
+  Note over LOS: Policy Engine never sees AI_CANDIDATE as VERIFIED
+  HUM->>LOS: Human Decision approve
+  LOS->>LOS: Decision + Sanction

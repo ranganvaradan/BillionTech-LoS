@@ -1,0 +1,24 @@
+# Build
+/target/
+/org/
+
+# Runtime uploads / borrower documents (do not add new tracked docs)
+/data/documents/
+
+# Secrets / local env
+.env
+.env.*
+!.env.example
+
+# Logs / crash dumps
+*.log
+hs_err_pid*
+replay_pid*
+
+# IDE
+.classpath
+.project
+.settings/
+.idea/
+*.iml
+.vscode/

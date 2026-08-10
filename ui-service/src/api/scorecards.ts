@@ -1,6 +1,41 @@
 import { http } from './http'
 import type { BorrowerType } from '@/types/createApplication'
 
+export type ScorecardInputType = 'number' | 'text' | 'dropdown' | 'formula'
+
+export interface ScorecardParamOption {
+  value: string
+  label: string
+  score: number
+}
+
+export interface FormulaOperand {
+  parameter: string
+  source: string
+}
+
+export interface FormulaDefinition {
+  expression: string
+  operands: FormulaOperand[]
+}
+
+export interface DependencyCondition {
+  source: string
+  parameter: string
+  condition: string
+}
+
+export interface DependencyGroup {
+  logic?: 'ALL' | 'ANY'
+  conditions: DependencyCondition[]
+}
+
+export interface ScorecardParameterDef {
+  inputType: ScorecardInputType
+  options?: ScorecardParamOption[]
+  formula?: FormulaDefinition
+}
+
 export interface ScorecardRow {
   id: string
   parameter: string
@@ -9,6 +44,10 @@ export interface ScorecardRow {
   weight: number
   score: number
   attachment?: string
+  inputType?: ScorecardInputType
+  options?: ScorecardParamOption[]
+  formula?: FormulaDefinition
+  dependsOn?: DependencyGroup
 }
 
 export interface HardRuleRow {
@@ -18,6 +57,7 @@ export interface HardRuleRow {
   condition: string
   decision: 'REJECT' | 'MANUAL_REVIEW'
   message?: string
+  dependsOn?: DependencyGroup
 }
 
 export interface UnderwritingScorecardResponse {

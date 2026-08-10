@@ -1,27 +1,58 @@
 import { useEffect, useState } from 'react'
 import { ErrorState } from '@/components/ErrorState'
-import { generateVkycUrl, getVkycEligibility, getVkycTimeline, resendVkycLink, updateVkycStage } from '@/api/vkyc'
+import { ProcessOverrideCard } from '@/components/ProcessOverrideCard'
+import {
+  PHYSICAL_KYC_DOCUMENT_TYPE,
+  completePhysicalVkyc,
+  generateVkycUrl,
+  getVkycEligibility,
+  getVkycTimeline,
+  resendVkycLink,
+  updateVkycStage,
+} from '@/api/vkyc'
+import type { VkycPkycReasonCode } from '@/api/vkyc'
+import { uploadDocument } from '@/api/documents'
+import { canCompletePhysicalVkyc, loadSessionUser } from '@/auth/types'
 import { formatInstant } from '@/lib/format'
+import { applicationPartyLabels } from '@/lib/applicationPartyLabels'
 import type { VkycWorkflowGate } from '@/lib/vkycWorkflowGate'
+import type { ApplicationIntakeSegment } from '@/types/application'
 
 type VkycStage = 'CUSTOMER_JOINED' | 'URL_GENERATED' | 'AGENT_APPROVED' | 'AUDITOR_APPROVED' | 'COMPLETED' | 'REJECTED' | 'EXPIRED' | 'FAILED'
+
+const PKYC_REASON_OPTIONS: ReadonlyArray<{ value: VkycPkycReasonCode; label: string }> = [
+  { value: 'TECHNICAL_ISSUE', label: 'Technical Issue' },
+  { value: 'CUSTOMER_REFUSED_VKYC', label: 'Customer Refused VKYC' },
+  { value: 'CAMERA_NETWORK_FAILURE', label: 'Camera/Network Failure' },
+  { value: 'VKYC_VENDOR_FAILURE', label: 'VKYC Vendor Failure' },
+  { value: 'MANUAL_VERIFICATION_APPROVED', label: 'Manual Verification Approved' },
+  { value: 'OTHER', label: 'Other' },
+]
 
 export function VkycDetailsSection({
   applicationId,
   workflowGate,
+  intakeSegment,
   onApplicationRefetch,
   onWorkflowStateRefetch,
 }: {
   applicationId: string
   workflowGate: VkycWorkflowGate
+  intakeSegment?: ApplicationIntakeSegment | null
   onApplicationRefetch: () => void
   onWorkflowStateRefetch?: () => Promise<void> | void
 }) {
+  const partyLabels = applicationPartyLabels(intakeSegment)
   const [timeline, setTimeline] = useState<Record<string, unknown> | null>(null)
   const [eligibility, setEligibility] = useState<Record<string, unknown> | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [info, setInfo] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [pkycModalOpen, setPkycModalOpen] = useState(false)
+  const [pkycReason, setPkycReason] = useState<VkycPkycReasonCode>('TECHNICAL_ISSUE')
+  const [pkycComments, setPkycComments] = useState('')
+  const [pkycFile, setPkycFile] = useState<File | null>(null)
+  const [pkycBusy, setPkycBusy] = useState(false)
 
   async function reload() {
     try {
@@ -77,19 +108,66 @@ export function VkycDetailsSection({
     }
   }
 
+  async function onPkycSubmit() {
+    setPkycBusy(true)
+    setError(null)
+    setInfo(null)
+    try {
+      if (!pkycComments.trim()) {
+        setError('Comments are required for Physical KYC completion.')
+        return
+      }
+      if (!pkycFile) {
+        setError('Upload a PDF, JPG, or PNG document for Physical KYC.')
+        return
+      }
+      const uploaded = await uploadDocument(applicationId, pkycFile, PHYSICAL_KYC_DOCUMENT_TYPE)
+      await completePhysicalVkyc(applicationId, {
+        reason: pkycReason,
+        comments: pkycComments.trim(),
+        documentId: uploaded.id,
+      })
+      setInfo('VKYC completed via Physical KYC.')
+      setPkycModalOpen(false)
+      setPkycComments('')
+      setPkycFile(null)
+      await reload()
+      await onWorkflowStateRefetch?.()
+      onApplicationRefetch()
+    } catch (ex) {
+      setError(ex instanceof Error ? ex.message : 'Physical KYC completion failed')
+    } finally {
+      setPkycBusy(false)
+    }
+  }
+
   const rows = (timeline?.stages as Array<Record<string, unknown>> | undefined) ?? []
   const isEligible = Boolean(eligibility?.eligible)
   const status = String(timeline?.vkycStatus ?? 'NOT_STARTED').toUpperCase()
+  const completionMode = String(timeline?.vkycCompletionMode ?? '').toUpperCase()
+  const isPkycPath = completionMode === 'PKYC'
+  const userRole = loadSessionUser()?.role ?? ''
+
   const url = String(timeline?.vkycUrl ?? '')
   const hasUrl = url.trim().length > 0
-  const resendBlocked = ['AGENT_APPROVED', 'AUDITOR_APPROVED', 'COMPLETED', 'REJECTED'].includes(status)
-  const terminalStatusBlocked = ['AGENT_APPROVED', 'AUDITOR_APPROVED', 'COMPLETED', 'REJECTED', 'AUDITOR_REJECTED', 'AUTO_DECLINED', 'ERROR'].includes(status)
-  const showGenerate = workflowGate.canGenerate && !hasUrl
-  const showLinkActions = hasUrl && !['COMPLETED'].includes(status)
-  const canGenerate = workflowGate.canGenerate && isEligible && !hasUrl && !terminalStatusBlocked
+  const resendBlocked = ['AGENT_APPROVED', 'AUDITOR_APPROVED', 'COMPLETED', 'REJECTED'].includes(status) || isPkycPath
+  const terminalStatusBlocked = ['AGENT_APPROVED', 'AUDITOR_APPROVED', 'COMPLETED', 'REJECTED', 'AUDITOR_REJECTED', 'AUTO_DECLINED', 'ERROR'].includes(status) || isPkycPath
+  const showGenerate = workflowGate.canGenerate && !hasUrl && !isPkycPath
+  const showLinkActions = hasUrl && !['COMPLETED'].includes(status) && !isPkycPath
+  const canGenerate = workflowGate.canGenerate && isEligible && !hasUrl && !terminalStatusBlocked && !isPkycPath
   const canMarkAgentApproved = ['URL_GENERATED', 'CUSTOMER_JOINED'].includes(status) && !workflowGate.applicationTerminal
   const canMarkAuditorApproved = status === 'AGENT_APPROVED' && !workflowGate.applicationTerminal
   const canMarkCompleted = status === 'AUDITOR_APPROVED' && !workflowGate.applicationTerminal
+  const showOverride = ['REJECTED', 'AUTO_DECLINED', 'AUDITOR_REJECTED', 'FAILED', 'ERROR'].includes(status)
+  const allowPhysicalFb = Boolean(timeline?.allowPhysicalKycFallback)
+  const auditorClearedUi = ['AUDITOR_APPROVED', 'COMPLETED'].includes(status) || isPkycPath
+  const showPkycCta =
+    allowPhysicalFb &&
+    isEligible &&
+    workflowGate.workflowReached &&
+    !workflowGate.applicationTerminal &&
+    !auditorClearedUi &&
+    canCompletePhysicalVkyc(userRole)
 
   async function onResend() {
     setBusy(true)
@@ -115,7 +193,7 @@ export function VkycDetailsSection({
   }
 
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm mb-0 border-0 p-0 shadow-none">
+    <section className="bt-card p-5 mb-0 border-0 p-0 shadow-none">
       <h2 className="mb-1 text-lg font-medium text-slate-900">VKYC</h2>
       <p className="mb-3 text-sm text-slate-600">Video KYC stage progression and review checkpoints.</p>
       {error ? <ErrorState message={error} /> : null}
@@ -124,19 +202,34 @@ export function VkycDetailsSection({
         <div className="flex flex-wrap items-center gap-3">
           <span className="font-medium">Status:</span>
           <span className="rounded bg-slate-100 px-2 py-0.5 text-xs">{status}</span>
+          {isPkycPath ? (
+            <span className="rounded bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">
+              Completed via Physical KYC
+            </span>
+          ) : null}
         </div>
         <div className="mt-2 grid gap-2 sm:grid-cols-2 text-xs text-slate-600">
           <div>Generated: {formatInstant((timeline?.vkycUrlGeneratedAt as string | null) ?? null)}</div>
           <div>Expiry: {formatInstant((timeline?.vkycUrlExpiryAt as string | null) ?? null)}</div>
           <div>Resend count: {String(timeline?.vkycResendCount ?? 0)}</div>
           <div>Last resent: {formatInstant((timeline?.vkycLastResentAt as string | null) ?? null)}</div>
+          {timeline?.pkycVerifiedAt ? <div className="sm:col-span-2 text-amber-800">PKYC verified at: {formatInstant(String(timeline.pkycVerifiedAt))}</div> : null}
         </div>
       </div>
+      {showOverride ? (
+        <ProcessOverrideCard
+          applicationId={applicationId}
+          processCode="VKYC"
+          failureCode={status}
+          title="Manual override for VKYC rejection/failure"
+          onSuccess={onApplicationRefetch}
+        />
+      ) : null}
       <div className="mb-3 flex flex-wrap gap-2">
         {showGenerate ? (
           <button
             type="button"
-            className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+            className="bt-btn bt-btn-primary disabled:opacity-50"
             disabled={!canGenerate || busy}
             onClick={() => void onGenerateUrl()}
           >
@@ -171,6 +264,19 @@ export function VkycDetailsSection({
             </button>
           </>
         ) : null}
+        {showPkycCta ? (
+          <button
+            type="button"
+            className="rounded-md border border-amber-500 bg-white px-3 py-1.5 text-sm font-medium text-amber-900 shadow-sm hover:bg-amber-50 disabled:opacity-50"
+            disabled={busy || pkycBusy}
+            onClick={() => {
+              setPkycModalOpen(true)
+              setError(null)
+            }}
+          >
+            Complete using Physical KYC
+          </button>
+        ) : null}
         <button type="button" className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm disabled:opacity-50" disabled={busy || !canMarkAgentApproved} onClick={() => void onStage('AGENT_APPROVED')}>Agent approved</button>
         <button type="button" className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm disabled:opacity-50" disabled={busy || !canMarkAuditorApproved} onClick={() => void onStage('AUDITOR_APPROVED')}>Auditor approved</button>
         <button type="button" className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm disabled:opacity-50" disabled={busy || !canMarkCompleted} onClick={() => void onStage('COMPLETED')}>Mark completed</button>
@@ -198,7 +304,7 @@ export function VkycDetailsSection({
               <th className="px-2 py-1.5">Timestamp</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-slate-100">
+          <tbody className="">
             {rows.length === 0 ? (
               <tr>
                 <td className="px-2 py-1.5 text-slate-500" colSpan={3}>No VKYC history yet.</td>
@@ -213,6 +319,74 @@ export function VkycDetailsSection({
           </tbody>
         </table>
       </div>
+      {pkycModalOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="pkyc-modal-title"
+        >
+          <div className="w-full max-w-lg rounded-lg border border-slate-200 bg-white p-5 shadow-lg">
+            <h3 id="pkyc-modal-title" className="text-base font-semibold text-slate-900">
+              Complete VKYC via Physical KYC
+            </h3>
+            <p className="mt-1 text-xs text-slate-600">
+              Provide reason, mandatory comments, and upload evidence (PDF/JPG/PNG). Verified-by and timestamp are captured automatically when you submit.
+            </p>
+            <label className="mt-4 block text-xs text-slate-600">
+              <span className="mb-1 block font-medium text-slate-700">Reason *</span>
+              <select
+                className="w-full rounded border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                value={pkycReason}
+                onChange={(e) => setPkycReason(e.target.value as VkycPkycReasonCode)}
+              >
+                {PKYC_REASON_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="mt-3 block text-xs text-slate-600">
+              <span className="mb-1 block font-medium text-slate-700">Comments *</span>
+              <textarea
+                className="bt-input w-full text-sm"
+                rows={4}
+                value={pkycComments}
+                onChange={(e) => setPkycComments(e.target.value)}
+                placeholder={partyLabels.vkycPkycPlaceholder}
+              />
+            </label>
+            <label className="mt-3 block text-xs text-slate-600">
+              <span className="mb-1 block font-medium text-slate-700">Supporting document * (PDF / JPG / PNG)</span>
+              <input
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg,application/pdf,image/png,image/jpeg"
+                className="block w-full text-sm text-slate-700 file:mr-3 file:rounded-md file:border file:border-slate-300 file:bg-white file:px-2 file:py-1 file:text-xs"
+                onChange={(e) => setPkycFile(e.target.files?.[0] ?? null)}
+              />
+            </label>
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-800 disabled:opacity-50"
+                disabled={pkycBusy}
+                onClick={() => setPkycModalOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="bt-btn bt-btn-primary disabled:opacity-50"
+                disabled={pkycBusy}
+                onClick={() => void onPkycSubmit()}
+              >
+                {pkycBusy ? 'Saving…' : 'Complete Physical KYC'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   )
 }

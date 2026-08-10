@@ -25,6 +25,24 @@ const SCORECARD_PARAM_TO_ROW_ID: Record<string, string> = {
   EBITDA_PROXY: 'manual-credit-ebitda-proxy',
   STATE: 'manual-credit-state',
   CITY: 'manual-credit-city',
+  DTI_RATIO: 'manual-credit-obligation-ratio',
+  avgDailyBalance3m: 'manual-credit-metric-avgDailyBalance3m',
+  avgMonthlyTransactions3m: 'manual-credit-metric-avgMonthlyTransactions3m',
+  avgMonthlySettlements3m: 'manual-credit-metric-avgMonthlySettlements3m',
+  monthlyTransactions3m: 'manual-credit-metric-monthlyTransactions3m',
+  inwardChequeReturns3m: 'manual-credit-metric-inwardChequeReturns3m',
+  avgDailySettlements3m: 'manual-credit-metric-avgDailySettlements3m',
+  noOfTxns60days: 'manual-credit-metric-noOfTxns60days',
+  txnMth1: 'manual-credit-metric-txnMth1',
+  txnMth2: 'manual-credit-metric-txnMth2',
+  txnMth3: 'manual-credit-metric-txnMth3',
+  residenceOwned: 'manual-credit-metric-residenceOwned',
+  residenceStability: 'manual-credit-metric-residenceStability',
+  businessStability: 'manual-credit-metric-businessStability',
+  existingLoanTrackRecordAll: 'manual-credit-metric-existingLoanTrackRecordAll',
+  existingLoanTrackRecord15d: 'manual-credit-metric-existingLoanTrackRecord15d',
+  qrTxnEDI: 'manual-credit-metric-qrTxnEDI',
+  eligibleOnePointFiveX: 'manual-credit-metric-eligibleOnePointFiveX',
 }
 
 /** Hash including leading `#` for use in `href`. */
@@ -39,6 +57,6 @@ function normalizeParameterKey(raw: string): string {
 export function manualCreditHashForScorecardParameter(parameter: string | undefined | null): string {
   if (!parameter) return '#manual-credit-inputs'
   const k = normalizeParameterKey(parameter)
-  const id = SCORECARD_PARAM_TO_ROW_ID[k]
-  return id ? `#${id}` : '#manual-credit-inputs'
+  const id = SCORECARD_PARAM_TO_ROW_ID[k] ?? SCORECARD_PARAM_TO_ROW_ID[parameter] ?? `manual-credit-metric-${parameter}`
+  return id.startsWith('manual-credit-') ? `#${id}` : `#manual-credit-inputs`
 }

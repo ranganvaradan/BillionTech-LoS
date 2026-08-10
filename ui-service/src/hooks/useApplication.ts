@@ -21,7 +21,10 @@ export function useApplication(applicationId: string | undefined) {
         setLoading(false)
         return
       }
-      setLoading(true)
+      const backgroundRefetch = refetchKey > 0
+      if (!backgroundRefetch) {
+        setLoading(true)
+      }
       setError(null)
       try {
         const d = await getApplication(applicationId)
@@ -31,7 +34,9 @@ export function useApplication(applicationId: string | undefined) {
         }
       } catch (e: unknown) {
         if (!cancelled) {
-          setData(null)
+          if (!backgroundRefetch) {
+            setData(null)
+          }
           setError(e instanceof Error ? e.message : 'Failed to load application')
           setLoading(false)
         }

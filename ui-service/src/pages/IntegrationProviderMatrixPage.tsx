@@ -3,6 +3,8 @@ import { getProviderMatrix, type IntegrationProviderMatrixRow } from '@/api/inte
 import { ErrorState } from '@/components/ErrorState'
 import { LoadingState } from '@/components/LoadingState'
 import { PageHeader } from '@/components/PageHeader'
+import { AdministrationWorkspaceNav } from '@/components/workspace/AdministrationWorkspaceNav'
+import { BtCard } from '@/components/ui/BtCard'
 import { ApiError } from '@/api/http'
 
 export function IntegrationProviderMatrixPage() {
@@ -34,53 +36,53 @@ export function IntegrationProviderMatrixPage() {
   }, [])
 
   return (
-    <div>
+    <div className="space-y-4">
       <PageHeader
-        title="Integration provider matrix"
+        title="Integrations"
         description="Read-only view of default provider priority and fallbacks (aggregator_routing). Higher priority is attempted first."
       />
+      <AdministrationWorkspaceNav />
       {loading && <LoadingState label="Loading matrix…" />}
       {error && !rows && <ErrorState message={error} />}
       {rows && rows.length === 0 ? (
-        <p className="text-sm text-slate-600">No routing rows returned.</p>
+        <p className="text-sm text-[var(--bt-gray-500)]">No routing rows returned.</p>
       ) : null}
       {rows && rows.length > 0 ? (
-        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
-          <table className="min-w-full border-collapse text-left text-sm">
-            <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-600">
+        <BtCard className="overflow-x-auto">
+          <table className="bt-table">
+            <thead>
               <tr>
-                <th className="px-3 py-2">Integration</th>
-                <th className="px-3 py-2">Step</th>
-                <th className="px-3 py-2">Provider</th>
-                <th className="px-3 py-2">Priority</th>
-                <th className="px-3 py-2">Fallback</th>
-                <th className="px-3 py-2">Purpose</th>
-                <th className="px-3 py-2">Applies to</th>
+                <th>Integration</th>
+                <th>Step</th>
+                <th>Provider</th>
+                <th>Priority</th>
+                <th>Fallback</th>
+                <th>Purpose</th>
+                <th>Applies to</th>
               </tr>
             </thead>
             <tbody>
               {rows.map((r) => {
                 const meta = r.metadata
                 const purpose = meta && typeof meta.purpose === 'string' ? meta.purpose : '—'
-                const applies =
-                  meta && typeof meta.appliesTo === 'string' ? meta.appliesTo : '—'
+                const applies = meta && typeof meta.appliesTo === 'string' ? meta.appliesTo : '—'
                 const stepLabel =
                   r.kycStepType ?? r.esignStepType ?? (r.integrationType === 'ESIGN' ? '(all eSign)' : '(global KYC)')
                 return (
-                  <tr key={r.id} className="border-b border-slate-100 last:border-0">
-                    <td className="px-3 py-2 font-mono text-xs">{r.integrationType}</td>
-                    <td className="px-3 py-2 font-mono text-xs">{stepLabel}</td>
-                    <td className="px-3 py-2 font-mono text-xs">{r.providerName}</td>
-                    <td className="px-3 py-2">{r.priority}</td>
-                    <td className="px-3 py-2">{r.allowFallback ? 'yes' : 'no'}</td>
-                    <td className="max-w-xs px-3 py-2 text-slate-700">{purpose}</td>
-                    <td className="max-w-xs px-3 py-2 text-slate-700">{applies}</td>
+                  <tr key={r.id}>
+                    <td className="font-mono text-xs">{r.integrationType}</td>
+                    <td className="font-mono text-xs">{stepLabel}</td>
+                    <td className="font-mono text-xs">{r.providerName}</td>
+                    <td>{r.priority}</td>
+                    <td>{r.allowFallback ? 'yes' : 'no'}</td>
+                    <td className="max-w-xs">{purpose}</td>
+                    <td className="max-w-xs">{applies}</td>
                   </tr>
                 )
               })}
             </tbody>
           </table>
-        </div>
+        </BtCard>
       ) : null}
     </div>
   )

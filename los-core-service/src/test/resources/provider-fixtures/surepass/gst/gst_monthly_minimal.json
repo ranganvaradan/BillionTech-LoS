@@ -1,0 +1,45 @@
+﻿{
+  "_fixtureMeta": {
+    "dataOrigin": "USER_SUPPLIED_SAMPLE",
+    "sanitized": true,
+    "note": "Trimmed from TESTED_SUREPASS_GST_JSON_RESPONSE"
+  },
+  "success": true,
+  "status_code": 200,
+  "data": {
+    "doc_id": "gst_fixture_001",
+    "gstin": "29AAICB9639F1Z8",
+    "business_name": "SAMPLE TECH PVT LTD",
+    "profile": {
+      "gstin": "29AAICB9639F1Z8",
+      "legal_name": "SAMPLE TECH PVT LTD",
+      "status": "Active",
+      "pan": "AAICB9639F",
+      "constitution": "Private Limited"
+    },
+    "monthly_data": [
+      {
+        "period": "012024",
+        "label": "Jan 2024",
+        "financial_year": "2023-24",
+        "gstr1_revenue": 191159.32,
+        "gstr1_tax": 34408.68,
+        "gstr3b_liability": 191159.32,
+        "gstr3b_itc_claimed": 60057.0,
+        "is_quarterly": false
+      },
+      {
+        "period": "022024",
+        "label": "Feb 2024",
+        "financial_year": "2023-24",
+        "gstr1_revenue": 767048.04,
+        "gstr1_tax": 138068.64,
+        "gstr3b_liability": 767048.04,
+        "gstr3b_itc_claimed": 42057.0,
+        "is_quarterly": false
+      }
+    ],
+    "analysis_summary": { "annual_turnover_provider": 958207.36 },
+    "dashboard": { "customers": 12, "suppliers": 8 }
+  }
+}

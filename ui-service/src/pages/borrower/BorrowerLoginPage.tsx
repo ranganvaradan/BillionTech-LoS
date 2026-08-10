@@ -49,6 +49,10 @@ export function BorrowerLoginPage() {
         return
       }
       login(u)
+      if (u.passwordResetRequired) {
+        navigate('/borrower/change-password', { replace: true })
+        return
+      }
       navigate(from.startsWith('/borrower') ? from : '/borrower/dashboard', { replace: true })
     } catch (ex) {
       setErr(ex instanceof ApiError ? ex.message : 'Sign-in failed.')
@@ -75,7 +79,7 @@ export function BorrowerLoginPage() {
           <input
             type="email"
             required
-            className="mt-1 w-full rounded border border-slate-300 px-3 py-2 focus:border-bl-primary focus:outline-none focus:ring-1 focus:ring-bl-primary/30"
+            className="bt-input w-full"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             autoComplete="email"
@@ -86,7 +90,7 @@ export function BorrowerLoginPage() {
           <input
             type="password"
             required
-            className="mt-1 w-full rounded border border-slate-300 px-3 py-2 focus:border-bl-primary focus:outline-none focus:ring-1 focus:ring-bl-primary/30"
+            className="bt-input w-full"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             autoComplete="current-password"
@@ -95,7 +99,7 @@ export function BorrowerLoginPage() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded-md bg-bl-primary py-2 text-sm font-medium text-white shadow-sm hover:brightness-110 disabled:opacity-50"
+          className="bt-btn bt-btn-primary w-full justify-center disabled:opacity-50"
         >
           {loading ? 'Signing in…' : 'Sign in'}
         </button>

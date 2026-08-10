@@ -34,6 +34,10 @@ export function LoginPage() {
     try {
       const u = await postLogin(email.trim(), password)
       login(u)
+      if (u.passwordResetRequired) {
+        nav('/change-password', { replace: true })
+        return
+      }
       nav(pickDestAfterLogin(from, u.role), { replace: true })
     } catch (er) {
       if (er instanceof ApiError) {
@@ -71,7 +75,7 @@ export function LoginPage() {
           <span className="mb-0.5 block text-xs text-slate-500">Email</span>
           <input
             type="email"
-            className="w-full rounded-md border border-slate-300 px-3 py-2 focus:border-bl-primary focus:outline-none focus:ring-1 focus:ring-bl-primary/30"
+            className="bt-input w-full"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
@@ -82,7 +86,7 @@ export function LoginPage() {
           <span className="mb-0.5 block text-xs text-slate-500">Password</span>
           <input
             type="password"
-            className="w-full rounded-md border border-slate-300 px-3 py-2 focus:border-bl-primary focus:outline-none focus:ring-1 focus:ring-bl-primary/30"
+            className="bt-input w-full"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
@@ -92,7 +96,7 @@ export function LoginPage() {
         <button
           type="submit"
           disabled={busy}
-          className="w-full rounded-md bg-bl-primary py-2 text-sm font-medium text-white shadow-sm hover:brightness-110 disabled:opacity-50"
+          className="bt-btn bt-btn-primary w-full justify-center disabled:opacity-50"
         >
           {busy ? 'Signing in…' : 'Log in'}
         </button>

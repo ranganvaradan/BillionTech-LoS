@@ -19,8 +19,8 @@ function Card({
   children: ReactNode
 }) {
   return (
-    <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <h4 className="text-sm font-semibold text-slate-900">{title}</h4>
+    <section className="bt-section-card bt-section-card--default p-4 shadow-sm">
+      <h4 className="bt-card-title">{title}</h4>
       {subtitle ? <p className="mb-3 text-xs text-slate-500">{subtitle}</p> : <div className="mb-2" />}
       <div className="space-y-3">{children}</div>
     </section>
@@ -229,7 +229,7 @@ export function ManualCreditInputsSection({
     }
   }
 
-  const inputCls = 'w-full rounded border border-slate-300 px-2 py-1.5 text-sm'
+  const inputCls = 'bt-input w-full text-sm'
 
   return (
     <div
@@ -588,7 +588,7 @@ export function ManualCreditInputsSection({
         <div>
           <div className="text-xs font-medium text-slate-500">Notes for the file</div>
           <textarea
-            className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-sm"
+            className="mt-1 bt-input w-full text-sm"
             rows={3}
             value={creditRemarks}
             onChange={(e) => setCreditRemarks(e.target.value)}

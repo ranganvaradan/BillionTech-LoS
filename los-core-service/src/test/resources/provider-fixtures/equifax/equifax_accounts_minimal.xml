@@ -1,0 +1,33 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<!-- SYNTHETIC sanitized sample derived from EquifaxBureauAccountExtractorTest — not live production data -->
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+<soapenv:Body>
+<sch:InquiryResponse xmlns:sch="http://services.equifax.com/eport/ws/schemas/1.0">
+<sch:InquiryResponseHeader>
+  <sch:SuccessCode>1</sch:SuccessCode>
+  <sch:Date>22-10-2025</sch:Date>
+</sch:InquiryResponseHeader>
+<sch:Score><sch:Value>720</sch:Value></sch:Score>
+<sch:Account seq="1" ReportedDate="2025-10-15">
+  <sch:AccountNumber>1234567890</sch:AccountNumber>
+  <sch:Institution>TEST BANK</sch:Institution>
+  <sch:AccountType>Personal Loan</sch:AccountType>
+  <sch:OwnershipType>Individual</sch:OwnershipType>
+  <sch:Balance>15000</sch:Balance>
+  <sch:SanctionAmount>50000</sch:SanctionAmount>
+  <sch:HighCredit>50000</sch:HighCredit>
+  <sch:Open>Yes</sch:Open>
+  <sch:DateOpened>2022-12-20</sch:DateOpened>
+  <sch:DateReported>2025-10-15</sch:DateReported>
+  <sch:AccountStatus>Current Account</sch:AccountStatus>
+  <sch:InstallmentAmount>2500</sch:InstallmentAmount>
+  <sch:History48Months>
+    <sch:Month key="10-25">
+      <sch:PaymentStatus>000</sch:PaymentStatus>
+      <sch:DaysPastDue>0</sch:DaysPastDue>
+    </sch:Month>
+  </sch:History48Months>
+</sch:Account>
+</sch:InquiryResponse>
+</soapenv:Body>
+</soapenv:Envelope>

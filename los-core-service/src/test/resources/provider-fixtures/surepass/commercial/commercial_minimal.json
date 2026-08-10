@@ -1,0 +1,39 @@
+﻿{
+  "_fixtureMeta": { "dataOrigin": "USER_SUPPLIED_SAMPLE", "sanitized": true },
+  "success": true,
+  "status_code": 200,
+  "data": {
+    "client_id": "commercial_fixture_001",
+    "pan": "AAHCB0052H",
+    "business_name": "SAMPLE CO PVT LTD",
+    "credit_score": [{ "score_name": "ERS 4.0", "credit_score": "852" }],
+    "credit_report": {
+      "Status": "1",
+      "CommercialBureauResponseDetails": {
+        "IDAndContactInfo": {
+          "CommercialPersonalInfo": {
+            "BusinessName": "SAMPLE CO PVT LTD",
+            "BusinessLegalConstitution": "Private Limited",
+            "BusinessCategory": "Medium",
+            "IndustryType": "Financial Services",
+            "DateOfIncorporation": "2016-11-09",
+            "SalesFigure": "81000000",
+            "NumberOfEmployees": "50"
+          }
+        },
+        "CreditFacilityDetails": [
+          {
+            "AccountNumber": "CF001",
+            "AccountType": "Working Capital",
+            "CurrentBalance": "1000000",
+            "SanctionedAmount": "5000000",
+            "AssetClassification": "Standard"
+          }
+        ],
+        "RelationshipDetails": [
+          { "Name": "SAMPLE DIRECTOR", "Relationship": "Director" }
+        ]
+      }
+    }
+  }
+}

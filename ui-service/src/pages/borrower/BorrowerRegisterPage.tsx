@@ -114,7 +114,7 @@ export function BorrowerRegisterPage() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full rounded-md bg-bl-primary py-2 text-sm font-medium text-white shadow-sm hover:brightness-110 disabled:opacity-50"
+          className="bt-btn bt-btn-primary w-full justify-center disabled:opacity-50"
         >
           {loading ? 'Please wait…' : 'Register'}
         </button>

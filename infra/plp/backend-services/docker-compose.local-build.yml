@@ -1,0 +1,52 @@
+# Local dev: build from cloned repos (no private registry).
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.local-build.yml -f docker-compose.local-env.yml up -d --build
+
+services:
+  discovery-service:
+    build:
+      context: ../../../PLP/discovery-service
+      dockerfile: Dockerfile
+    image: plp-discovery:local
+
+  iam-service:
+    build:
+      context: ../../../PLP/iam-service
+      dockerfile: Dockerfile
+    image: plp-iam:local
+
+  program-service:
+    build:
+      context: ../../../PLP/program-service
+      dockerfile: Dockerfile
+    image: plp-program:local
+
+  lending-service:
+    build:
+      context: ../../../PLP/lending-service
+      dockerfile: Dockerfile
+    image: plp-lending:local
+
+  integration-service:
+    build:
+      context: ../../../PLP/integration-service
+      dockerfile: Dockerfile
+    image: plp-integration:local
+
+  notification-service:
+    build:
+      context: ../../../PLP/notification-service
+      dockerfile: Dockerfile
+    image: plp-notification:local
+
+  report-service:
+    build:
+      context: ../../../PLP/report-service
+      dockerfile: Dockerfile
+    image: plp-report:local
+
+  api-gateway:
+    build:
+      context: ../../../PLP/api-gateway
+      dockerfile: Dockerfile
+    image: plp-gateway:local

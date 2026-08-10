@@ -1,0 +1,20 @@
+%% Policy orchestration stages
+flowchart TB
+  S1[1 Data readiness] --> S2[2 Identity and KYC]
+  S2 --> S3[3 Fraud and sanctions]
+  S3 --> S4[4 Bureau]
+  S4 --> S5[5 Banking]
+  S5 --> S6[6 Tax]
+  S6 --> S7[7 Financial performance]
+  S7 --> S8[8 Obligations]
+  S8 --> S9[9 Working capital]
+  S9 --> S10[10 Collateral]
+  S10 --> S11[11 Scorecards]
+  S11 --> S12[12 Eligibility]
+  S12 --> S13[13 Limit sizing]
+  S13 --> S14[14 Pricing]
+  S14 --> S15[15 Covenants]
+  S15 --> S16[16 Recommendation]
+  S16 --> S17[17 Approval authority]
+  S4 -.->|parallel optional| S5
+  S6 -.->|parallel optional| S7

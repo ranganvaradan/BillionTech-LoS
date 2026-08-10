@@ -1,18 +1,16 @@
-@import "tailwindcss";
-
-@theme {
-  --color-bl-navy: #001529;
-  --color-bl-primary: #1890ff;
-  --color-bl-canvas: #f0f2f5;
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-}
+@import 'tailwindcss';
+@import './design-system/index.css';
+@import './design-system/tailwind-v4-bridge.css';
 
 @layer base {
   html {
-    @apply font-sans text-slate-800 antialiased;
+    @apply font-sans antialiased;
+    font-size: 13px;
   }
   body {
     @apply m-0 min-h-screen;
+    color: var(--bt-gray-700);
+    background: var(--bt-gray-50);
   }
   #root {
     @apply min-h-screen;

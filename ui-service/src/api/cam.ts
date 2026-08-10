@@ -27,8 +27,9 @@ export async function submitCam(applicationId: string): Promise<CamResponse> {
   return data
 }
 
-export async function sendBackCam(applicationId: string): Promise<CamResponse> {
-  const { data } = await http.post<CamResponse>(`/applications/${applicationId}/cam/send-back`, {})
+export async function sendBackCam(applicationId: string, notes?: string): Promise<CamResponse> {
+  const body = notes?.trim() ? { notes: notes.trim(), remarks: notes.trim() } : {}
+  const { data } = await http.post<CamResponse>(`/applications/${applicationId}/cam/send-back`, body)
   return data
 }
 

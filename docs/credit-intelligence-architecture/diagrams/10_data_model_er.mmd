@@ -1,0 +1,22 @@
+%% Entity relationship overview
+erDiagram
+  SOURCE_RECORD ||--o{ SOURCE_ARTIFACT : contains
+  SOURCE_RECORD }o--|| CONSENT : requires
+  ENTITY ||--o{ ENTITY_IDENTIFIER : has
+  ENTITY ||--o{ ENTITY_RELATIONSHIP : relates
+  UNDERWRITING_FACT }o--|| ENTITY : about
+  FACT_SNAPSHOT ||--o{ UNDERWRITING_FACT : freezes
+  FACT_SNAPSHOT ||--o{ METRIC_RESULT : inputs
+  FACT_SNAPSHOT ||--o{ RECONCILIATION_RESULT : inputs
+  POLICY_PACKAGE ||--o{ POLICY_VERSION : versions
+  POLICY_VERSION ||--o{ EVALUATION : evaluates
+  EVALUATION }o--|| FACT_SNAPSHOT : uses
+  EVALUATION ||--o{ EVALUATION_STAGE : has
+  EVALUATION_STAGE ||--o{ RULE_RESULT : produces
+  EVALUATION ||--|| RECOMMENDATION : yields
+  RECOMMENDATION ||--o{ DECISION : approved_as
+  AI_ANALYSIS_REQUEST ||--o{ AI_OUTPUT : returns
+  AI_OUTPUT ||--o| AI_OUTPUT_REVIEW : reviewed
+  AI_OUTPUT_REVIEW ||--o| UNDERWRITING_FACT : may_promote
+  MONITORING_CASE ||--o{ EARLY_WARNING_SIGNAL : raises
+  EVALUATION ||--o{ AUDIT_EVENT : correlates

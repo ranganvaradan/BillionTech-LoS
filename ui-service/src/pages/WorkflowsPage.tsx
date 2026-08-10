@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { listWorkflowEventTemplateMappings } from '@/api/workflowEventTemplateMappings'
 import {
   activateWorkflow,
   createWorkflow,
@@ -10,7 +11,17 @@ import {
 import { ErrorState } from '@/components/ErrorState'
 import { LoadingState } from '@/components/LoadingState'
 import { PageHeader } from '@/components/PageHeader'
+import { AdministrationWorkspaceNav } from '@/components/workspace/AdministrationWorkspaceNav'
+import {
+  DetailEmptyState,
+  DetailPanel,
+  DetailSection,
+  MasterDetailLayout,
+  MasterListItem,
+  MasterListPanel,
+} from '@/components/ui/AdminLayout'
 import { WorkflowStepEditorPanel } from '@/components/WorkflowStepEditorPanel'
+import { WorkflowIntakeRulesPanel } from '@/components/workflow/WorkflowIntakeRulesPanel'
 import {
   jsonToRows,
   rowsToJson,
@@ -21,17 +32,34 @@ import {
 import { ApiError } from '@/api/http'
 import { BORROWER_TYPE_LABELS, BORROWER_TYPE_ORDER } from '@/catalog/borrowerTypes'
 import { isLoanProductCode, LOAN_PRODUCT_CODES, LOAN_PRODUCT_LABELS, loanProductLabel } from '@/catalog/loanProducts'
+import {
+  DEFAULT_LMS_PRODUCT_CODE,
+  DEFAULT_LMS_TENURE_UNIT,
+  LMS_TENURE_UNIT_OPTIONS,
+  workflowUsesPlpLmsConfig,
+} from '@/catalog/lmsTenureUnits'
 import { formatInstant } from '@/lib/format'
+import {
+  deriveProcessNotificationsFromSteps,
+  parseProcessNotifications,
+  processNotificationsToJsonArray,
+  type ProcessNotificationConfig,
+} from '@/lib/workflowProcessNotifications'
 import {
   createEmptyVisualStep,
   parseWorkflowStepsFromJson,
   visualStepsToJsonArray,
   type VisualWorkflowStep,
 } from '@/lib/workflowVisual'
-import type { WorkflowConfigRequest, WorkflowConfigResponse } from '@/types/workflow'
+import { staticWorkflowEventTemplateMappings } from '@/lib/workflowEventTemplateMappingsFallback'
+import type { WorkflowEventTemplateMappingDto } from '@/api/workflowEventTemplateMappings'
+import type { WorkflowConfigRequest, WorkflowConfigResponse, WorkflowIntakeConfig, WorkflowIntakeSegment } from '@/types/workflow'
+import { defaultWorkflowDrivenIntakeConfig, intakeConfigFromApi } from '@/lib/workflow/workflowIntakeRules'
 import type { BorrowerType } from '@/types/createApplication'
 
 const BORROWER_TYPES: BorrowerType[] = [...BORROWER_TYPE_ORDER]
+
+type WorkflowDetailTab = 'general' | 'intake' | 'kyc' | 'advanced'
 
 export function WorkflowsPage() {
   const [list, setList] = useState<WorkflowConfigResponse[] | null>(null)
@@ -44,12 +72,26 @@ export function WorkflowsPage() {
   const [name, setName] = useState('')
   const [borrowerType, setBorrowerType] = useState<BorrowerType>('INDIVIDUAL')
   const [loanProduct, setLoanProduct] = useState('')
+  const [lmsProductCode, setLmsProductCode] = useState(DEFAULT_LMS_PRODUCT_CODE)
+  const [lmsTenureUnit, setLmsTenureUnit] = useState(DEFAULT_LMS_TENURE_UNIT)
+  const [intakeSegment, setIntakeSegment] = useState<WorkflowIntakeSegment>('BORROWER')
+  const [bureauEnabled, setBureauEnabled] = useState(true)
+  const [autoPullBureauAfterKycSuccess, setAutoPullBureauAfterKycSuccess] = useState(true)
+  const [intakeIdentitySchemaJson, setIntakeIdentitySchemaJson] = useState('[]')
+  const [intakeConfig, setIntakeConfig] = useState<WorkflowIntakeConfig>(() => defaultWorkflowDrivenIntakeConfig())
+  const [detailTab, setDetailTab] = useState<WorkflowDetailTab>('general')
   const [visualSteps, setVisualSteps] = useState<VisualWorkflowStep[]>([])
+  const [processNotifications, setProcessNotifications] = useState<ProcessNotificationConfig[]>([])
   const [stepsJson, setStepsJson] = useState('[]')
   const [workflowPosition, setWorkflowPosition] = useState('BEFORE_ESIGN')
   const [vkycConditionRows, setVkycConditionRows] = useState<VkycConditionRow[]>([])
   const [vkycTriggerConditionJson, setVkycTriggerConditionJson] = useState('[]')
   const [vkycConditionJsonError, setVkycConditionJsonError] = useState<string | null>(null)
+
+  /** Catalog for workflow notification template picker (proxied via los-core → notification-service). */
+  const [templateMappings, setTemplateMappings] = useState<WorkflowEventTemplateMappingDto[]>(() =>
+    staticWorkflowEventTemplateMappings(),
+  )
 
   const [actionError, setActionError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
@@ -57,6 +99,7 @@ export function WorkflowsPage() {
   const [toggling, setToggling] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [listSearch, setListSearch] = useState('')
 
   function messageForWorkflowDeleteError(e: unknown): string {
     if (e instanceof ApiError && e.reason === 'WORKFLOW_ACTIVE_DELETE_FORBIDDEN') {
@@ -88,6 +131,43 @@ export function WorkflowsPage() {
     void load()
   }, [load])
 
+  const filteredList = useMemo(() => {
+    const items = list ?? []
+    const q = listSearch.trim().toLowerCase()
+    if (!q) return items
+    return items.filter((w) => {
+      const borrowerLabel = (BORROWER_TYPE_LABELS[w.borrowerType as BorrowerType] ?? w.borrowerType).toLowerCase()
+      const productLabel = loanProductLabel(w.loanProduct).toLowerCase()
+      const segmentLabel = (w.intakeSegment === 'ANCHOR' ? 'anchor' : 'borrower').toLowerCase()
+      return (
+        w.name.toLowerCase().includes(q)
+        || w.borrowerType.toLowerCase().includes(q)
+        || borrowerLabel.includes(q)
+        || w.loanProduct.toLowerCase().includes(q)
+        || productLabel.includes(q)
+        || segmentLabel.includes(q)
+      )
+    })
+  }, [list, listSearch])
+
+  useEffect(() => {
+    let cancelled = false
+    async function hydrateTemplateCatalog(): Promise<void> {
+      try {
+        const rows = await listWorkflowEventTemplateMappings()
+        if (!cancelled && rows?.length) {
+          setTemplateMappings(rows)
+        }
+      } catch {
+        if (!cancelled) setTemplateMappings(staticWorkflowEventTemplateMappings())
+      }
+    }
+    void hydrateTemplateCatalog()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   function resetFormToNew() {
     setSuccessMessage(null)
     setSelected(null)
@@ -95,23 +175,43 @@ export function WorkflowsPage() {
     setName('New workflow')
     setBorrowerType('INDIVIDUAL')
     setLoanProduct('PERSONAL_LOAN')
+    setLmsProductCode(DEFAULT_LMS_PRODUCT_CODE)
+    setLmsTenureUnit(DEFAULT_LMS_TENURE_UNIT)
+    setIntakeSegment('BORROWER')
+    setBureauEnabled(true)
+    setAutoPullBureauAfterKycSuccess(true)
+    setIntakeIdentitySchemaJson('[]')
+    setIntakeConfig(defaultWorkflowDrivenIntakeConfig())
+    setDetailTab('general')
     setWorkflowPosition('BEFORE_ESIGN')
     setVkycConditionRows([])
     setVkycTriggerConditionJson('[]')
     setVkycConditionJsonError(null)
     const v = [createEmptyVisualStep()]
     setVisualSteps(v)
+    setProcessNotifications([])
     setStepsJson(JSON.stringify(visualStepsToJsonArray(v), null, 2))
     setActionError(null)
   }
 
-  function applySelection(w: WorkflowConfigResponse) {
+  function applySelection(
+    w: WorkflowConfigResponse,
+    options?: { preserveTab?: boolean; intakeFallback?: WorkflowIntakeConfig },
+  ) {
     setSuccessMessage(null)
     setSelected(w)
     setIsCreating(false)
     setName(w.name)
     setBorrowerType((w.borrowerType as BorrowerType) || 'INDIVIDUAL')
     setLoanProduct(w.loanProduct)
+    setLmsProductCode(w.lmsProductCode?.trim() || DEFAULT_LMS_PRODUCT_CODE)
+    setLmsTenureUnit(w.lmsTenureUnit?.trim() || DEFAULT_LMS_TENURE_UNIT)
+    setIntakeSegment(w.intakeSegment === 'ANCHOR' ? 'ANCHOR' : 'BORROWER')
+    setBureauEnabled(w.bureauEnabled !== false)
+    setAutoPullBureauAfterKycSuccess(w.autoPullBureauAfterKycSuccess !== false)
+    setIntakeIdentitySchemaJson(JSON.stringify(w.intakeIdentitySchema ?? [], null, 2))
+    setIntakeConfig(intakeConfigFromApi(w, options?.intakeFallback))
+    if (!options?.preserveTab) setDetailTab('general')
     setWorkflowPosition(w.workflowPosition ?? 'BEFORE_ESIGN')
     const existingConditions = (w.vkycTriggerCondition ?? []) as unknown
     setVkycConditionRows(jsonToRows(existingConditions))
@@ -123,6 +223,8 @@ export function WorkflowsPage() {
       : []
     const vis = parseWorkflowStepsFromJson(arr)
     setVisualSteps(vis)
+    const processRows = parseProcessNotifications(w.processNotificationMappings ?? [])
+    setProcessNotifications(processRows.length > 0 ? processRows : deriveProcessNotificationsFromSteps(vis))
     setStepsJson(JSON.stringify(visualStepsToJsonArray(vis), null, 2))
     setActionError(null)
   }
@@ -177,11 +279,32 @@ export function WorkflowsPage() {
         return
       }
     }
+    let intakeIdentitySchema: Record<string, unknown>[] | undefined
+    try {
+      const parsed = JSON.parse(intakeIdentitySchemaJson.trim() || '[]') as unknown
+      if (!Array.isArray(parsed)) {
+        setActionError('Anchor identity schema must be a JSON array of field objects (or [] for none).')
+        return
+      }
+      intakeIdentitySchema = parsed as Record<string, unknown>[]
+    } catch {
+      setActionError('Invalid anchor identity schema JSON.')
+      return
+    }
+
     const body: WorkflowConfigRequest = {
       name: name.trim() || 'Unnamed workflow',
       borrowerType,
       loanProduct: loanProduct.trim() || 'PERSONAL_LOAN',
+      lmsProductCode: workflowUsesPlpLmsConfig(loanProduct, intakeSegment) ? undefined : lmsProductCode.trim() || DEFAULT_LMS_PRODUCT_CODE,
+      lmsTenureUnit: workflowUsesPlpLmsConfig(loanProduct, intakeSegment) ? undefined : lmsTenureUnit.trim() || DEFAULT_LMS_TENURE_UNIT,
+      intakeSegment,
+      bureauEnabled,
+      autoPullBureauAfterKycSuccess,
+      intakeIdentitySchema,
+      intakeConfig: JSON.parse(JSON.stringify(intakeConfig)) as WorkflowIntakeConfig,
       steps,
+      processNotificationMappings: processNotificationsToJsonArray(processNotifications),
       vkycTriggerCondition: vkycConditions,
       workflowPosition,
     }
@@ -201,8 +324,12 @@ export function WorkflowsPage() {
       } else {
         if (!selected) return
         const updated = await updateWorkflow(selected.id, body)
-        setList((prev) => (prev ? prev.map((w) => (w.id === updated.id ? updated : w)) : [updated]))
-        applySelection(updated)
+        const merged: WorkflowConfigResponse = {
+          ...updated,
+          intakeConfig: intakeConfigFromApi(updated, body.intakeConfig),
+        }
+        setList((prev) => (prev ? prev.map((w) => (w.id === merged.id ? merged : w)) : [merged]))
+        applySelection(merged, { preserveTab: true, intakeFallback: body.intakeConfig })
       }
     } catch (e) {
       const m = e instanceof ApiError ? e.message : e instanceof Error ? e.message : 'Save failed'
@@ -291,9 +418,10 @@ export function WorkflowsPage() {
   return (
     <div>
       <PageHeader
-        title="Workflow configuration"
-        description="Create, edit, activate, and remove KYC and bureau step templates per borrower type and loan product."
+        title="Workflows"
+        description="Create, edit, activate, and remove KYC and bureau step templates per borrower type, loan product, and intake segment (borrower vs anchor invoice-discounting onboarding)."
       />
+      <AdministrationWorkspaceNav />
 
       {loading && <LoadingState label="Loading workflows…" />}
       {loadError && <ErrorState message={loadError} />}
@@ -302,75 +430,112 @@ export function WorkflowsPage() {
         <div>
           {successMessage ? (
             <p
-              className="mb-4 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900"
+              className="bt-alert bt-alert-success mb-4"
               role="status"
             >
               {successMessage}
             </p>
           ) : null}
-          <div className="grid gap-6 lg:grid-cols-2">
-            <div>
-              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-sm font-semibold text-slate-900">Workflows</h2>
-                <button
-                  type="button"
-                  onClick={resetFormToNew}
-                  className="rounded-md border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-800"
-                >
+          <MasterDetailLayout>
+            <MasterListPanel
+              title="Workflows"
+              count={filteredList.length}
+              search={listSearch}
+              onSearchChange={setListSearch}
+              searchPlaceholder="Search workflows…"
+              action={
+                <button type="button" onClick={resetFormToNew} className="bt-btn bt-btn-primary bt-btn-sm">
                   New workflow
                 </button>
-              </div>
-              {list.length === 0 && !isCreating ? (
-                <p className="text-sm text-slate-600">No workflows yet. Click &quot;New workflow&quot; to add one.</p>
-              ) : (
-                <ul className="divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
-                  {list.map((w) => (
-                    <li key={w.id}>
-                      <button
-                        type="button"
-                        onClick={() => applySelection(w)}
-                        className={[
-                          'w-full px-3 py-2.5 text-left text-sm transition-colors hover:bg-slate-50',
-                          selected?.id === w.id && !isCreating ? 'bg-slate-100' : '',
-                        ].join(' ')}
-                      >
-                        <div className="font-medium text-slate-900">{w.name}</div>
-                        <div className="text-xs text-slate-500">
-                          {BORROWER_TYPE_LABELS[w.borrowerType as BorrowerType] ?? w.borrowerType} ·{' '}
-                          {loanProductLabel(w.loanProduct)} · v{w.version}
-                          {w.active ? (
-                            <span className="ml-2 rounded bg-emerald-100 px-1.5 py-0.5 text-emerald-800">Active</span>
-                          ) : (
-                            <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-slate-600">Inactive</span>
-                          )}
-                        </div>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+              }
+              empty={
+                filteredList.length === 0 && !isCreating ? (
+                  <div className="bt-master-list-empty">
+                    {list.length === 0
+                      ? 'No workflows yet. Click "New workflow" to add one.'
+                      : 'No workflows match your search.'}
+                  </div>
+                ) : undefined
+              }
+            >
+              {filteredList.map((w) => (
+                <MasterListItem
+                  key={w.id}
+                  active={selected?.id === w.id && !isCreating}
+                  onClick={() => applySelection(w)}
+                  avatar={w.name}
+                  title={w.name}
+                  subtitle={`Version ${w.version}`}
+                  meta={
+                    w.active ? (
+                      <span className="bt-badge bt-badge-green">Active</span>
+                    ) : (
+                      <span className="bt-badge bt-badge-gray">Inactive</span>
+                    )
+                  }
+                  tags={
+                    <>
+                      <span className="bt-tag">
+                        {BORROWER_TYPE_LABELS[w.borrowerType as BorrowerType] ?? w.borrowerType}
+                      </span>
+                      <span className="bt-tag">{loanProductLabel(w.loanProduct)}</span>
+                      <span className="bt-tag">{w.intakeSegment === 'ANCHOR' ? 'Anchor' : 'Borrower'}</span>
+                    </>
+                  }
+                />
+              ))}
+            </MasterListPanel>
 
-            <div>
-              {showEditor ? (
-                <div className="space-y-3">
-                <h2 className="text-sm font-semibold text-slate-900">
-                  {isCreating ? 'New workflow' : 'Edit'}
-                </h2>
-                <p className="text-xs text-slate-500">
-                  New configs are <strong>inactive</strong> until you activate them. Only one active workflow applies per
-                  borrower type and loan product. Delete is allowed for <strong>inactive</strong> workflows only.
-                </p>
+            {showEditor ? (
+              <DetailPanel
+                title={isCreating ? 'New workflow' : name}
+                description="New configs are inactive until you activate them. Multiple active workflows are allowed for the same borrower type, loan product, and intake segment; applications use an explicit workflow binding when set, otherwise the highest version."
+                badge={
+                  !isCreating && selected ? (
+                    selected.active ? (
+                      <span className="bt-badge bt-badge-green">Active</span>
+                    ) : (
+                      <span className="bt-badge bt-badge-gray">Inactive</span>
+                    )
+                  ) : undefined
+                }
+              >
                 {actionError ? (
-                  <p className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900" role="alert">
+                  <p className="bt-alert bt-alert-warning mb-4" role="alert">
                     {actionError}
                   </p>
                 ) : null}
+                <div className="mb-4 flex flex-wrap gap-1 border-b border-slate-200 pb-2">
+                  {(
+                    [
+                      ['general', 'General'],
+                      ['intake', 'Intake rules'],
+                      ['kyc', 'KYC steps'],
+                      ['advanced', 'Advanced'],
+                    ] as const
+                  ).map(([id, label]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setDetailTab(id)}
+                      className={
+                        detailTab === id
+                          ? 'rounded-md bg-slate-800 px-3 py-1.5 text-sm font-medium text-white'
+                          : 'rounded-md border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50'
+                      }
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+
+                {detailTab === 'general' ? (
+                <DetailSection title="Configuration">
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="block text-sm text-slate-700 sm:col-span-2">
                     <span className="mb-1 block text-xs font-medium text-slate-500">Name</span>
                     <input
-                      className="w-full rounded-md border border-slate-300 px-3 py-2"
+                      className="bt-input w-full"
                       value={name}
                       onChange={(e) => setName(e.target.value)}
                     />
@@ -378,7 +543,7 @@ export function WorkflowsPage() {
                   <label className="block text-sm text-slate-700">
                     <span className="mb-1 block text-xs font-medium text-slate-500">Borrower type</span>
                     <select
-                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2"
+                      className="bt-input w-full"
                       value={borrowerType}
                       onChange={(e) => setBorrowerType(e.target.value as BorrowerType)}
                     >
@@ -392,7 +557,7 @@ export function WorkflowsPage() {
                   <label className="block text-sm text-slate-700">
                     <span className="mb-1 block text-xs font-medium text-slate-500">Loan product (code in API)</span>
                     <select
-                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2"
+                      className="bt-input w-full"
                       value={loanProduct}
                       onChange={(e) => setLoanProduct(e.target.value)}
                     >
@@ -407,10 +572,104 @@ export function WorkflowsPage() {
                     </select>
                     <p className="mt-0.5 text-xs text-slate-500">Applications and APIs store the code (e.g. PERSONAL_LOAN).</p>
                   </label>
+                  {!workflowUsesPlpLmsConfig(loanProduct, intakeSegment) ? (
+                    <>
+                      <label className="block text-sm text-slate-700">
+                        <span className="mb-1 block text-xs font-medium text-slate-500">LMS product code</span>
+                        <input
+                          className="bt-input w-full"
+                          value={lmsProductCode}
+                          onChange={(e) => setLmsProductCode(e.target.value)}
+                          placeholder="e.g. IPPOPAYM01"
+                        />
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          Encore product code sent on loan account creation (default for applications using this workflow).
+                        </p>
+                      </label>
+                      <label className="block text-sm text-slate-700">
+                        <span className="mb-1 block text-xs font-medium text-slate-500">LMS tenure type</span>
+                        <select
+                          className="bt-input w-full"
+                          value={lmsTenureUnit}
+                          onChange={(e) => setLmsTenureUnit(e.target.value)}
+                        >
+                          {LMS_TENURE_UNIT_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          Encore tenure unit (Day, Month, Week) paired with tenure magnitude at disbursement.
+                        </p>
+                      </label>
+                    </>
+                  ) : null}
+                  <label className="block text-sm text-slate-700">
+                    <span className="mb-1 block text-xs font-medium text-slate-500">Intake segment</span>
+                    <select
+                      className="bt-input w-full"
+                      value={intakeSegment}
+                      onChange={(e) => setIntakeSegment(e.target.value as WorkflowIntakeSegment)}
+                    >
+                      <option value="BORROWER">Borrower (default self-service / staff loan intake)</option>
+                      <option value="ANCHOR">Anchor (invoice discounting onboarding)</option>
+                    </select>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      Activating a row only competes with other configs that share the same segment for this borrower type
+                      and product.
+                    </p>
+                  </label>
+                </div>
+                </DetailSection>
+                ) : null}
+
+                {detailTab === 'intake' ? (
+                <DetailSection title="Intake rules">
+                  <WorkflowIntakeRulesPanel
+                    intakeConfig={intakeConfig}
+                    onChange={setIntakeConfig}
+                    bureauEnabled={bureauEnabled}
+                    autoPullBureauAfterKycSuccess={autoPullBureauAfterKycSuccess}
+                    onBureauEnabledChange={setBureauEnabled}
+                    onAutoPullBureauAfterKycSuccessChange={setAutoPullBureauAfterKycSuccess}
+                    visualSteps={visualSteps}
+                  />
+                </DetailSection>
+                ) : null}
+
+                {detailTab === 'kyc' ? (
+                <DetailSection title="KYC steps & notifications">
+                <WorkflowStepEditorPanel
+                  steps={visualSteps}
+                  onChange={setVisualSteps}
+                  templateMappings={templateMappings}
+                  processNotifications={processNotifications}
+                  onProcessNotificationsChange={setProcessNotifications}
+                  showIntakeOptions={intakeConfig.policy === 'WORKFLOW_DRIVEN'}
+                />
+                </DetailSection>
+                ) : null}
+
+                {detailTab === 'advanced' ? (
+                <>
+                <DetailSection title="Advanced configuration">
+                  <label className="block text-sm text-slate-700 sm:col-span-2">
+                    <span className="mb-1 block text-xs font-medium text-slate-500">
+                      Anchor identity schema (JSON array, optional)
+                    </span>
+                    <textarea
+                      className="min-h-[7rem] bt-input w-full font-mono text-xs"
+                      spellCheck={false}
+                      value={intakeIdentitySchemaJson}
+                      onChange={(e) => setIntakeIdentitySchemaJson(e.target.value)}
+                      placeholder='[{"key":"entityPan","label":"Entity PAN","required":true,"inputType":"text","maxLength":10}]'
+                    />
+                  </label>
                   <label className="block text-sm text-slate-700 sm:col-span-2">
                     <span className="mb-1 block text-xs font-medium text-slate-500">VKYC workflow position</span>
                     <select
-                      className="w-full rounded-md border border-slate-300 bg-white px-3 py-2"
+                      className="bt-input w-full max-w-md"
                       value={workflowPosition}
                       onChange={(e) => setWorkflowPosition(e.target.value)}
                     >
@@ -420,10 +679,9 @@ export function WorkflowsPage() {
                       <option value="CUSTOM">Custom (by step order)</option>
                     </select>
                   </label>
-                </div>
+                </DetailSection>
 
-                <WorkflowStepEditorPanel steps={visualSteps} onChange={setVisualSteps} />
-
+                <DetailSection title="Steps JSON">
                 <details
                   className="rounded border border-slate-200 bg-slate-50"
                   onToggle={(e) => {
@@ -441,7 +699,7 @@ export function WorkflowsPage() {
                       from the cards above. After editing, use &quot;Apply to visual editor&quot; before saving.
                     </p>
                     <textarea
-                      className="h-48 w-full rounded-md border border-slate-300 bg-white px-3 py-2 font-mono text-xs"
+                      className="h-48 bt-input w-full font-mono text-xs"
                       value={stepsJson}
                       onChange={(e) => setStepsJson(e.target.value)}
                       spellCheck={false}
@@ -464,11 +722,11 @@ export function WorkflowsPage() {
                     </div>
                   </div>
                 </details>
-                <div className="rounded border border-slate-200 bg-slate-50">
+                <div className="min-w-0 overflow-hidden rounded border border-slate-200 bg-slate-50">
                   <div className="border-b border-slate-200 px-3 py-2 text-sm font-medium text-slate-800">
                     VKYC trigger conditions
                   </div>
-                  <div className="space-y-2 p-3">
+                  <div className="min-w-0 space-y-2 p-3">
                     <p className="text-xs text-slate-500">
                       Define when VKYC must be triggered. Conditions are combined with AND. When empty,
                       VKYC runs for every application that reaches this position in the workflow.
@@ -503,7 +761,7 @@ export function WorkflowsPage() {
                           <code className="rounded bg-slate-100 px-1">{`[{"field":"...","operator":"...","value":...}]`}</code>.
                         </p>
                         <textarea
-                          className="h-28 w-full rounded-md border border-slate-300 bg-white px-3 py-2 font-mono text-xs"
+                          className="h-28 bt-input w-full font-mono text-xs"
                           value={vkycTriggerConditionJson}
                           onChange={(e) => {
                             setVkycTriggerConditionJson(e.target.value)
@@ -550,13 +808,16 @@ export function WorkflowsPage() {
                     </details>
                   </div>
                 </div>
+                </DetailSection>
+                </>
+                ) : null}
 
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 pt-2">
                   <button
                     type="button"
                     onClick={() => void onSave()}
                     disabled={saving}
-                    className="rounded-md bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+                    className="bt-btn bt-btn-primary disabled:opacity-50"
                   >
                     {saving ? 'Saving…' : isCreating ? 'Create' : 'Save changes'}
                   </button>
@@ -611,17 +872,24 @@ export function WorkflowsPage() {
                   <p className="text-xs text-amber-800">Deactivate this workflow before deleting it.</p>
                 ) : null}
                 {!isCreating && selected ? (
-                  <p className="text-xs text-slate-500">
+                  <p className="mt-3 text-xs text-slate-500">
                     Id: {selected.id} · version {selected.version} ·
                     {selected.createdAt ? ` created ${formatInstant(selected.createdAt)}` : ''}
                   </p>
                 ) : null}
-              </div>
+              </DetailPanel>
             ) : (
-              <p className="text-sm text-slate-600">Select a workflow to edit, or create a new one.</p>
+              <DetailEmptyState
+                title="Select a workflow"
+                description="Pick a workflow from the list to view or edit its configuration, or create a new one."
+                action={
+                  <button type="button" onClick={resetFormToNew} className="bt-btn bt-btn-primary">
+                    New workflow
+                  </button>
+                }
+              />
             )}
-            </div>
-          </div>
+          </MasterDetailLayout>
         </div>
       )}
 

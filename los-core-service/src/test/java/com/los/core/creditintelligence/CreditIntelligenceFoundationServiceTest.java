@@ -1,0 +1,108 @@
+package com.los.core.creditintelligence;
+
+import com.los.core.creditintelligence.config.CreditIntelligenceProperties;
+import com.los.core.creditintelligence.domain.CiFactSnapshot;
+import com.los.core.creditintelligence.domain.CiPolicyVersion;
+import com.los.core.creditintelligence.service.CreditIntelligenceFoundationService;
+import com.los.core.creditintelligence.service.PolicyVersionResolver;
+import com.los.core.creditintelligence.service.ShadowCreditEvaluationService;
+import com.los.core.creditintelligence.service.UnderwritingFactSnapshotBuilder;
+import com.los.core.model.entity.LoanApplication;
+import com.los.core.model.enums.BorrowerType;
+import com.los.core.service.credit.EffectiveUnderwritingContext;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.math.BigDecimal;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+@ExtendWith(MockitoExtension.class)
+class CreditIntelligenceFoundationServiceTest {
+
+    @Mock
+    private UnderwritingFactSnapshotBuilder snapshotBuilder;
+    @Mock
+    private PolicyVersionResolver policyVersionResolver;
+    @Mock
+    private ShadowCreditEvaluationService shadowCreditEvaluationService;
+    @Mock
+    private ExecutorService creditIntelligenceShadowExecutor;
+    @Mock
+    private com.los.core.creditintelligence.gst.service.GstIngestionService gstIngestionService;
+    @Mock
+    private com.los.core.creditintelligence.banking.service.BankingIngestionService bankingIngestionService;
+    @Mock
+    private com.los.core.creditintelligence.tax.service.TaxIngestionService taxIngestionService;
+    @Mock
+    private com.los.core.creditintelligence.policystudio.lifecycle.ShadowPolicyRoutingService shadowPolicyRoutingService;
+
+    private CreditIntelligenceProperties properties;
+    private CreditIntelligenceFoundationService service;
+
+    @BeforeEach
+    void setUp() {
+        properties = new CreditIntelligenceProperties();
+        service = new CreditIntelligenceFoundationService(
+                properties, snapshotBuilder, policyVersionResolver,
+                shadowCreditEvaluationService, creditIntelligenceShadowExecutor,
+                gstIngestionService, bankingIngestionService, taxIngestionService,
+                shadowPolicyRoutingService);
+    }
+
+    @Test
+    void disabledFoundationDoesNothing() {
+        properties.getFoundation().setEnabled(false);
+        LoanApplication app = LoanApplication.builder()
+                .id(UUID.randomUUID())
+                .borrowerType(BorrowerType.INDIVIDUAL)
+                .loanProduct("PL")
+                .build();
+        EffectiveUnderwritingContext ctx = new EffectiveUnderwritingContext(
+                700, true, null, null, null, null, "PROVIDER", "PROVIDER", "PROVIDER", Map.of());
+
+        Optional<CreditIntelligenceFoundationService.PrepResult> prep =
+                service.prepare(app, ctx, "PASS", "u1");
+
+        assertTrue(prep.isEmpty());
+        verify(snapshotBuilder, never()).buildAndFreeze(any(), any(), any(), any());
+    }
+
+    @Test
+    void enabledPrepareCallsBuilderAndPolicyResolver() {
+        properties.getFoundation().setEnabled(true);
+        LoanApplication app = LoanApplication.builder()
+                .id(UUID.randomUUID())
+                .borrowerType(BorrowerType.INDIVIDUAL)
+                .loanProduct("PL")
+                .build();
+        EffectiveUnderwritingContext ctx = new EffectiveUnderwritingContext(
+                700, true, new BigDecimal("50000"), null, null, null, "PROVIDER", "PROVIDER", "PROVIDER", Map.of());
+
+        CiFactSnapshot snap = CiFactSnapshot.builder().id(UUID.randomUUID()).build();
+        CiPolicyVersion pv = CiPolicyVersion.builder().id(UUID.randomUUID()).build();
+        when(snapshotBuilder.buildAndFreeze(eq(app), eq(ctx), eq("PASS"), eq("u1")))
+                .thenReturn(new UnderwritingFactSnapshotBuilder.FoundationPrep(snap, List.of()));
+        when(policyVersionResolver.resolveAndFreeze(app, "u1")).thenReturn(pv);
+
+        Optional<CreditIntelligenceFoundationService.PrepResult> prep =
+                service.prepare(app, ctx, "PASS", "u1");
+
+        assertTrue(prep.isPresent());
+        verify(snapshotBuilder).buildAndFreeze(app, ctx, "PASS", "u1");
+        verify(policyVersionResolver).resolveAndFreeze(app, "u1");
+    }
+}

@@ -2,7 +2,8 @@ import axios, { type AxiosError } from 'axios'
 import { loadSessionUser } from '@/auth/types'
 import { xHeadersForUser } from '@/auth/sessionHeaders'
 
-const baseURL = '/api/v1'
+const baseURL =
+  (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') || '/los/api/v1'
 
 export const http = axios.create({
   baseURL,

@@ -1,0 +1,28 @@
+%% Deployment sketch
+flowchart TB
+  subgraph Clients
+    UI[ui-service]
+  end
+  subgraph LOS_Cluster["BillionTechLOS"]
+    CORE[los-core-service]
+    NOTIF[notification-service]
+    DISC[discovery]
+  end
+  subgraph Data
+    PG[(PostgreSQL)]
+    OBJ[(Object store artifacts)]
+    BUS[Event bus]
+  end
+  subgraph AI_Cluster["AI-LOS"]
+    UW[underwriting service]
+    EWS[ews]
+    FE[ai frontend]
+  end
+  UI --> CORE
+  CORE --> PG
+  CORE --> OBJ
+  CORE --> BUS
+  CORE -->|m2m| UW
+  UW -->|callback| CORE
+  EWS -->|signals API| CORE
+  FE -.->|analyst optional| UW

@@ -1,0 +1,43 @@
+# Local URLs (override UAT billiontech.in values in docker-compose.yml).
+# Merged keys win over x-common-env for each service.
+
+services:
+  discovery-service:
+    environment:
+      PLP_PUBLIC_API_BASE_URL: http://localhost:8180
+      PLP_BORROWER_UI_URL: http://localhost:3300/plp-borrower
+      LOS_BORROWER_UI_URL: http://localhost:8080/los/borrower
+
+  iam-service:
+    environment:
+      PLP_PUBLIC_API_BASE_URL: http://localhost:8180
+      PLP_BORROWER_UI_URL: http://localhost:3300/plp-borrower
+      LOS_BORROWER_UI_URL: http://localhost:8080/los/borrower
+
+  program-service:
+    environment:
+      PLP_PUBLIC_API_BASE_URL: http://localhost:8180
+      PLP_BORROWER_UI_URL: http://localhost:3300/plp-borrower
+      LOS_BORROWER_UI_URL: http://localhost:8080/los/borrower
+
+  lending-service:
+    environment:
+      PLP_PUBLIC_API_BASE_URL: http://localhost:8180
+      PLP_BORROWER_UI_URL: http://localhost:3300/plp-borrower
+      LOS_BORROWER_UI_URL: http://localhost:8080/los/borrower
+
+  integration-service:
+    environment:
+      PLP_PUBLIC_API_BASE_URL: http://localhost:8180
+
+  notification-service:
+    environment:
+      PLP_PUBLIC_API_BASE_URL: http://localhost:8180
+
+  report-service:
+    environment:
+      PLP_PUBLIC_API_BASE_URL: http://localhost:8180
+
+  api-gateway:
+    environment:
+      PLP_PUBLIC_API_BASE_URL: http://localhost:8180

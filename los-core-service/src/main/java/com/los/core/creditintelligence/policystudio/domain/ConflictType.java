@@ -1,0 +1,14 @@
+package com.los.core.creditintelligence.policystudio.domain;
+
+public enum ConflictType {
+    DIRECT_CONFLICT,
+    OVERLAPPING_SCOPE,
+    UNREACHABLE_RULE,
+    REDUNDANT_RULE,
+    DUPLICATE_RULE,
+    CONTRADICTORY_EXCEPTION,
+    CONFLICTING_EXCEPTION,
+    CONFLICTING_MISSING_DATA_POLICY,
+    METRIC_DEFINITION_CONFLICT,
+    DUPLICATE
+}

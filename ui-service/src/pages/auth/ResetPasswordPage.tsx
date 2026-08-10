@@ -64,7 +64,7 @@ export function ResetPasswordPage() {
             <span className="mb-0.5 block text-xs text-slate-500">New password</span>
             <input
               type="password"
-              className="w-full rounded-md border border-slate-300 px-3 py-2"
+              className="bt-input w-full"
               value={pw}
               onChange={(e) => setPw(e.target.value)}
               minLength={8}
@@ -75,7 +75,7 @@ export function ResetPasswordPage() {
             <span className="mb-0.5 block text-xs text-slate-500">Confirm</span>
             <input
               type="password"
-              className="w-full rounded-md border border-slate-300 px-3 py-2"
+              className="bt-input w-full"
               value={pw2}
               onChange={(e) => setPw2(e.target.value)}
               minLength={8}
@@ -85,7 +85,7 @@ export function ResetPasswordPage() {
           <button
             type="submit"
             disabled={busy}
-            className="w-full rounded-md bg-slate-900 py-2 text-sm font-medium text-white disabled:opacity-50"
+            className="bt-btn bt-btn-primary w-full justify-center disabled:opacity-50"
           >
             {busy ? 'Saving…' : 'Update password'}
           </button>
