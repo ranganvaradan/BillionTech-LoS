@@ -1,6 +1,8 @@
 package com.los.core.creditintelligence.staging;
 
 import com.los.core.creditintelligence.config.CreditIntelligenceProperties;
+import com.los.core.creditintelligence.policystudio.catalogue.CatalogueCapabilityDraftService;
+import com.los.core.creditintelligence.policystudio.catalogue.CreditCapabilityCatalogueService;
 import com.los.core.creditintelligence.policystudio.domain.AmbiguityResolutionAction;
 import com.los.core.creditintelligence.policystudio.domain.CiPolicyClause;
 import com.los.core.creditintelligence.policystudio.domain.CiPolicyDocument;
@@ -51,6 +53,7 @@ public class StagingPolicyStudioDemoService {
     private final PolicyTextExtractionService textExtractionService;
     private final BusinessMeasureDesignerService measureDesigner;
     private final PolicyLifecycleService lifecycleService;
+    private final CatalogueCapabilityDraftService catalogueDraftService;
 
     /** documentId → meta used to rebuild prospect view after resolve/review */
     private final ConcurrentHashMap<UUID, Map<String, Object>> sessionMeta = new ConcurrentHashMap<>();
@@ -61,20 +64,24 @@ public class StagingPolicyStudioDemoService {
             PolicyStudioOrchestrator orchestrator,
             PolicyTextExtractionService textExtractionService,
             BusinessMeasureDesignerService measureDesigner,
-            PolicyLifecycleService lifecycleService) {
+            PolicyLifecycleService lifecycleService,
+            CatalogueCapabilityDraftService catalogueDraftService) {
         this.properties = properties;
         this.orchestrator = orchestrator;
         this.textExtractionService = textExtractionService;
         this.measureDesigner = measureDesigner != null ? measureDesigner : new BusinessMeasureDesignerService();
         this.lifecycleService = lifecycleService;
+        this.catalogueDraftService = catalogueDraftService != null
+                ? catalogueDraftService
+                : new CatalogueCapabilityDraftService(new CreditCapabilityCatalogueService(properties));
     }
 
-    /** Test / legacy convenience — Spring uses the @Autowired 5-arg constructor. */
+    /** Test / legacy convenience — Spring uses the @Autowired constructor. */
     public StagingPolicyStudioDemoService(
             CreditIntelligenceProperties properties,
             PolicyStudioOrchestrator orchestrator,
             PolicyTextExtractionService textExtractionService) {
-        this(properties, orchestrator, textExtractionService, new BusinessMeasureDesignerService(), null);
+        this(properties, orchestrator, textExtractionService, new BusinessMeasureDesignerService(), null, null);
     }
 
     public StagingPolicyStudioDemoService(
@@ -82,7 +89,7 @@ public class StagingPolicyStudioDemoService {
             PolicyStudioOrchestrator orchestrator,
             PolicyTextExtractionService textExtractionService,
             BusinessMeasureDesignerService measureDesigner) {
-        this(properties, orchestrator, textExtractionService, measureDesigner, null);
+        this(properties, orchestrator, textExtractionService, measureDesigner, null, null);
     }
 
     public Map<String, Object> landing() {
@@ -372,6 +379,15 @@ public class StagingPolicyStudioDemoService {
             if ("EDIT".equals(action) && body.get("threshold") != null) {
                 humanChanges.putIfAbsent("threshold", body.get("threshold"));
             }
+            // POLICY-UX-2C — catalogue-backed edit rewrites parameters + expression in place
+            if ("EDIT".equals(action)
+                    && (body.get("parameters") != null || body.get("failureTreatment") != null)
+                    && meta.get("businessCapabilityId") != null) {
+                Map<String, Object> catalogueEdit = new LinkedHashMap<>(body);
+                catalogueEdit.put("ruleId", ruleId.toString());
+                catalogueEdit.putIfAbsent("businessCapabilityId", meta.get("businessCapabilityId"));
+                catalogueDraftService.addOrUpdate(session, catalogueEdit);
+            }
         }
 
         var review = orchestrator.reviewService().review(
@@ -458,6 +474,31 @@ public class StagingPolicyStudioDemoService {
         view.put("message", rules.isEmpty()
                 ? "Clause stored for review — interpretation did not yet produce an executable rule."
                 : "Plain-English rule added — review before Accept.");
+        return view;
+    }
+
+    /**
+     * POLICY-UX-2C — add or update a catalogue capability as a draft rule (no new engine / tables).
+     */
+    public Map<String, Object> addCatalogueCapabilityRule(
+            UUID documentId, Map<String, Object> body, String tenantHeader) {
+        UUID tenantId = resolveTenant(tenantHeader);
+        PolicyStudioSession session = orchestrator.requireSession(documentId, tenantId);
+        CatalogueCapabilityDraftService.DraftMutation mutation =
+                catalogueDraftService.addOrUpdate(session, body == null ? Map.of() : body);
+        orchestrator.reviewService().invalidateCheckerApproval(session,
+                mutation.created() ? "catalogue-capability-add" : "catalogue-capability-edit");
+        orchestrator.persistence().saveSessionSnapshot(session);
+
+        Map<String, Object> view = sessionView(documentId, tenantHeader);
+        view.put("addedRuleId", mutation.rule().getId().toString());
+        view.put("created", mutation.created());
+        view.put("businessCapabilityId", mutation.rule().getMetadata() == null
+                ? null : mutation.rule().getMetadata().get("businessCapabilityId"));
+        view.put("message", mutation.created()
+                ? "Capability added to draft policy."
+                : "Capability parameters updated in draft.");
+        view.put("allowCanonicalAuthority", false);
         return view;
     }
 

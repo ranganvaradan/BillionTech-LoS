@@ -107,6 +107,39 @@ export async function getCreditCapabilityCatalogue(
   return data
 }
 
+export async function searchCreditCapabilities(
+  q: string,
+  advanced = false,
+): Promise<CreditCapabilityCatalogue & { matches?: Array<Record<string, unknown>>; matchCount?: number }> {
+  const { data } = await http.get(`${BASE}/policy-studio/capabilities/search`, {
+    params: { q, advanced },
+  })
+  return data
+}
+
+export type CatalogueCapabilityAddBody = {
+  businessCapabilityId: string
+  parameters?: Record<string, unknown>
+  failureTreatment?: string
+  dataRequirement?: string
+  useManualInput?: boolean
+  manualInputLabel?: string
+  manualInputType?: string
+  requiredActor?: string
+  ruleId?: string
+}
+
+export async function addCatalogueCapabilityRule(
+  documentId: string,
+  body: CatalogueCapabilityAddBody,
+): Promise<StagingPolicyStudio> {
+  const { data } = await http.post<StagingPolicyStudio>(
+    `${BASE}/policy-studio/documents/${encodeURIComponent(documentId)}/rules/add-catalogue-capability`,
+    body,
+  )
+  return data
+}
+
 export async function getStagingPolicyStudio(kind: 'banking' | 'bureau' | 'kyc'): Promise<StagingPolicyStudio> {
   const { data } = await http.get<StagingPolicyStudio>(`${BASE}/policy-studio/${kind}`)
   return data

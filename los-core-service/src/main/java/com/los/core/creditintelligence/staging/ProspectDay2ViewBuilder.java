@@ -570,15 +570,21 @@ final class ProspectDay2ViewBuilder {
         boolean kycDomain = "KYC".equalsIgnoreCase(decisionDomain) || "ELIGIBILITY".equalsIgnoreCase(decisionDomain);
         String businessTitle = meta.get("businessTitle") == null
                 ? friendlyRuleName(r.getSystemRuleId()) : String.valueOf(meta.get("businessTitle"));
+        boolean catalogueBacked = Boolean.TRUE.equals(meta.get("catalogueBacked"))
+                || Boolean.TRUE.equals(meta.get("existingCapability"))
+                || meta.get("businessCapabilityId") != null;
 
         Map<String, Object> card = new LinkedHashMap<>();
         card.put("id", r.getId() == null ? null : r.getId().toString());
         card.put("systemRuleId", r.getSystemRuleId());
-        card.put("ruleName", kycDomain ? businessTitle : friendlyRuleName(r.getSystemRuleId()));
+        card.put("ruleName", (kycDomain || catalogueBacked) ? businessTitle : friendlyRuleName(r.getSystemRuleId()));
         card.put("sourceClause", clause == null ? null : clause.getSourceText());
         card.put("section", clause == null ? null : clause.getSection());
         card.put("productScope", product);
-        card.put("businessRule", businessRuleText(r, meaning, product));
+        String businessRule = catalogueBacked && meta.get("businessSummary") != null
+                ? String.valueOf(meta.get("businessSummary"))
+                : businessRuleText(r, meaning, product);
+        card.put("businessRule", businessRule);
         card.put("period", friendlyPeriod(r.getPeriodSemantics(), interp));
         card.put("onMissing", friendlyMissing(
                 meta.get("outcomeOnMissing") != null ? String.valueOf(meta.get("outcomeOnMissing")) : r.getOnMissing()));
@@ -595,7 +601,12 @@ final class ProspectDay2ViewBuilder {
         card.put("blockedReason", blockedReason);
         card.put("dataUsed", dataUsed.stream().map(ProspectDay2ViewBuilder::friendlyMetric).toList());
         card.put("dataFamily", dataFamily(dataUsed));
-        card.put("businessGroup", businessGroup(decisionDomain, dataUsed, r.getSystemRuleId()));
+        String groupOverride = meta.get("businessCapabilityId") == null
+                ? null
+                : catalogueBusinessGroup(String.valueOf(meta.get("businessCapabilityId")));
+        card.put("businessGroup", groupOverride != null
+                ? groupOverride
+                : businessGroup(decisionDomain, dataUsed, r.getSystemRuleId()));
         card.put("disposition", meta.get("disposition"));
         card.put("excludedFromActivation", Boolean.TRUE.equals(meta.get("excludedFromActivation"))
                 || Boolean.TRUE.equals(meta.get("deleted")));
@@ -620,7 +631,42 @@ final class ProspectDay2ViewBuilder {
                 || requirementType.contains("MATCH")));
         card.put("manualReviewRequired", "MANUAL_VERIFICATION".equalsIgnoreCase(requirementType)
                 || "REFER".equalsIgnoreCase(String.valueOf(meta.get("outcomeOnFailure"))));
+        // POLICY-UX-2C catalogue fields for Credit Manager cards
+        card.put("businessCapabilityId", meta.get("businessCapabilityId"));
+        card.put("catalogueBacked", catalogueBacked);
+        card.put("existingCapability", catalogueBacked);
+        card.put("capabilityBadge", meta.get("capabilityBadge") != null
+                ? meta.get("capabilityBadge")
+                : (catalogueBacked
+                    ? (Boolean.TRUE.equals(meta.get("plainEnglishAdded")) || meta.get("source") == null
+                        ? "Existing capability · extracted from policy"
+                        : "MANUAL_CATALOGUE_ADD".equals(String.valueOf(meta.get("source")))
+                            ? "Existing capability · added manually"
+                            : "Existing capability")
+                    : null));
+        card.put("parameters", meta.get("parameters"));
+        card.put("failureTreatment", meta.get("failureTreatment"));
+        card.put("dataRequirement", meta.get("dataRequirement"));
+        card.put("dataSource", meta.get("dataSource"));
+        card.put("catalogueSource", meta.get("source"));
+        if ("MANUAL_CATALOGUE_ADD".equals(String.valueOf(meta.getOrDefault("source", "")))) {
+            card.put("sourceLabel", "Added by Credit Manager");
+        }
         return card;
+    }
+
+    private static String catalogueBusinessGroup(String capabilityId) {
+        if (capabilityId == null) return null;
+        if (capabilityId.startsWith("BUREAU.")) return "Bureau";
+        if (capabilityId.startsWith("BANK.")) return "Banking";
+        if (capabilityId.startsWith("FIN.")) return "Financial / Income";
+        if (capabilityId.startsWith("GST.")) return "GST / Business";
+        if (capabilityId.startsWith("KYC.") || capabilityId.startsWith("ELIG.")) return "KYC & Eligibility";
+        if (capabilityId.startsWith("COLL.")) return "Collateral";
+        if (capabilityId.startsWith("RISK.")) return "Risk / Exceptions";
+        if (capabilityId.startsWith("LIMIT.") || capabilityId.startsWith("PRICE.")) return "Limit & Pricing";
+        if (capabilityId.startsWith("DEC.")) return "Decision / Review";
+        return null;
     }
 
     private static String ruleStatus(CiPolicyRuleCandidate r, String blockedReason) {

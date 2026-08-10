@@ -164,6 +164,8 @@ export function CiPolicyRulesTab({
   onSaveDraft,
   onActivationCheck,
   onAddPlainEnglishRule,
+  onCatalogueChanged,
+  documentId,
   prospectDemoMode = false,
 }: {
   cards: unknown[]
@@ -173,6 +175,8 @@ export function CiPolicyRulesTab({
   onSaveDraft?: () => void
   onActivationCheck?: () => void
   onAddPlainEnglishRule?: (group: string, text: string) => Promise<void>
+  onCatalogueChanged?: (session?: unknown) => void
+  documentId?: string | null
   prospectDemoMode?: boolean
 }) {
   const [clauseOpen, setClauseOpen] = useState<Record<string, boolean>>({})
@@ -188,6 +192,12 @@ export function CiPolicyRulesTab({
   const [addText, setAddText] = useState<Record<string, string>>({})
   const [undoStack, setUndoStack] = useState<{ id: string; prev: Record<string, unknown> }[]>([])
   const [catalogueOpen, setCatalogueOpen] = useState(false)
+  const [catalogueEdit, setCatalogueEdit] = useState<{
+    ruleId: string
+    businessCapabilityId: string
+    parameters?: Record<string, unknown>
+    failureTreatment?: string
+  } | null>(null)
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -299,12 +309,29 @@ export function CiPolicyRulesTab({
         <button
           type="button"
           className="bt-btn bt-btn-secondary bt-btn-sm"
-          onClick={() => setCatalogueOpen((v) => !v)}
+          onClick={() => {
+            setCatalogueEdit(null)
+            setCatalogueOpen((v) => !v)
+          }}
         >
           {catalogueOpen ? 'Hide capability catalogue' : 'Browse / Add Rule'}
         </button>
       </div>
-      <CiCapabilityCataloguePanel open={catalogueOpen} onClose={() => setCatalogueOpen(false)} />
+      <CiCapabilityCataloguePanel
+        open={catalogueOpen}
+        onClose={() => {
+          setCatalogueOpen(false)
+          setCatalogueEdit(null)
+        }}
+        documentId={documentId}
+        busy={busy}
+        editCapability={catalogueEdit}
+        onAdded={(session) => {
+          setCatalogueOpen(false)
+          setCatalogueEdit(null)
+          onCatalogueChanged?.(session)
+        }}
+      />
 
       <div className="flex flex-wrap items-center gap-2">
         {(
@@ -413,12 +440,23 @@ export function CiPolicyRulesTab({
                             <span className="rounded-full bg-slate-100 px-2 py-0.5">
                               {decisionPolicyDomainLabel(r.decisionDomain)}
                             </span>
+                            {r.capabilityBadge || r.existingCapability || r.catalogueBacked ? (
+                              <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-900">
+                                {String(r.capabilityBadge ?? 'Existing capability')}
+                              </span>
+                            ) : null}
+                            {r.sourceLabel ? (
+                              <span className="rounded-full bg-slate-50 px-2 py-0.5 text-slate-700">
+                                {String(r.sourceLabel)}
+                              </span>
+                            ) : null}
                             {r.kycRequirementType ? (
                               <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-indigo-900">
                                 {kycRequirementTypeLabel(r.kycRequirementType)}
                               </span>
                             ) : null}
-                            {Boolean(r.manualReviewRequired) ? (
+                            {Boolean(r.manualReviewRequired) ||
+                            String(r.failureTreatment ?? '').toUpperCase() === 'MANUAL_REVIEW' ? (
                               <span className="rounded-full bg-violet-100 px-2 py-0.5 font-semibold text-violet-950">
                                 Manual review
                               </span>
@@ -487,6 +525,16 @@ export function CiPolicyRulesTab({
                             disabled={busy || Boolean(r.platformGuardrail)}
                             className="bt-btn bt-btn-secondary bt-btn-sm"
                             onClick={() => {
+                              if (r.businessCapabilityId) {
+                                setCatalogueEdit({
+                                  ruleId: id,
+                                  businessCapabilityId: String(r.businessCapabilityId),
+                                  parameters: asRecord(r.parameters),
+                                  failureTreatment: String(r.failureTreatment ?? 'REJECT'),
+                                })
+                                setCatalogueOpen(true)
+                                return
+                              }
                               setEditOpen((p) => ({ ...p, [id]: !p[id] }))
                               setEditDraft((p) => ({
                                 ...p,

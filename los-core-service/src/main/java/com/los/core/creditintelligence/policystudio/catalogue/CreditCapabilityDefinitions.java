@@ -43,8 +43,10 @@ final class CreditCapabilityDefinitions {
     private static List<BusinessCapability> eligibility() {
         return List.of(
                 BusinessCapability.builder("ELIG.MIN_BUREAU_SCORE")
-                        .name("Minimum bureau score (eligibility)")
-                        .description("Applicant bureau score must meet the product minimum.")
+                        .name("Eligibility bureau gate (product ruleset)")
+                        .description("Product-level eligibility gate for minimum bureau score (UnderwritingRuleEngine "
+                                + "minBureauScore). Prefer BUREAU.MIN_SCORE for Credit Manager authoring of the same "
+                                + "business threshold — this ID is kept for production binding fidelity.")
                         .domain(CapabilityDomain.ELIGIBILITY)
                         .fact("BUREAU_SCORE / bureau.score")
                         .dataSource("Credit Bureau")
@@ -555,13 +557,51 @@ final class CreditCapabilityDefinitions {
         return new ImplementationBinding(id, kind, engine, ref, null, prod);
     }
 
+    /** Capabilities shown only when advanced=true (alias / specialized production bindings). */
+    static boolean primaryCatalogueVisible(String businessCapabilityId) {
+        return !"ELIG.MIN_BUREAU_SCORE".equals(businessCapabilityId);
+    }
+
+    /** Search aliases (business language → capability ids). */
+    static Map<String, List<String>> searchAliases() {
+        Map<String, List<String>> m = new LinkedHashMap<>();
+        m.put("cibil", List.of("BUREAU.MIN_SCORE"));
+        m.put("bureau score", List.of("BUREAU.MIN_SCORE"));
+        m.put("bounce", List.of("BANK.CHEQUE_BOUNCE_MAX"));
+        m.put("cheque", List.of("BANK.CHEQUE_BOUNCE_MAX"));
+        m.put("foir", List.of("FIN.FOIR_MAX"));
+        m.put("obligation", List.of("FIN.FOIR_MAX"));
+        m.put("dscr", List.of("FIN.DSCR_MIN"));
+        m.put("gst", List.of("GST.TURNOVER_MIN", "BANK.TURNOVER_PCT_GST_MIN"));
+        m.put("turnover", List.of("GST.TURNOVER_MIN", "BANK.TURNOVER_PCT_GST_MIN"));
+        m.put("vintage", List.of("ELIG.BUSINESS_VINTAGE_MIN"));
+        m.put("ticket", List.of("LIMIT.ABS_CAP", "ELIG.MAX_REQUESTED_AMOUNT"));
+        m.put("cap", List.of("LIMIT.ABS_CAP"));
+        m.put("kyc", List.of("ELIG.REQUIRE_KYC_PASS", "KYC.PAN_VERIFIED", "KYC.GSTIN_VERIFIED"));
+        return m;
+    }
+
+    /** Common capabilities surfaced first in Browse / Add Rule. */
+    static List<String> commonCapabilityIds() {
+        return List.of(
+                "BUREAU.MIN_SCORE",
+                "FIN.FOIR_MAX",
+                "ELIG.BUSINESS_VINTAGE_MIN",
+                "BANK.CHEQUE_BOUNCE_MAX",
+                "BANK.TURNOVER_PCT_GST_MIN",
+                "FIN.DSCR_MIN",
+                "LIMIT.ABS_CAP");
+    }
+
     /** Normalization notes exposed in advanced catalogue payload. */
     static List<Map<String, Object>> normalizationNotes() {
         List<Map<String, Object>> notes = new ArrayList<>();
         notes.add(note("BUREAU.MIN_SCORE",
                 "Normalized across hardRules (BUREAU_SCORE), scorecard rows, golden BUREAU_SCORE_OR_NTC_OR_GTE_650, "
-                        + "and registry bureau.score. Golden template always emits 650+NTC/-1 — parameter editing "
-                        + "is POLICY-UX-2C; do not assume golden parses arbitrary thresholds."));
+                        + "and registry bureau.score. Preferred Credit Manager capability for bureau score thresholds."));
+        notes.add(note("ELIG.MIN_BUREAU_SCORE",
+                "Related production eligibility ruleset binding (minBureauScore). Hidden from primary catalogue; "
+                        + "shown under Advanced. Prefer BUREAU.MIN_SCORE for authoring — IDs not merged."));
         notes.add(note("BANK.CHEQUE_BOUNCE_MAX",
                 "Normalized across CHEQUE_BOUNCES_3M/12M (production), banking.cheque_return_count_* (canonical), "
                         + "and CreditRules bounceCount6Months. Studio inward_return golden is a RELATED but DISTINCT "
@@ -572,8 +612,8 @@ final class CreditCapabilityDefinitions {
         notes.add(note("GST.TURNOVER_MIN",
                 "Normalized across ANNUAL_GST_TURNOVER hardRule and CanonicalGst GST_TURNOVER_ELIGIBILITY."));
         notes.add(note("ELIG.BUSINESS_VINTAGE_MIN",
-                "Production uses businessStability in YEARS. Months (e.g. 24) require unit conversion in UX-2C — "
-                        + "not auto-converted here."));
+                "Production uses businessStability in YEARS. MONTHS unit is accepted in UX-2C and converted to years "
+                        + "in the draft expression (e.g. 24 months → 2.0 years)."));
         notes.add(note("LIMIT.ABS_CAP / ELIG.MAX_REQUESTED_AMOUNT",
                 "Related: absolute SCF cap vs product maxLoanAmount. Kept as separate IDs; both amount caps."));
         notes.add(note("ELIG.REQUIRE_KYC_PASS",

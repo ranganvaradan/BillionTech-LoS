@@ -324,6 +324,16 @@ export function CiPolicyStudioPage() {
     }
   }
 
+  const applyCatalogueSession = (data?: unknown) => {
+    if (data && typeof data === 'object') {
+      setSession(data as typeof session)
+      setDirty(true)
+      setDraftMsg(
+        String(asRecord(data).message ?? 'Capability saved in draft — use Save Draft anytime.'),
+      )
+    }
+  }
+
   const header = asRecord(session?.policyHeader)
   const counts = asRecord(session?.counts)
   const cards = asList(session?.summaryCards)
@@ -994,6 +1004,8 @@ export function CiPolicyStudioPage() {
           onSaveDraft={() => void saveDraft()}
           onActivationCheck={() => setTab('lifecycle')}
           onAddPlainEnglishRule={addPlainEnglishRule}
+          onCatalogueChanged={applyCatalogueSession}
+          documentId={documentId}
           prospectDemoMode={prospectDemoMode}
         />
       ) : null}

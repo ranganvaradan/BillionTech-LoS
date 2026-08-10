@@ -153,6 +153,24 @@ public class StagingDemoController {
         return creditCapabilityCatalogueService.mapProductionFixtureSample();
     }
 
+    @GetMapping("/policy-studio/capabilities/search")
+    public Map<String, Object> searchCapabilities(
+            @RequestHeader(value = "X-Internal-Token", required = false) String token,
+            @RequestParam(value = "q", required = false) String q,
+            @RequestParam(value = "advanced", required = false, defaultValue = "false") boolean advanced) {
+        assertInternalToken(token);
+        assertStagingDemoEnabled();
+        return creditCapabilityCatalogueService.search(q, advanced);
+    }
+
+    @GetMapping("/policy-studio/capabilities/scf-representability")
+    public Map<String, Object> scfRepresentability(
+            @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        assertInternalToken(token);
+        assertStagingDemoEnabled();
+        return creditCapabilityCatalogueService.scfRepresentability();
+    }
+
     @GetMapping("/policy-studio/{kind}")
     public Map<String, Object> policyStudio(
             @PathVariable String kind,
@@ -342,6 +360,29 @@ public class StagingDemoController {
             log.warn("staging-demo add plain-english rule failed reason={}", e.getClass().getSimpleName());
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "We could not add this rule. Please try again.");
+        }
+    }
+
+    /**
+     * POLICY-UX-2C — add/edit a catalogue capability into the current draft (business parameters, no DSL UX).
+     */
+    @PostMapping("/policy-studio/documents/{documentId}/rules/add-catalogue-capability")
+    public Map<String, Object> addCatalogueCapabilityRule(
+            @PathVariable UUID documentId,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token,
+            @RequestHeader(value = "X-Tenant-Id", required = false) String tenantHeader,
+            @RequestBody Map<String, Object> body) {
+        assertInternalToken(token);
+        assertStagingDemoEnabled();
+        try {
+            return policyStudioDemoService.addCatalogueCapabilityRule(
+                    documentId, body == null ? Map.of() : body, tenantHeader);
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
+            log.warn("staging-demo add catalogue capability failed reason={}", e.getClass().getSimpleName());
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "We could not add this capability to the draft. Please check parameters and try again.");
         }
     }
 

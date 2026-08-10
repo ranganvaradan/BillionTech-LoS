@@ -7,12 +7,13 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
 /**
- * POLICY-UX-2A — universal credit capability catalogue read model.
+ * POLICY-UX-2A/2C — universal credit capability catalogue read model.
  * Does not alter production underwriting configuration or authority.
  */
 @Service
@@ -48,28 +49,45 @@ public class CreditCapabilityCatalogueService {
     /**
      * Credit Manager facing catalogue payload.
      *
-     * @param advanced when true, include engine/class binding details and normalization notes
+     * @param advanced when true, include engine/class binding details, alias capabilities, normalization notes
      */
     public Map<String, Object> catalogueView(boolean advanced) {
+        List<BusinessCapability> visible = capabilities.stream()
+                .filter(c -> advanced || CreditCapabilityDefinitions.primaryCatalogueVisible(c.businessCapabilityId()))
+                .toList();
+
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("title", "Credit capability catalogue");
         out.put("purpose", "Normalized underwriting capabilities for Policy Studio — read model only");
         out.put("allowCanonicalAuthority", allowCanonicalAuthority());
         out.put("productionAuthority", "DISABLED");
-        out.put("capabilityCount", capabilities.size());
+        out.put("capabilityCount", visible.size());
+        out.put("totalCapabilityCount", capabilities.size());
 
         Map<String, List<Map<String, Object>>> groups = new LinkedHashMap<>();
         for (CapabilityDomain domain : CapabilityDomain.values()) {
-            List<Map<String, Object>> items = capabilities.stream()
+            List<Map<String, Object>> items = visible.stream()
                     .filter(c -> c.domain() == domain)
-                    .map(c -> c.toBusinessView(advanced))
+                    .map(c -> enrichView(c, advanced))
                     .toList();
             if (!items.isEmpty()) {
                 groups.put(domain.displayName(), items);
             }
         }
         out.put("groups", groups);
-        out.put("capabilities", capabilities.stream().map(c -> c.toBusinessView(advanced)).toList());
+        out.put("capabilities", visible.stream().map(c -> enrichView(c, advanced)).toList());
+
+        List<Map<String, Object>> common = new ArrayList<>();
+        for (String id : CreditCapabilityDefinitions.commonCapabilityIds()) {
+            findById(id).ifPresent(c -> common.add(enrichView(c, advanced)));
+        }
+        out.put("commonCapabilities", common);
+        out.put("searchAliases", CreditCapabilityDefinitions.searchAliases());
+        out.put("bureauDuplicateResolution", Map.of(
+                "preferredCapabilityId", "BUREAU.MIN_SCORE",
+                "advancedAliasCapabilityId", "ELIG.MIN_BUREAU_SCORE",
+                "note", "Prefer Minimum Bureau Score (BUREAU.MIN_SCORE). Eligibility bureau gate is an advanced "
+                        + "production-ruleset binding — IDs are not merged."));
 
         if (advanced) {
             out.put("normalizationNotes", CreditCapabilityDefinitions.normalizationNotes());
@@ -77,6 +95,43 @@ public class CreditCapabilityCatalogueService {
                     ProductionUnderwritingCapabilityAdapter.mapHardRules(
                             ProductionUnderwritingCapabilityAdapter.scfFixtureHardRules()));
         }
+        return out;
+    }
+
+    public Map<String, Object> search(String query, boolean advanced) {
+        String q = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
+        Map<String, Object> view = catalogueView(advanced);
+        if (q.isBlank()) {
+            return view;
+        }
+        Set<String> aliasHits = new LinkedHashSet<>();
+        for (Map.Entry<String, List<String>> e : CreditCapabilityDefinitions.searchAliases().entrySet()) {
+            if (e.getKey().contains(q) || q.contains(e.getKey())) {
+                aliasHits.addAll(e.getValue());
+            }
+        }
+        List<Map<String, Object>> matched = new ArrayList<>();
+        for (BusinessCapability c : capabilities) {
+            if (!advanced && !CreditCapabilityDefinitions.primaryCatalogueVisible(c.businessCapabilityId())) {
+                continue;
+            }
+            String hay = (c.businessCapabilityId() + " " + c.businessName() + " " + c.description() + " "
+                    + c.factOrMeasure() + " " + c.dataSource()).toLowerCase(Locale.ROOT);
+            if (hay.contains(q) || aliasHits.contains(c.businessCapabilityId())) {
+                matched.add(enrichView(c, advanced));
+            }
+        }
+        Map<String, Object> out = new LinkedHashMap<>(view);
+        out.put("query", query);
+        out.put("matchCount", matched.size());
+        out.put("matches", matched);
+        Map<String, List<Map<String, Object>>> groups = new LinkedHashMap<>();
+        for (Map<String, Object> item : matched) {
+            String label = String.valueOf(item.getOrDefault("domainLabel", "Other"));
+            groups.computeIfAbsent(label, k -> new ArrayList<>()).add(item);
+        }
+        out.put("groups", groups);
+        out.put("capabilityCount", matched.size());
         return out;
     }
 
@@ -105,6 +160,63 @@ public class CreditCapabilityCatalogueService {
         out.put("matchedCount", matched);
         out.put("totalCount", rows.size());
         return out;
+    }
+
+    /** SCF walkthrough representability check for UX-2C. */
+    public Map<String, Object> scfRepresentability() {
+        List<String> required = List.of(
+                "BUREAU.MIN_SCORE",
+                "BUREAU.LIVE_UNSECURED_MAX",
+                "BUREAU.ENQUIRIES_MAX",
+                "BANK.CHEQUE_BOUNCE_MAX",
+                "BANK.TURNOVER_PCT_GST_MIN",
+                "BANK.CC_UTIL_MAX",
+                "GST.TURNOVER_MIN",
+                "ELIG.BUSINESS_VINTAGE_MIN",
+                "FIN.DSCR_MIN",
+                "FIN.INTEREST_COVERAGE_MIN",
+                "FIN.DEBT_EQUITY_MAX",
+                "FIN.TOL_TNW_MAX",
+                "LIMIT.ABS_CAP");
+        List<Map<String, Object>> rows = new ArrayList<>();
+        List<String> missing = new ArrayList<>();
+        for (String id : required) {
+            Optional<BusinessCapability> cap = findById(id);
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("businessCapabilityId", id);
+            if (cap.isEmpty()) {
+                row.put("representable", false);
+                missing.add(id);
+            } else {
+                row.put("representable", true);
+                row.put("businessName", cap.get().businessName());
+                row.put("parameters", cap.get().parameterDefinitions().stream()
+                        .map(ParameterDefinition::name).toList());
+            }
+            rows.add(row);
+        }
+        // Cheque bounce needs both 3M and 12M via same capability + windowMonths param
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("title", "SCF catalogue representability");
+        out.put("representableCount", required.size() - missing.size());
+        out.put("requiredCount", required.size());
+        out.put("missing", missing);
+        out.put("note", "BANK.CHEQUE_BOUNCE_MAX covers both 3M=0 and 12M<=6 via windowMonths + maximumCount");
+        out.put("items", rows);
+        out.put("allowCanonicalAuthority", allowCanonicalAuthority());
+        return out;
+    }
+
+    private Map<String, Object> enrichView(BusinessCapability c, boolean advanced) {
+        Map<String, Object> view = new LinkedHashMap<>(c.toBusinessView(advanced));
+        view.put("primaryCatalogue", CreditCapabilityDefinitions.primaryCatalogueVisible(c.businessCapabilityId()));
+        if ("ELIG.MIN_BUREAU_SCORE".equals(c.businessCapabilityId())) {
+            view.put("aliasOf", "BUREAU.MIN_SCORE");
+            view.put("catalogueVisibility", "ADVANCED");
+        } else {
+            view.put("catalogueVisibility", "PRIMARY");
+        }
+        return view;
     }
 
     private boolean allowCanonicalAuthority() {

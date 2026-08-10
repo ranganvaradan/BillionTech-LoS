@@ -118,7 +118,10 @@ class CreditCapabilityCatalogueServiceTest {
         assertThat(groups).containsKeys("Bureau", "Banking", "Financial", "Eligibility", "KYC");
         assertThat(groups).doesNotContainKey("");
         assertThat(((List<?>) groups.get("Bureau"))).isNotEmpty();
-        assertThat(view.get("capabilityCount")).isEqualTo(service.listCapabilities().size());
+        // Primary catalogue hides advanced aliases (e.g. ELIG.MIN_BUREAU_SCORE)
+        assertThat(((Number) view.get("capabilityCount")).intValue())
+                .isLessThanOrEqualTo(service.listCapabilities().size());
+        assertThat(view.get("totalCapabilityCount")).isEqualTo(service.listCapabilities().size());
     }
 
     @Test
