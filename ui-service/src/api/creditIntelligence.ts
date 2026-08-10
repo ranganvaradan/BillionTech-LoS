@@ -90,6 +90,23 @@ export async function getPolicyStudioLanding(): Promise<PolicyStudioLanding> {
   return data
 }
 
+/** POLICY-UX-2A — universal credit capability catalogue (read model). */
+export type CreditCapabilityCatalogue = Record<string, unknown> & {
+  title?: string
+  capabilityCount?: number
+  groups?: Record<string, Array<Record<string, unknown>>>
+  allowCanonicalAuthority?: boolean
+}
+
+export async function getCreditCapabilityCatalogue(
+  advanced = false,
+): Promise<CreditCapabilityCatalogue> {
+  const { data } = await http.get<CreditCapabilityCatalogue>(`${BASE}/policy-studio/capabilities`, {
+    params: { advanced },
+  })
+  return data
+}
+
 export async function getStagingPolicyStudio(kind: 'banking' | 'bureau' | 'kyc'): Promise<StagingPolicyStudio> {
   const { data } = await http.get<StagingPolicyStudio>(`${BASE}/policy-studio/${kind}`)
   return data

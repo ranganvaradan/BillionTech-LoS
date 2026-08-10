@@ -9,6 +9,7 @@ import {
   decisionPolicyDomainLabel,
   kycRequirementTypeLabel,
 } from '@/lib/creditIntelligence/businessLexicon'
+import { CiCapabilityCataloguePanel } from '@/pages/creditIntelligence/CiCapabilityCataloguePanel'
 
 function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {}
@@ -186,6 +187,7 @@ export function CiPolicyRulesTab({
   const [addOpen, setAddOpen] = useState<Record<string, boolean>>({})
   const [addText, setAddText] = useState<Record<string, string>>({})
   const [undoStack, setUndoStack] = useState<{ id: string; prev: Record<string, unknown> }[]>([])
+  const [catalogueOpen, setCatalogueOpen] = useState(false)
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -292,6 +294,17 @@ export function CiPolicyRulesTab({
           Save Draft anytime — unresolved items and ignored rules do not block a draft.
         </p>
       </CiExecutiveSummary>
+
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          className="bt-btn bt-btn-secondary bt-btn-sm"
+          onClick={() => setCatalogueOpen((v) => !v)}
+        >
+          {catalogueOpen ? 'Hide capability catalogue' : 'Browse / Add Rule'}
+        </button>
+      </div>
+      <CiCapabilityCataloguePanel open={catalogueOpen} onClose={() => setCatalogueOpen(false)} />
 
       <div className="flex flex-wrap items-center gap-2">
         {(

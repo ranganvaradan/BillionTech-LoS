@@ -1,6 +1,7 @@
 package com.los.core.creditintelligence.staging;
 
 import com.los.core.creditintelligence.config.CreditIntelligenceProperties;
+import com.los.core.creditintelligence.policystudio.catalogue.CreditCapabilityCatalogueService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -39,6 +40,7 @@ public class StagingDemoController {
     private final StagingProspectSimulationService prospectSimulationService;
     private final StagingProspectApprovalService prospectApprovalService;
     private final PolicyCatalogueFacade policyCatalogueFacade;
+    private final CreditCapabilityCatalogueService creditCapabilityCatalogueService;
     private final com.los.core.creditintelligence.decisionpolicy.kyc.shadow.ShadowKycApplicationEvaluationFacade shadowKycFacade;
     private final com.los.core.creditintelligence.decisionpolicy.kyc.shadow.ShadowKycPolicyEvaluationService shadowKycEvaluationService;
     private final com.los.core.creditintelligence.decisionpolicy.sim.DecisionPolicyEndToEndSimulationService decisionPolicyE2eSimulationService;
@@ -102,6 +104,53 @@ public class StagingDemoController {
         assertInternalToken(token);
         assertStagingDemoEnabled();
         return policyStudioDemoService.landing();
+    }
+
+    /**
+     * POLICY-UX-2A — universal credit capability catalogue (read model).
+     * Does not modify production underwriting configuration.
+     */
+    @GetMapping("/policy-studio/capabilities")
+    public Map<String, Object> creditCapabilities(
+            @RequestHeader(value = "X-Internal-Token", required = false) String token,
+            @RequestParam(value = "advanced", required = false, defaultValue = "false") boolean advanced) {
+        assertInternalToken(token);
+        assertStagingDemoEnabled();
+        return creditCapabilityCatalogueService.catalogueView(advanced);
+    }
+
+    @GetMapping("/policy-studio/capabilities/{capabilityId}")
+    public Map<String, Object> creditCapability(
+            @PathVariable String capabilityId,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token,
+            @RequestParam(value = "advanced", required = false, defaultValue = "false") boolean advanced) {
+        assertInternalToken(token);
+        assertStagingDemoEnabled();
+        return creditCapabilityCatalogueService.findById(capabilityId)
+                .map(c -> {
+                    Map<String, Object> view = new LinkedHashMap<>(c.toBusinessView(advanced));
+                    view.put("allowCanonicalAuthority", false);
+                    return view;
+                })
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Unknown capability: " + capabilityId));
+    }
+
+    @PostMapping("/policy-studio/capabilities/map-production-rule")
+    public Map<String, Object> mapProductionRule(
+            @RequestHeader(value = "X-Internal-Token", required = false) String token,
+            @RequestBody Map<String, Object> body) {
+        assertInternalToken(token);
+        assertStagingDemoEnabled();
+        return creditCapabilityCatalogueService.mapProductionHardRule(body == null ? Map.of() : body);
+    }
+
+    @GetMapping("/policy-studio/capabilities/production-fixture-mappings")
+    public Map<String, Object> productionFixtureMappings(
+            @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        assertInternalToken(token);
+        assertStagingDemoEnabled();
+        return creditCapabilityCatalogueService.mapProductionFixtureSample();
     }
 
     @GetMapping("/policy-studio/{kind}")
