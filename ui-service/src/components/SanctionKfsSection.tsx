@@ -1,28 +1,50 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useAuth } from '@/auth/useAuth'
+import { isL2SanctionRole } from '@/auth/types'
 import { getCam } from '@/api/cam'
 import { downloadKfsPdfBlob, getLatestKfs, type KfsDocumentView } from '@/api/kfsApi'
 import { proceedToSanctionPendingFlow, rejectPostCreditFlow, sanctionApplicationFlow } from '@/api/flow'
 import { ApiError } from '@/api/http'
 import { downloadSanctionPdfBlob, getLatestSanction, type SanctionResponse } from '@/api/sanctionApi'
-import { formatMoney } from '@/lib/format'
+import { formatMoneyWithScale as formatMoney } from '@/lib/format'
+import { AmountInputHint } from '@/components/ui/AmountInputHint'
 import type { ApplicationResponse } from '@/types/application'
+import { isInvoiceDiscountingProduct } from '@/catalog/loanProducts'
+import { installmentPaymentLabel, tenureMagnitudeLabel } from '@/catalog/lmsTenureUnits'
+import {
+  idFlowSkipsKfsAtSanction,
+  isInvoiceDiscountingAnchorApp,
+  isInvoiceDiscountingBorrowerApp,
+} from '@/lib/invoiceDiscountingFlow'
+import { PlpBorrowerProgramSection } from '@/components/plp/PlpBorrowerProgramSection'
+import { PlpProgramSetupSection } from '@/components/plp/PlpProgramSetupSection'
+import { listPlpProgramsForAnchor, listSyncedAnchors } from '@/api/plp'
 
 export function SanctionKfsSection({
   applicationId,
   app,
   onRefetch,
+  suppressCamGuidance = false,
 }: {
   applicationId: string
   app: ApplicationResponse
   onRefetch: () => void | Promise<unknown>
+  /** When CAM is shown elsewhere on Decision, hide duplicate CAM status helper copy. */
+  suppressCamGuidance?: boolean
 }) {
   const [error, setError] = useState<string | null>(null)
   const [sanctionRec, setSanctionRec] = useState<SanctionResponse | null>(null)
   const [kfs, setKfs] = useState<KfsDocumentView | null>(null)
   const [loadErr, setLoadErr] = useState<string | null>(null)
-  const [amount, setAmount] = useState<string>(() =>
-    app.sanctionedAmount != null ? String(app.sanctionedAmount) : '',
-  )
+  const [amount, setAmount] = useState<string>(() => {
+    if (app.sanctionedAmount != null) {
+      return String(app.sanctionedAmount)
+    }
+    if (isInvoiceDiscountingAnchorApp(app) && app.requestedAmount != null) {
+      return String(app.requestedAmount)
+    }
+    return ''
+  })
   const [tenure, setTenure] = useState<string>(() =>
     app.tenureMonths != null ? String(app.tenureMonths) : '',
   )
@@ -42,9 +64,18 @@ export function SanctionKfsSection({
   const [busy, setBusy] = useState(false)
   const [kfsLoad, setKfsLoad] = useState(false)
   const [camStatusLine, setCamStatusLine] = useState<string | null>(null)
+  const { user } = useAuth()
+  const canSanctionL2 = user ? isL2SanctionRole(user.role) : false
 
-  const canAct =
-    app.status === 'CAM_REVIEWED' || app.status === 'SANCTION_PENDING' || app.status === 'APPROVED'
+  const isAnchor = isInvoiceDiscountingAnchorApp(app)
+  const isIdBorrower = isInvoiceDiscountingBorrowerApp(app)
+  const skipKfsDoc = idFlowSkipsKfsAtSanction(app)
+
+  // Anchor sanction / eSign start requires L2 (CM/Admin); RM still sees program setup below.
+  const canAct = isAnchor
+    ? app.status === 'SANCTION_PENDING' && canSanctionL2
+    : (app.status === 'CAM_REVIEWED' || app.status === 'SANCTION_PENDING' || app.status === 'APPROVED') &&
+      canSanctionL2
 
   const refetchAncillary = useCallback(async () => {
     setKfsLoad(true)
@@ -86,6 +117,15 @@ export function SanctionKfsSection({
             : null,
         )
       }
+      if (c.recommendedAmount != null) {
+        setAmount((prev) => prev || String(c.recommendedAmount))
+      }
+      if (c.recommendedTenureMonths != null) {
+        setTenure((prev) => prev || String(c.recommendedTenureMonths))
+      }
+      if (c.recommendedRate != null) {
+        setRate((prev) => prev || String(c.recommendedRate))
+      }
     } catch {
       setCamStatusLine(
         'CAM is not on file for this case yet, or the application has not reached CAM ready. If you expect CAM here, check underwriting status first.',
@@ -93,10 +133,38 @@ export function SanctionKfsSection({
     }
   }, [applicationId])
 
+  const loadAnchorProgramDefaults = useCallback(async () => {
+    if (app.requestedAmount != null) {
+      setAmount((prev) => prev || String(app.requestedAmount))
+    }
+    try {
+      const anchors = await listSyncedAnchors()
+      const linked = anchors.find((a) => a.sourceAnchorApplicationId === applicationId)
+      if (!linked) return
+      const programs = await listPlpProgramsForAnchor(linked.id)
+      const program = programs[0]
+      if (!program) return
+      if (program.creditLimit != null) {
+        setAmount((prev) => prev || String(program.creditLimit))
+      }
+      if (program.tenureDays != null) {
+        const months = Math.max(1, Math.ceil(program.tenureDays / 30))
+        setTenure((prev) => prev || String(months))
+      }
+    } catch {
+      /* PLP program may not exist yet */
+    }
+  }, [applicationId, app.requestedAmount])
+
   useEffect(() => {
+    if (isAnchor) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- PLP defaults for anchor sanction
+      void loadAnchorProgramDefaults()
+      return
+    }
     // eslint-disable-next-line react-hooks/set-state-in-effect -- async CAM status line for sanction gate
     void loadCamLabel()
-  }, [loadCamLabel, app.status])
+  }, [loadCamLabel, loadAnchorProgramDefaults, app.status, isAnchor])
 
   async function onProceedPending() {
     setBusy(true)
@@ -115,15 +183,20 @@ export function SanctionKfsSection({
     setBusy(true)
     setError(null)
     try {
-      await sanctionApplicationFlow(applicationId, {
+      const body: Record<string, unknown> = {
         sanctionedAmount: amount,
-        interestRate: rate,
-        tenureMonths: parseInt(tenure, 10),
-        processingFee: fee || undefined,
         conditions,
         remarks,
         approvedBy: approvedBy || undefined,
-      })
+      }
+      if (!isAnchor) {
+        body.interestRate = rate
+        body.tenureMonths = parseInt(tenure, 10)
+        body.processingFee = fee || undefined
+      } else if (tenure) {
+        body.tenureMonths = parseInt(tenure, 10)
+      }
+      await sanctionApplicationFlow(applicationId, body)
       await onRefetch()
       await refetchAncillary()
     } catch (e) {
@@ -149,6 +222,28 @@ export function SanctionKfsSection({
     }
   }
 
+  async function openTermsOrKfsPdf() {
+    setBusy(true)
+    setError(null)
+    try {
+      try {
+        const blob = await downloadKfsPdfBlob(applicationId)
+        const url = URL.createObjectURL(blob)
+        window.open(url, '_blank', 'noopener,noreferrer')
+        setTimeout(() => URL.revokeObjectURL(url), 60_000)
+      } catch {
+        const blob = await downloadSanctionPdfBlob(applicationId)
+        const url = URL.createObjectURL(blob)
+        window.open(url, '_blank', 'noopener,noreferrer')
+        setTimeout(() => URL.revokeObjectURL(url), 60_000)
+      }
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Document preview not available')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function openSanctionPdf() {
     setBusy(true)
     setError(null)
@@ -164,53 +259,73 @@ export function SanctionKfsSection({
     }
   }
 
-  async function openKfsPdf() {
-    setBusy(true)
-    setError(null)
-    try {
-      const blob = await downloadKfsPdfBlob(applicationId)
-      const url = URL.createObjectURL(blob)
-      window.open(url, '_blank', 'noopener,noreferrer')
-      setTimeout(() => URL.revokeObjectURL(url), 60_000)
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'KFS PDF not available')
-    } finally {
-      setBusy(false)
-    }
-  }
+  const idBorrowerTermsOnFile =
+    isIdBorrower &&
+    (sanctionRec != null ||
+      kfs != null ||
+      ['SANCTIONED', 'KFS_GENERATED', 'SANCTION_ISSUED', 'ESIGN_PENDING', 'ESIGN_COMPLETED'].includes(app.status))
 
-  const sanctionUnlocked = [
-    'CAM_REVIEWED',
-    'SANCTION_PENDING',
-    'SANCTIONED',
-    'KFS_GENERATED',
-    'SANCTION_ISSUED',
-    'ESIGN_PENDING',
-    'ESIGN_COMPLETED',
-    'READY_FOR_DISBURSEMENT',
-    'DISBURSEMENT_PENDING',
-    'DISBURSED',
-    'APPROVED',
-  ].includes(app.status)
+  const tenureFieldLabel = tenureMagnitudeLabel(app.lmsTenureUnit)
+  const installmentLabel =
+    (kfs?.additionalTerms && typeof kfs.additionalTerms.installmentLabel === 'string'
+      ? kfs.additionalTerms.installmentLabel
+      : null) ?? installmentPaymentLabel(app.lmsTenureUnit)
+
+  const sanctionUnlocked = isAnchor
+    ? ['SANCTION_PENDING', 'SANCTIONED'].includes(app.status)
+    : [
+        'CAM_REVIEWED',
+        'SANCTION_PENDING',
+        'SANCTIONED',
+        'KFS_GENERATED',
+        'SANCTION_ISSUED',
+        'ESIGN_PENDING',
+        'ESIGN_COMPLETED',
+        'READY_FOR_DISBURSEMENT',
+        'DISBURSEMENT_PENDING',
+        'DISBURSED',
+        'APPROVED',
+      ].includes(app.status)
 
   return (
-    <div className="space-y-8">
-      {camStatusLine ? (
-        <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800">{camStatusLine}</div>
+    <div className="space-y-8" data-testid="sanction-kfs-section">
+      {!isAnchor && !suppressCamGuidance && camStatusLine ? (
+        <div className="bt-section-card bt-section-card--default px-3 py-2 text-sm text-slate-800">{camStatusLine}</div>
       ) : null}
       {!sanctionUnlocked ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50/60 px-3 py-2 text-sm text-amber-950">
-          <span className="font-medium">Status:</span> {app.status}. Sanction and KFS actions unlock after the Credit
-          Appraisal Memo is reviewed (CAM_REVIEWED or legacy APPROVED). You can still use this tab to read guidance and
-          download PDFs if they already exist.
+          {isAnchor ? (
+            <>
+              Sanction terms will be available after due diligence approval. Complete program setup and PLP approval,
+              then generate program terms.
+            </>
+          ) : (
+            <>Sanction terms will be available after credit appraisal is completed.</>
+          )}
         </div>
       ) : null}
       {error && (
         <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">{error}</div>
       )}
 
-      {canAct && app.status === 'CAM_REVIEWED' && (
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
+      {isInvoiceDiscountingProduct(app.loanProduct) ? (
+        <div data-testid="plp-program-subsection" className="space-y-3">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">Program / PLP</h3>
+            <p className="text-xs text-slate-500">
+              Program setup and borrower linkage stay with Sanction &amp; Terms (not CAM).
+            </p>
+          </div>
+          {app.intakeSegment === 'ANCHOR' ? (
+            <PlpProgramSetupSection app={app} />
+          ) : (
+            <PlpBorrowerProgramSection app={app} onRefetch={onRefetch} />
+          )}
+        </div>
+      ) : null}
+
+      {canAct && !isAnchor && app.status === 'CAM_REVIEWED' && (
+        <div className="bt-section-card bt-section-card--default p-4">
           <p className="mb-2 text-sm text-slate-700">Optional: move to formal sanction-pending before entering terms.</p>
           <button
             type="button"
@@ -225,44 +340,75 @@ export function SanctionKfsSection({
 
       {canAct && (
         <div className="rounded-lg border border-indigo-200/80 bg-indigo-50/40 p-4">
-          <h3 className="mb-2 text-sm font-semibold text-indigo-950">Sanction decision</h3>
+          <h3 className="mb-2 text-sm font-semibold text-indigo-950">
+            {isAnchor ? 'Anchor sanction (final step)' : 'Sanction decision'}
+          </h3>
+          {isAnchor ? (
+            <p className="mb-3 text-sm text-slate-700">
+              Set the program limit below and complete PLP program setup. Approve the program in PLP
+              (Programs listing), refresh status on LOS, then sanction to generate program terms
+              for anchor eSign — onboarding completes after eSign, not at this step.
+            </p>
+          ) : isIdBorrower ? (
+            <p className="mb-3 text-sm text-slate-700">
+              Issue sanction terms for this invoice discounting borrower. A terms &amp; conditions document is generated
+              instead of a KFS; no LMS loan is created.
+            </p>
+          ) : null}
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-xs font-medium text-slate-600">
-              Approved amount
+              {isAnchor ? 'Program / anchor limit (INR)' : 'Approved amount'}
               <input
                 className="mt-0.5 w-full rounded border border-slate-200 p-2 text-sm"
                 value={amount}
                 onChange={(e) => setAmount(e.target.value)}
                 inputMode="decimal"
               />
+              <AmountInputHint value={amount} />
             </label>
-            <label className="text-xs font-medium text-slate-600">
-              Tenure (months)
-              <input
-                className="mt-0.5 w-full rounded border border-slate-200 p-2 text-sm"
-                value={tenure}
-                onChange={(e) => setTenure(e.target.value)}
-                inputMode="numeric"
-              />
-            </label>
-            <label className="text-xs font-medium text-slate-600">
-              Interest rate (% p.a.)
-              <input
-                className="mt-0.5 w-full rounded border border-slate-200 p-2 text-sm"
-                value={rate}
-                onChange={(e) => setRate(e.target.value)}
-                inputMode="decimal"
-              />
-            </label>
-            <label className="text-xs font-medium text-slate-600">
-              Processing fee
-              <input
-                className="mt-0.5 w-full rounded border border-slate-200 p-2 text-sm"
-                value={fee}
-                onChange={(e) => setFee(e.target.value)}
-                inputMode="decimal"
-              />
-            </label>
+            {isAnchor ? (
+              <label className="text-xs font-medium text-slate-600">
+                Program validity (months, from PLP)
+                <input
+                  className="mt-0.5 w-full rounded border border-slate-200 p-2 text-sm"
+                  value={tenure}
+                  onChange={(e) => setTenure(e.target.value)}
+                  inputMode="numeric"
+                  placeholder="From PLP program tenure"
+                />
+              </label>
+            ) : null}
+            {!isAnchor ? (
+              <>
+                <label className="text-xs font-medium text-slate-600">
+                  {tenureFieldLabel}
+                  <input
+                    className="mt-0.5 w-full rounded border border-slate-200 p-2 text-sm"
+                    value={tenure}
+                    onChange={(e) => setTenure(e.target.value)}
+                    inputMode="numeric"
+                  />
+                </label>
+                <label className="text-xs font-medium text-slate-600">
+                  Interest rate (% p.a.)
+                  <input
+                    className="mt-0.5 w-full rounded border border-slate-200 p-2 text-sm"
+                    value={rate}
+                    onChange={(e) => setRate(e.target.value)}
+                    inputMode="decimal"
+                  />
+                </label>
+                <label className="text-xs font-medium text-slate-600">
+                  Processing fee
+                  <input
+                    className="mt-0.5 w-full rounded border border-slate-200 p-2 text-sm"
+                    value={fee}
+                    onChange={(e) => setFee(e.target.value)}
+                    inputMode="decimal"
+                  />
+                </label>
+              </>
+            ) : null}
           </div>
           <label className="mt-3 block text-xs font-medium text-slate-600">
             Conditions
@@ -297,7 +443,13 @@ export function SanctionKfsSection({
               onClick={() => void onApprove()}
               className="rounded-md bg-indigo-700 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
             >
-              {busy ? 'Working…' : 'Approve & generate sanction + KFS'}
+              {busy
+                ? 'Working…'
+                : isAnchor
+                  ? 'Generate program terms & start eSign'
+                  : isIdBorrower
+                    ? 'Approve & generate terms document'
+                    : 'Approve & generate sanction + KFS'}
             </button>
             <button
               type="button"
@@ -313,25 +465,27 @@ export function SanctionKfsSection({
               onClick={() => void openSanctionPdf()}
               className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-800"
             >
-              Sanction letter PDF
+              {isIdBorrower ? 'Terms & conditions PDF' : 'Sanction letter PDF'}
             </button>
           </div>
         </div>
       )}
 
-      {(sanctionRec || kfs) && (
-        <div className="rounded-lg border border-slate-200 bg-white p-4">
-          <h3 className="mb-2 text-sm font-semibold text-slate-900">KFS (from sanction)</h3>
-          {kfsLoad && <p className="text-sm text-slate-500">Refreshing KFS…</p>}
+      {(idBorrowerTermsOnFile || (!skipKfsDoc && (sanctionRec || kfs))) && (
+        <div className="bt-section-card bt-section-card--default p-4">
+          <h3 className="mb-2 bt-card-title">
+            {isIdBorrower ? 'Sanction terms' : 'KFS (from sanction)'}
+          </h3>
+          {kfsLoad && <p className="text-sm text-slate-500">Refreshing document…</p>}
           {loadErr && <p className="text-sm text-amber-800">{loadErr}</p>}
-          {kfs && (
+          {kfs && !isIdBorrower && (
             <dl className="mb-3 grid gap-2 sm:grid-cols-2 text-sm">
               <div>
                 <dt className="text-xs uppercase text-slate-500">APR</dt>
                 <dd className="font-medium text-slate-900">{kfs.apr != null ? `${kfs.apr}%` : '—'}</dd>
               </div>
               <div>
-                <dt className="text-xs uppercase text-slate-500">EMI</dt>
+                <dt className="text-xs uppercase text-slate-500">{installmentLabel}</dt>
                 <dd className="font-medium text-slate-900">{formatMoney(kfs.emiAmount)}</dd>
               </div>
               <div>
@@ -346,14 +500,20 @@ export function SanctionKfsSection({
               </div>
             </dl>
           )}
+          {isIdBorrower && sanctionRec ? (
+            <p className="mb-3 text-sm text-slate-700">
+              Sanctioned limit: {formatMoney(sanctionRec.approvedAmount)}
+              {sanctionRec.createdAt ? ` · Recorded ${sanctionRec.createdAt}` : ''}
+            </p>
+          ) : null}
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
               disabled={busy}
-              onClick={() => void openKfsPdf()}
+              onClick={() => void openTermsOrKfsPdf()}
               className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-800"
             >
-              Preview KFS PDF
+              {isIdBorrower ? 'Preview terms document (PDF)' : 'Preview KFS PDF'}
             </button>
             <button
               type="button"
@@ -367,10 +527,18 @@ export function SanctionKfsSection({
         </div>
       )}
 
-      {sanctionRec && (
-        <p className="text-xs text-slate-500">
-          Latest sanction on file from {sanctionRec.createdAt ?? '—'}
-        </p>
+      {skipKfsDoc && sanctionRec && isAnchor && (
+        <div className="bt-section-card bt-section-card--default p-4">
+          <h3 className="mb-2 bt-card-title">Anchor program terms</h3>
+          <p className="text-sm text-slate-700">
+            Limit: {formatMoney(sanctionRec.approvedAmount)} · Recorded {sanctionRec.createdAt ?? '—'}
+            {app.status === 'ESIGN_PENDING'
+              ? ' · Awaiting anchor eSign on the eSign tab — SANCTIONED after signing.'
+              : app.status === 'SANCTIONED' || app.status === 'ESIGN_COMPLETED'
+                ? ' · eSign complete — anchor onboarding is SANCTIONED.'
+                : null}
+          </p>
+        </div>
       )}
     </div>
   )

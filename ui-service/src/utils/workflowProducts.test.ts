@@ -3,7 +3,9 @@ import {
   activeCatalogHasSecuredProduct,
   dedupeByLoanProduct,
   productsForBorrowerType,
+  productsForIntakeSegment,
   uniqueActiveWorkflowLoanProducts,
+  workflowIntakeSegment,
   workflowLoanProductDisplayName,
 } from './workflowProducts'
 import type { WorkflowConfigResponse } from '@/types/workflow'
@@ -82,5 +84,67 @@ describe('productsForBorrowerType + display', () => {
     const names = list.map((w) => w.loanProduct).sort()
     expect(names).toContain('PERSONAL_LOAN')
     expect(names).toContain('LOAN_AGAINST_GOLD')
+  })
+
+  it('excludes ANCHOR-segment workflows from the borrower product picker', () => {
+    const list = productsForBorrowerType(
+      [
+        wf({
+          id: 'borrower',
+          loanProduct: 'BUSINESS_WC_INVOICE_DISCOUNTING',
+          borrowerType: 'COMPANY',
+          intakeSegment: 'BORROWER',
+          version: 1,
+        }),
+        wf({
+          id: 'anchor',
+          loanProduct: 'BUSINESS_WC_INVOICE_DISCOUNTING',
+          borrowerType: 'COMPANY',
+          intakeSegment: 'ANCHOR',
+          version: 2,
+        }),
+      ],
+      'COMPANY',
+    )
+    expect(list).toHaveLength(1)
+    expect(list[0]!.id).toBe('borrower')
+  })
+})
+
+describe('workflowIntakeSegment + productsForIntakeSegment', () => {
+  it('defaults missing intakeSegment to BORROWER', () => {
+    expect(workflowIntakeSegment(wf({ loanProduct: 'PERSONAL_LOAN' }))).toBe('BORROWER')
+  })
+
+  it('lists only active workflows for the requested segment', () => {
+    const rows = [
+      wf({
+        id: 'a',
+        loanProduct: 'BUSINESS_WC_INVOICE_DISCOUNTING',
+        borrowerType: 'COMPANY',
+        intakeSegment: 'ANCHOR',
+        active: true,
+        version: 1,
+      }),
+      wf({
+        id: 'b',
+        loanProduct: 'BUSINESS_WC_INVOICE_DISCOUNTING',
+        borrowerType: 'COMPANY',
+        intakeSegment: 'BORROWER',
+        active: true,
+        version: 1,
+      }),
+      wf({
+        id: 'c',
+        loanProduct: 'BUSINESS_WC_INVOICE_DISCOUNTING',
+        borrowerType: 'COMPANY',
+        intakeSegment: 'ANCHOR',
+        active: false,
+        version: 9,
+      }),
+    ]
+    const anchor = productsForIntakeSegment(rows, 'ANCHOR', 'COMPANY')
+    expect(anchor).toHaveLength(1)
+    expect(anchor[0]!.id).toBe('a')
   })
 })

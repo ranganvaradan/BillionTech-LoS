@@ -1,16 +1,77 @@
-import { isLoanProductCode } from '@/catalog/loanProducts'
+import { isInvoiceDiscountingProduct, isLoanProductCode } from '@/catalog/loanProducts'
+import { isCityInIndianState, isKnownIndianState } from '@/data/geo/indiaGeo'
 import { estimatedValueForSecuredProduct } from './collateralIntakePayload'
 import type { IntakeFormState, IntakeMode } from './intakeTypes'
 import { isBusinessBorrowerType } from './intakeTypes'
 import { allDocumentSlotsForIntake, documentSlotsForBorrowerType } from './intakeDocumentSlots'
 import { COLLATERAL_DOC, collateralDocumentTypesForKind, detectSecuredCollateralKind } from './securedProducts'
 import type { WorkflowConfigResponse } from '@/types/workflow'
-import { productsForBorrowerType } from '@/utils/workflowProducts'
+import { matchingWorkflowsForBorrowerType, matchingWorkflowsForProduct, uniqueActiveWorkflowLoanProducts, productsForBorrowerType } from '@/utils/workflowProducts'
+import { ANCHOR_BORROWER_TYPE } from '@/lib/intake/anchorIntakeConstants'
+import {
+  activeWorkflowForProduct,
+  isWorkflowDrivenIntake,
+  missingRequiredWorkflowDocuments,
+  resolveWorkflowAllowedStates,
+  isStateAllowedByWorkflow,
+  shouldCollectLoanPurposeField,
+  validateWorkflowAge,
+  validateWorkflowKycStep,
+  validateWorkflowLoanPurpose,
+  validateWorkflowOccupation,
+  validateWorkflowPersonalFields,
+  validateWorkflowTenure,
+} from '@/lib/workflow/workflowIntakeRules'
+import { resolveLoanPurposeOptions, resolveOccupationOptions } from '@/lib/intake/intakeOptionCatalogs'
 
 export { productsForBorrowerType }
 export type { WorkflowConfigResponse }
 
 const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]$/i
+const INDIAN_PIN_RE = /^\d{6}$/
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
+export type IntakeLocationStrictness = 'staff_basic' | 'borrower_address'
+
+/** PIN + state/city rules for intake (staff vs borrower address step). */
+export function validateIntakeLocation(
+  state: string,
+  city: string,
+  pincode: string,
+  strictness: IntakeLocationStrictness,
+  allowedStates?: string[] | null,
+): string | null {
+  const pc = pincode.replace(/\D/g, '')
+  if (!INDIAN_PIN_RE.test(pc)) {
+    return 'Enter a valid 6-digit Indian PIN code.'
+  }
+  const st = state.trim()
+  const ct = city.trim()
+
+  if (strictness === 'borrower_address') {
+    if (!st) return 'Select your state.'
+    if (!ct) return 'Select your city.'
+  } else {
+    if (ct && !st) return 'Select a state before choosing a city.'
+  }
+
+  if (st && !isStateAllowedByWorkflow(st, allowedStates ?? null)) {
+    return 'Select a state configured for this workflow.'
+  }
+
+  if (st && isKnownIndianState(st)) {
+    if (!ct) {
+      return strictness === 'borrower_address' ? 'Select your city.' : 'Select a city for the chosen state.'
+    }
+    if (!isCityInIndianState(st, ct)) {
+      return 'Choose a city from the list for the selected state.'
+    }
+  } else if (st && strictness === 'staff_basic' && !ct) {
+    return 'Enter a city, or choose a standard state from the list to pick a city.'
+  }
+
+  return null
+}
 
 function normalizeMobile(s: string): string {
   return s.replace(/\D/g, '')
@@ -22,21 +83,88 @@ function parseAmount(s: string): number | null {
   return n
 }
 
+function validateRequiredEmail(email: string): string | null {
+  const trimmed = email.trim()
+  if (!trimmed) {
+    return 'Email is required.'
+  }
+  if (!EMAIL_RE.test(trimmed)) {
+    return 'Please enter a valid email address.'
+  }
+  return null
+}
+
 export function validateProductStep(
   s: IntakeFormState,
   mode: IntakeMode,
   activeWorkflows: WorkflowConfigResponse[],
 ): string | null {
-  const list = productsForBorrowerType(activeWorkflows, s.borrowerType)
-  if (list.length === 0) {
-    return 'No active loan product is available for the selected borrower type. Ask an admin to configure a workflow.'
+  const globalProducts = uniqueActiveWorkflowLoanProducts(activeWorkflows)
+  if (globalProducts.length === 0) {
+    return 'No active loan product is available. Ask an admin to configure a workflow.'
   }
-  if (!s.loanProduct || !list.some((w) => w.loanProduct === s.loanProduct)) {
+  if (!s.loanProduct || !globalProducts.includes(s.loanProduct)) {
     return 'Select a loan product from the list of active workflows.'
   }
   if (!isLoanProductCode(s.loanProduct)) {
     return 'Select a valid loan product.'
   }
+
+  if (isInvoiceDiscountingProduct(s.loanProduct)) {
+    const onboardingChoice =
+      mode === 'BORROWER_SELF_SERVICE' ? 'BORROWER' : s.invoiceOnboardingChoice
+    if (mode !== 'BORROWER_SELF_SERVICE' && onboardingChoice !== 'BORROWER' && onboardingChoice !== 'ANCHOR') {
+      return 'For invoice discounting, select onboarding type: Borrower or Anchor.'
+    }
+    if (onboardingChoice === 'BORROWER' || mode === 'BORROWER_SELF_SERVICE') {
+      const list = productsForBorrowerType(activeWorkflows, s.borrowerType)
+      if (list.length === 0) {
+        return 'No active borrower workflow for invoice discounting and this borrower type. Ask an admin to activate a BORROWER-segment workflow.'
+      }
+      if (!list.some((w) => w.loanProduct === s.loanProduct)) {
+        return 'The selected borrower type does not have an active borrower workflow for invoice discounting.'
+      }
+    } else if (onboardingChoice === 'ANCHOR') {
+      const list = matchingWorkflowsForProduct(
+        activeWorkflows,
+        ANCHOR_BORROWER_TYPE,
+        s.loanProduct,
+        'ANCHOR',
+      )
+      if (list.length === 0) {
+        return 'No active anchor workflow for invoice discounting. Ask an admin to activate an ANCHOR-segment workflow.'
+      }
+    }
+  } else {
+    const list = productsForBorrowerType(activeWorkflows, s.borrowerType)
+    if (list.length === 0) {
+      return 'No active loan product is available for the selected borrower type. Ask an admin to configure a workflow.'
+    }
+    if (!list.some((w) => w.loanProduct === s.loanProduct)) {
+      return 'Select a loan product from the list of active workflows for this borrower type.'
+    }
+  }
+
+  const intakeSegment: 'BORROWER' | 'ANCHOR' =
+    isInvoiceDiscountingProduct(s.loanProduct) &&
+    mode !== 'BORROWER_SELF_SERVICE' &&
+    s.invoiceOnboardingChoice === 'ANCHOR'
+      ? 'ANCHOR'
+      : 'BORROWER'
+  const workflowBorrowerType = intakeSegment === 'ANCHOR' ? ANCHOR_BORROWER_TYPE : s.borrowerType
+  const matchingWorkflows = matchingWorkflowsForProduct(
+    activeWorkflows,
+    workflowBorrowerType,
+    s.loanProduct,
+    intakeSegment,
+  )
+  if (matchingWorkflows.length > 1 && !s.workflowId) {
+    return 'Select the workflow to use for this application.'
+  }
+  if (s.workflowId && !matchingWorkflows.some((w) => w.id === s.workflowId)) {
+    return 'Select a workflow from the active options for this product.'
+  }
+
   const amount = parseAmount(s.requestedAmount)
   if (amount == null || amount <= 0) {
     return 'Enter a valid requested amount greater than zero.'
@@ -47,6 +175,19 @@ export function validateProductStep(
     if (Number.isNaN(t) || t <= 0) {
       return 'Tenure must be a positive whole number of months, or leave it blank.'
     }
+  }
+  const workflow = activeWorkflowForProduct(
+    activeWorkflows,
+    workflowBorrowerType,
+    s.loanProduct,
+    s.workflowId,
+    intakeSegment,
+  )
+  const tenureErr = validateWorkflowTenure(s, workflow)
+  if (tenureErr) return tenureErr
+  if (intakeSegment !== 'ANCHOR') {
+    const loanPurposeErr = validateLoanPurposeSelection(s, workflow)
+    if (loanPurposeErr) return loanPurposeErr
   }
   if (mode === 'SALES_ASSISTED') {
     if (!s.salesOfficerName.trim()) {
@@ -62,7 +203,77 @@ export function validateProductStep(
   return null
 }
 
-export function validateBorrowerStep(s: IntakeFormState, mode: IntakeMode): string | null {
+/**
+ * Minimal fields for staff "Save draft & notify borrower" — does not require full address / KYC / docs.
+ */
+export function validateNotifyBasics(
+  s: IntakeFormState,
+  mode: IntakeMode,
+  activeWorkflows: WorkflowConfigResponse[],
+  opts?: { needPlpProgram?: boolean },
+): string | null {
+  const globalProducts = uniqueActiveWorkflowLoanProducts(activeWorkflows)
+  if (globalProducts.length === 0) {
+    return 'No active loan product is available. Ask an admin to configure a workflow.'
+  }
+  if (!s.loanProduct || !globalProducts.includes(s.loanProduct)) {
+    return 'Select a loan product before notifying the borrower.'
+  }
+  if (!s.borrowerType) {
+    return 'Select a borrower type before notifying the borrower.'
+  }
+  const matchingWorkflows = matchingWorkflowsForBorrowerType(activeWorkflows, s.borrowerType).filter(
+    (w) => w.loanProduct === s.loanProduct,
+  )
+  if (matchingWorkflows.length > 1 && !s.workflowId) {
+    return 'Select the workflow to use before notifying the borrower.'
+  }
+  if (s.workflowId && !matchingWorkflows.some((w) => w.id === s.workflowId)) {
+    return 'Select a valid workflow before notifying the borrower.'
+  }
+
+  if (isInvoiceDiscountingProduct(s.loanProduct)) {
+    const onboardingChoice =
+      mode === 'BORROWER_SELF_SERVICE' ? 'BORROWER' : s.invoiceOnboardingChoice
+    if (mode !== 'BORROWER_SELF_SERVICE' && onboardingChoice !== 'BORROWER' && onboardingChoice !== 'ANCHOR') {
+      return 'Select onboarding type (Borrower or Anchor) before notifying.'
+    }
+    if (onboardingChoice === 'ANCHOR') {
+      return 'Anchor onboarding cannot be delegated to the borrower portal.'
+    }
+    if (opts?.needPlpProgram !== false && !s.selectedSubProgramId?.trim()) {
+      return 'Select an anchor program before notifying the borrower.'
+    }
+  }
+
+  if (s.borrowerType === 'INDIVIDUAL') {
+    if (!s.fullName.trim()) return 'Enter the borrower’s name before notifying.'
+    const mobile =
+      normalizeMobile(s.mobile) || (mode === 'SALES_ASSISTED' ? normalizeMobile(s.borrowerMobile) : '')
+    if (mobile.length < 10) {
+      return 'Enter a valid mobile number before notifying.'
+    }
+    const emailError = validateRequiredEmail(s.email)
+    if (emailError) return emailError
+  } else {
+    if (!s.businessName.trim()) return 'Enter the business or entity name before notifying.'
+    if (!s.contactPersonName.trim()) return 'Enter a contact person name before notifying.'
+    const m = normalizeMobile(s.contactMobile)
+    if (m.length < 10) {
+      return 'Enter a valid contact mobile before notifying.'
+    }
+    const email = s.contactEmail.trim()
+    if (!email) return 'Enter a contact email before notifying.'
+    if (!EMAIL_RE.test(email)) return 'Please enter a valid contact email address.'
+  }
+  return null
+}
+
+export function validateBorrowerStep(
+  s: IntakeFormState,
+  mode: IntakeMode,
+  workflow?: WorkflowConfigResponse | null,
+): string | null {
   if (s.borrowerType === 'INDIVIDUAL') {
     if (!s.fullName.trim()) return 'Enter the borrower’s full name as per PAN.'
     const mobile =
@@ -70,6 +281,17 @@ export function validateBorrowerStep(s: IntakeFormState, mode: IntakeMode): stri
     if (mobile.length < 10) {
       return 'Enter a valid mobile number for the borrower (at least 10 digits).'
     }
+    const emailError = validateRequiredEmail(s.email)
+    if (emailError) return emailError
+    const allowedStates = resolveWorkflowAllowedStates(workflow)
+    const loc = validateIntakeLocation(s.state, s.city, s.pincode, 'staff_basic', allowedStates)
+    if (loc) return loc
+    const personalErr = validateWorkflowPersonalFields(s, workflow)
+    if (personalErr) return personalErr
+    const ageErr = validateWorkflowAge(s, workflow)
+    if (ageErr) return ageErr
+    const occupationErr = validateOccupationSelection(s, workflow)
+    if (occupationErr) return occupationErr
   } else {
     if (!s.businessName.trim()) {
       return 'Enter the business or entity name.'
@@ -81,11 +303,22 @@ export function validateBorrowerStep(s: IntakeFormState, mode: IntakeMode): stri
     if (m.length < 10) {
       return 'Enter a valid mobile number for the contact person (at least 10 digits).'
     }
+    const allowedStates = resolveWorkflowAllowedStates(workflow)
+    const loc = validateIntakeLocation(s.businessState, s.businessCity, s.businessPincode, 'staff_basic', allowedStates)
+    if (loc) return loc
   }
+  const vintageErr = validateInvoiceDiscountingVintageStep(s, mode)
+  if (vintageErr) return vintageErr
   return null
 }
 
-export function validateKycStep(s: IntakeFormState): string | null {
+export function validateKycStep(
+  s: IntakeFormState,
+  workflow?: WorkflowConfigResponse | null,
+): string | null {
+  if (workflow && isWorkflowDrivenIntake(workflow)) {
+    return validateWorkflowKycStep(s, workflow)
+  }
   if (!s.panNumber.trim()) {
     return 'PAN is required.'
   }
@@ -121,21 +354,70 @@ export function allConsentsChecked(s: IntakeFormState): boolean {
 export function missingDocumentTypes(s: IntakeFormState): string[] {
   const slots = documentSlotsForBorrowerType(s.borrowerType)
   return slots
-    .filter((slot) => slot.documentType !== 'OTHER')
+    .filter((slot) => slot.required !== false && slot.documentType !== 'OTHER')
     .filter((slot) => !s.documentUploaded[slot.documentType])
     .map((slot) => slot.documentType)
 }
 
 /** Includes collateral document slots when the selected product is secured. */
-export function missingIntakeDocumentTypes(s: IntakeFormState): string[] {
+export function missingIntakeDocumentTypes(
+  s: IntakeFormState,
+  workflow?: WorkflowConfigResponse | null,
+): string[] {
+  if (workflow && isWorkflowDrivenIntake(workflow)) {
+    return missingRequiredWorkflowDocuments(s, workflow, s.borrowerType)
+  }
   const slots = allDocumentSlotsForIntake(s)
   return slots
-    .filter((slot) => slot.documentType !== 'OTHER' && slot.documentType !== 'COLLATERAL_OTHER')
+    .filter((slot) => slot.required !== false && slot.documentType !== 'OTHER' && slot.documentType !== 'COLLATERAL_OTHER')
     .filter((slot) => !s.documentUploaded[slot.documentType])
     .map((slot) => slot.documentType)
 }
 
 const IFSC_RE = /^[A-Z]{4}0[A-Z0-9]{6}$/i
+
+export function validateLoanPurposeSelection(
+  s: IntakeFormState,
+  workflow: WorkflowConfigResponse | null | undefined,
+): string | null {
+  if (isInvoiceDiscountingProduct(s.loanProduct) && s.invoiceOnboardingChoice === 'ANCHOR') {
+    return null
+  }
+  if (isWorkflowDrivenIntake(workflow)) {
+    return validateWorkflowLoanPurpose(s, workflow)
+  }
+  if (!shouldCollectLoanPurposeField(workflow, true)) {
+    return null
+  }
+  if (!s.loanPurpose.trim()) {
+    return 'Select a loan purpose.'
+  }
+  const ok = resolveLoanPurposeOptions(workflow).some((o) => o.value === s.loanPurpose.trim())
+  if (!ok) {
+    return 'Select a valid loan purpose option.'
+  }
+  return null
+}
+
+export function validateOccupationSelection(
+  s: IntakeFormState,
+  workflow: WorkflowConfigResponse | null | undefined,
+): string | null {
+  if (s.borrowerType !== 'INDIVIDUAL') {
+    return null
+  }
+  if (isWorkflowDrivenIntake(workflow)) {
+    return validateWorkflowOccupation(s, workflow)
+  }
+  if (!s.occupation.trim()) {
+    return 'Select occupation.'
+  }
+  const ok = resolveOccupationOptions(workflow).some((o) => o.value === s.occupation.trim())
+  if (!ok) {
+    return 'Select a valid occupation option.'
+  }
+  return null
+}
 
 /**
  * Product step + “existing loans” for borrower 6-step journey (INDIVIDUAL only).
@@ -152,34 +434,71 @@ export function validateBorrowerProductStep(
   if (!s.hasExistingLoans) {
     return 'Indicate whether you have other loans running.'
   }
-  if (!s.purpose.trim()) {
-    return 'Enter a short purpose for the loan (how you plan to use the amount).'
-  }
   return null
 }
 
-export function validateBorrowerPersonalAddressStep(s: IntakeFormState): string | null {
+export function validateBorrowerPersonalAddressStep(
+  s: IntakeFormState,
+  workflow?: WorkflowConfigResponse | null,
+): string | null {
+  if (workflow?.intakeConfig?.policy === 'WORKFLOW_DRIVEN') {
+    const personalErr = validateWorkflowPersonalFields(s, workflow)
+    if (personalErr) return personalErr
+    const ageErr = validateWorkflowAge(s, workflow)
+    if (ageErr) return ageErr
+    if (!s.fullName.trim()) return 'Enter your full name as per PAN.'
+    if (normalizeMobile(s.mobile).length < 10) {
+      return 'Enter a valid mobile number (at least 10 digits).'
+    }
+    const emailError = validateRequiredEmail(s.email)
+    if (emailError) return emailError
+    if (!s.addressLine.trim()) return 'Enter your address (line 1).'
+    const loc = validateIntakeLocation(
+      s.state,
+      s.city,
+      s.pincode,
+      'borrower_address',
+      resolveWorkflowAllowedStates(workflow),
+    )
+    if (loc) return loc
+    if (!s.maritalStatus.trim()) return 'Select your marital status.'
+    if (!s.addressProofType.trim()) return 'Select the type of address proof you can provide.'
+    const occupationErr = validateOccupationSelection(s, workflow)
+    if (occupationErr) return occupationErr
+    return null
+  }
   if (!s.fullName.trim()) return 'Enter your full name as per PAN.'
   if (normalizeMobile(s.mobile).length < 10) {
     return 'Enter a valid mobile number (at least 10 digits).'
   }
   if (!s.dateOfBirth.trim()) return 'Enter your date of birth.'
-  if (!s.email.trim() || !s.email.includes('@')) {
-    return 'Enter a valid email address.'
-  }
+  const emailError = validateRequiredEmail(s.email)
+  if (emailError) return emailError
   if (!s.addressLine.trim()) return 'Enter your address (line 1).'
-  if (!s.city.trim()) return 'Enter your city.'
-  if (!s.state.trim()) return 'Enter your state.'
-  const pc = s.pincode.replace(/\D/g, '')
-  if (pc.length !== 6) return 'Enter a 6-digit PIN code.'
+  const loc = validateIntakeLocation(
+    s.state,
+    s.city,
+    s.pincode,
+    'borrower_address',
+    resolveWorkflowAllowedStates(workflow),
+  )
+  if (loc) return loc
   if (!s.gender.trim()) return 'Select your gender (or “prefer not to say”).'
   if (!s.maritalStatus.trim()) return 'Select your marital status.'
   if (!s.addressProofType.trim()) return 'Select the type of address proof you can provide.'
+  const occupationErr = validateOccupationSelection(s, workflow)
+  if (occupationErr) return occupationErr
   return null
 }
 
 /** Aadhaar last 4 or full 12, or left blank in borrower journey. */
-export function validateBorrowerBankKycStep(s: IntakeFormState): string | null {
+export function validateBorrowerBankKycStep(
+  s: IntakeFormState,
+  workflow?: WorkflowConfigResponse | null,
+): string | null {
+  if (workflow && isWorkflowDrivenIntake(workflow)) {
+    return validateWorkflowKycStep(s, workflow)
+  }
   if (!s.panNumber.trim()) {
     return 'PAN is required.'
   }
@@ -232,6 +551,25 @@ export function validateCollateralIntakeStep(s: IntakeFormState): string | null 
     if (!s.collateralGoldPurityKarat.trim()) return 'Enter purity (e.g. 22K) or karat.'
     if (!s.collateralGoldOrnamentDescription.trim()) return 'Describe the item(s) offered as security.'
   }
+  if (kind === 'VEHICLE') {
+    if (!s.collateralVehicleType) return 'Select the vehicle type.'
+    if (!s.collateralVehicleMakeModel.trim()) return 'Enter the vehicle make and model.'
+    if (!s.collateralVehicleYear.trim()) return 'Enter the year of manufacture.'
+    if (!s.collateralVehicleRegistrationNumber.trim()) return 'Enter the vehicle registration number.'
+    if (!s.collateralVehicleExistingLoan) return 'Indicate if there is an existing loan on this vehicle.'
+  }
+  if (kind === 'FIXED_DEPOSIT') {
+    if (!s.collateralFdBankName.trim()) return 'Enter the bank name for the fixed deposit.'
+    if (!s.collateralFdAccountNumber.trim()) return 'Enter the FD account number.'
+    if (!s.collateralFdMaturityDate.trim()) return 'Enter the FD maturity date.'
+    if (!s.collateralFdReceiptNumber.trim()) return 'Enter the FD receipt number.'
+  }
+  if (kind === 'MACHINERY') {
+    if (!s.collateralMachineryTypeDescription.trim()) return 'Enter the machinery type or description.'
+    if (!s.collateralMachineryMakeModel.trim()) return 'Enter the machinery make and model.'
+    if (!s.collateralMachineryYearOfPurchase.trim()) return 'Enter the year of purchase.'
+    if (!s.collateralMachineryLocationAddress.trim()) return 'Enter the machinery location or address.'
+  }
   return null
 }
 
@@ -267,6 +605,23 @@ export function validateBorrowerIncomeStep(s: IntakeFormState): string | null {
     if (Number.isNaN(n) || n < 0) {
       return 'Work experience should be a whole number of years, or leave blank.'
     }
+  }
+  return null
+}
+
+export function validateInvoiceDiscountingVintageStep(s: IntakeFormState, mode: IntakeMode): string | null {
+  if (!isInvoiceDiscountingProduct(s.loanProduct)) return null
+  const onboardingChoice = mode === 'BORROWER_SELF_SERVICE' ? 'BORROWER' : s.invoiceOnboardingChoice
+  if (onboardingChoice === 'ANCHOR') return null
+  const dep = s.dependencyVintagePercent.trim()
+  if (!dep) return 'Enter dependency vintage (%).'
+  const depN = Number.parseFloat(dep)
+  if (Number.isNaN(depN) || depN < 0) return 'Dependency vintage must be 0 or greater.'
+  const anchorMo = s.anchorRelationshipVintageMonths.trim()
+  if (!anchorMo) return 'Enter anchor relationship vintage (months).'
+  const anchorN = Number.parseInt(anchorMo, 10)
+  if (Number.isNaN(anchorN) || anchorN < 0) {
+    return 'Anchor relationship vintage must be a whole number of months (0 or greater).'
   }
   return null
 }

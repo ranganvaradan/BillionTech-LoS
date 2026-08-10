@@ -1,13 +1,25 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getKycOutcome, getKycResults } from '@/api/kyc'
 import { retryKycFlow, runKycFlow, submitApplicationForKyc } from '@/api/flow'
-import { getActiveWorkflow } from '@/api/workflows'
-import { messageForKycAction, messageFromKycRunOutput } from '@/api/kycErrorMessage'
+import { getActiveWorkflow, listWorkflows } from '@/api/workflows'
+import { messageForKycAction, messageFromKycRunOutput, businessKycOutcomeLabel, businessKycStepLabel } from '@/api/kycErrorMessage'
 import { updateApplication } from '@/api/applications'
 import { ErrorState } from '@/components/ErrorState'
+import { ProcessOverrideCard } from '@/components/ProcessOverrideCard'
 import type { ApplicationResponse } from '@/types/application'
 import type { KycStepResultResponse } from '@/types/kyc'
 import type { WorkflowConfigResponse } from '@/types/workflow'
+import { applicationPartyLabels } from '@/lib/applicationPartyLabels'
+import { workflowAnyGroupKycHint } from '@/lib/workflow/workflowIntakeRules'
+import {
+  buildAnchorKycSavePayload,
+  hydrateAnchorKycFields,
+  isAnchorApplication,
+} from '@/lib/intake/anchorKycBridge'
+import {
+  filterAnchorKycUiStepNames,
+  filterAnchorKycUiSteps,
+} from '@/lib/intake/anchorKycUi'
 import { isBusinessBorrowerType } from '@/lib/intake/intakeTypes'
 import type { BorrowerType } from '@/types/createApplication'
 
@@ -36,6 +48,22 @@ const KNOWN_KYC_INPUT_STEPS = new Set([
   'VOTER_ID_VERIFY',
   'MOBILE_OTP',
   'MNRL',
+])
+
+/** Steps that are not staff form inputs (borrower portal / dedicated admin panels only). */
+const NO_STAFF_KYC_INPUT_STEPS = new Set([
+  'ITR_RETURN_FORMS',
+  'GST_ANALYSIS',
+  'FACE_MATCH',
+  'LIVENESS',
+  'VIDEO_KYC',
+  'CKYC_DOWNLOAD',
+  'CKYC_UPLOAD',
+  'BUREAU_PULL',
+  'ESIGN_KFS',
+  'ESIGN_AGREEMENT',
+  'EMAIL_OTP',
+  'AML_SCREENING',
 ])
 
 function toStepName(step: Record<string, unknown>): string {
@@ -108,6 +136,73 @@ function summaryPairs(stepType: string, parsedData: Record<string, unknown> | nu
       ['Match result', read('nameMatch', 'matchResult')],
     ]
     rows.forEach(([label, value]) => value && out.push({ label, value }))
+  } else if (s === 'MOBILE_OTP') {
+    if (read('mobileVerified') === 'true' || data.mobileVerified === true) {
+      out.push({ label: 'Status', value: 'Verified' })
+    }
+    const masked = read('mobileNumberMasked')
+    if (masked) out.push({ label: 'Mobile', value: masked })
+    if (errorMessage) {
+      if (/required for verification/i.test(errorMessage) || /invalid mobile/i.test(errorMessage)) {
+        out.push({ label: 'Issue', value: 'Mobile verification could not be completed' })
+      } else {
+        out.push({ label: 'Issue', value: errorMessage })
+      }
+    }
+  } else if (s === 'ITR_RETURN_FORMS') {
+    const metrics =
+      data.mappedMetrics && typeof data.mappedMetrics === 'object'
+        ? (data.mappedMetrics as Record<string, unknown>)
+        : {}
+    const result =
+      data.result && typeof data.result === 'object' ? (data.result as Record<string, unknown>) : {}
+    const gen =
+      result.generalInformation && typeof result.generalInformation === 'object'
+        ? (result.generalInformation as Record<string, unknown>)
+        : {}
+    const readM = (...keys: string[]) => {
+      for (const key of keys) {
+        const value = metrics[key] ?? data[key] ?? gen[key]
+        if (value != null && String(value).trim() !== '') return String(value)
+      }
+      return ''
+    }
+    const rows: Array<[string, string]> = [
+      ['Entity', readM('entityName')],
+      ['PAN', readM('panNumber', 'entityPan')],
+      ['Assessment year', readM('assessmentYear')],
+      ['Total revenue (ITR income)', readM('itrIncome', 'grossTotalIncome')],
+      ['PAT', readM('pat')],
+      ['EBITDA', readM('ebitda')],
+      ['Username used', read('username')],
+      ['Request id', read('requestId')],
+    ]
+    rows.forEach(([label, value]) => value && out.push({ label, value }))
+  } else if (s === 'GST_ANALYSIS') {
+    const metrics =
+      data.mappedMetrics && typeof data.mappedMetrics === 'object'
+        ? (data.mappedMetrics as Record<string, unknown>)
+        : {}
+    const readM = (...keys: string[]) => {
+      for (const key of keys) {
+        const value = metrics[key] ?? data[key]
+        if (value != null && String(value).trim() !== '') return String(value)
+      }
+      return ''
+    }
+    const rows: Array<[string, string]> = [
+      ['Phase', read('phase')],
+      ['GSTIN', readM('gstin')],
+      ['Legal name', readM('legalName')],
+      ['Trade name', readM('tradeName')],
+      ['Annual GST turnover', readM('annualGstTurnover')],
+      ['GST income', readM('gstIncome')],
+      ['Avg GMV (3m)', readM('avgGmv3m')],
+      ['Active 90 days', readM('active90days')],
+      ['Request id', read('requestId', 'uploadRequestId')],
+      ['Documents stored', Array.isArray(data.storedDocuments) ? String(data.storedDocuments.length) : ''],
+    ]
+    rows.forEach(([label, value]) => value && out.push({ label, value }))
   } else if (s === 'MNRL') {
     const active = read('active').toLowerCase()
     const activeLabel = active === 'y' ? 'Yes' : active === 'n' ? 'No' : read('active')
@@ -136,17 +231,33 @@ function summaryPairs(stepType: string, parsedData: Record<string, unknown> | nu
   return out
 }
 
-/** KYC flow finished successfully (outcome API) or application has moved past the KYC stage. */
+/**
+ * KYC is complete only after an explicit PASS outcome, or once the application has genuinely moved
+ * past the review/KYC stages. Queue statuses like BORROWER_SUBMITTED and PENDING_CREDIT_OFFICER
+ * must not show a false "success" banner before any verification has actually run.
+ */
 function isKycChecksComplete(app: ApplicationResponse, kycOutcome: Record<string, unknown> | null): boolean {
   const st = app.status
-  if (st !== 'DRAFT' && st !== 'CONSENT_PENDING' && st !== 'KYC_IN_PROGRESS' && st !== 'KYC_FAILED') {
-    return true
-  }
-  if (st === 'KYC_IN_PROGRESS' && kycOutcome) {
+  if (kycOutcome) {
     const o = String((kycOutcome as { outcome?: unknown }).outcome ?? '').toUpperCase()
-    return o === 'PASS'
+    if (o === 'PASS') return true
   }
-  return false
+  return (
+    st === 'UNDERWRITING' ||
+    st === 'UNDERWRITING_COMPLETED' ||
+    st === 'CAM_READY' ||
+    st === 'CAM_REVIEWED' ||
+    st === 'SANCTION_PENDING' ||
+    st === 'APPROVED' ||
+    st === 'SANCTIONED' ||
+    st === 'KFS_GENERATED' ||
+    st === 'SANCTION_ISSUED' ||
+    st === 'ESIGN_PENDING' ||
+    st === 'ESIGN_COMPLETED' ||
+    st === 'READY_FOR_DISBURSEMENT' ||
+    st === 'DISBURSEMENT_PENDING' ||
+    st === 'DISBURSED'
+  )
 }
 
 export function KycDetailsSection({
@@ -155,6 +266,7 @@ export function KycDetailsSection({
   onApplicationRefetch,
   onStepsRefetch,
   className = 'mb-8',
+  allowRunKyc = true,
 }: {
   applicationId: string
   app: ApplicationResponse
@@ -162,6 +274,8 @@ export function KycDetailsSection({
   onStepsRefetch: () => void
   /** Panel spacing when embedded (e.g. in tabs). */
   className?: string
+  /** When false (e.g. Relationship Manager), hide Run KYC but still allow save. */
+  allowRunKyc?: boolean
 }) {
   const [panNumber, setPanNumber] = useState('')
   const [name, setName] = useState('')
@@ -176,6 +290,7 @@ export function KycDetailsSection({
   const [accountNumber, setAccountNumber] = useState('')
   const [ifsc, setIfsc] = useState('')
   const [bankName, setBankName] = useState('')
+  const [cin, setCin] = useState('')
   const [extraStepValues, setExtraStepValues] = useState<Record<string, string>>({})
   const [activeWorkflow, setActiveWorkflow] = useState<WorkflowConfigResponse | null>(null)
   const [formDirty, setFormDirty] = useState(false)
@@ -203,32 +318,37 @@ export function KycDetailsSection({
     return names
   }, [activeWorkflow])
   const showDynamicFromWorkflow = configuredKycStepNames.length > 0
+  const isAnchorApp = isAnchorApplication(app.intakeSegment)
   const shouldShow = useCallback(
     (stepName: string, fallback: boolean) =>
       showDynamicFromWorkflow ? configuredKycStepNames.includes(stepName) : fallback,
     [configuredKycStepNames, showDynamicFromWorkflow],
   )
   const showPan = shouldShow('PAN_VERIFY', true)
-  const showAadhaar = shouldShow('AADHAAR_OTP', true)
-  const showBank = shouldShow('BANK_PENNY_DROP', true)
+  const showAadhaar = shouldShow('AADHAAR_OTP', !isAnchorApp)
+  const showBank = shouldShow('BANK_PENNY_DROP', !isAnchorApp)
   const showGstin = shouldShow('GSTIN_VERIFY', app.borrowerType !== 'INDIVIDUAL')
   const showUdyam = shouldShow('UDYAM_VERIFY', isBusinessBorrowerType((app.borrowerType as BorrowerType) ?? 'INDIVIDUAL'))
   const showDl = shouldShow('DL_VERIFY', false)
   const showVoter = shouldShow('VOTER_ID_VERIFY', false)
   const showMnrl = shouldShow('MNRL', false)
-  const showMobile = shouldShow('MOBILE_OTP', true) || showAadhaar || showMnrl
-  const extraConfiguredSteps = useMemo(
-    () =>
-      configuredKycStepNames.filter(
-        (name) =>
-          !KNOWN_KYC_INPUT_STEPS.has(name) &&
-          name !== 'FACE_MATCH' &&
-          name !== 'LIVENESS' &&
-          name !== 'VIDEO_KYC' &&
-          name !== 'CKYC_DOWNLOAD' &&
-          name !== 'CKYC_UPLOAD',
-      ),
-    [configuredKycStepNames],
+  const showMobile = shouldShow('MOBILE_OTP', false) || showAadhaar || showMnrl
+  // When workflow KYC steps are configured, field visibility must follow those steps only
+  // (including Anchor apps — do not force Bank / PAN / GSTIN when those steps are absent).
+  const showFullName = showPan || showAadhaar || showDl || showVoter || showBank || (isAnchorApp && !showDynamicFromWorkflow)
+  const showPanField = showPan || (isAnchorApp && !showDynamicFromWorkflow)
+  const showBankFields = showBank
+  const showGstinFields = showGstin || (isAnchorApp && !showDynamicFromWorkflow)
+  const extraConfiguredSteps = useMemo(() => {
+    const names = configuredKycStepNames.filter(
+      (name) => !KNOWN_KYC_INPUT_STEPS.has(name) && !NO_STAFF_KYC_INPUT_STEPS.has(name),
+    )
+    return filterAnchorKycUiStepNames(isAnchorApp, names)
+  }, [configuredKycStepNames, isAnchorApp])
+
+  const visibleKycResults = useMemo(
+    () => (kycResults ? filterAnchorKycUiSteps(isAnchorApp, kycResults) : null),
+    [isAnchorApp, kycResults],
   )
 
   const isDraft = app.status === 'DRAFT'
@@ -240,6 +360,8 @@ export function KycDetailsSection({
     () => isKycChecksComplete(app, kycOutcome),
     [app, kycOutcome],
   )
+
+  const anyGroupKycHint = useMemo(() => workflowAnyGroupKycHint(activeWorkflow), [activeWorkflow])
 
   const kycActionBusy = running || retrying || submitting
   const fieldsLocked = kycChecksComplete || kycActionBusy
@@ -280,8 +402,28 @@ export function KycDetailsSection({
       const pi = app.personalInfo as Record<string, unknown> | null | undefined
       const bi = app.businessInfo as Record<string, unknown> | null | undefined
       const fi = app.financialInfo as Record<string, unknown> | null | undefined
-      setPanNumber(pickStr(pi, 'panNumber'))
-      setName(pickStr(pi, 'fullName') || pickStr(pi, 'name'))
+      if (isAnchorApplication(app.intakeSegment)) {
+        const anchor = hydrateAnchorKycFields(pi, bi, fi)
+        setPanNumber(anchor.panNumber)
+        setName(anchor.name)
+        setMobile(anchor.mobile)
+        setGstin(anchor.gstin)
+        setBusinessName(anchor.businessName)
+        setAccountNumber(anchor.accountNumber)
+        setIfsc(anchor.ifsc)
+        setBankName(anchor.bankName)
+        setCin(anchor.cin)
+      } else {
+        setPanNumber(pickStr(pi, 'panNumber'))
+        setName(pickStr(pi, 'fullName') || pickStr(pi, 'name'))
+        setMobile(pickStr(pi, 'mobile') || pickStr(pi, 'phone'))
+        setGstin(pickStr(bi, 'gstin'))
+        setBusinessName(pickStr(bi, 'businessName'))
+        setAccountNumber(pickStr(pi, 'bankAccountNumber') || pickStr(fi, 'accountNumber'))
+        setIfsc(pickStr(pi, 'ifsc') || pickStr(fi, 'ifsc'))
+        setBankName(pickStr(pi, 'bankName'))
+        setCin(pickStr(bi, 'cin'))
+      }
       const a12 = pickStr(pi, 'aadhaarNumber')
       if (a12) {
         setAadhaarNumber(a12)
@@ -289,16 +431,10 @@ export function KycDetailsSection({
         const last4 = pickStr(pi, 'aadhaarLast4')
         setAadhaarNumber(last4 ? `••••••${last4}` : '')
       }
-      setMobile(pickStr(pi, 'mobile') || pickStr(pi, 'phone'))
-      setGstin(pickStr(bi, 'gstin'))
       setUdyamRegistrationNo(pickStr(bi, 'udyam') || pickStr(bi, 'udyamRegistrationNo'))
-      setBusinessName(pickStr(bi, 'businessName'))
-      setDlNo(pickStr(pi, 'dlNo') || pickStr(pi, 'drivingLicenseNumber'))
-      setDlDob(pickStr(pi, 'dob') || pickStr(pi, 'drivingLicenseDob'))
+      setDlNo(pickStr(pi, 'dlNo') || pickStr(pi, 'drivingLicenseNumber') || pickStr(pi, 'dlNumber'))
+      setDlDob(pickStr(pi, 'dob') || pickStr(pi, 'dateOfBirth') || pickStr(pi, 'drivingLicenseDob'))
       setEpicNo(pickStr(pi, 'epicNo') || pickStr(pi, 'voterId'))
-      setAccountNumber(pickStr(pi, 'bankAccountNumber') || pickStr(fi, 'accountNumber'))
-      setIfsc(pickStr(pi, 'ifsc') || pickStr(fi, 'ifsc'))
-      setBankName(pickStr(pi, 'bankName'))
       const seedExtra: Record<string, string> = {}
       extraConfiguredSteps.forEach((step) => {
         const fromPi = pickStr(pi, step)
@@ -314,13 +450,24 @@ export function KycDetailsSection({
   useEffect(() => {
     void (async () => {
       try {
-        const workflow = await getActiveWorkflow(app.borrowerType, app.loanProduct)
+        const workflows = await listWorkflows()
+        const boundId = (app.workflowId ?? '').trim()
+        const bound = boundId ? workflows.find((w) => w.id === boundId) : undefined
+        if (bound) {
+          setActiveWorkflow(bound)
+          return
+        }
+        const workflow = await getActiveWorkflow(
+          app.borrowerType,
+          app.loanProduct,
+          app.intakeSegment ?? 'BORROWER',
+        )
         setActiveWorkflow(workflow)
       } catch {
         setActiveWorkflow(null)
       }
     })()
-  }, [app.borrowerType, app.loanProduct])
+  }, [app.borrowerType, app.loanProduct, app.intakeSegment, app.workflowId])
 
   useEffect(() => {
     setFormDirty(false)
@@ -354,6 +501,26 @@ export function KycDetailsSection({
     setActionError(null)
     setSaving(true)
     try {
+      if (isAnchorApp) {
+        const pi = app.personalInfo as Record<string, unknown> | null | undefined
+        const bi = app.businessInfo as Record<string, unknown> | null | undefined
+        const fi = app.financialInfo as Record<string, unknown> | null | undefined
+        const payload = buildAnchorKycSavePayload(pi, bi, fi, {
+          panNumber,
+          name,
+          mobile,
+          gstin,
+          businessName,
+          accountNumber,
+          ifsc,
+          bankName,
+          cin,
+        })
+        await updateApplication(applicationId, payload)
+        setFormDirty(false)
+        onApplicationRefetch()
+        return
+      }
       const aadhaarClean = aadhaarNumber.replace(/\D/g, '')
       const personalInfo: Record<string, unknown> = {
         ...((app.personalInfo as Record<string, unknown> | null) ?? {}),
@@ -365,6 +532,7 @@ export function KycDetailsSection({
         mobile: mobile.trim() || undefined,
         phone: mobile.trim() || undefined,
         dlNo: dlNo.trim().toUpperCase() || undefined,
+        dlNumber: dlNo.trim().toUpperCase() || undefined,
         drivingLicenseNumber: dlNo.trim().toUpperCase() || undefined,
         drivingLicenseDob: dlDob.trim() || undefined,
         epicNo: epicNo.trim().toUpperCase() || undefined,
@@ -426,11 +594,16 @@ export function KycDetailsSection({
       udyamRegistrationNo: kycFormData.UDYAM.udyamRegistrationNo,
       businessName: kycFormData.GST.businessName,
       dlNo: kycFormData.DL.dlNo,
+      dlNumber: kycFormData.DL.dlNo,
+      drivingLicenseNumber: kycFormData.DL.dlNo,
       dob: kycFormData.DL.dob,
+      dateOfBirth: kycFormData.DL.dob,
+      drivingLicenseDob: kycFormData.DL.dob,
       epicNo: kycFormData.VOTER.epicNo,
+      voterId: kycFormData.VOTER.epicNo,
       accountNumber: kycFormData.BANK.accountNumber.replace(/\D/g, ''),
       ifsc: kycFormData.BANK.ifsc,
-      bankName: kycFormData.BANK.bankName,
+      ...(isAnchorApp ? {} : { bankName: kycFormData.BANK.bankName }),
       ...Object.fromEntries(extraConfiguredSteps.map((step) => [step, extraStepValues[step] ?? ''])),
     })
   }
@@ -493,30 +666,38 @@ export function KycDetailsSection({
   }
 
   const canRunKyc = isKycInProgress && !kycChecksComplete
-  const canShowRunKyc = canRunKyc && !isFailed
+  const canShowRunKyc = canRunKyc && !isFailed && allowRunKyc
+  const rmEditableStatus =
+    app.status === 'BORROWER_SUBMITTED' ||
+    app.status === 'SENT_BACK_TO_RM' ||
+    (isAnchorApp && (app.status === 'KYC_IN_PROGRESS' || app.status === 'KYC_FAILED'))
   const canSave =
-    !kycChecksComplete && (isPreKyc || isKycInProgress || isFailed) && !kycActionBusy
+    !kycChecksComplete && (isPreKyc || isKycInProgress || isFailed || rmEditableStatus) && !kycActionBusy
+  const partyLabels = applicationPartyLabels(app.intakeSegment)
 
   return (
     <section
-      className={`rounded-lg border border-slate-200 bg-white p-5 shadow-sm ${className}`.trim()}
+      className={`bt-card p-5 ${className}`.trim()}
     >
       <h2 className="mb-1 text-lg font-medium text-slate-900">KYC checks</h2>
       <p className="mb-3 text-sm text-slate-600">
         Enter the customer details used for identity verification, then run checks. Use <strong>Save to application</strong>{' '}
         to keep details on the application record, or <strong>Run KYC</strong> to send them for verification.         Values
-        pre-filled from the applicant&apos;s journey are stored on the application record; the <strong>Borrower profile</strong>{' '}
-        tab lists everything submitted at intake.
+        pre-filled from the applicant&apos;s journey are stored on the application record; the{' '}
+        <strong>{partyLabels.profileTab}</strong> tab lists everything submitted at intake.
       </p>
       {loadError ? <p className="mb-2 text-sm text-amber-800">{loadError}</p> : null}
+      {anyGroupKycHint ? (
+        <p className="mb-3 rounded-md border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">{anyGroupKycHint}</p>
+      ) : null}
       {actionError ? <ErrorState message={actionError} /> : null}
       {kycChecksComplete ? (
-        <p className="mb-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+        <p className="mb-3 bt-section-card bt-section-card--success px-3 py-2 text-sm text-emerald-900">
           KYC checks completed successfully.
         </p>
       ) : null}
       {isFailed && !kycChecksComplete ? (
-        <div className="mb-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+        <div className="mb-3 bt-alert bt-alert-warning">
           <p>
             Verification did not pass. You can update the details where needed, then use <strong>Retry KYC</strong> to try
             again. Earlier attempts stay in the history below.
@@ -529,6 +710,13 @@ export function KycDetailsSection({
           >
             {retrying ? 'Preparing…' : 'Retry KYC'}
           </button>
+          <ProcessOverrideCard
+            applicationId={applicationId}
+            processCode="KYC"
+            failureCode="KYC_FAILED"
+            title="Manual override for KYC failure"
+            onSuccess={onApplicationRefetch}
+          />
         </div>
       ) : null}
 
@@ -548,11 +736,13 @@ export function KycDetailsSection({
 
       <fieldset disabled={fieldsLocked} className="min-w-0">
         <div className="grid gap-4 sm:grid-cols-2">
-          {(showPan || showAadhaar || showDl || showVoter || showBank) ? (
+          {showFullName ? (
             <label className="block text-sm text-slate-700 sm:col-span-2">
-              <span className="mb-1 block text-xs font-medium text-slate-500">Full name</span>
+              <span className="mb-1 block text-xs font-medium text-slate-500">
+                {isAnchorApp ? 'Account holder / signatory name' : 'Full name'}
+              </span>
               <input
-                className="w-full rounded-md border border-slate-300 px-3 py-2 disabled:cursor-not-allowed disabled:bg-slate-50"
+                className="bt-input w-full disabled:cursor-not-allowed disabled:bg-slate-50"
                 value={name}
                 onChange={(e) => {
                   setFormDirty(true)
@@ -562,11 +752,13 @@ export function KycDetailsSection({
               />
             </label>
           ) : null}
-          {showPan ? (
+          {showPanField ? (
             <label className="block text-sm text-slate-700">
-              <span className="mb-1 block text-xs font-medium text-slate-500">PAN</span>
+              <span className="mb-1 block text-xs font-medium text-slate-500">
+                {isAnchorApp ? 'Entity PAN' : 'PAN'}
+              </span>
               <input
-                className="w-full rounded-md border border-slate-300 px-3 py-2 uppercase disabled:cursor-not-allowed disabled:bg-slate-50"
+                className="bt-input w-full uppercase disabled:cursor-not-allowed disabled:bg-slate-50"
                 value={panNumber}
                 onChange={(e) => {
                   setFormDirty(true)
@@ -580,7 +772,7 @@ export function KycDetailsSection({
             <label className="block text-sm text-slate-700">
               <span className="mb-1 block text-xs font-medium text-slate-500">Aadhaar (12 digits or last 4)</span>
               <input
-                className="w-full rounded-md border border-slate-300 px-3 py-2 tabular-nums disabled:cursor-not-allowed disabled:bg-slate-50"
+                className="bt-input w-full tabular-nums disabled:cursor-not-allowed disabled:bg-slate-50"
                 value={aadhaarNumber}
                 onChange={(e) => {
                   setFormDirty(true)
@@ -602,7 +794,7 @@ export function KycDetailsSection({
             <label className="block text-sm text-slate-700">
               <span className="mb-1 block text-xs font-medium text-slate-500">Mobile</span>
               <input
-                className="w-full rounded-md border border-slate-300 px-3 py-2 tabular-nums disabled:cursor-not-allowed disabled:bg-slate-50"
+                className="bt-input w-full tabular-nums disabled:cursor-not-allowed disabled:bg-slate-50"
                 value={mobile}
                 onChange={(e) => {
                   setFormDirty(true)
@@ -612,12 +804,14 @@ export function KycDetailsSection({
               />
             </label>
           ) : null}
-          {showGstin ? (
+          {showGstinFields ? (
             <>
               <label className="block text-sm text-slate-700 sm:col-span-2">
-                <span className="mb-1 block text-xs font-medium text-slate-500">Business / trade name</span>
+                <span className="mb-1 block text-xs font-medium text-slate-500">
+                  {isAnchorApp ? 'Corporate / trade name' : 'Business / trade name'}
+                </span>
                 <input
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 disabled:cursor-not-allowed disabled:bg-slate-50"
+                  className="bt-input w-full disabled:cursor-not-allowed disabled:bg-slate-50"
                   value={businessName}
                   onChange={(e) => {
                     setFormDirty(true)
@@ -628,7 +822,7 @@ export function KycDetailsSection({
               <label className="block text-sm text-slate-700 sm:col-span-2">
                 <span className="mb-1 block text-xs font-medium text-slate-500">GSTIN</span>
                 <input
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 uppercase disabled:cursor-not-allowed disabled:bg-slate-50"
+                  className="bt-input w-full uppercase disabled:cursor-not-allowed disabled:bg-slate-50"
                   value={gstin}
                   onChange={(e) => {
                     setFormDirty(true)
@@ -642,7 +836,7 @@ export function KycDetailsSection({
             <label className="block text-sm text-slate-700 sm:col-span-2">
               <span className="mb-1 block text-xs font-medium text-slate-500">Udyam registration number</span>
               <input
-                className="w-full rounded-md border border-slate-300 px-3 py-2 uppercase disabled:cursor-not-allowed disabled:bg-slate-50"
+                className="bt-input w-full uppercase disabled:cursor-not-allowed disabled:bg-slate-50"
                 value={udyamRegistrationNo}
                 onChange={(e) => {
                   setFormDirty(true)
@@ -656,7 +850,7 @@ export function KycDetailsSection({
               <label className="block text-sm text-slate-700">
                 <span className="mb-1 block text-xs font-medium text-slate-500">Driving license number</span>
                 <input
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 uppercase disabled:cursor-not-allowed disabled:bg-slate-50"
+                  className="bt-input w-full uppercase disabled:cursor-not-allowed disabled:bg-slate-50"
                   value={dlNo}
                   onChange={(e) => {
                     setFormDirty(true)
@@ -667,7 +861,7 @@ export function KycDetailsSection({
               <label className="block text-sm text-slate-700">
                 <span className="mb-1 block text-xs font-medium text-slate-500">DOB (DD-MM-YYYY)</span>
                 <input
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 disabled:cursor-not-allowed disabled:bg-slate-50"
+                  className="bt-input w-full disabled:cursor-not-allowed disabled:bg-slate-50"
                   value={dlDob}
                   onChange={(e) => {
                     setFormDirty(true)
@@ -682,7 +876,7 @@ export function KycDetailsSection({
             <label className="block text-sm text-slate-700">
               <span className="mb-1 block text-xs font-medium text-slate-500">Voter EPIC number</span>
               <input
-                className="w-full rounded-md border border-slate-300 px-3 py-2 uppercase disabled:cursor-not-allowed disabled:bg-slate-50"
+                className="bt-input w-full uppercase disabled:cursor-not-allowed disabled:bg-slate-50"
                 value={epicNo}
                 onChange={(e) => {
                   setFormDirty(true)
@@ -691,12 +885,12 @@ export function KycDetailsSection({
               />
             </label>
           ) : null}
-          {showBank ? (
+          {showBankFields ? (
             <>
               <label className="block text-sm text-slate-700">
                 <span className="mb-1 block text-xs font-medium text-slate-500">Bank account</span>
                 <input
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 tabular-nums disabled:cursor-not-allowed disabled:bg-slate-50"
+                  className="bt-input w-full tabular-nums disabled:cursor-not-allowed disabled:bg-slate-50"
                   value={accountNumber}
                   onChange={(e) => {
                     setFormDirty(true)
@@ -708,7 +902,7 @@ export function KycDetailsSection({
               <label className="block text-sm text-slate-700">
                 <span className="mb-1 block text-xs font-medium text-slate-500">IFSC</span>
                 <input
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 uppercase disabled:cursor-not-allowed disabled:bg-slate-50"
+                  className="bt-input w-full uppercase disabled:cursor-not-allowed disabled:bg-slate-50"
                   value={ifsc}
                   onChange={(e) => {
                     setFormDirty(true)
@@ -716,24 +910,26 @@ export function KycDetailsSection({
                   }}
                 />
               </label>
-              <label className="block text-sm text-slate-700 sm:col-span-2">
-                <span className="mb-1 block text-xs font-medium text-slate-500">Bank name</span>
-                <input
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 disabled:cursor-not-allowed disabled:bg-slate-50"
-                  value={bankName}
-                  onChange={(e) => {
-                    setFormDirty(true)
-                    setBankName(e.target.value)
-                  }}
-                />
-              </label>
+              {!isAnchorApp ? (
+                <label className="block text-sm text-slate-700 sm:col-span-2">
+                  <span className="mb-1 block text-xs font-medium text-slate-500">Bank name</span>
+                  <input
+                    className="bt-input w-full disabled:cursor-not-allowed disabled:bg-slate-50"
+                    value={bankName}
+                    onChange={(e) => {
+                      setFormDirty(true)
+                      setBankName(e.target.value)
+                    }}
+                  />
+                </label>
+              ) : null}
             </>
           ) : null}
           {extraConfiguredSteps.map((step) => (
             <label key={step} className="block text-sm text-slate-700 sm:col-span-2">
               <span className="mb-1 block text-xs font-medium text-slate-500">{step.split('_').join(' ')}</span>
               <input
-                className="w-full rounded-md border border-slate-300 px-3 py-2 disabled:cursor-not-allowed disabled:bg-slate-50"
+                className="bt-input w-full disabled:cursor-not-allowed disabled:bg-slate-50"
                 value={extraStepValues[step] ?? ''}
                 onChange={(e) =>
                   {
@@ -784,7 +980,7 @@ export function KycDetailsSection({
             {showTechnical ? 'Hide' : 'Show'} technical details
           </button>
           {showTechnical ? (
-            <div className="mt-2 space-y-2 rounded border border-slate-200 bg-slate-50 p-3 text-sm">
+            <div className="mt-2 space-y-2 bt-section-card bt-section-card--default p-3 text-sm bg-slate-50">
               {lastRunSummary ? (
                 <div>
                   <div className="text-xs font-medium text-slate-500">Last run (raw)</div>
@@ -806,9 +1002,9 @@ export function KycDetailsSection({
         </div>
       ) : null}
 
-      {kycResults && kycResults.length > 0 ? (
+      {visibleKycResults && visibleKycResults.length > 0 ? (
         <div className="mt-4">
-          <h3 className="text-sm font-semibold text-slate-900">Verification history (checks)</h3>
+          <h3 className="bt-card-title">Verification history (checks)</h3>
           <div className="mt-2 overflow-x-auto">
             <table className="min-w-full text-left text-xs">
               <thead className="border-b border-slate-200 bg-slate-50 text-slate-600">
@@ -821,13 +1017,13 @@ export function KycDetailsSection({
                   <th className="px-2 py-1.5">Raw response</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
-                {kycResults.map((r) => {
+              <tbody className="">
+                {visibleKycResults.map((r) => {
                   const pairs = summaryPairs(r.stepType, r.parsedData, r.errorMessage)
                   return (
                     <tr key={r.id}>
-                      <td className="px-2 py-1.5 font-mono">{r.stepType}</td>
-                      <td className="px-2 py-1.5">{r.outcome}</td>
+                      <td className="px-2 py-1.5 font-medium text-slate-800">{businessKycStepLabel(r.stepType)}</td>
+                      <td className="px-2 py-1.5">{businessKycOutcomeLabel(r.outcome)}</td>
                       <td className="px-2 py-1.5">{r.provider}</td>
                       <td className="px-2 py-1.5 text-slate-700">
                         {pairs.length > 0 ? (
@@ -865,7 +1061,7 @@ export function KycDetailsSection({
             </table>
           </div>
         </div>
-      ) : kycResults && kycResults.length === 0 ? (
+      ) : visibleKycResults && visibleKycResults.length === 0 ? (
         <p className="mt-3 text-sm text-slate-500">No verification results yet.</p>
       ) : null}
       {fullResponseModal ? (

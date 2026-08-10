@@ -18,6 +18,15 @@ import {
 import { ErrorState } from '@/components/ErrorState'
 import { LoadingState } from '@/components/LoadingState'
 import { PageHeader } from '@/components/PageHeader'
+import { AdministrationWorkspaceNav } from '@/components/workspace/AdministrationWorkspaceNav'
+import {
+  DetailEmptyState,
+  DetailPanel,
+  DetailSection,
+  MasterDetailLayout,
+  MasterListItem,
+  MasterListPanel,
+} from '@/components/ui/AdminLayout'
 import { BORROWER_TYPE_LABELS, BORROWER_TYPE_ORDER } from '@/catalog/borrowerTypes'
 import { isLoanProductCode, LOAN_PRODUCT_CODES, LOAN_PRODUCT_LABELS, loanProductLabel } from '@/catalog/loanProducts'
 import type { BorrowerType } from '@/types/createApplication'
@@ -150,60 +159,78 @@ export function AssignmentRulesPage() {
     }
   }
 
+  function startNew() {
+    setIsCreating(true)
+    setSelected(null)
+    setName('New assignment')
+    setAssignedRole('CREDIT_MANAGER')
+    setAssignedUserId('')
+    setLoanProduct(LOAN_PRODUCT_CODES[0] ?? 'PERSONAL_LOAN')
+    setActionError(null)
+  }
+
   return (
     <div>
       <PageHeader
-        title="Assignment rules"
+        title="Assignment Rules"
         description="Credit Manager setup — route applications to a role and optional user when they enter underwriting, using the same match dimensions as other policy rules. Highest priority match wins."
       />
+      <AdministrationWorkspaceNav />
       {loading && <LoadingState label="Loading…" />}
       {loadError && <ErrorState message={loadError} />}
       {rows && !loading && (
-        <div className="grid gap-6 lg:grid-cols-2">
-          <div>
-            <h2 className="mb-2 text-sm font-semibold text-slate-900">Rules</h2>
-            <ul className="divide-y rounded-lg border border-slate-200 bg-white">
-              {rows.map((r) => (
-                <li key={r.id}>
-                  <button
-                    type="button"
-                    onClick={() => applyRule(r)}
-                    className="w-full px-3 py-2 text-left text-sm hover:bg-slate-50"
-                  >
-                    <div className="font-medium text-slate-900">{r.name}</div>
-                    <div className="text-xs text-slate-500">
-                      {BORROWER_TYPE_LABELS[r.borrowerType as BorrowerType] ?? r.borrowerType} · {loanProductLabel(r.loanProduct)} ·
-                      p{r.priority} · {roleLabel(r.assignedRole)}
-                      {r.active ? (
-                        <span className="ml-1 rounded bg-emerald-100 px-1 text-emerald-800">on</span>
-                      ) : (
-                        <span className="ml-1 rounded bg-slate-100 px-1">off</span>
-                      )}
-                    </div>
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <button
-              type="button"
-              onClick={() => {
-                setIsCreating(true)
-                setSelected(null)
-                setName('New assignment')
-                setAssignedRole('CREDIT_MANAGER')
-                setAssignedUserId('')
-                setLoanProduct(LOAN_PRODUCT_CODES[0] ?? 'PERSONAL_LOAN')
-                setActionError(null)
-              }}
-              className="mt-2 rounded border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs text-white"
+        <MasterDetailLayout>
+          <MasterListPanel
+            title="Rules"
+            count={rows.length}
+            action={
+              <button type="button" onClick={startNew} className="bt-btn bt-btn-primary bt-btn-sm">
+                New
+              </button>
+            }
+          >
+            {rows.map((r) => (
+              <MasterListItem
+                key={r.id}
+                active={selected?.id === r.id && !isCreating}
+                onClick={() => applyRule(r)}
+                avatar={r.name}
+                title={r.name}
+                subtitle={`Priority ${r.priority} · ${roleLabel(r.assignedRole)}`}
+                meta={
+                  r.active ? (
+                    <span className="bt-badge bt-badge-green">Active</span>
+                  ) : (
+                    <span className="bt-badge bt-badge-gray">Inactive</span>
+                  )
+                }
+                tags={
+                  <>
+                    <span className="bt-tag">{BORROWER_TYPE_LABELS[r.borrowerType as BorrowerType] ?? r.borrowerType}</span>
+                    <span className="bt-tag">{loanProductLabel(r.loanProduct)}</span>
+                  </>
+                }
+              />
+            ))}
+          </MasterListPanel>
+
+          {selected || isCreating ? (
+            <DetailPanel
+              title={isCreating ? 'New assignment rule' : name}
+              description="Route applications to a role and optional user when they enter underwriting."
+              badge={
+                !isCreating && selected ? (
+                  selected.active ? (
+                    <span className="bt-badge bt-badge-green">Active</span>
+                  ) : (
+                    <span className="bt-badge bt-badge-gray">Inactive</span>
+                  )
+                ) : undefined
+              }
             >
-              New
-            </button>
-          </div>
-          {(selected || isCreating) && (
-            <div className="space-y-2 rounded-lg border border-slate-200 bg-white p-4 text-sm">
-              {actionError ? <p className="text-amber-800">{actionError}</p> : null}
-              <input className="w-full border px-2 py-1" value={name} onChange={(e) => setName(e.target.value)} />
+              {actionError ? <p className="bt-alert bt-alert-warning mb-4">{actionError}</p> : null}
+              <DetailSection title="Rule details">
+              <input className="bt-input mb-3 w-full" value={name} onChange={(e) => setName(e.target.value)} />
               <div className="grid gap-2 sm:grid-cols-2">
                 <select
                   className="border px-2 py-1"
@@ -294,7 +321,7 @@ export function AssignmentRulesPage() {
                 <div className="sm:col-span-2">
                   <label className="mb-0.5 block text-xs text-slate-500">User (optional)</label>
                   <select
-                    className="w-full border px-2 py-1"
+                    className="bt-input w-full"
                     value={assignedUserId}
                     onChange={(e) => setAssignedUserId(e.target.value)}
                   >
@@ -310,16 +337,17 @@ export function AssignmentRulesPage() {
                   ) : null}
                 </div>
               </div>
+              <div className="mt-4 flex flex-wrap gap-2">
               <button
                 type="button"
                 disabled={saving}
                 onClick={() => void onSave()}
-                className="rounded bg-slate-900 px-3 py-1.5 text-white"
+                className="bt-btn bt-btn-primary bt-btn-sm"
               >
                 {saving ? '…' : isCreating ? 'Create' : 'Save'}
               </button>
               {!isCreating && selected ? (
-                <div className="flex flex-wrap gap-2 pt-2">
+                <>
                   {selected.active ? (
                     <button
                       type="button"
@@ -333,6 +361,7 @@ export function AssignmentRulesPage() {
                           setToggling(false)
                         }
                       }}
+                      className="bt-btn bt-btn-secondary bt-btn-sm"
                     >
                       Deactivate
                     </button>
@@ -349,6 +378,7 @@ export function AssignmentRulesPage() {
                           setToggling(false)
                         }
                       }}
+                      className="bt-btn bt-btn-secondary bt-btn-sm"
                     >
                       Activate
                     </button>
@@ -363,14 +393,27 @@ export function AssignmentRulesPage() {
                         void load()
                       }
                     }}
+                    className="bt-btn bt-btn-danger bt-btn-sm"
                   >
                     Delete (inactive)
                   </button>
-                </div>
+                </>
               ) : null}
-            </div>
+              </div>
+              </DetailSection>
+            </DetailPanel>
+          ) : (
+            <DetailEmptyState
+              title="Select an assignment rule"
+              description="Choose a rule from the list to edit routing criteria, or create a new one."
+              action={
+                <button type="button" onClick={startNew} className="bt-btn bt-btn-primary">
+                  New rule
+                </button>
+              }
+            />
           )}
-        </div>
+        </MasterDetailLayout>
       )}
     </div>
   )

@@ -1,5 +1,31 @@
 import { http } from './http'
 import type { BorrowerType } from '@/types/createApplication'
+import type { DependencyGroup, FormulaDefinition } from './scorecards'
+
+export interface HardRuleRow {
+  id?: string
+  parameter: string
+  source: string
+  condition: string
+  decision: 'REJECT' | 'MANUAL_REVIEW'
+  message?: string
+  dependsOn?: DependencyGroup
+  formula?: FormulaDefinition
+}
+
+export interface LimitSizingRow {
+  enabled?: boolean
+  turnoverParameter?: string
+  turnoverLimitPercent?: number
+  standardTicketCap?: number
+  maxDeviationCap?: number
+  standardCapMode?: 'MIN_OF_BOTH' | 'TURNOVER_PERCENT' | 'FIXED'
+  maxDeviationMode?: 'FIXED' | 'TURNOVER_PERCENT'
+  maxDeviationPercent?: number
+  dependsOn?: DependencyGroup
+  sanctionCapEnabled?: boolean
+  camRecommendedCapEnabled?: boolean
+}
 
 export interface UnderwritingRuleSetResponse {
   id: string

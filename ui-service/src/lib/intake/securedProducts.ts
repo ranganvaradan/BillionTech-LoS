@@ -3,7 +3,13 @@
  */
 import { isSecuredLoanProductCode } from '@/catalog/loanProducts'
 
-export type SecuredCollateralKind = 'PROPERTY' | 'SHARES' | 'GOLD'
+export type SecuredCollateralKind =
+  | 'PROPERTY'
+  | 'SHARES'
+  | 'GOLD'
+  | 'VEHICLE'
+  | 'FIXED_DEPOSIT'
+  | 'MACHINERY'
 
 /**
  * @returns collateral kind for secured products, or null if unsecured / unknown.
@@ -13,6 +19,9 @@ export function detectSecuredCollateralKind(loanProduct: string): SecuredCollate
   if (t === 'LOAN_AGAINST_PROPERTY') return 'PROPERTY'
   if (t === 'LOAN_AGAINST_SECURITIES') return 'SHARES'
   if (t === 'LOAN_AGAINST_GOLD') return 'GOLD'
+  if (t === 'VEHICLE_LOAN') return 'VEHICLE'
+  if (t === 'LOAN_AGAINST_FIXED_DEPOSIT') return 'FIXED_DEPOSIT'
+  if (t === 'LOAN_AGAINST_MACHINERY') return 'MACHINERY'
   return null
 }
 
@@ -33,5 +42,6 @@ export const COLLATERAL_DOC = {
 export function collateralDocumentTypesForKind(kind: SecuredCollateralKind): string[] {
   if (kind === 'PROPERTY') return [COLLATERAL_DOC.PROPERTY_DOCUMENT, COLLATERAL_DOC.PROPERTY_VALUATION, COLLATERAL_DOC.COLLATERAL_OTHER]
   if (kind === 'SHARES') return [COLLATERAL_DOC.SHARE_HOLDING_STATEMENT, COLLATERAL_DOC.COLLATERAL_OTHER]
-  return [COLLATERAL_DOC.GOLD_PHOTO, COLLATERAL_DOC.GOLD_VALUATION, COLLATERAL_DOC.COLLATERAL_OTHER]
+  if (kind === 'GOLD') return [COLLATERAL_DOC.GOLD_PHOTO, COLLATERAL_DOC.GOLD_VALUATION, COLLATERAL_DOC.COLLATERAL_OTHER]
+  return [COLLATERAL_DOC.COLLATERAL_OTHER]
 }

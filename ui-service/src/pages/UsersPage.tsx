@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   createLosUser,
   deactivateLosUser,
@@ -10,6 +10,20 @@ import {
 import { ErrorState } from '@/components/ErrorState'
 import { LoadingState } from '@/components/LoadingState'
 import { PageHeader } from '@/components/PageHeader'
+import { AdministrationWorkspaceNav } from '@/components/workspace/AdministrationWorkspaceNav'
+import {
+  BtAlert,
+  DetailActions,
+  DetailEmptyState,
+  DetailPanel,
+  DetailSection,
+  FormField,
+  MasterDetailLayout,
+  MasterListItem,
+  MasterListPanel,
+} from '@/components/ui/AdminLayout'
+import { BtBadge } from '@/components/ui/BtBadge'
+import { BtButton } from '@/components/ui/BtButton'
 
 export function UsersPage() {
   const [rows, setRows] = useState<LosUserResponse[] | null>(null)
@@ -19,6 +33,8 @@ export function UsersPage() {
   const [isCreating, setIsCreating] = useState(false)
   const [saving, setSaving] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [actionOk, setActionOk] = useState<string | null>(null)
+  const [search, setSearch] = useState('')
 
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -40,9 +56,30 @@ export function UsersPage() {
   }, [])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- async load
     void load()
   }, [load])
+
+  const filteredRows = useMemo(() => {
+    if (!rows) return []
+    const q = search.trim().toLowerCase()
+    if (!q) return rows
+    return rows.filter(
+      (r) =>
+        r.name.toLowerCase().includes(q) ||
+        r.email.toLowerCase().includes(q) ||
+        (r.mobile ?? '').toLowerCase().includes(q),
+    )
+  }, [rows, search])
+
+  function startCreate() {
+    setIsCreating(true)
+    setSelected(null)
+    setName('New user')
+    setEmail('')
+    setMobile('')
+    setActive(true)
+    setActionError(null)
+  }
 
   function applyRow(u: LosUserResponse) {
     setSelected(u)
@@ -60,6 +97,7 @@ export function UsersPage() {
 
   async function onSave() {
     setActionError(null)
+    setActionOk(null)
     if (!name.trim() || !email.trim()) {
       setActionError('Name and email are required.')
       return
@@ -71,6 +109,9 @@ export function UsersPage() {
         setRows((p) => (p ? [c, ...p] : [c]))
         setIsCreating(false)
         applyRow(c)
+        setActionOk(
+          `User created. Temporary password: Temp@123 — they must change it on first sign-in.`,
+        )
       } else {
         if (!selected) return
         const u = await updateLosUser(selected.id, toRequest())
@@ -85,112 +126,123 @@ export function UsersPage() {
   }
 
   return (
-    <div>
+    <div className="space-y-4">
       <PageHeader
-        title="User directory"
+        title="Users"
         description="Local LOS users for assignment and role mapping. This is a demo directory separate from IAM."
       />
+      <AdministrationWorkspaceNav />
       {loading && <LoadingState label="Loading…" />}
       {loadError && <ErrorState message={loadError} />}
+      {actionOk ? <BtAlert tone="success">{actionOk}</BtAlert> : null}
+      {actionError ? <BtAlert tone="error">{actionError}</BtAlert> : null}
       {rows && !loading && (
-        <div className="grid gap-6 lg:grid-cols-2">
-          <div>
-            <h2 className="mb-2 text-sm font-semibold text-slate-900">Users</h2>
-            <ul className="divide-y rounded-lg border border-slate-200 bg-white">
-              {rows.map((r) => (
-                <li key={r.id}>
-                  <button
-                    type="button"
-                    onClick={() => applyRow(r)}
-                    className="w-full px-3 py-2 text-left text-sm hover:bg-slate-50"
-                  >
-                    <div className="font-medium text-slate-900">{r.name}</div>
-                    <div className="text-xs text-slate-500">
-                      {r.email}
-                      {r.active ? (
-                        <span className="ml-1 rounded bg-emerald-100 px-1 text-emerald-800">active</span>
-                      ) : (
-                        <span className="ml-1 rounded bg-slate-200 px-1">inactive</span>
-                      )}
-                    </div>
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <button
-              type="button"
-              onClick={() => {
-                setIsCreating(true)
-                setSelected(null)
-                setName('New user')
-                setEmail('')
-                setMobile('')
-                setActive(true)
-                setActionError(null)
-              }}
-              className="mt-2 rounded border border-slate-800 bg-slate-900 px-3 py-1.5 text-xs text-white"
+        <MasterDetailLayout>
+          <MasterListPanel
+            title="Users"
+            count={filteredRows.length}
+            search={search}
+            onSearchChange={setSearch}
+            searchPlaceholder="Search by name or email…"
+            action={<BtButton size="sm" onClick={startCreate}>Create user</BtButton>}
+            empty={
+              filteredRows.length === 0 ? (
+                <div className="bt-master-list-empty">
+                  {search.trim() ? 'No users match your search.' : 'No users yet.'}
+                </div>
+              ) : undefined
+            }
+          >
+            {filteredRows.map((r) => (
+              <MasterListItem
+                key={r.id}
+                active={selected?.id === r.id && !isCreating}
+                onClick={() => applyRow(r)}
+                avatar={r.name}
+                title={r.name}
+                subtitle={r.email}
+                meta={r.active ? <BtBadge tone="green">Active</BtBadge> : <BtBadge tone="gray">Inactive</BtBadge>}
+                tags={r.mobile ? <span className="bt-tag">{r.mobile}</span> : undefined}
+              />
+            ))}
+          </MasterListPanel>
+
+          {selected || isCreating ? (
+            <DetailPanel
+              title={isCreating ? 'New user' : name}
+              description={
+                isCreating
+                  ? 'Add a local LOS user for assignment rules and role mapping. A temporary password (Temp@123) is assigned automatically; the user must change it on first sign-in.'
+                  : 'Update contact details and availability for this user.'
+              }
+              badge={
+                !isCreating && selected ? (
+                  selected.active ? <BtBadge tone="green">Active</BtBadge> : <BtBadge tone="gray">Inactive</BtBadge>
+                ) : undefined
+              }
+              footer={
+                <DetailActions>
+                  <BtButton disabled={saving} onClick={() => void onSave()}>
+                    {saving ? 'Saving…' : isCreating ? 'Create user' : 'Save changes'}
+                  </BtButton>
+                  {!isCreating && selected?.active ? (
+                    <BtButton
+                      variant="danger"
+                      disabled={saving}
+                      onClick={async () => {
+                        if (!selected) return
+                        if (!window.confirm('Deactivate this user?')) return
+                        setSaving(true)
+                        try {
+                          await deactivateLosUser(selected.id)
+                          void load()
+                          setSelected(null)
+                        } catch (e) {
+                          setActionError(e instanceof Error ? e.message : 'Deactivate failed')
+                        } finally {
+                          setSaving(false)
+                        }
+                      }}
+                    >
+                      Deactivate
+                    </BtButton>
+                  ) : null}
+                </DetailActions>
+              }
             >
-              Create user
-            </button>
-          </div>
-          {(selected || isCreating) && (
-            <div className="space-y-2 rounded-lg border border-slate-200 bg-white p-4 text-sm">
-              {actionError ? <p className="text-amber-800">{actionError}</p> : null}
-              <label className="block text-xs text-slate-500">Name</label>
-              <input className="w-full border px-2 py-1" value={name} onChange={(e) => setName(e.target.value)} />
-              <label className="block text-xs text-slate-500">Email</label>
-              <input
-                className="w-full border px-2 py-1"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                type="email"
-                autoComplete="off"
-              />
-              <label className="block text-xs text-slate-500">Mobile</label>
-              <input
-                className="w-full border px-2 py-1"
-                value={mobile}
-                onChange={(e) => setMobile(e.target.value)}
-              />
-              <label className="flex items-center gap-2 text-xs">
-                <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
-                Active
-              </label>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  disabled={saving}
-                  onClick={() => void onSave()}
-                  className="rounded bg-slate-900 px-3 py-1.5 text-white"
-                >
-                  {saving ? '…' : isCreating ? 'Create' : 'Save'}
-                </button>
-                {!isCreating && selected?.active ? (
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      if (!selected) return
-                      if (!window.confirm('Deactivate this user?')) return
-                      setSaving(true)
-                      try {
-                        await deactivateLosUser(selected.id)
-                        void load()
-                        setSelected(null)
-                      } catch (e) {
-                        setActionError(e instanceof Error ? e.message : 'Deactivate failed')
-                      } finally {
-                        setSaving(false)
-                      }
-                    }}
-                    className="rounded border border-amber-700 px-3 py-1.5 text-amber-900"
-                  >
-                    Deactivate
-                  </button>
-                ) : null}
-              </div>
-            </div>
+              {actionError ? <BtAlert tone="warning" className="mb-4">{actionError}</BtAlert> : null}
+              <DetailSection title="Profile">
+                <div className="space-y-3">
+                  <FormField label="Name">
+                    <input className="bt-input w-full" value={name} onChange={(e) => setName(e.target.value)} />
+                  </FormField>
+                  <FormField label="Email">
+                    <input
+                      className="bt-input w-full"
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      autoComplete="off"
+                    />
+                  </FormField>
+                  <FormField label="Mobile">
+                    <input className="bt-input w-full" value={mobile} onChange={(e) => setMobile(e.target.value)} />
+                  </FormField>
+                  <label className="flex items-center gap-2 text-sm text-[var(--bt-gray-700)]">
+                    <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
+                    Active
+                  </label>
+                </div>
+              </DetailSection>
+            </DetailPanel>
+          ) : (
+            <DetailEmptyState
+              title="Select a user"
+              description="Choose someone from the directory to view or edit their profile, or create a new user."
+              action={<BtButton onClick={startCreate}>Create user</BtButton>}
+            />
           )}
-        </div>
+        </MasterDetailLayout>
       )}
     </div>
   )

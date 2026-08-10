@@ -7,6 +7,10 @@ export function friendlyStatusHeadline(status: ApplicationStatus): string {
   const m: Record<ApplicationStatus, string> = {
     DRAFT: 'Application in progress',
     CONSENT_PENDING: 'Waiting for your consent',
+    BORROWER_SUBMITTED: 'Submitted — we are reviewing your details',
+    PENDING_CREDIT_OFFICER: 'Submitted — under credit review',
+    SENT_BACK_TO_RM: 'Submitted — under review',
+    BORROWER_SENT_BACK: 'Please update your application',
     KYC_IN_PROGRESS: 'Verification in progress',
     KYC_FAILED: 'We need a bit more information',
     UNDERWRITING: 'We are reviewing your application',
@@ -15,6 +19,7 @@ export function friendlyStatusHeadline(status: ApplicationStatus): string {
     REJECTED: 'Application did not go through',
     SANCTION_ISSUED: 'Your terms are being prepared',
     CAM_READY: 'We are finalising the credit summary',
+    CAM_SENT_BACK: 'Credit summary sent back for revision',
     CAM_REVIEWED: 'Moving to the next step',
     SANCTION_PENDING: 'Final approval in progress',
     SANCTIONED: 'Your loan is approved on agreed terms',

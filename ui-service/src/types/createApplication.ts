@@ -8,11 +8,17 @@ export type { LoanProductCode }
 
 export type BorrowerType = 'INDIVIDUAL' | 'PROPRIETOR' | 'PARTNERSHIP' | 'COMPANY'
 
+export type IntakeSegment = 'BORROWER' | 'ANCHOR'
+
 export interface CreateApplicationRequest {
   borrowerType: BorrowerType
   loanProduct: LoanProductCode
+  workflowId?: string | null
+  intakeSegment?: IntakeSegment
   requestedAmount: number
   tenureMonths?: number | null
+  lmsProductCode?: string | null
+  lmsTenureUnit?: string | null
   personalInfo?: Record<string, unknown> | null
   businessInfo?: Record<string, unknown> | null
   financialInfo?: Record<string, unknown> | null

@@ -34,19 +34,49 @@ function buildDetails(kind: SecuredCollateralKind, s: IntakeFormState): Record<s
       pledgeConsent: s.collateralPledgeConsent,
     }
   }
+  if (kind === 'GOLD') {
+    return {
+      goldType: s.collateralGoldType.trim(),
+      approxGrossWeight: s.collateralGoldGrossWeight.trim(),
+      approxNetWeight: s.collateralGoldNetWeight.trim(),
+      purityOrKarat: s.collateralGoldPurityKarat.trim(),
+      ornamentDescription: s.collateralGoldOrnamentDescription.trim(),
+    }
+  }
+  if (kind === 'VEHICLE') {
+    return {
+      vehicleType: s.collateralVehicleType || null,
+      makeModel: s.collateralVehicleMakeModel.trim(),
+      yearOfManufacture: s.collateralVehicleYear.trim(),
+      registrationNumber: s.collateralVehicleRegistrationNumber.trim(),
+      existingLoanOnVehicle: s.collateralVehicleExistingLoan || null,
+    }
+  }
+  if (kind === 'FIXED_DEPOSIT') {
+    return {
+      bankName: s.collateralFdBankName.trim(),
+      fdAccountNumber: s.collateralFdAccountNumber.trim(),
+      fdAmount: s.collateralFdAmount.trim(),
+      maturityDate: s.collateralFdMaturityDate.trim(),
+      fdReceiptNumber: s.collateralFdReceiptNumber.trim(),
+    }
+  }
   return {
-    goldType: s.collateralGoldType.trim(),
-    approxGrossWeight: s.collateralGoldGrossWeight.trim(),
-    approxNetWeight: s.collateralGoldNetWeight.trim(),
-    purityOrKarat: s.collateralGoldPurityKarat.trim(),
-    ornamentDescription: s.collateralGoldOrnamentDescription.trim(),
+    machineryTypeDescription: s.collateralMachineryTypeDescription.trim(),
+    makeModel: s.collateralMachineryMakeModel.trim(),
+    yearOfPurchase: s.collateralMachineryYearOfPurchase.trim(),
+    locationAddress: s.collateralMachineryLocationAddress.trim(),
   }
 }
 
 export function estimatedValueForSecuredProduct(s: IntakeFormState, kind: SecuredCollateralKind): number | null {
   if (kind === 'PROPERTY') return parseAmount(s.collateralEstimatedMarketValue)
   if (kind === 'SHARES') return parseAmount(s.collateralShareMarketValue)
-  return parseAmount(s.collateralGoldEstimatedValue)
+  if (kind === 'GOLD') return parseAmount(s.collateralGoldEstimatedValue)
+  if (kind === 'VEHICLE') return parseAmount(s.collateralVehicleEstimatedMarketValue)
+  if (kind === 'FIXED_DEPOSIT') return parseAmount(s.collateralFdAmount)
+  if (kind === 'MACHINERY') return parseAmount(s.collateralMachineryEstimatedValue)
+  return null
 }
 
 /**

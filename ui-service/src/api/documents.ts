@@ -1,6 +1,9 @@
 import { http } from './http'
 import type { AxiosResponseHeaders, RawAxiosResponseHeaders } from 'axios'
 import type { DocumentResponse } from '@/types/document'
+import { messageForDocumentUpload, validateIdentityDocumentFile } from './documentUploadError'
+
+export { messageForDocumentUpload, validateIdentityDocumentFile } from './documentUploadError'
 
 /**
  * Multipart upload — uses shared axios client so:
@@ -19,13 +22,31 @@ export async function uploadDocument(
   documentType: string,
   kycStepType?: string,
 ): Promise<DocumentResponse> {
+  const identityTypes = new Set(['PAN_CARD', 'AADHAAR', 'PHOTOGRAPH'])
+  if (identityTypes.has(documentType.toUpperCase())) {
+    const clientErr = validateIdentityDocumentFile(file)
+    if (clientErr) {
+      const e = new Error(clientErr) as Error & { reason?: string }
+      e.reason = clientErr.includes('size') ? 'DOCUMENT_TOO_LARGE' : 'DOCUMENT_UNSUPPORTED_TYPE'
+      throw e
+    }
+  }
   const form = new FormData()
   form.append('file', file)
   const q = new URLSearchParams()
   q.set('documentType', documentType)
   if (kycStepType) q.set('kycStepType', kycStepType)
-  const { data } = await http.post<DocumentResponse>(`/documents/${applicationId}/upload?${q.toString()}`, form)
-  return data
+  try {
+    const { data } = await http.post<DocumentResponse>(
+      `/documents/${applicationId}/upload?${q.toString()}`,
+      form,
+    )
+    return data
+  } catch (err) {
+    const wrapped = new Error(messageForDocumentUpload(err)) as Error & { cause?: unknown }
+    wrapped.cause = err
+    throw wrapped
+  }
 }
 
 function getHeader(

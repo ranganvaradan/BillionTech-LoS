@@ -126,4 +126,27 @@ describe('buildIntakeReadback', () => {
     const allLabels = sections.flatMap((s) => s.rows.map((r) => r.label))
     expect(allLabels.some((l) => l.toLowerCase().includes('password'))).toBe(false)
   })
+
+  it('shows personalInfo.customFields under Custom intake fields with workflow labels', () => {
+    const sections = buildIntakeReadback(
+      baseApp({
+        personalInfo: {
+          fullName: 'Test User',
+          customFields: {
+            gstTurnover: '250000',
+            msmeRegistered: true,
+          },
+        },
+      }),
+      { gstTurnover: 'GST Turnover', msmeRegistered: 'MSME registered' },
+    )
+    const custom = sections.find((s) => s.title === 'Custom intake fields')
+    expect(custom).toBeTruthy()
+    expect(custom?.rows).toEqual(
+      expect.arrayContaining([
+        { label: 'GST Turnover', value: '250000' },
+        { label: 'MSME registered', value: 'Yes' },
+      ]),
+    )
+  })
 })

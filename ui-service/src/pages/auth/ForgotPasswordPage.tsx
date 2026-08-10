@@ -48,7 +48,7 @@ export function ForgotPasswordPage({ variant = 'staff' }: ForgotPasswordPageProp
             <span className="mb-0.5 block text-xs text-slate-500">Email</span>
             <input
               type="email"
-              className="w-full rounded-md border border-slate-300 px-3 py-2 focus:border-bl-primary focus:outline-none focus:ring-1 focus:ring-bl-primary/30"
+              className="bt-input w-full focus:border-bl-primary focus:outline-none focus:ring-1 focus:ring-bl-primary/30"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -57,7 +57,7 @@ export function ForgotPasswordPage({ variant = 'staff' }: ForgotPasswordPageProp
           <button
             type="submit"
             disabled={busy}
-            className="w-full rounded-md bg-bl-primary py-2 text-sm font-medium text-white shadow-sm hover:brightness-110 disabled:opacity-50"
+            className="bt-btn bt-btn-primary w-full justify-center disabled:opacity-50"
           >
             {busy ? 'Working…' : 'Continue'}
           </button>

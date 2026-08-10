@@ -10,7 +10,7 @@ describe('manualCreditHashForScorecardParameter', () => {
     expect(manualCreditHashForScorecardParameter('monthly income')).toBe('#manual-credit-monthly-income')
     expect(manualCreditHashForScorecardParameter('BANK STATEMENT INCOME')).toBe('#manual-credit-bank-statement-income')
   })
-  it('falls back to section top for unknown', () => {
-    expect(manualCreditHashForScorecardParameter('UNKNOWN_V2_METRIC')).toBe('#manual-credit-inputs')
+  it('falls back to metric field id for unknown parameters', () => {
+    expect(manualCreditHashForScorecardParameter('UNKNOWN_V2_METRIC')).toBe('#manual-credit-metric-UNKNOWN_V2_METRIC')
   })
 })

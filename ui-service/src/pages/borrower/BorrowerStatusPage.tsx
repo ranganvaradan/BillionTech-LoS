@@ -4,6 +4,7 @@ import { getBorrowerApplicationStatus } from '@/api/borrowerStatus'
 import { ApiError } from '@/api/http'
 import { friendlyStatusHeadline } from '@/lib/borrowerFriendly'
 import { isUuid } from '@/lib/format'
+import { LoadingState } from '@/components/LoadingState'
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
@@ -46,7 +47,9 @@ function BorrowerStatusContent({ applicationId }: { applicationId: string }) {
     return (
       <div>
         <h1 className="text-xl font-semibold text-slate-900">Application status</h1>
-        <p className="mt-4 text-sm text-slate-600">Loading…</p>
+        <div className="mt-4">
+          <LoadingState label="Loading application status…" />
+        </div>
       </div>
     )
   }
@@ -76,7 +79,7 @@ function BorrowerStatusContent({ applicationId }: { applicationId: string }) {
         Reference <span className="font-mono text-slate-800">{data.applicationNumber}</span>
       </p>
 
-      <div className="mt-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="mt-6 bt-card p-5">
         <Row label="Your name" value={data.customerName} />
         <Row label="Product" value={data.product} />
         <Row label="Verification" value={data.kycStatus} />

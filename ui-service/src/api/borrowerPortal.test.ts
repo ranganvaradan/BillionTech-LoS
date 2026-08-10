@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest'
 import { http } from './http'
-import { deleteBorrowerDraftApplication, getBorrowerApplicationDetail, getBorrowerDashboard } from './borrowerPortal'
+import { deleteBorrowerDraftApplication, getBorrowerApplicationDetail, getBorrowerDashboard, listBorrowerDocuments } from './borrowerPortal'
 
 vi.mock('./http', () => ({
   http: { get: vi.fn(), delete: vi.fn() },
@@ -75,5 +75,25 @@ describe('borrower portal client', () => {
     mockDelete.mockResolvedValue({ data: null })
     await deleteBorrowerDraftApplication('6ba7b810-9dad-11d1-80b4-00c04fd430c8')
     expect(mockDelete).toHaveBeenCalledWith('/borrower/applications/6ba7b810-9dad-11d1-80b4-00c04fd430c8/draft')
+  })
+
+  it('list documents uses borrower documents endpoint', async () => {
+    mockGet.mockResolvedValue({
+      data: [
+        {
+          id: '6ba7b810-9dad-11d1-80b4-00c04fd430c9',
+          source: 'UPLOAD',
+          category: 'KYC',
+          documentType: 'PAN_CARD',
+          fileName: 'pan.pdf',
+          contentType: 'application/pdf',
+          fileSize: 100,
+          createdAt: '2026-01-01T00:00:00Z',
+        },
+      ],
+    })
+    const docs = await listBorrowerDocuments('6ba7b810-9dad-11d1-80b4-00c04fd430c8')
+    expect(mockGet).toHaveBeenCalledWith('/borrower/applications/6ba7b810-9dad-11d1-80b4-00c04fd430c8/documents')
+    expect(docs[0]!.category).toBe('KYC')
   })
 })

@@ -12,5 +12,8 @@ export function RequireStaff({ children }: { children: ReactNode }) {
   if (user.role === 'BORROWER') {
     return <Navigate to="/borrower" replace />
   }
+  if (user.passwordResetRequired) {
+    return <Navigate to="/change-password" replace />
+  }
   return <>{children}</>
 }

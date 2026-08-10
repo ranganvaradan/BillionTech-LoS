@@ -2,6 +2,11 @@ import { http } from './http'
 
 export interface ClearDemoApplicationsResponse {
   deletedApplications: number
+  deletedBorrowerUsers?: number
+  deletedLosPlpSubPrograms?: number
+  deletedLosPlpPrograms?: number
+  deletedLosPlpAnchors?: number
+  deletedLosPlpMasterRows?: number
   status: string
 }
 

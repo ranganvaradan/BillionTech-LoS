@@ -79,6 +79,18 @@ export const INTEGRATION_MATRIX: MatrixStep[] = [
     providers: ['PERFIOS', 'AUTHBRIDGE'],
   },
   {
+    step: 'ITR_RETURN_FORMS',
+    purpose: 'Income Tax return forms pull (borrower ITD login)',
+    appliesTo: 'When configured — credentials collected on borrower portal only',
+    providers: ['KARZA', 'PERFIOS'],
+  },
+  {
+    step: 'GST_ANALYSIS',
+    purpose: 'GST PDF analysis (docs-upload-advance) — multi return PDF upload',
+    appliesTo: 'When configured — borrower upload + GSTIN/consent; admin generate report',
+    providers: ['KARZA', 'PERFIOS'],
+  },
+  {
     step: 'AML_SCREENING',
     purpose: 'AML check',
     appliesTo: 'All',

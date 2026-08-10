@@ -1,0 +1,18 @@
+/* Tailwind v4 theme bridge — maps BT tokens to utilities */
+@theme {
+  --color-bt-primary: var(--bt-orange);
+  --color-bt-primary-hover: var(--bt-orange-hover);
+  --color-bt-primary-light: var(--bt-orange-light);
+  --color-bt-canvas: var(--bt-gray-50);
+  --color-bt-muted: var(--bt-gray-500);
+  --color-bt-heading: var(--bt-gray-900);
+  --color-bt-border: var(--bt-gray-200);
+
+  /* Legacy LOS aliases (Phase 0–4 compat) */
+  --color-bl-primary: var(--bt-orange);
+  --color-bl-navy: var(--bt-gray-900);
+  --color-bl-canvas: var(--bt-gray-50);
+
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+}

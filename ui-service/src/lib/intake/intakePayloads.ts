@@ -4,6 +4,45 @@ import type { UpdateApplicationRequest } from '@/types/updateApplication'
 import type { IntakeFormState, IntakeMode } from './intakeTypes'
 import { isBusinessBorrowerType } from './intakeTypes'
 import type { SessionUser } from '@/auth/types'
+import { isInvoiceDiscountingProduct } from '@/catalog/loanProducts'
+import {
+  labelForLoanPurpose,
+  labelForOccupation,
+} from '@/lib/intake/intakeOptionCatalogs'
+
+function appendLmsConfigToCreate(s: IntakeFormState, payload: CreateApplicationRequest): CreateApplicationRequest {
+  const withWorkflow = {
+    ...payload,
+    ...(s.workflowId ? { workflowId: s.workflowId } : {}),
+  }
+  if (isInvoiceDiscountingProduct(s.loanProduct)) {
+    return withWorkflow
+  }
+  const code = s.lmsProductCode.trim()
+  const unit = s.lmsTenureUnit.trim()
+  return {
+    ...withWorkflow,
+    ...(code ? { lmsProductCode: code } : {}),
+    ...(unit ? { lmsTenureUnit: unit } : {}),
+  }
+}
+
+function appendLmsConfigToUpdate(s: IntakeFormState, payload: UpdateApplicationRequest): UpdateApplicationRequest {
+  const withWorkflow = {
+    ...payload,
+    ...(s.workflowId ? { workflowId: s.workflowId } : {}),
+  }
+  if (isInvoiceDiscountingProduct(s.loanProduct)) {
+    return withWorkflow
+  }
+  const code = s.lmsProductCode.trim()
+  const unit = s.lmsTenureUnit.trim()
+  return {
+    ...withWorkflow,
+    ...(code ? { lmsProductCode: code } : {}),
+    ...(unit ? { lmsTenureUnit: unit } : {}),
+  }
+}
 
 function trimStringRecord(rec: Record<string, string | boolean | number | null | undefined>): Record<string, string> {
   const out: Record<string, string> = {}
@@ -15,6 +54,39 @@ function trimStringRecord(rec: Record<string, string | boolean | number | null |
     }
   }
   return out
+}
+
+function normalizeCustomFieldValues(values: Record<string, string | boolean>): Record<string, string | boolean> {
+  const out: Record<string, string | boolean> = {}
+  for (const [k, v] of Object.entries(values)) {
+    if (!k.trim()) continue
+    if (typeof v === 'boolean') {
+      out[k] = v
+      continue
+    }
+    const trimmed = String(v ?? '').trim()
+    if (trimmed) out[k] = trimmed
+  }
+  return out
+}
+
+function appendCodedIntakePersonalFields(
+  s: IntakeFormState,
+  personal: Record<string, string>,
+  workflow?: import('@/types/workflow').WorkflowConfigResponse | null,
+): void {
+  if (s.loanPurpose.trim()) {
+    personal.loanPurpose = s.loanPurpose.trim()
+    personal.purpose = labelForLoanPurpose(s.loanPurpose, workflow)
+  } else if (s.purpose.trim()) {
+    personal.purpose = s.purpose.trim()
+  }
+  if (s.occupation.trim()) {
+    personal.occupation = s.occupation.trim()
+    personal.occupationIndustry = labelForOccupation(s.occupation, workflow)
+  } else if (s.occupationIndustry.trim()) {
+    personal.occupationIndustry = s.occupationIndustry.trim()
+  }
 }
 
 function parseTenure(s: string): number | null {
@@ -66,11 +138,16 @@ export function buildIntakeCreateRequest(s: IntakeFormState, mode: IntakeMode, s
       gstin: s.gstin,
     })
     const pi: Record<string, string> = { ...(base.personalInfo as Record<string, string>) }
+    const customFieldValues = normalizeCustomFieldValues(s.customFieldValues)
+    if (Object.keys(customFieldValues).length) {
+      ;(pi as Record<string, unknown>).customFields = customFieldValues
+    }
     if (s.borrowerType === 'INDIVIDUAL') {
       if (s.dateOfBirth.trim()) pi.dateOfBirth = s.dateOfBirth.trim()
       if (s.addressLine.trim()) pi.addressLine = s.addressLine.trim()
       if (s.city.trim()) pi.city = s.city.trim()
       if (s.state.trim()) pi.state = s.state.trim()
+      if (s.pincode.replace(/\D/g, '').length === 6) pi.pincode = s.pincode.replace(/\D/g, '')
     }
     if (isBusinessBorrowerType(s.borrowerType)) {
       const bi: Record<string, string> = { ...((base.businessInfo as Record<string, string> | undefined) ?? {}) }
@@ -78,9 +155,11 @@ export function buildIntakeCreateRequest(s: IntakeFormState, mode: IntakeMode, s
       if (s.businessAddress.trim()) bi.addressLine = s.businessAddress.trim()
       if (s.businessCity.trim()) bi.city = s.businessCity.trim()
       if (s.businessState.trim()) bi.state = s.businessState.trim()
-      return { ...base, personalInfo: pi, businessInfo: Object.keys(bi).length ? bi : base.businessInfo }
+      if (s.businessPincode.replace(/\D/g, '').length === 6) bi.pincode = s.businessPincode.replace(/\D/g, '')
+      appendInvoiceVintageFields(s, bi)
+      return withInvoiceBorrowerSegment(s, appendLmsConfigToCreate(s, { ...base, personalInfo: pi, businessInfo: Object.keys(bi).length ? bi : base.businessInfo }))
     }
-    return { ...base, personalInfo: pi }
+    return withInvoiceBorrowerSegment(s, appendLmsConfigToCreate(s, { ...base, personalInfo: pi }))
   }
 
   const phone = primaryPhone(s)
@@ -111,12 +190,17 @@ export function buildIntakeCreateRequest(s: IntakeFormState, mode: IntakeMode, s
     if (s.city.trim()) personal.city = s.city.trim()
     if (s.state.trim()) personal.state = s.state.trim()
     if (s.addressLine2.trim()) personal.addressLine2 = s.addressLine2.trim()
-    if (s.pincode.trim()) personal.pincode = s.pincode.trim()
+    if (s.pincode.replace(/\D/g, '').length === 6) personal.pincode = s.pincode.replace(/\D/g, '')
     if (s.gender.trim()) personal.gender = s.gender.trim()
     if (s.maritalStatus.trim()) personal.maritalStatus = s.maritalStatus.trim()
     if (s.hasExistingLoans) personal.hasExistingLoans = s.hasExistingLoans
     if (s.existingLoansDetails.trim()) personal.existingLoansDetails = s.existingLoansDetails.trim()
     if (s.addressProofType.trim()) personal.addressProofType = s.addressProofType.trim()
+  }
+  appendCodedIntakePersonalFields(s, personal)
+  const customFieldValues = normalizeCustomFieldValues(s.customFieldValues)
+  if (Object.keys(customFieldValues).length) {
+    ;(personal as Record<string, unknown>).customFields = customFieldValues
   }
 
   const business: Record<string, string> = {}
@@ -125,20 +209,42 @@ export function buildIntakeCreateRequest(s: IntakeFormState, mode: IntakeMode, s
     if (s.gstin.trim()) business.gstin = s.gstin.trim()
     if (s.udyam.trim()) business.udyam = s.udyam.trim()
     if (s.contactPersonName.trim()) business.contactPersonName = s.contactPersonName.trim()
+    if (s.contactMobile.trim()) business.contactMobile = s.contactMobile.trim()
+    if (s.contactEmail.trim()) business.contactEmail = s.contactEmail.trim()
     if (s.businessAddress.trim()) business.addressLine = s.businessAddress.trim()
     if (s.businessCity.trim()) business.city = s.businessCity.trim()
     if (s.businessState.trim()) business.state = s.businessState.trim()
+    if (s.businessPincode.replace(/\D/g, '').length === 6) business.pincode = s.businessPincode.replace(/\D/g, '')
   }
+  appendInvoiceVintageFields(s, business)
 
   const payload: CreateApplicationRequest = {
     borrowerType: s.borrowerType,
     loanProduct: s.loanProduct as LoanProductCode,
+    ...(s.workflowId ? { workflowId: s.workflowId } : {}),
     requestedAmount: amount,
     personalInfo: personal,
   }
   if (tenure != null) payload.tenureMonths = tenure
   if (Object.keys(business).length) payload.businessInfo = business
-  return payload
+  return withInvoiceBorrowerSegment(s, appendLmsConfigToCreate(s, payload))
+}
+
+function withInvoiceBorrowerSegment(s: IntakeFormState, r: CreateApplicationRequest): CreateApplicationRequest {
+  if (isInvoiceDiscountingProduct(s.loanProduct) && s.invoiceOnboardingChoice === 'BORROWER') {
+    return { ...r, intakeSegment: 'BORROWER' }
+  }
+  return r
+}
+
+function appendInvoiceVintageFields(s: IntakeFormState, business: Record<string, string>): void {
+  if (!isInvoiceDiscountingProduct(s.loanProduct) || s.invoiceOnboardingChoice === 'ANCHOR') {
+    return
+  }
+  const dep = s.dependencyVintagePercent.trim()
+  const anchorMo = s.anchorRelationshipVintageMonths.trim()
+  if (dep) business.dependencyVintagePercent = dep
+  if (anchorMo) business.anchorRelationshipVintageMonths = anchorMo
 }
 
 /** Patch borrower / business / amount after step 0 edited while id exists, or re-save after step 1 edits. */
@@ -149,6 +255,7 @@ export function buildIntakeBorrowerUpdate(s: IntakeFormState, mode: IntakeMode, 
   const out: UpdateApplicationRequest = {}
   if (!Number.isNaN(amount) && amount > 0) out.requestedAmount = amount
   if (tenure != null) out.tenureMonths = tenure
+  if (s.workflowId) out.workflowId = s.workflowId
 
   const p = primaryPhone(s)
   const personal: Record<string, string> = trimStringRecord({
@@ -183,12 +290,17 @@ export function buildIntakeBorrowerUpdate(s: IntakeFormState, mode: IntakeMode, 
     if (s.city.trim()) personal.city = s.city.trim()
     if (s.state.trim()) personal.state = s.state.trim()
     if (s.addressLine2.trim()) personal.addressLine2 = s.addressLine2.trim()
-    if (s.pincode.trim()) personal.pincode = s.pincode.trim()
+    if (s.pincode.replace(/\D/g, '').length === 6) personal.pincode = s.pincode.replace(/\D/g, '')
     if (s.gender.trim()) personal.gender = s.gender.trim()
     if (s.maritalStatus.trim()) personal.maritalStatus = s.maritalStatus.trim()
     if (s.hasExistingLoans) personal.hasExistingLoans = s.hasExistingLoans
     if (s.existingLoansDetails.trim()) personal.existingLoansDetails = s.existingLoansDetails.trim()
     if (s.addressProofType.trim()) personal.addressProofType = s.addressProofType.trim()
+  }
+  appendCodedIntakePersonalFields(s, personal)
+  const customFieldValues = normalizeCustomFieldValues(s.customFieldValues)
+  if (Object.keys(customFieldValues).length) {
+    ;(personal as Record<string, unknown>).customFields = customFieldValues
   }
 
   const business: Record<string, string> = {}
@@ -197,14 +309,18 @@ export function buildIntakeBorrowerUpdate(s: IntakeFormState, mode: IntakeMode, 
     if (s.gstin.trim()) business.gstin = s.gstin.trim()
     if (s.udyam.trim()) business.udyam = s.udyam.trim()
     if (s.contactPersonName.trim()) business.contactPersonName = s.contactPersonName.trim()
+    if (s.contactMobile.trim()) business.contactMobile = s.contactMobile.trim()
+    if (s.contactEmail.trim()) business.contactEmail = s.contactEmail.trim()
     if (s.businessAddress.trim()) business.addressLine = s.businessAddress.trim()
     if (s.businessCity.trim()) business.city = s.businessCity.trim()
     if (s.businessState.trim()) business.state = s.businessState.trim()
+    if (s.businessPincode.replace(/\D/g, '').length === 6) business.pincode = s.businessPincode.replace(/\D/g, '')
   }
+  appendInvoiceVintageFields(s, business)
 
   out.personalInfo = personal
   if (Object.keys(business).length) out.businessInfo = business
-  return out
+  return appendLmsConfigToUpdate(s, out)
 }
 
 export function buildKycUpdate(s: IntakeFormState): UpdateApplicationRequest {
@@ -221,6 +337,8 @@ export function buildKycUpdate(s: IntakeFormState): UpdateApplicationRequest {
   if (s.bankAccountNumber.trim()) personal.bankAccountNumber = s.bankAccountNumber.trim()
   if (s.ifscCode.trim()) personal.ifsc = s.ifscCode.trim().toUpperCase()
   if (s.bankName.trim()) personal.bankName = s.bankName.trim()
+  if (s.voterId.trim()) personal.voterId = s.voterId.trim().toUpperCase()
+  if (s.dlNumber.trim()) personal.dlNumber = s.dlNumber.trim().toUpperCase()
 
   const business: Record<string, string> = {}
   if (isBusinessBorrowerType(s.borrowerType)) {
@@ -263,6 +381,8 @@ export function buildBorrowerEmploymentUpdate(s: IntakeFormState): UpdateApplica
     monthlyNetIncome: s.monthlyNetIncome,
     occupationIndustry: s.occupationIndustry,
     workExperienceYears: s.workExperienceYears,
+    occupation: s.occupation,
   })
+  appendCodedIntakePersonalFields(s, personal)
   return { personalInfo: personal as unknown as Record<string, unknown> }
 }

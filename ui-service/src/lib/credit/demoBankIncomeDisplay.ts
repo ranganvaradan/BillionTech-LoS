@@ -1,4 +1,5 @@
 import type { ApplicationResponse } from '@/types/application'
+import { formatMoneyWithScale } from '@/lib/format'
 
 /** Safe demo figures for underwriting preview only (not persisted). FOIR &lt; 40%, positive surplus. */
 export const DEMO_BANK_INCOME = {
@@ -70,7 +71,7 @@ export function shouldShowDemoBankIncomePreview(app: ApplicationResponse, bankSt
 }
 
 function inr(n: number): string {
-  return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n)
+  return formatMoneyWithScale(n)
 }
 
 /**

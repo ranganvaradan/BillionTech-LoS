@@ -16,6 +16,13 @@ export const LOAN_PRODUCT_CODES = [
 
 export type LoanProductCode = (typeof LOAN_PRODUCT_CODES)[number]
 
+/** Invoice discounting (working capital) — only product that may branch to anchor onboarding in staff intake. */
+export const INVOICE_DISCOUNTING_PRODUCT_CODE: LoanProductCode = 'BUSINESS_WC_INVOICE_DISCOUNTING'
+
+export function isInvoiceDiscountingProduct(code: string | null | undefined): boolean {
+  return (code ?? '').trim() === INVOICE_DISCOUNTING_PRODUCT_CODE
+}
+
 export const LOAN_PRODUCT_LABELS: Record<LoanProductCode, string> = {
   PERSONAL_LOAN: 'Personal Loan',
   BUSINESS_TERM_LOAN: 'Business Term Loan',

@@ -1,6 +1,9 @@
 import { borrowerTypeLabel } from '@/catalog/borrowerTypes'
 import { loanProductLabel } from '@/catalog/loanProducts'
+import { lmsTenureUnitLabel, tenureMagnitudeLabel } from '@/catalog/lmsTenureUnits'
+import { applicationPartyLabels, resolveIntakeSegment } from '@/lib/applicationPartyLabels'
 import { BORROWER_INTAKE_KEY } from './collateralIntakePayload'
+import { labelForLoanPurpose, labelForOccupation } from '@/lib/intake/intakeOptionCatalogs'
 import type { ApplicationResponse } from '@/types/application'
 
 /** Internal / system keys we never surface as row labels to staff (values may still inform other UI). */
@@ -54,11 +57,22 @@ function pushRow(
   rows.push({ label, value: v || '—' })
 }
 
+function humanizeFieldKey(k: string): string {
+  return k.replaceAll(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase()).trim()
+}
+
 /**
  * Structured, business-friendly readback of borrower + staff intake data for internal Application Detail.
  * Omits empty fields; never includes raw map keys in labels.
+ *
+ * @param customFieldLabels optional map of custom field key → display label (from workflow intakeConfig)
  */
-export function buildIntakeReadback(app: ApplicationResponse): IntakeReadbackSection[] {
+export function buildIntakeReadback(
+  app: ApplicationResponse,
+  customFieldLabels?: Record<string, string> | null,
+): IntakeReadbackSection[] {
+  const L = applicationPartyLabels(app.intakeSegment)
+  const isAnchor = resolveIntakeSegment(app.intakeSegment) === 'ANCHOR'
   const pi = (app.personalInfo ?? null) as Record<string, unknown> | null
   const bi = (app.businessInfo ?? null) as Record<string, unknown> | null
   const fi = (app.financialInfo ?? null) as Record<string, unknown> | null
@@ -66,15 +80,24 @@ export function buildIntakeReadback(app: ApplicationResponse): IntakeReadbackSec
 
   const product: IntakeReadbackRow[] = []
   pushRow(product, 'Loan product', loanProductLabel(app.loanProduct))
-  pushRow(product, 'Borrower class', borrowerTypeLabel(app.borrowerType))
+  pushRow(product, L.entityClassRow, borrowerTypeLabel(app.borrowerType))
   if (app.requestedAmount != null) {
     product.push({ label: 'Requested amount (INR)', value: new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 }).format(app.requestedAmount) })
   }
   if (app.tenureMonths != null) {
-    pushRow(product, 'Tenure (months)', app.tenureMonths)
+    pushRow(product, tenureMagnitudeLabel(app.lmsTenureUnit), app.tenureMonths)
+  }
+  if (app.lmsProductCode?.trim()) {
+    pushRow(product, 'LMS product code', app.lmsProductCode)
+  }
+  if (app.lmsTenureUnit?.trim()) {
+    pushRow(product, 'LMS tenure type', lmsTenureUnitLabel(app.lmsTenureUnit))
   }
   if (pi) {
-    pushRow(product, 'Purpose of loan', pi.purpose)
+    const purposeLabel = str(pi.loanPurpose)
+      ? labelForLoanPurpose(str(pi.loanPurpose))
+      : str(pi.purpose)
+    pushRow(product, 'Purpose of loan', purposeLabel)
   }
   if (product.length) out.push({ title: 'Product & request', rows: product })
 
@@ -84,9 +107,9 @@ export function buildIntakeReadback(app: ApplicationResponse): IntakeReadbackSec
     if (im) pushRow(channel, 'Intake channel', formatIntakeMode(im))
     const jc = str(pi.journeyChannel)
     if (jc) pushRow(channel, 'Journey channel', formatIntakeMode(jc))
-    pushRow(channel, 'Linked borrower (user id)', pi.borrowerUserId)
-    pushRow(channel, 'Borrower email (record)', pi.borrowerEmail)
-    pushRow(channel, 'Borrower mobile (record)', pi.borrowerMobile)
+    pushRow(channel, L.linkedPartyUserId, pi.borrowerUserId)
+    pushRow(channel, L.partyEmailRecord, pi.borrowerEmail)
+    pushRow(channel, L.partyMobileRecord, pi.borrowerMobile)
     pushRow(channel, 'Created by (user id)', pi.createdByUserId)
     pushRow(channel, 'Created by (role)', pi.createdByRole)
     pushRow(channel, 'Assisted by (user id)', pi.assistedByUserId)
@@ -99,7 +122,13 @@ export function buildIntakeReadback(app: ApplicationResponse): IntakeReadbackSec
   if (channel.length) out.push({ title: 'Intake, ownership & assistance', rows: channel })
 
   const identity: IntakeReadbackRow[] = []
-  if (pi) {
+  if (isAnchor && bi) {
+    pushRow(identity, 'Corporate name', bi.corporateName)
+    pushRow(identity, 'Email', bi.email)
+    pushRow(identity, 'Mobile', bi.mobile)
+    pushRow(identity, 'Date of incorporation', bi.dateOfIncorporation)
+    pushRow(identity, 'Account holder name', bi.accountHolderName)
+  } else if (pi) {
     pushRow(identity, 'Full name', pi.fullName ?? pi.name)
     pushRow(identity, 'Email', pi.email)
     pushRow(identity, 'Mobile', pi.mobile ?? pi.phone)
@@ -107,7 +136,7 @@ export function buildIntakeReadback(app: ApplicationResponse): IntakeReadbackSec
     pushRow(identity, 'Gender', pi.gender ? String(pi.gender).replaceAll('_', ' ') : '')
     pushRow(identity, 'Marital status', pi.maritalStatus ? String(pi.maritalStatus).replaceAll('_', ' ') : '')
   }
-  if (identity.length) out.push({ title: 'Borrower identity & contact', rows: identity })
+  if (identity.length) out.push({ title: L.identitySectionTitle, rows: identity })
 
   const address: IntakeReadbackRow[] = []
   if (pi) {
@@ -133,26 +162,40 @@ export function buildIntakeReadback(app: ApplicationResponse): IntakeReadbackSec
   if (existing.length) out.push({ title: 'Existing borrowings', rows: existing })
 
   const kyc: IntakeReadbackRow[] = []
-  if (pi) {
-    pushRow(kyc, 'PAN', pi.panNumber)
-    if (str(pi.aadhaarNumber)) {
-      pushRow(kyc, 'Aadhaar (full on file)', 'Submitted')
-    } else if (str(pi.aadhaarLast4)) {
-      pushRow(kyc, 'Aadhaar (last 4 digits)', pi.aadhaarLast4)
-    }
-    if (pi.mobileLinkedAadhaar != null) {
-      kyc.push({ label: 'Mobile suitable for e-KYC / Aadhaar', value: formatYesNo(pi.mobileLinkedAadhaar) })
-    }
-  }
-  if (bi) {
+  if (isAnchor && bi) {
+    pushRow(kyc, 'Entity PAN', bi.entityPan)
     pushRow(kyc, 'GSTIN', bi.gstin)
-    pushRow(kyc, 'Udyam', bi.udyam)
     pushRow(kyc, 'CIN / company id', bi.cin)
+  } else {
+    if (pi) {
+      pushRow(kyc, 'PAN', pi.panNumber)
+      if (str(pi.aadhaarNumber)) {
+        pushRow(kyc, 'Aadhaar (full on file)', 'Submitted')
+      } else if (str(pi.aadhaarLast4)) {
+        pushRow(kyc, 'Aadhaar (last 4 digits)', pi.aadhaarLast4)
+      }
+      if (pi.mobileLinkedAadhaar != null) {
+        kyc.push({ label: 'Mobile suitable for e-KYC / Aadhaar', value: formatYesNo(pi.mobileLinkedAadhaar) })
+      }
+    }
+    if (bi) {
+      pushRow(kyc, 'GSTIN', bi.gstin)
+      pushRow(kyc, 'Udyam', bi.udyam)
+      pushRow(kyc, 'CIN / company id', bi.cin)
+    }
   }
   if (kyc.length) out.push({ title: 'KYC & statutory ids', rows: kyc })
 
   const bank: IntakeReadbackRow[] = []
-  if (pi) {
+  if (isAnchor && bi) {
+    const acct = str(bi.bankAccountNumber)
+    if (acct) {
+      bank.push({ label: 'Bank account number', value: acct })
+    }
+    pushRow(bank, 'IFSC', bi.ifscCode)
+    pushRow(bank, 'Account holder name', bi.accountHolderName)
+    pushRow(bank, 'Bank name', bi.bankName)
+  } else if (pi) {
     const acct = str(pi.bankAccountNumber)
     if (acct) {
       bank.push({ label: 'Bank account number', value: acct })
@@ -171,18 +214,30 @@ export function buildIntakeReadback(app: ApplicationResponse): IntakeReadbackSec
     if (str(pi.monthlyNetIncome)) {
       work.push({ label: 'Monthly net income (INR, declared)', value: str(pi.monthlyNetIncome) })
     }
-    pushRow(work, 'Occupation / industry', pi.occupationIndustry)
+    const occupationLabel = str(pi.occupation)
+      ? labelForOccupation(str(pi.occupation))
+      : str(pi.occupationIndustry)
+    pushRow(work, 'Occupation / industry', occupationLabel)
     pushRow(work, 'Work experience (years)', pi.workExperienceYears)
   }
   if (work.length) out.push({ title: 'Employment & income (declared at intake)', rows: work })
 
   const business: IntakeReadbackRow[] = []
   if (bi) {
-    pushRow(business, 'Business / entity name', bi.businessName)
-    pushRow(business, 'Contact person', bi.contactPersonName)
-    pushRow(business, 'Registered address (business)', bi.addressLine)
+    pushRow(
+      business,
+      isAnchor ? 'Corporate name' : 'Business / entity name',
+      isAnchor ? bi.corporateName : bi.businessName,
+    )
+    if (!isAnchor) {
+      pushRow(business, 'Contact person', bi.contactPersonName)
+    }
+    pushRow(business, isAnchor ? 'Registered address' : 'Registered address (business)', bi.addressLine)
     pushRow(business, 'City', bi.city)
     pushRow(business, 'State', bi.state)
+    if (isAnchor) {
+      pushRow(business, 'PIN code', bi.pincode)
+    }
   }
   if (business.length) out.push({ title: 'Business profile', rows: business })
 
@@ -243,7 +298,23 @@ export function buildIntakeReadback(app: ApplicationResponse): IntakeReadbackSec
     if (Array.isArray(ids) && ids.length) {
       cRows.push({ label: 'Supporting document uploads (file ids on record)', value: String(ids.length) + ' file(s)' })
     }
-    if (cRows.length) out.push({ title: 'Collateral (borrower intake)', rows: cRows })
+    if (cRows.length) out.push({ title: L.collateralIntakeSectionTitle, rows: cRows })
+  }
+
+  // Workflow custom intake fields (stored under personalInfo.customFields).
+  if (pi) {
+    const customRaw = pi.customFields
+    if (customRaw && typeof customRaw === 'object' && !Array.isArray(customRaw)) {
+      const customRows: IntakeReadbackRow[] = []
+      for (const [k, v] of Object.entries(customRaw as Record<string, unknown>)) {
+        if (v == null || str(v) === '') continue
+        const label = customFieldLabels?.[k]?.trim() || humanizeFieldKey(k)
+        customRows.push({ label, value: str(v) })
+      }
+      if (customRows.length) {
+        out.push({ title: 'Custom intake fields', rows: customRows })
+      }
+    }
   }
 
   // Optional: any remaining top-level string fields in personalInfo (excluding hidden), for forward compatibility.
@@ -269,6 +340,8 @@ export function buildIntakeReadback(app: ApplicationResponse): IntakeReadbackSec
         'phone',
         'mobile',
         'purpose',
+        'loanPurpose',
+        'occupation',
         'dateOfBirth',
         'gender',
         'maritalStatus',
@@ -295,6 +368,7 @@ export function buildIntakeReadback(app: ApplicationResponse): IntakeReadbackSec
         'createdByName',
         'lastSavedByName',
         'lastSavedByUserId',
+        'customFields',
       ].map((k) => k.toLowerCase()),
     )
     const extra: IntakeReadbackRow[] = []
@@ -304,7 +378,7 @@ export function buildIntakeReadback(app: ApplicationResponse): IntakeReadbackSec
       if (v == null || str(v) === '') continue
       if (typeof v === 'object') continue
       extra.push({
-        label: k.replaceAll(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase()).trim(),
+        label: humanizeFieldKey(k),
         value: str(v),
       })
     }

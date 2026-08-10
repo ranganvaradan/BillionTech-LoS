@@ -3,8 +3,8 @@ import { listApplications } from '@/api/applications'
 import type { ApplicationPage } from '@/types/api'
 import type { ApplicationStatus } from '@/types/application'
 
-export function useApplications(params: { status?: ApplicationStatus; page?: number; size?: number }) {
-  const { status, page = 0, size = 20 } = params
+export function useApplications(params: { status?: ApplicationStatus; intakeSegment?: string; page?: number; size?: number }) {
+  const { status, intakeSegment, page = 0, size = 20 } = params
   const [data, setData] = useState<ApplicationPage | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -26,7 +26,7 @@ export function useApplications(params: { status?: ApplicationStatus; page?: num
       setLoading(true)
       setError(null)
       try {
-        const d = await listApplications({ status, page, size })
+        const d = await listApplications({ status, intakeSegment, page, size })
         if (!cancelled) {
           setData(d)
           setLoading(false)
@@ -42,7 +42,7 @@ export function useApplications(params: { status?: ApplicationStatus; page?: num
     return () => {
       cancelled = true
     }
-  }, [status, page, size, refreshKey])
+  }, [status, intakeSegment, page, size, refreshKey])
 
   return { data, loading, error, refetch }
 }
