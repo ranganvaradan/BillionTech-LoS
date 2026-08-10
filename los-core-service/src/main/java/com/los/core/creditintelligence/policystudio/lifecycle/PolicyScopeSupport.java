@@ -3,7 +3,6 @@ package com.los.core.creditintelligence.policystudio.lifecycle;
 import com.los.core.model.enums.BorrowerType;
 
 import java.math.BigDecimal;
-import java.text.NumberFormat;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -17,8 +16,6 @@ import java.util.Objects;
  * Reuses existing applicability dimensions — no new routing schema.
  */
 public final class PolicyScopeSupport {
-
-    private static final Locale EN_IN = Locale.forLanguageTag("en-IN");
 
     private PolicyScopeSupport() {}
 
@@ -180,9 +177,26 @@ public final class PolicyScopeSupport {
         if (amount == null) {
             return "";
         }
-        NumberFormat nf = NumberFormat.getCurrencyInstance(EN_IN);
-        nf.setMaximumFractionDigits(0);
-        return nf.format(amount);
+        // Explicit Indian grouping (lakhs/crores) — do not rely on JVM locale data.
+        String digits = amount.setScale(0, java.math.RoundingMode.HALF_UP).toPlainString();
+        boolean neg = digits.startsWith("-");
+        if (neg) {
+            digits = digits.substring(1);
+        }
+        StringBuilder sb = new StringBuilder();
+        int n = digits.length();
+        if (n <= 3) {
+            sb.append(digits);
+        } else {
+            sb.append(digits.substring(n - 3));
+            int i = n - 3;
+            while (i > 0) {
+                int start = Math.max(0, i - 2);
+                sb.insert(0, digits.substring(start, i) + ",");
+                i = start;
+            }
+        }
+        return (neg ? "-₹" : "₹") + sb;
     }
 
     private static boolean hasActivationHints(Map<String, Object> app) {

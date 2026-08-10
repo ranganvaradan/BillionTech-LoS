@@ -129,6 +129,8 @@ class PolicyScopeUx2bTest {
         Map<String, Object> summary = PolicyScopeSupport.summarize(app);
         assertThat(String.valueOf(summary.get("appliesTo"))).contains("Invoice Discounting");
         assertThat(String.valueOf(summary.get("appliesTo"))).contains("Company");
+        assertThat(String.valueOf(summary.get("appliesTo"))).contains("₹10,00,000");
+        assertThat(String.valueOf(summary.get("appliesTo"))).contains("₹1,00,00,000");
         assertThat(String.valueOf(summary.get("appliesTo"))).doesNotContain("{");
         assertThat(String.valueOf(summary.get("effective"))).contains("2026-09-01");
         assertThat(summary.get("allowCanonicalAuthority")).isEqualTo(false);
