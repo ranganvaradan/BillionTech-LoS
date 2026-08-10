@@ -1,0 +1,21 @@
+# Local dev: build UI images from cloned repos.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.local-build.yml up -d --build
+
+services:
+  platform-ui:
+    build:
+      context: ../../../PLP/platform-ui
+      dockerfile: Dockerfile
+    image: plp-platform-ui:local
+
+  anchor-portal:
+    build:
+      context: ../../../PLP/anchor-portal
+      dockerfile: Dockerfile
+    image: plp-anchor-portal:local
+
+  borrower-portal:
+    build:
+      context: ../../../PLP/borrower-portal
+      dockerfile: Dockerfile
+    image: plp-borrower-portal:local

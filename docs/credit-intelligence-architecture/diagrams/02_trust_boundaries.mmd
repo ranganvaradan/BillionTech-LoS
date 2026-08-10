@@ -1,0 +1,25 @@
+%% Trust and security boundaries
+flowchart LR
+  subgraph Untrusted
+    EXT[External providers]
+    USR[Users / browsers]
+    AIM[AI models / AI-LOS]
+  end
+
+  subgraph Edge
+    API[LOS API Gateway TLS + AuthN]
+  end
+
+  subgraph SoR["Trust: BillionTechLOS SoR"]
+    SE[Source vault]
+    CORE[Fact Metric Policy Decision]
+    DB[(Encrypted DB / object store)]
+  end
+
+  EXT -->|m2m adapters| API
+  USR -->|RBAC session| API
+  AIM -->|short-lived m2m JWT + envelopes| API
+  API --> SE
+  API --> CORE
+  CORE --> DB
+  SE --> DB

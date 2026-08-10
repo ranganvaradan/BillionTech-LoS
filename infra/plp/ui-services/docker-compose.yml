@@ -1,0 +1,43 @@
+# PLP UI portals (all 3). Use with main compose:
+#   docker compose -f docker-compose.yml -f docker-compose.ui.yml up -d --build
+
+name: plp
+
+services:
+  platform-ui:
+    image: artifacts.billionloans.com:5001/platform-ui:main-1
+    container_name: plp-platform-ui
+    ports:
+      - "3100:80"
+    volumes:
+      - ./env-config.js:/usr/share/nginx/html/env-config.js:ro
+    networks:
+      - plp_nw
+    restart: unless-stopped
+
+  anchor-portal:
+    image: artifacts.billionloans.com:5001/anchor-portal:main-1
+    container_name: plp-anchor-portal
+    ports:
+      - "3200:80"
+    volumes:
+      - ./env-config.js:/usr/share/nginx/html/env-config.js:ro
+    networks:
+      - plp_nw
+    restart: unless-stopped
+
+  borrower-portal:
+    image: artifacts.billionloans.com:5001/borrower-portal:main-1
+    container_name: plp-borrower-portal
+    ports:
+      - "3300:80"
+    volumes:
+      - ./env-config.js:/usr/share/nginx/html/env-config.js:ro
+    networks:
+      - plp_nw
+    restart: unless-stopped
+
+networks:
+  plp_nw:
+    driver: bridge
+    external: true

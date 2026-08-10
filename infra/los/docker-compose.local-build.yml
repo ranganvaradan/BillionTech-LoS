@@ -1,0 +1,30 @@
+# Local dev: build from cloned LOS repos (no private registry).
+# Usage: docker compose -f docker-compose.yml -f docker-compose.local-build.yml -f docker-compose.local-env.yml up -d --build
+
+services:
+  discovery-service:
+    build:
+      context: ../../LOS/discovery-service
+      dockerfile: Dockerfile
+    image: los-discovery:local
+
+  los-core:
+    build:
+      context: ../../LOS/los-core-service
+      dockerfile: Dockerfile
+    image: los-core:local
+
+  notification-service:
+    build:
+      context: ../../LOS/notification-service
+      dockerfile: Dockerfile
+    image: los-notification:local
+
+  ui-service:
+    build:
+      context: ../../LOS/ui-service
+      dockerfile: Dockerfile.prod
+      args:
+        VITE_BASE_PATH: /los/
+        VITE_API_BASE_URL: /los/api/v1
+    image: los-ui:local

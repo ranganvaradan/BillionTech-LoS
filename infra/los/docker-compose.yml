@@ -1,0 +1,222 @@
+services:
+  discovery-service:
+    image: artifacts.billionloans.com:5002/discovery-service:main-1
+    container_name: los_discovery
+    restart: unless-stopped
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SERVER_PORT: 8761
+    ports:
+      - "8761:8761"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8761/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    networks:
+      - los_nw
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: los_postgres
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - los_postgres_data:/var/lib/postgresql/data
+      - ./init-databases.sql:/docker-entrypoint-initdb.d/init-databases.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - los_nw
+
+  redis:
+    image: redis:7-alpine
+    container_name: los_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - los_nw
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: los_rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: losuser
+      RABBITMQ_DEFAULT_PASS: lospassword
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+          - los_nw
+
+
+  los-core:
+    image: artifacts.billionloans.com:5002/los-core-service:main-9
+    container_name: los_core
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SERVER_PORT: 8083
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      DOCUMENT_STORAGE_PATH: /data/documents
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      # Prod redis image has no requirepass; clear default from application.yml
+      SPRING_DATA_REDIS_PASSWORD: ""
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: losuser
+      SPRING_RABBITMQ_PASSWORD: lospassword
+      LOS_NOTIFICATION_URL: http://notification-service:8084
+
+      # Literal values override .env.prod (EC2 .env.prod may still have vuser; compose ${VAR} also reads host .env)
+      ENCORE_BASE_URL: https://core.dev.billionloans.com/encore/
+      ENCORE_API_USERNAME: admin
+      ENCORE_API_PASSWORD: password1
+      ENCORE_REST_AUTH_TOKEN: ${ENCORE_REST_AUTH_TOKEN:-}
+      LMS_CALLBACK_HMAC_SECRET: ${LMS_CALLBACK_HMAC_SECRET:-}
+      JAVA_OPTS: ${LOS_CORE_JAVA_OPTS:--XX:MaxRAMPercentage=50.0}
+
+      PLP_SYNC_ENABLED: ${PLP_SYNC_ENABLED:-true}
+      # PLP_BASE_URL: ${PLP_BASE_URL:-http://host.docker.internal:8180}
+      PLP_BASE_URL: http://172.17.0.1:8180
+      PLP_INTEGRATION_EMAIL: ${PLP_INTEGRATION_EMAIL:-admin@credinnov.com}
+      PLP_INTEGRATION_PASSWORD: ${PLP_INTEGRATION_PASSWORD:-Bltest@123}
+      PLP_LENDER_ID: ${PLP_LENDER_ID:-2d6e05e3-423f-4946-8027-8cbb4f01aefa}
+
+      # UAT/sandbox: enables Reset demo data button (GET /api/v1/demo/status). Set false in production.
+      LOS_DEMO_ENABLED: ${LOS_DEMO_ENABLED:-true}
+
+      PAYU_MERCHANT_KEY: ${PAYU_MERCHANT_KEY:-g8yc8J}
+      PAYU_MERCHANT_SALT: ${PAYU_MERCHANT_SALT:-BBc2U41mOZPLuteAYBW9wJ2Lnm9V9rQV}
+      PAYU_GATEWAY_URL: ${PAYU_GATEWAY_URL:-https://test.payu.in/_payment}
+      LOS_PUBLIC_API_BASE_URL: ${LOS_PUBLIC_API_BASE_URL:-https://los.billiontech.in/los}
+      LOS_BORROWER_UI_URL: ${LOS_BORROWER_UI_URL:-https://los.billiontech.in/los/borrower}
+
+    depends_on:
+      discovery-service:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      notification-service:
+        condition: service_started
+    volumes:
+      - los_documents:/data/documents
+    expose:
+      - "8083"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8083/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 180s
+    networks:
+      - los_nw
+
+  notification-service:
+    image: artifacts.billionloans.com:5002/notification-service:main-1
+    container_name: los_notification
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SERVER_PORT: 8084
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/los_notification
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      SPRING_RABBITMQ_USERNAME: losuser
+      SPRING_RABBITMQ_PASSWORD: lospassword
+      EUREKA_HOST: discovery-service
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-billiontechuat@gmail.com}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-lqwt apmk jusw hcyo}
+      SPRING_MAIL_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SPRING_MAIL_PORT: ${SMTP_PORT:-587}
+      SPRING_MAIL_USERNAME: ${SMTP_USERNAME:-billiontechuat@gmail.com}
+      SPRING_MAIL_PASSWORD: ${SMTP_PASSWORD:-lqwt apmk jusw hcyo}
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_AUTH: "true"
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_ENABLE: "true"
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_STARTTLS_REQUIRED: "true"
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_SSL_ENABLE: "false"
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_CONNECTIONTIMEOUT: "10000"
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_TIMEOUT: "10000"
+      SPRING_MAIL_PROPERTIES_MAIL_SMTP_WRITETIMEOUT: "10000"
+      SPRING_MAIL_PROPERTIES_MAIL_DEBUG: ${SMTP_DEBUG:-false}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER:-SMTP}
+      EMAIL_FROM_ADDRESS: ${EMAIL_FROM_ADDRESS:-billiontechuat@gmail.com}
+      EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-LOS Platform}
+      EMAIL_SIMULATION_ENABLED: ${EMAIL_SIMULATION_ENABLED:-false}
+    depends_on:
+      discovery-service:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    ports:
+      - "8084:8084"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8084/actuator/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    networks:
+      - los_nw
+
+  ui-service:
+    image: artifacts.billionloans.com:5002/ui-service:main-1
+    container_name: los_ui
+    restart: unless-stopped
+    depends_on:
+      los-core:
+        condition: service_healthy
+      notification-service:
+        condition: service_healthy
+    # Host 80 is reserved for system nginx on shared EC2; override via LOS_UI_HOST_PORT in .env.prod
+    ports:
+      - "${LOS_UI_HOST_PORT:-8080}:80"
+    networks:
+      - los_nw
+
+volumes:
+  los_postgres_data:
+  los_documents:
+
+networks:
+    los_nw:
+      name: los_nw
+      external: true

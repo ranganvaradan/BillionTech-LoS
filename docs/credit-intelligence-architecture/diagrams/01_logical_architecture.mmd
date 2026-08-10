@@ -1,0 +1,46 @@
+%% Logical target architecture — Credit Intelligence Platform
+flowchart TB
+  subgraph External["External & Assistive"]
+    P[Providers: Bureau AA GST ITR KYC MCA]
+    D[Documents & Manual]
+    ERP[ERP / Invoice / LMS]
+    AI[AI-LOS]
+  end
+
+  subgraph LOS["BillionTechLOS — System of Record"]
+    SE[Source Engine]
+    ID[Identity Resolution]
+    FE[Fact Engine]
+    ME[Metric Engine]
+    RE[Reconciliation Engine]
+    PE[Policy Engine]
+    DE[Decision Engine]
+    HUM[Human Approval]
+    SAN[Sanction / Downstream]
+    MON[Monitoring Engine]
+    ORCH[Orchestrator]
+    AUD[Audit / Evidence]
+  end
+
+  P --> SE
+  D --> SE
+  ERP --> SE
+  SE --> ID
+  SE --> FE
+  ID --> FE
+  FE --> ME
+  FE --> RE
+  ME --> PE
+  RE --> PE
+  ORCH --> PE
+  PE --> DE
+  DE --> HUM
+  HUM --> SAN
+  SAN --> MON
+  MON --> SE
+  AI -.->|analysis request / outputs| FE
+  AI -.->|narratives anomalies| HUM
+  FE --> AUD
+  PE --> AUD
+  DE --> AUD
+  HUM --> AUD
