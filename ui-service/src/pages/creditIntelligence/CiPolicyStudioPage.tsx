@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from 'react'
 import {
+  addPlainEnglishPolicyRule,
   getPolicyStudioLanding,
   getPolicyStudioSession,
   getStagingPolicyStudio,
@@ -8,6 +9,7 @@ import {
   reviewPolicyRule,
   runDemoBlockedPath,
   runDemoHappyPath,
+  saveLifecycleDraft,
   uploadPolicyStudioFile,
   type PolicyStudioLanding,
   type StagingPolicyStudio,
@@ -18,7 +20,11 @@ import { PageHeader } from '@/components/PageHeader'
 import { PoliciesWorkspaceNav } from '@/components/workspace/PoliciesWorkspaceNav'
 import { CiFixtureBanner } from '@/components/creditIntelligence/CiFixtureBanner'
 import { CiExecutiveSummary, CiSection, CiTechnicalDetails } from '@/components/creditIntelligence/CiSection'
-import { PROSPECT_DEMO_VISIBLE_TAB_IDS } from '@/lib/applicationWorkbench'
+import {
+  POLICY_STUDIO_ADVANCED_TAB_IDS,
+  POLICY_STUDIO_PRIMARY_TAB_IDS,
+  PROSPECT_DEMO_VISIBLE_TAB_IDS,
+} from '@/lib/applicationWorkbench'
 import { draftOnlyBanner, derivePolicyNextStep, progressStageLabels } from '@/lib/creditIntelligence/businessLexicon'
 import { CiPolicyAmbiguitiesTab } from '@/pages/creditIntelligence/CiPolicyAmbiguitiesTab'
 import { CiPolicyAnalystExperience } from '@/pages/creditIntelligence/CiPolicyAnalystExperience'
@@ -62,17 +68,20 @@ function chipClass(state: string): string {
 }
 
 const TABS: { id: TabId; label: string }[] = [
-  { id: 'overview', label: 'Summary' },
+  { id: 'rules', label: 'Rules' },
+  { id: 'simulation', label: 'Test' },
+  { id: 'lifecycle', label: 'Versions' },
+  { id: 'overview', label: 'Overview' },
   { id: 'kyc-eligibility', label: 'KYC & Eligibility' },
   { id: 'structure', label: 'Structure' },
   { id: 'ambiguities', label: 'Ambiguous Terms' },
-  { id: 'rules', label: 'Business Rules' },
   { id: 'data-readiness', label: 'Data Readiness' },
-  { id: 'tests', label: 'Tests' },
-  { id: 'simulation', label: 'Simulation' },
+  { id: 'tests', label: 'Generated Tests' },
   { id: 'approvals', label: 'Approvals' },
-  { id: 'lifecycle', label: 'Policy Settings' },
 ]
+
+const PRIMARY_TAB_IDS = POLICY_STUDIO_PRIMARY_TAB_IDS as readonly string[]
+const ADVANCED_TAB_IDS = POLICY_STUDIO_ADVANCED_TAB_IDS as readonly string[]
 
 export function CiPolicyStudioPage() {
   const { user } = useAuth()
@@ -98,6 +107,9 @@ export function CiPolicyStudioPage() {
   })
   const [demoActor, setDemoActor] = useState('credit_manager')
   const [demoMsg, setDemoMsg] = useState<string | null>(null)
+  const [showAdvancedTabs, setShowAdvancedTabs] = useState(false)
+  const [draftMsg, setDraftMsg] = useState<string | null>(null)
+  const [dirty, setDirty] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const toggleProspectDemoMode = () => {
@@ -190,10 +202,12 @@ export function CiPolicyStudioPage() {
     if (!pendingSession) return
     setSession(pendingSession)
     setPendingSession(null)
-    setTab('overview')
+    setTab('rules')
     setView('session')
     setExpanded({})
     setError(null)
+    setDirty(false)
+    setDraftMsg(null)
   }
 
   const cancelAnalysis = () => {
@@ -261,8 +275,50 @@ export function CiPolicyStudioPage() {
     try {
       const data = await reviewPolicyRule(documentId, ruleId, body as Parameters<typeof reviewPolicyRule>[2])
       setSession(data)
+      setDirty(true)
+      setDraftMsg(null)
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Could not record rule review')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const saveDraft = async () => {
+    if (!documentId) {
+      setError('Missing document id for this session')
+      return
+    }
+    setBusy(true)
+    setError(null)
+    try {
+      const data = await saveLifecycleDraft(documentId, {
+        reasonForChange: 'Credit Manager draft save',
+      })
+      setSession(data)
+      setDirty(false)
+      setDraftMsg(String(asRecord(data).message ?? 'Draft saved.'))
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Could not save draft')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const addPlainEnglishRule = async (group: string, text: string) => {
+    if (!documentId) {
+      setError('Missing document id for this session')
+      return
+    }
+    setBusy(true)
+    setError(null)
+    try {
+      const data = await addPlainEnglishPolicyRule(documentId, { text, group })
+      setSession(data)
+      setDirty(true)
+      setDraftMsg(String(asRecord(data).message ?? 'Rule added for review.'))
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Could not add rule')
     } finally {
       setBusy(false)
     }
@@ -488,9 +544,31 @@ export function CiPolicyStudioPage() {
     <div>
       <PageHeader
         title={String(header.policyName ?? 'Policy Understanding')}
-        description="Credit Head view — resolve ambiguous terms and approve proposed business rules. Draft / approved / scheduled policies — not live LOS production configuration."
+        description="Review extracted rules, save a draft anytime, then test and check activation readiness. Draft / approved / scheduled — not live LOS production configuration."
         actions={
           <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="bt-btn bt-btn-primary bt-btn-sm"
+              disabled={busy || !documentId}
+              onClick={() => void saveDraft()}
+            >
+              Save Draft
+            </button>
+            <button
+              type="button"
+              className="bt-btn bt-btn-secondary bt-btn-sm"
+              onClick={() => setTab('simulation')}
+            >
+              Test Policy
+            </button>
+            <button
+              type="button"
+              className="bt-btn bt-btn-secondary bt-btn-sm"
+              onClick={() => setTab('lifecycle')}
+            >
+              Activation Check
+            </button>
             <button
               type="button"
               className={`bt-btn bt-btn-sm ${prospectDemoMode ? 'bt-btn-primary' : 'bt-btn-secondary'}`}
@@ -516,6 +594,7 @@ export function CiPolicyStudioPage() {
                 setSession(null)
                 setError(null)
                 setDemoMsg(null)
+                setDraftMsg(null)
               }}
             >
               Back to upload
@@ -553,6 +632,16 @@ export function CiPolicyStudioPage() {
           {demoMsg}
         </p>
       ) : null}
+      {draftMsg ? (
+        <p className="mb-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+          {draftMsg}
+        </p>
+      ) : null}
+      {dirty ? (
+        <p className="mb-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+          Unsaved changes — use <strong>Save Draft</strong> anytime (implementability is not required).
+        </p>
+      ) : null}
       {error ? (
         <p className="mb-4 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800" role="alert">
           {error}
@@ -561,59 +650,46 @@ export function CiPolicyStudioPage() {
 
       {session ? (
         <div className="mb-4 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
+          <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+            <span className="font-semibold text-slate-900">{String(header.policyName ?? 'Policy')}</span>
+            <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-900">
+              {String(header.status ?? 'DRAFT')}
+            </span>
+            <span className="text-xs text-slate-500">
+              Source: {String(header.fileName ?? session.fileName ?? '—')}
+            </span>
+          </div>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-700">
             <span>
-              <strong>{String(readinessBanner.totalClauses ?? counts.totalClauses ?? 0)}</strong> clauses
+              <strong>{String(readinessBanner.rulesIdentified ?? counts.rulesTotal ?? ruleCards.length)}</strong>{' '}
+              rules identified
             </span>
             <span>
               <strong className="text-emerald-800">
                 {String(readinessBanner.rulesReady ?? counts.rulesReady ?? 0)}
               </strong>{' '}
-              rules ready
+              ready
             </span>
             <span>
               <strong className="text-amber-800">
                 {String(readinessBanner.rulesNeedReview ?? counts.rulesNeedReview ?? 0)}
               </strong>{' '}
-              rules need review
+              need your input
             </span>
             <span>
-              <strong>{String(readinessBanner.missingMetrics ?? counts.missingMetrics ?? 0)}</strong> missing
-              business measures
+              <strong className="text-indigo-800">{String(counts.rulesManualInput ?? 0)}</strong> manual
+              input
             </span>
             <span>
-              <strong className="text-rose-800">
-                {String(readinessBanner.ambiguities ?? counts.openAmbiguities ?? 0)}
-              </strong>{' '}
-              ambiguous terms
+              <strong className="text-slate-700">{String(readinessBanner.rulesIgnored ?? counts.rulesIgnored ?? 0)}</strong>{' '}
+              ignored
             </span>
-            <span>
-              <strong>{String(readinessBanner.testsGenerated ?? counts.tests ?? testsCount)}</strong> tests
-              generated
-            </span>
-            <span className="ml-auto rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-900">
-              Policy Readiness: {String(readinessBanner.policyReadinessPercent ?? 0)}%
-            </span>
-            {asRecord(session.implementabilitySummary).implementationReadinessPercent != null ||
-            asRecord(asRecord(session.implementability).summary).implementationReadinessPercent != null ? (
-              <span className="rounded-full bg-indigo-100 px-3 py-1 text-xs font-semibold text-indigo-950">
-                Data Readiness:{' '}
-                {String(
-                  asRecord(session.implementabilitySummary).implementationReadinessPercent ??
-                    asRecord(asRecord(session.implementability).summary).implementationReadinessPercent ??
-                    0,
-                )}
-                %
-              </span>
-            ) : null}
           </div>
         </div>
       ) : null}
 
-      <div className="mb-4 flex flex-wrap gap-2 border-b border-slate-200 pb-2">
-        {TABS.filter((t) =>
-          prospectDemoMode ? (PROSPECT_DEMO_VISIBLE_TAB_IDS as readonly string[]).includes(t.id) : true,
-        ).map((t) => (
+      <div className="mb-4 flex flex-wrap items-center gap-2 border-b border-slate-200 pb-2">
+        {TABS.filter((t) => PRIMARY_TAB_IDS.includes(t.id)).map((t) => (
           <button
             key={t.id}
             type="button"
@@ -625,6 +701,32 @@ export function CiPolicyStudioPage() {
             {t.label}
           </button>
         ))}
+        <button
+          type="button"
+          onClick={() => setShowAdvancedTabs((v) => !v)}
+          className="rounded-full px-3 py-1.5 text-sm font-medium bg-slate-50 text-slate-600 ring-1 ring-slate-200 hover:bg-slate-100"
+        >
+          {showAdvancedTabs ? 'Hide Advanced' : 'Advanced'}
+        </button>
+        {(showAdvancedTabs || (!prospectDemoMode && ADVANCED_TAB_IDS.includes(tab))) &&
+          TABS.filter((t) => {
+            if (!ADVANCED_TAB_IDS.includes(t.id)) return false
+            if (prospectDemoMode) {
+              return showAdvancedTabs || (PROSPECT_DEMO_VISIBLE_TAB_IDS as readonly string[]).includes(t.id)
+            }
+            return showAdvancedTabs || t.id === tab
+          }).map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              className={`rounded-full px-3 py-1.5 text-sm font-medium ${
+                tab === t.id ? 'bg-indigo-900 text-white' : 'bg-indigo-50 text-indigo-900 hover:bg-indigo-100'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
       </div>
 
       {busy ? <p className="text-sm text-slate-600">Working on your policy…</p> : null}
@@ -888,8 +990,10 @@ export function CiPolicyStudioPage() {
           cards={ruleCards}
           busy={busy}
           onReview={reviewRule}
-          onViewTests={() => setTab('tests')}
-          onEditInterpretation={() => setTab('ambiguities')}
+          onViewTests={() => setTab('simulation')}
+          onSaveDraft={() => void saveDraft()}
+          onActivationCheck={() => setTab('lifecycle')}
+          onAddPlainEnglishRule={addPlainEnglishRule}
           prospectDemoMode={prospectDemoMode}
         />
       ) : null}

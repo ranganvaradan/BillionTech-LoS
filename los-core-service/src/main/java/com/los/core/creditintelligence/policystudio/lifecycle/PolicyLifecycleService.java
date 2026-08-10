@@ -1,7 +1,9 @@
 package com.los.core.creditintelligence.policystudio.lifecycle;
 
 import com.los.core.creditintelligence.config.CreditIntelligenceProperties;
+import com.los.core.creditintelligence.policystudio.domain.CiPolicyAmbiguity;
 import com.los.core.creditintelligence.policystudio.domain.CiPolicyDocument;
+import com.los.core.creditintelligence.policystudio.domain.CiPolicyRuleCandidate;
 import com.los.core.creditintelligence.policystudio.domain.ReviewState;
 import com.los.core.creditintelligence.policystudio.model.PolicyStudioSession;
 import com.los.core.creditintelligence.policystudio.service.PolicyImplementabilityService;
@@ -712,6 +714,7 @@ public class PolicyLifecycleService {
         }
         long openMat = session.getAmbiguities().stream()
                 .filter(a -> "OPEN".equals(a.getResolutionStatus()) && "MATERIAL".equals(a.getSeverity()))
+                .filter(a -> !ambiguityOnlyAffectsExcludedRules(session, a))
                 .count();
         if (openMat > 0) {
             blockers.add("Blocking ambiguities unresolved (" + openMat + ")");
@@ -852,6 +855,23 @@ public class PolicyLifecycleService {
         int params = session.getParameters() == null ? 0 : session.getParameters().size();
         String textHash = session.getDocument() == null ? "" : String.valueOf(session.getDocument().getContentHash());
         return textHash + "|rules=" + rules + "|params=" + params;
+    }
+
+    /**
+     * Ambiguities tied only to Ignored/Deleted rules are not activation blockers.
+     * Unresolved ambiguities on included executable rules remain blockers.
+     */
+    private static boolean ambiguityOnlyAffectsExcludedRules(PolicyStudioSession session, CiPolicyAmbiguity a) {
+        if (a == null || a.getClauseId() == null) {
+            return false;
+        }
+        List<CiPolicyRuleCandidate> related = session.getRuleCandidates().stream()
+                .filter(r -> a.getClauseId().equals(r.getClauseId()))
+                .toList();
+        if (related.isEmpty()) {
+            return false;
+        }
+        return related.stream().allMatch(PolicyImplementabilityService::isExcludedFromActivation);
     }
 
     private boolean hasCheckerApproval(PolicyStudioSession session) {

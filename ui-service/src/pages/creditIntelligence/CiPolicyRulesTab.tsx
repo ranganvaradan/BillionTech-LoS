@@ -20,16 +20,41 @@ function asList(v: unknown): unknown[] {
 
 function statusChip(status: string): string {
   switch (status) {
+    case 'Accepted':
     case 'Approved':
+    case 'Edited':
       return 'bg-emerald-100 text-emerald-900'
     case 'Ready':
       return 'bg-sky-100 text-sky-900'
+    case 'Manual Input':
+      return 'bg-indigo-100 text-indigo-900'
+    case 'Ignored':
+      return 'bg-slate-200 text-slate-700'
+    case 'Deleted':
+      return 'bg-slate-100 text-slate-500 line-through'
     case 'Blocked':
-      return 'bg-rose-100 text-rose-900'
+    case 'Needs your input':
+    case 'Needs Review':
+      return 'bg-amber-100 text-amber-900'
     default:
       return 'bg-amber-100 text-amber-900'
   }
 }
+
+const GROUP_ORDER = [
+  'KYC & Eligibility',
+  'Bureau',
+  'Banking',
+  'Financial / Income',
+  'GST / Business',
+  'Collateral',
+  'Risk / Exceptions',
+  'Limit & Pricing',
+  'Decision / Review',
+  'Credit Rules',
+] as const
+
+type StatusFilter = 'ALL' | 'NEEDS_REVIEW' | 'ACCEPTED' | 'MANUAL_INPUT' | 'IGNORED'
 
 function VisualLogic({ visual }: { visual: Record<string, unknown> }) {
   const kind = String(visual.kind ?? 'SIMPLE')
@@ -113,12 +138,21 @@ function VisualLogic({ visual }: { visual: Record<string, unknown> }) {
   )
 }
 
-type DomainFilter = 'ALL' | 'KYC' | 'CREDIT'
-
-function domainOf(raw: unknown): DomainFilter {
-  const d = String(asRecord(raw).decisionDomain ?? 'CREDIT').toUpperCase()
-  if (d === 'KYC' || d === 'ELIGIBILITY') return 'KYC'
-  return 'CREDIT'
+function matchesStatusFilter(status: string, filter: StatusFilter): boolean {
+  switch (filter) {
+    case 'ALL':
+      return status !== 'Deleted'
+    case 'NEEDS_REVIEW':
+      return status === 'Needs your input' || status === 'Needs Review' || status === 'Blocked' || status === 'Ready'
+    case 'ACCEPTED':
+      return status === 'Accepted' || status === 'Edited' || status === 'Approved'
+    case 'MANUAL_INPUT':
+      return status === 'Manual Input'
+    case 'IGNORED':
+      return status === 'Ignored' || status === 'Deleted'
+    default:
+      return true
+  }
 }
 
 export function CiPolicyRulesTab({
@@ -126,278 +160,530 @@ export function CiPolicyRulesTab({
   busy,
   onReview,
   onViewTests,
-  onEditInterpretation,
+  onSaveDraft,
+  onActivationCheck,
+  onAddPlainEnglishRule,
   prospectDemoMode = false,
 }: {
   cards: unknown[]
   busy: boolean
   onReview: (ruleId: string, body: Record<string, unknown>) => Promise<void>
   onViewTests?: () => void
-  onEditInterpretation?: () => void
+  onSaveDraft?: () => void
+  onActivationCheck?: () => void
+  onAddPlainEnglishRule?: (group: string, text: string) => Promise<void>
   prospectDemoMode?: boolean
 }) {
   const [clauseOpen, setClauseOpen] = useState<Record<string, boolean>>({})
-  const [domainFilter, setDomainFilter] = useState<DomainFilter>('ALL')
+  const [editOpen, setEditOpen] = useState<Record<string, boolean>>({})
+  const [editDraft, setEditDraft] = useState<Record<string, string>>({})
+  const [manualOpen, setManualOpen] = useState<Record<string, boolean>>({})
+  const [manualLabel, setManualLabel] = useState<Record<string, string>>({})
+  const [manualType, setManualType] = useState<Record<string, string>>({})
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL')
+  const [search, setSearch] = useState('')
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+  const [addOpen, setAddOpen] = useState<Record<string, boolean>>({})
+  const [addText, setAddText] = useState<Record<string, string>>({})
+  const [undoStack, setUndoStack] = useState<{ id: string; prev: Record<string, unknown> }[]>([])
+
   const filtered = useMemo(() => {
-    if (domainFilter === 'ALL') return cards
-    return cards.filter((c) => domainOf(c) === domainFilter)
-  }, [cards, domainFilter])
-  const needReview = filtered.filter((c) => String(asRecord(c).status ?? '') !== 'Approved').length
-  const hasKyc = cards.some((c) => domainOf(c) === 'KYC')
+    const q = search.trim().toLowerCase()
+    return cards.filter((c) => {
+      const r = asRecord(c)
+      const status = String(r.status ?? 'Needs your input')
+      if (!matchesStatusFilter(status, statusFilter)) return false
+      if (!q) return true
+      const hay = `${r.ruleName ?? ''} ${r.businessRule ?? ''} ${r.sourceClause ?? ''}`.toLowerCase()
+      return hay.includes(q)
+    })
+  }, [cards, statusFilter, search])
+
+  const groups = useMemo(() => {
+    const map = new Map<string, unknown[]>()
+    for (const c of filtered) {
+      const g = String(asRecord(c).businessGroup ?? asRecord(c).dataFamily ?? 'Credit Rules')
+      if (!map.has(g)) map.set(g, [])
+      map.get(g)!.push(c)
+    }
+    const ordered: { name: string; items: unknown[] }[] = []
+    for (const name of GROUP_ORDER) {
+      if (map.has(name)) {
+        ordered.push({ name, items: map.get(name)! })
+        map.delete(name)
+      }
+    }
+    for (const [name, items] of map) {
+      ordered.push({ name, items })
+    }
+    return ordered
+  }, [filtered])
+
+  const totals = useMemo(() => {
+    const all = cards.map((c) => String(asRecord(c).status ?? ''))
+    return {
+      total: cards.length,
+      ready: all.filter((s) => s === 'Ready' || s === 'Accepted' || s === 'Edited' || s === 'Approved').length,
+      needs: all.filter((s) => s === 'Needs your input' || s === 'Needs Review' || s === 'Blocked').length,
+      manual: all.filter((s) => s === 'Manual Input').length,
+      ignored: all.filter((s) => s === 'Ignored').length,
+      accepted: all.filter((s) => s === 'Accepted' || s === 'Edited' || s === 'Approved').length,
+    }
+  }, [cards])
+
+  const readyToAccept = useMemo(
+    () =>
+      cards.filter((c) => {
+        const r = asRecord(c)
+        return String(r.status) === 'Ready' && !r.blockedReason && !r.platformGuardrail
+      }),
+    [cards],
+  )
+
+  const acceptAllReady = async () => {
+    if (readyToAccept.length === 0) return
+    if (
+      !window.confirm(
+        `Accept ${readyToAccept.length} ready rule${readyToAccept.length === 1 ? '' : 's'}? Ambiguous or incomplete rules will not be accepted.`,
+      )
+    ) {
+      return
+    }
+    for (const c of readyToAccept) {
+      const id = String(asRecord(c).id ?? '')
+      if (!id) continue
+      await onReview(id, {
+        uiAction: 'ACCEPT',
+        reason: 'Accepted via Accept all ready rules',
+      })
+    }
+  }
 
   return (
     <div className="space-y-4">
       <CiExecutiveSummary
-        title="Summary"
+        title="Review Rules"
         nextAction={
-          needReview > 0 ? (
-            <p className="text-sm font-medium text-amber-900">
-              Review and approve proposed business rules before simulation.
-            </p>
-          ) : (
-            <button type="button" className="bt-btn bt-btn-primary bt-btn-sm" onClick={() => onViewTests?.()}>
-              Review tests
-            </button>
-          )
+          <div className="flex flex-wrap gap-2">
+            {onSaveDraft ? (
+              <button type="button" className="bt-btn bt-btn-primary bt-btn-sm" disabled={busy} onClick={onSaveDraft}>
+                Save Draft
+              </button>
+            ) : null}
+            {onViewTests ? (
+              <button type="button" className="bt-btn bt-btn-secondary bt-btn-sm" onClick={onViewTests}>
+                Test Policy
+              </button>
+            ) : null}
+            {onActivationCheck ? (
+              <button type="button" className="bt-btn bt-btn-secondary bt-btn-sm" onClick={onActivationCheck}>
+                Activation Check
+              </button>
+            ) : null}
+          </div>
         }
       >
-        <p>
-          {filtered.length} proposed business rule{filtered.length === 1 ? '' : 's'} · {needReview} still need Credit Head
-          confirmation.
+        <p className="text-sm text-slate-700">
+          <strong>{totals.total}</strong> rules identified · <strong>{totals.ready}</strong> ready ·{' '}
+          <strong>{totals.needs}</strong> need your input · <strong>{totals.manual}</strong> manual input ·{' '}
+          <strong>{totals.ignored}</strong> ignored
+        </p>
+        <p className="mt-1 text-xs text-slate-500">
+          Save Draft anytime — unresolved items and ignored rules do not block a draft.
         </p>
       </CiExecutiveSummary>
 
-      {hasKyc ? (
-        <div className="flex flex-wrap gap-2">
-          {(
-            [
-              ['ALL', 'All'],
-              ['KYC', 'KYC & Eligibility'],
-              ['CREDIT', 'Credit'],
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setDomainFilter(id)}
-              className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                domainFilter === id
-                  ? 'bg-slate-900 text-white'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+      <div className="flex flex-wrap items-center gap-2">
+        {(
+          [
+            ['ALL', 'All'],
+            ['NEEDS_REVIEW', 'Needs review'],
+            ['ACCEPTED', 'Accepted'],
+            ['MANUAL_INPUT', 'Manual input'],
+            ['IGNORED', 'Ignored'],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setStatusFilter(id)}
+            className={`rounded-full px-3 py-1 text-xs font-semibold ${
+              statusFilter === id ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search rules…"
+          className="ml-auto min-w-[12rem] flex-1 rounded border border-slate-300 px-3 py-1.5 text-sm"
+        />
+        {readyToAccept.length > 0 ? (
+          <button
+            type="button"
+            disabled={busy}
+            className="bt-btn bt-btn-secondary bt-btn-sm"
+            onClick={() => void acceptAllReady()}
+          >
+            Accept all ready ({readyToAccept.length})
+          </button>
+        ) : null}
+        {undoStack.length > 0 ? (
+          <button
+            type="button"
+            disabled={busy}
+            className="bt-btn bt-btn-secondary bt-btn-sm"
+            onClick={() => {
+              const last = undoStack[undoStack.length - 1]
+              setUndoStack((s) => s.slice(0, -1))
+              void onReview(last.id, {
+                uiAction: 'ACCEPT',
+                reason: 'Undo exclude — restored to draft',
+                humanChanges: { undo: true },
+              })
+            }}
+          >
+            Undo last delete
+          </button>
+        ) : null}
+      </div>
+
+      {groups.length === 0 ? (
+        <CiEmptyState
+          title="No rules in this filter"
+          detail="Try All, or clear search. After ingest, extracted rules appear here for review."
+        />
       ) : null}
 
-      <CiSection
-        title="Proposed business rules"
-        description="Business purpose and impact first. Supporting technical detail stays collapsed."
-      >
-        {filtered.length === 0 ? (
-          <CiEmptyState title="No rules in this filter" detail="Try another domain filter." />
-        ) : null}
-        <ul className="space-y-4">
-          {filtered.map((raw) => {
-            const r = asRecord(raw)
-            const id = String(r.id ?? r.systemRuleId ?? '')
-            const status = String(r.status ?? 'Needs Review')
-            const dataUsed = asList(r.dataUsed)
-            const visual = asRecord(r.visualLogic)
-            const purpose =
-              String(r.businessPurpose ?? r.whyThisRule ?? r.rationale ?? r.businessRule ?? 'Supports consistent underwriting for this product.')
-            const impact = String(
-              r.businessImpact ?? r.impact ?? r.resultOnFailure ?? 'Affects applicants who fail this condition.',
-            )
-            const who = String(r.whoIsAffected ?? r.productScope ?? 'Applicants in the stated product scope')
-            const isKyc = domainOf(raw) === 'KYC'
+      {groups.map(({ name, items }) => {
+        const open = !collapsed[name]
+        return (
+          <CiSection
+            key={name}
+            title={`${name} (${items.length})`}
+            description="Review each rule: Accept, Edit, Ignore for now, Delete, or Manual input."
+          >
+            <button
+              type="button"
+              className="mb-3 text-xs font-semibold text-sky-800 underline"
+              onClick={() => setCollapsed((p) => ({ ...p, [name]: !p[name] }))}
+            >
+              {open ? 'Collapse' : 'Expand'}
+            </button>
+            {open ? (
+              <ul className="space-y-4">
+                {items.map((raw) => {
+                  const r = asRecord(raw)
+                  const id = String(r.id ?? r.systemRuleId ?? '')
+                  const status = String(r.status ?? 'Needs your input')
+                  const dataUsed = asList(r.dataUsed)
+                  const visual = asRecord(r.visualLogic)
+                  const isTerminal = status === 'Deleted'
+                  const needsInput = status === 'Needs your input' || status === 'Blocked' || status === 'Needs Review'
 
-            return (
-              <li key={id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <div className="text-lg font-semibold text-slate-900">{String(r.ruleName ?? 'Proposed business rule')}</div>
-                    <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-600">
-                      <span>
-                        Who is affected: <strong>{who}</strong>
-                      </span>
-                      {isKyc ? (
-                        <>
-                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium">
-                            {decisionPolicyDomainLabel(r.decisionDomain)}
-                          </span>
-                          {r.kycRequirementType ? (
-                            <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-900">
-                              {kycRequirementTypeLabel(r.kycRequirementType)}
+                  return (
+                    <li
+                      key={id}
+                      className={`rounded-xl border bg-white p-4 shadow-sm ${
+                        isTerminal ? 'border-slate-100 opacity-60' : 'border-slate-200'
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <div className="text-lg font-semibold text-slate-900">
+                            {String(r.ruleName ?? 'Business rule')}
+                          </div>
+                          <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-600">
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5">
+                              {decisionPolicyDomainLabel(r.decisionDomain)}
                             </span>
-                          ) : null}
-                          {r.platformGuardrail ? (
-                            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-950">
-                              Platform Guardrail
-                            </span>
-                          ) : null}
-                        </>
-                      ) : null}
-                    </div>
-                  </div>
-                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusChip(status)}`}>
-                    {status}
-                  </span>
-                </div>
-
-                {r.blockedReason ? (
-                  <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">
-                    Action required: {String(r.blockedReason)}
-                  </div>
-                ) : null}
-
-                <div className="mt-4 grid gap-3 rounded-lg border border-sky-100 bg-sky-50/50 px-3 py-3 text-sm sm:grid-cols-3">
-                  <div>
-                    <div className="text-xs font-semibold uppercase tracking-wide text-sky-800">Why is this rule here?</div>
-                    <p className="mt-1 text-slate-800">{purpose}</p>
-                  </div>
-                  <div>
-                    <div className="text-xs font-semibold uppercase tracking-wide text-sky-800">Data required</div>
-                    <div className="mt-1 flex flex-wrap gap-1.5">
-                      {dataUsed.map((d, i) => (
-                        <span key={i} className="rounded-full bg-white px-2 py-0.5 text-xs font-medium text-slate-700">
-                          {String(d)}
+                            {r.kycRequirementType ? (
+                              <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-indigo-900">
+                                {kycRequirementTypeLabel(r.kycRequirementType)}
+                              </span>
+                            ) : null}
+                            {Boolean(r.manualReviewRequired) ? (
+                              <span className="rounded-full bg-violet-100 px-2 py-0.5 font-semibold text-violet-950">
+                                Manual review
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusChip(status)}`}>
+                          {status === 'Needs Review' ? 'Needs your input' : status}
                         </span>
-                      ))}
-                      {dataUsed.length === 0 ? <span className="text-xs text-slate-500">See policy clause</span> : null}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-xs font-semibold uppercase tracking-wide text-sky-800">Business impact</div>
-                    <p className="mt-1 text-slate-800">{impact}</p>
-                  </div>
-                </div>
+                      </div>
 
-                <div className="mt-4 grid gap-4 lg:grid-cols-2">
-                  <div className="space-y-3 text-sm">
-                    <div>
-                      <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Business rule</div>
-                      <p className="mt-1 font-medium text-slate-900">{String(r.businessRule ?? '—')}</p>
-                    </div>
-                    <dl className="grid grid-cols-2 gap-3">
-                      <div>
-                        <dt className="text-xs text-slate-500">Period</dt>
-                        <dd className="font-medium">{String(r.period ?? '—')}</dd>
-                      </div>
-                      <div>
-                        <dt className="text-xs text-slate-500">If information is missing</dt>
-                        <dd className="font-medium">{String(r.onMissing ?? '—')}</dd>
-                      </div>
-                      <div>
-                        <dt className="text-xs text-slate-500">Result when rule fails</dt>
-                        <dd className="font-medium">{String(r.resultOnFailure ?? '—')}</dd>
-                      </div>
-                      <div>
-                        <dt className="text-xs text-slate-500">Information family</dt>
-                        <dd className="font-medium">{String(r.dataFamily ?? '—')}</dd>
-                      </div>
-                    </dl>
-                  </div>
-                  <div>
-                    <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Rule logic</div>
-                    <VisualLogic visual={visual} />
-                  </div>
-                </div>
+                      {needsInput && r.blockedReason ? (
+                        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+                          Needs your input: {String(r.blockedReason)}
+                        </div>
+                      ) : null}
 
-                <div className="mt-4 flex flex-wrap gap-2">
+                      <div className="mt-3 space-y-2 text-sm">
+                        <div>
+                          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Business statement
+                          </div>
+                          <p className="mt-1 font-medium text-slate-900">{String(r.businessRule ?? '—')}</p>
+                        </div>
+                        <dl className="grid gap-2 sm:grid-cols-3">
+                          <div>
+                            <dt className="text-xs text-slate-500">Outcome if fails</dt>
+                            <dd className="font-medium">{String(r.resultOnFailure ?? '—')}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-xs text-slate-500">Data / source</dt>
+                            <dd className="font-medium">
+                              {dataUsed.length ? dataUsed.map(String).join(', ') : String(r.dataFamily ?? '—')}
+                            </dd>
+                          </div>
+                          <div>
+                            <dt className="text-xs text-slate-500">If information missing</dt>
+                            <dd className="font-medium">{String(r.onMissing ?? '—')}</dd>
+                          </div>
+                        </dl>
+                        <div className="mt-2">
+                          <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                            Key condition
+                          </div>
+                          <VisualLogic visual={visual} />
+                        </div>
+                      </div>
+
+                      {!isTerminal ? (
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            disabled={busy || status === 'Accepted' || status === 'Approved' || Boolean(r.platformGuardrail)}
+                            className="bt-btn bt-btn-primary bt-btn-sm"
+                            onClick={() =>
+                              void onReview(id, {
+                                uiAction: 'ACCEPT',
+                                reason: 'Accepted by Credit Manager — matches intended policy',
+                              })
+                            }
+                          >
+                            Accept
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busy || Boolean(r.platformGuardrail)}
+                            className="bt-btn bt-btn-secondary bt-btn-sm"
+                            onClick={() => {
+                              setEditOpen((p) => ({ ...p, [id]: !p[id] }))
+                              setEditDraft((p) => ({
+                                ...p,
+                                [id]: p[id] ?? String(r.businessRule ?? ''),
+                              }))
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busy || status === 'Ignored'}
+                            className="bt-btn bt-btn-secondary bt-btn-sm"
+                            onClick={() =>
+                              void onReview(id, {
+                                uiAction: 'IGNORE',
+                                reason: 'Ignored for now — retained in draft, not an activation blocker',
+                              })
+                            }
+                          >
+                            Ignore for now
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busy || Boolean(r.platformGuardrail)}
+                            className="bt-btn bt-btn-secondary bt-btn-sm"
+                            onClick={() => {
+                              setUndoStack((s) => [...s, { id, prev: r }])
+                              void onReview(id, {
+                                uiAction: 'DELETE',
+                                reason: 'Not part of the intended policy',
+                              })
+                            }}
+                          >
+                            Delete
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            className="bt-btn bt-btn-secondary bt-btn-sm"
+                            onClick={() => {
+                              setManualOpen((p) => ({ ...p, [id]: !p[id] }))
+                              setManualLabel((p) => ({
+                                ...p,
+                                [id]: p[id] ?? String(r.ruleName ?? 'Manual input'),
+                              }))
+                              setManualType((p) => ({ ...p, [id]: p[id] ?? 'YES_NO' }))
+                            }}
+                          >
+                            Manual input
+                          </button>
+                          <button
+                            type="button"
+                            className="bt-btn bt-btn-secondary bt-btn-sm"
+                            onClick={() => setClauseOpen((prev) => ({ ...prev, [id]: !prev[id] }))}
+                          >
+                            View source
+                          </button>
+                        </div>
+                      ) : null}
+
+                      {editOpen[id] ? (
+                        <div className="mt-3 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                          <label className="block text-sm">
+                            <span className="text-slate-600">Rule wording</span>
+                            <textarea
+                              className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
+                              rows={3}
+                              value={editDraft[id] ?? ''}
+                              onChange={(e) => setEditDraft((p) => ({ ...p, [id]: e.target.value }))}
+                              disabled={busy}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            className="bt-btn bt-btn-primary bt-btn-sm"
+                            onClick={() =>
+                              void onReview(id, {
+                                uiAction: 'EDIT',
+                                businessRule: editDraft[id],
+                                reason: 'Edited by Credit Manager',
+                                humanChanges: { businessRule: editDraft[id] },
+                              }).then(() => setEditOpen((p) => ({ ...p, [id]: false })))
+                            }
+                          >
+                            Save edit
+                          </button>
+                        </div>
+                      ) : null}
+
+                      {manualOpen[id] ? (
+                        <div className="mt-3 space-y-2 rounded-lg border border-indigo-200 bg-indigo-50/60 p-3">
+                          <p className="text-xs text-indigo-950">
+                            Manual input: an authorised user supplies a missing fact during application review.
+                            Distinct from Manual review (human judgement on existing evidence).
+                          </p>
+                          <label className="block text-sm">
+                            <span className="text-slate-600">Input label</span>
+                            <input
+                              className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+                              value={manualLabel[id] ?? ''}
+                              onChange={(e) => setManualLabel((p) => ({ ...p, [id]: e.target.value }))}
+                              disabled={busy}
+                            />
+                          </label>
+                          <label className="block text-sm">
+                            <span className="text-slate-600">Input type</span>
+                            <select
+                              className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+                              value={manualType[id] ?? 'YES_NO'}
+                              onChange={(e) => setManualType((p) => ({ ...p, [id]: e.target.value }))}
+                              disabled={busy}
+                            >
+                              <option value="YES_NO">Yes / No</option>
+                              <option value="DROPDOWN">Dropdown</option>
+                              <option value="NUMBER">Number</option>
+                              <option value="TEXT">Text</option>
+                              <option value="DATE">Date</option>
+                            </select>
+                          </label>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            className="bt-btn bt-btn-primary bt-btn-sm"
+                            onClick={() =>
+                              void onReview(id, {
+                                uiAction: 'MANUAL_INPUT',
+                                manualInputLabel: manualLabel[id],
+                                manualInputType: manualType[id],
+                                requiredActor: 'Credit Manager',
+                                reason: 'Designated Manual Input',
+                              }).then(() => setManualOpen((p) => ({ ...p, [id]: false })))
+                            }
+                          >
+                            Save Manual Input
+                          </button>
+                        </div>
+                      ) : null}
+
+                      {clauseOpen[id] ? (
+                        <blockquote className="mt-3 whitespace-pre-wrap rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
+                          {String(r.sourceClause ?? '—')}
+                          {r.section ? `\n\nSection: ${String(r.section)}` : ''}
+                        </blockquote>
+                      ) : null}
+
+                      <CiTechnicalDetails hidden={prospectDemoMode}>
+                        {JSON.stringify(
+                          {
+                            systemRuleId: r.systemRuleId,
+                            reviewStatus: r.reviewStatus,
+                            disposition: r.disposition,
+                            expression: r.technicalExpression,
+                          },
+                          null,
+                          2,
+                        )}
+                      </CiTechnicalDetails>
+                    </li>
+                  )
+                })}
+              </ul>
+            ) : null}
+
+            <div className="mt-3 border-t border-slate-100 pt-3">
+              <button
+                type="button"
+                className="text-sm font-semibold text-sky-800"
+                onClick={() => setAddOpen((p) => ({ ...p, [name]: !p[name] }))}
+              >
+                + Add rule
+              </button>
+              {addOpen[name] ? (
+                <div className="mt-2 space-y-2">
+                  <textarea
+                    className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+                    rows={2}
+                    placeholder='e.g. "Minimum bureau score is 700."'
+                    value={addText[name] ?? ''}
+                    onChange={(e) => setAddText((p) => ({ ...p, [name]: e.target.value }))}
+                    disabled={busy}
+                  />
                   <button
                     type="button"
-                    disabled={busy || status === 'Approved' || Boolean(r.platformGuardrail)}
+                    disabled={busy || !(addText[name] ?? '').trim()}
                     className="bt-btn bt-btn-primary bt-btn-sm"
-                    title={r.platformGuardrail ? 'Platform guardrails are not editable as ordinary rules' : undefined}
-                    onClick={() =>
-                      void onReview(id, {
-                        uiAction: 'APPROVE',
-                        reason: 'Approved by Credit Head in Policy Studio',
-                      })
-                    }
+                    onClick={() => {
+                      const text = (addText[name] ?? '').trim()
+                      if (!text) return
+                      if (onAddPlainEnglishRule) {
+                        void onAddPlainEnglishRule(name, text).then(() => {
+                          setAddText((p) => ({ ...p, [name]: '' }))
+                          setAddOpen((p) => ({ ...p, [name]: false }))
+                        })
+                      } else {
+                        window.alert(
+                          'Plain-English add uses the existing interpretation path. Paste the rule into Ambiguous Terms / analyst flow, or contact support if Add Rule API is unavailable in this build.',
+                        )
+                      }
+                    }}
                   >
-                    Approve rule
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    className="bt-btn bt-btn-secondary bt-btn-sm"
-                    onClick={() => onEditInterpretation?.()}
-                  >
-                    Edit AI understanding
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    className="bt-btn bt-btn-secondary bt-btn-sm"
-                    onClick={() => onEditInterpretation?.()}
-                  >
-                    Change verified mapping
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    className="bt-btn bt-btn-secondary bt-btn-sm"
-                    onClick={() => onViewTests?.()}
-                  >
-                    View tests
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy || status === 'Approved'}
-                    className="bt-btn bt-btn-secondary bt-btn-sm"
-                    onClick={() =>
-                      void onReview(id, {
-                        uiAction: 'REJECT',
-                        reason: 'Rejected by Credit Head in Policy Studio',
-                      })
-                    }
-                  >
-                    Reject rule
-                  </button>
-                  <button
-                    type="button"
-                    className="bt-btn bt-btn-secondary bt-btn-sm"
-                    onClick={() => setClauseOpen((prev) => ({ ...prev, [id]: !prev[id] }))}
-                  >
-                    View original clause
+                    Interpret & review
                   </button>
                 </div>
-
-                {clauseOpen[id] ? (
-                  <blockquote className="mt-3 whitespace-pre-wrap rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
-                    {String(r.sourceClause ?? '—')}
-                    {r.section ? `\n\nSection: ${String(r.section)}` : ''}
-                  </blockquote>
-                ) : null}
-
-                <CiTechnicalDetails hidden={prospectDemoMode}>
-                  {JSON.stringify(
-                    {
-                      systemRuleId: r.systemRuleId,
-                      reviewStatus: r.reviewStatus,
-                      expression: r.technicalExpression,
-                    },
-                    null,
-                    2,
-                  )}
-                </CiTechnicalDetails>
-              </li>
-            )
-          })}
-          {cards.length === 0 ? (
-            <li>
-              <CiEmptyState
-                title="No proposed business rules yet"
-                detail="Resolve ambiguous terms first, or re-open the policy so AI understanding can produce rules for review."
-              />
-            </li>
-          ) : null}
-        </ul>
-      </CiSection>
+              ) : null}
+            </div>
+          </CiSection>
+        )
+      })}
     </div>
   )
 }

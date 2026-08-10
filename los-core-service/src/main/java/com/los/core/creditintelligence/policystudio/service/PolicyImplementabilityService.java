@@ -138,6 +138,20 @@ public class PolicyImplementabilityService {
         int criticalBlocked = 0;
 
         for (CiPolicyRuleCandidate rule : session.getRuleCandidates()) {
+            // Ignored / deleted rules stay in the draft but never block activation or draft build.
+            if (isExcludedFromActivation(rule)) {
+                Map<String, Object> skipped = new LinkedHashMap<>();
+                skipped.put("ruleId", rule.getId() == null ? null : rule.getId().toString());
+                skipped.put("systemRuleId", rule.getSystemRuleId());
+                skipped.put("ruleName", friendlyRuleName(rule.getSystemRuleId()));
+                skipped.put("status", "EXCLUDED");
+                skipped.put("disposition", dispositionOf(rule));
+                skipped.put("excludedFromActivation", true);
+                skipped.put("critical", false);
+                skipped.put("requirements", List.of());
+                ruleRows.add(skipped);
+                continue;
+            }
             CiPolicyInterpretation interp = interps.get(rule.getClauseId());
             CiPolicyClause clause = clauses.get(rule.getClauseId());
             List<String> paths = extractPaths(rule, interp);
@@ -502,7 +516,37 @@ public class PolicyImplementabilityService {
             return true;
         }
         Object disposition = meta.get("dataGapDisposition");
-        return disposition != null && "MANUAL_VERIFICATION".equalsIgnoreCase(String.valueOf(disposition));
+        if (disposition != null && "MANUAL_VERIFICATION".equalsIgnoreCase(String.valueOf(disposition))) {
+            return true;
+        }
+        Object d = meta.get("disposition");
+        return d != null && ("MANUAL_INPUT".equalsIgnoreCase(String.valueOf(d))
+                || "MANUAL_REVIEW".equalsIgnoreCase(String.valueOf(d)));
+    }
+
+    /** Credit Manager Ignore / Delete — retained in draft, never an activation blocker. */
+    public static boolean isExcludedFromActivation(CiPolicyRuleCandidate rule) {
+        Map<String, Object> meta = rule.getMetadata();
+        if (meta == null || meta.isEmpty()) {
+            return false;
+        }
+        if (Boolean.TRUE.equals(meta.get("excludedFromActivation")) || Boolean.TRUE.equals(meta.get("deleted"))) {
+            return true;
+        }
+        Object d = meta.get("disposition");
+        if (d == null) {
+            return false;
+        }
+        String ds = String.valueOf(d).toUpperCase(Locale.ROOT);
+        return "IGNORED".equals(ds) || "DELETED".equals(ds) || "EXCLUDED".equals(ds);
+    }
+
+    private static String dispositionOf(CiPolicyRuleCandidate rule) {
+        Map<String, Object> meta = rule.getMetadata();
+        if (meta == null || meta.get("disposition") == null) {
+            return null;
+        }
+        return String.valueOf(meta.get("disposition"));
     }
 
     private String calculationHint(String path, CiPolicyRuleCandidate rule) {

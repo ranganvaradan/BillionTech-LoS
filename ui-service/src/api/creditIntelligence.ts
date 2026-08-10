@@ -184,12 +184,29 @@ export async function resolvePolicyAmbiguity(
 }
 
 export type ReviewRuleBody = {
-  uiAction?: 'APPROVE' | 'REJECT' | 'APPROVE_RULE' | 'REJECT_RULE'
+  uiAction?:
+    | 'APPROVE'
+    | 'REJECT'
+    | 'APPROVE_RULE'
+    | 'REJECT_RULE'
+    | 'ACCEPT'
+    | 'EDIT'
+    | 'IGNORE'
+    | 'IGNORE_FOR_NOW'
+    | 'DELETE'
+    | 'EXCLUDE'
+    | 'MANUAL_INPUT'
+    | 'MANUAL_VERIFICATION'
   reviewer?: string
   reviewerRole?: string
   reviewState?: string
   reason?: string
   humanChanges?: Record<string, unknown>
+  businessRule?: string
+  threshold?: string | number
+  manualInputLabel?: string
+  manualInputType?: string
+  requiredActor?: string
 }
 
 export async function reviewPolicyRule(
@@ -199,6 +216,17 @@ export async function reviewPolicyRule(
 ): Promise<StagingPolicyStudio> {
   const { data } = await http.post<StagingPolicyStudio>(
     `${BASE}/policy-studio/documents/${encodeURIComponent(documentId)}/rules/${encodeURIComponent(ruleId)}/review`,
+    body,
+  )
+  return data
+}
+
+export async function addPlainEnglishPolicyRule(
+  documentId: string,
+  body: { text: string; group?: string },
+): Promise<StagingPolicyStudio> {
+  const { data } = await http.post<StagingPolicyStudio>(
+    `${BASE}/policy-studio/documents/${encodeURIComponent(documentId)}/rules/add-plain-english`,
     body,
   )
   return data

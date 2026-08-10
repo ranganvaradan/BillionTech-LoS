@@ -329,15 +329,39 @@ export function collateralOverviewCopy(opts: {
   }
 }
 
-/** Policy Studio tabs hidden while Prospect Demo Mode is on (unchanged set). */
+/**
+ * Credit Manager primary tabs (Prospect Demo / simplified journey).
+ * Technical surfaces remain under Advanced in the Studio page.
+ */
 export const PROSPECT_DEMO_VISIBLE_TAB_IDS = [
-  'overview',
-  'ambiguities',
   'rules',
+  'simulation',
+  'lifecycle',
+  'overview',
+] as const
+
+/** Demoted from primary navigation — still reachable via Advanced. */
+export const PROSPECT_DEMO_HIDDEN_TAB_IDS = [
+  'kyc-eligibility',
+  'structure',
+  'ambiguities',
   'data-readiness',
   'tests',
-  'simulation',
   'approvals',
 ] as const
 
-export const PROSPECT_DEMO_HIDDEN_TAB_IDS = ['kyc-eligibility', 'structure', 'lifecycle'] as const
+export const POLICY_STUDIO_PRIMARY_TAB_IDS = [
+  'rules',
+  'simulation',
+  'lifecycle',
+  'overview',
+] as const
+
+export const POLICY_STUDIO_ADVANCED_TAB_IDS = [
+  'kyc-eligibility',
+  'structure',
+  'ambiguities',
+  'data-readiness',
+  'tests',
+  'approvals',
+] as const

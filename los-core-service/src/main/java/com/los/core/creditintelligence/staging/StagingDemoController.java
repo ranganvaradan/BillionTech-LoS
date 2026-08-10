@@ -276,6 +276,26 @@ public class StagingDemoController {
         }
     }
 
+    @PostMapping("/policy-studio/documents/{documentId}/rules/add-plain-english")
+    public Map<String, Object> addPlainEnglishRule(
+            @PathVariable UUID documentId,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token,
+            @RequestHeader(value = "X-Tenant-Id", required = false) String tenantHeader,
+            @RequestBody Map<String, Object> body) {
+        assertInternalToken(token);
+        assertStagingDemoEnabled();
+        try {
+            return policyStudioDemoService.addPlainEnglishRule(
+                    documentId, body == null ? Map.of() : body, tenantHeader);
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
+            log.warn("staging-demo add plain-english rule failed reason={}", e.getClass().getSimpleName());
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "We could not add this rule. Please try again.");
+        }
+    }
+
     /** @deprecated Prefer document-scoped resolve path. Kept for older clients. */
     @PostMapping("/ambiguities/{id}/resolve")
     public Map<String, Object> resolveAmbiguityLegacy(

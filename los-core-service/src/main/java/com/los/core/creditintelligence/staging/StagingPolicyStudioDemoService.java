@@ -2,14 +2,23 @@ package com.los.core.creditintelligence.staging;
 
 import com.los.core.creditintelligence.config.CreditIntelligenceProperties;
 import com.los.core.creditintelligence.policystudio.domain.AmbiguityResolutionAction;
+import com.los.core.creditintelligence.policystudio.domain.CiPolicyClause;
+import com.los.core.creditintelligence.policystudio.domain.CiPolicyDocument;
+import com.los.core.creditintelligence.policystudio.domain.CiPolicyInterpretation;
+import com.los.core.creditintelligence.policystudio.domain.CiPolicyRuleCandidate;
+import com.los.core.creditintelligence.policystudio.domain.ClauseType;
 import com.los.core.creditintelligence.policystudio.domain.ReviewState;
 import com.los.core.creditintelligence.policystudio.lifecycle.PolicyLifecycleService;
 import com.los.core.creditintelligence.policystudio.model.PolicyStudioSession;
 import com.los.core.creditintelligence.policystudio.service.BusinessMeasureDesignerService;
+import com.los.core.creditintelligence.policystudio.service.DeterministicGoldenInterpretationProvider;
+import com.los.core.creditintelligence.policystudio.service.PolicyClauseExtractor;
 import com.los.core.creditintelligence.policystudio.service.PolicyImplementabilityService;
 import com.los.core.creditintelligence.policystudio.service.PolicyReviewService;
 import com.los.core.creditintelligence.policystudio.service.PolicyStudioOrchestrator;
 import com.los.core.creditintelligence.policystudio.service.PolicyTextExtractionService;
+import com.los.core.creditintelligence.policystudio.service.RuleCandidateFactory;
+import com.los.core.creditintelligence.validation.service.PolicyAuthoringRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
@@ -18,7 +27,9 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.io.InputStream;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -264,17 +275,34 @@ public class StagingPolicyStudioDemoService {
         String uiAction = str(body, "uiAction", "APPROVE");
         String reviewState;
         String reason = str(body, "reason", null);
-        switch (uiAction == null ? "APPROVE" : uiAction.toUpperCase(Locale.ROOT)) {
-            case "REJECT", "REJECT_RULE" -> {
+        String action = uiAction == null ? "APPROVE" : uiAction.toUpperCase(Locale.ROOT);
+        switch (action) {
+            case "REJECT", "REJECT_RULE", "DELETE", "EXCLUDE" -> {
                 reviewState = ReviewState.REJECTED.name();
                 if (reason == null) {
-                    reason = "Rejected during Credit Head review";
+                    reason = "DELETE".equals(action) || "EXCLUDE".equals(action)
+                            ? "Excluded from intended policy by Credit Manager"
+                            : "Rejected during Credit Head review";
                 }
             }
-            case "APPROVE", "APPROVE_RULE" -> {
+            case "IGNORE", "IGNORE_FOR_NOW" -> {
+                reviewState = ReviewState.REJECTED.name();
+                if (reason == null) {
+                    reason = "Ignored for now — retained for draft, excluded from activation";
+                }
+            }
+            case "MANUAL_INPUT", "MANUAL_VERIFICATION" -> {
                 reviewState = ReviewState.CREDIT_MANAGER_APPROVED.name();
                 if (reason == null) {
-                    reason = "Approved during Credit Head review";
+                    reason = "Designated as Manual Input by Credit Manager";
+                }
+            }
+            case "APPROVE", "APPROVE_RULE", "ACCEPT", "EDIT" -> {
+                reviewState = ReviewState.CREDIT_MANAGER_APPROVED.name();
+                if (reason == null) {
+                    reason = "EDIT".equals(action)
+                            ? "Edited and accepted by Credit Manager"
+                            : "Accepted during Credit Manager review";
                 }
             }
             default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
@@ -283,7 +311,68 @@ public class StagingPolicyStudioDemoService {
 
         @SuppressWarnings("unchecked")
         Map<String, Object> humanChanges = body.get("humanChanges") instanceof Map<?, ?>
-                ? (Map<String, Object>) body.get("humanChanges") : Map.of();
+                ? new LinkedHashMap<>((Map<String, Object>) body.get("humanChanges"))
+                : new LinkedHashMap<>();
+
+        // Persist Credit Manager disposition in existing rule metadata (no schema migration).
+        CiPolicyRuleCandidate rule = session.getRuleCandidates().stream()
+                .filter(r -> ruleId.equals(r.getId()))
+                .findFirst()
+                .orElse(null);
+        if (rule != null) {
+            Map<String, Object> meta = rule.getMetadata() == null
+                    ? new LinkedHashMap<>()
+                    : new LinkedHashMap<>(rule.getMetadata());
+            switch (action) {
+                case "IGNORE", "IGNORE_FOR_NOW" -> {
+                    meta.put("disposition", "IGNORED");
+                    meta.put("excludedFromActivation", true);
+                    meta.put("deleted", false);
+                }
+                case "DELETE", "EXCLUDE" -> {
+                    meta.put("disposition", "DELETED");
+                    meta.put("excludedFromActivation", true);
+                    meta.put("deleted", true);
+                }
+                case "MANUAL_INPUT", "MANUAL_VERIFICATION" -> {
+                    meta.put("disposition", "MANUAL_INPUT");
+                    meta.put("verificationMode", "MANUAL");
+                    meta.put("dataGapDisposition", "MANUAL_VERIFICATION");
+                    meta.put("excludedFromActivation", false);
+                    meta.put("deleted", false);
+                    if (body.get("manualInputLabel") != null) {
+                        meta.put("manualInputLabel", String.valueOf(body.get("manualInputLabel")));
+                    }
+                    if (body.get("manualInputType") != null) {
+                        meta.put("manualInputType", String.valueOf(body.get("manualInputType")));
+                    }
+                    if (body.get("requiredActor") != null) {
+                        meta.put("requiredActor", String.valueOf(body.get("requiredActor")));
+                    } else {
+                        meta.putIfAbsent("requiredActor", "Credit Manager");
+                    }
+                    meta.putIfAbsent("requiredEvidence", "Application review capture");
+                    meta.putIfAbsent("manualOutcome", "PASS / FAIL / REFER");
+                }
+                case "APPROVE", "APPROVE_RULE", "ACCEPT", "EDIT" -> {
+                    meta.put("disposition", "EDIT".equals(action) ? "EDITED" : "ACCEPTED");
+                    meta.put("excludedFromActivation", false);
+                    meta.put("deleted", false);
+                }
+                default -> {
+                    /* reject path keeps prior metadata */
+                }
+            }
+            meta.put("lastUiAction", action);
+            meta.put("lastUiActionAt", Instant.now().toString());
+            rule.setMetadata(meta);
+            if ("EDIT".equals(action) && body.get("businessRule") != null) {
+                humanChanges.putIfAbsent("businessRule", body.get("businessRule"));
+            }
+            if ("EDIT".equals(action) && body.get("threshold") != null) {
+                humanChanges.putIfAbsent("threshold", body.get("threshold"));
+            }
+        }
 
         var review = orchestrator.reviewService().review(
                 session,
@@ -295,13 +384,80 @@ public class StagingPolicyStudioDemoService {
                 humanChanges,
                 reason);
 
+        if (rule != null) {
+            orchestrator.persistence().saveSessionSnapshot(session);
+        }
+
         Map<String, Object> view = sessionView(documentId, tenantHeader);
         view.put("lastReview", Map.of(
                 "reviewId", review.getId(),
                 "reviewState", review.getReviewState(),
                 "reviewer", review.getReviewer(),
-                "reviewerRole", review.getReviewerRole()));
+                "reviewerRole", review.getReviewerRole(),
+                "uiAction", action));
         view.put("message", "Rule review recorded.");
+        return view;
+    }
+
+    /**
+     * Credit Manager "+ Add rule" — reuses existing clause → interpretation → rule factory path.
+     * Does not introduce a second rule engine.
+     */
+    public Map<String, Object> addPlainEnglishRule(
+            UUID documentId, Map<String, Object> body, String tenantHeader) {
+        String text = str(body, "text", null);
+        if (text == null || text.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Rule text is required");
+        }
+        String group = str(body, "group", "Credit Rules");
+        UUID tenantId = resolveTenant(tenantHeader);
+        PolicyStudioSession session = orchestrator.requireSession(documentId, tenantId);
+        CiPolicyDocument doc = session.getDocument();
+        if (doc == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Policy document not found");
+        }
+        var kind = new PolicyClauseExtractor().detectKind(
+                doc.getSourceText() == null ? text : doc.getSourceText());
+        CiPolicyClause clause = CiPolicyClause.builder()
+                .id(UUID.randomUUID())
+                .policyDocumentId(doc.getId())
+                .section(group == null || group.isBlank() ? "Credit Rules" : group)
+                .sourceText(text.trim())
+                .normalizedText(text.trim().replaceAll("\\s+", " "))
+                .clauseType(ClauseType.HARD_RULE.name())
+                .extractionConfidence(new BigDecimal("0.9200"))
+                .sortOrder(session.getClauses().size())
+                .sourceLocation("manual:" + session.getClauses().size())
+                .status("EXTRACTED")
+                .metadata(Map.of("plainEnglishAdded", true, "businessGroup", group == null ? "Credit Rules" : group))
+                .effectiveScope(Map.of())
+                .build();
+        List<CiPolicyInterpretation> interps = new DeterministicGoldenInterpretationProvider()
+                .interpret(List.of(clause), new PolicyAuthoringRegistry(), kind);
+        List<CiPolicyRuleCandidate> rules = new RuleCandidateFactory()
+                .create(doc, List.of(clause), interps, kind);
+        for (CiPolicyRuleCandidate r : rules) {
+            Map<String, Object> meta = r.getMetadata() == null
+                    ? new LinkedHashMap<>()
+                    : new LinkedHashMap<>(r.getMetadata());
+            meta.put("disposition", "EXTRACTED");
+            meta.put("plainEnglishAdded", true);
+            meta.putIfAbsent("businessTitle", text.trim());
+            r.setMetadata(meta);
+            r.setReviewStatus(ReviewState.AI_DRAFTED.name());
+        }
+        session.getClauses().add(clause);
+        session.getInterpretations().addAll(interps);
+        session.getRuleCandidates().addAll(rules);
+        orchestrator.reviewService().invalidateCheckerApproval(session, "plain-english-add");
+        orchestrator.persistence().saveSessionSnapshot(session);
+
+        Map<String, Object> view = sessionView(documentId, tenantHeader);
+        view.put("addedClauseId", clause.getId().toString());
+        view.put("addedRuleCount", rules.size());
+        view.put("message", rules.isEmpty()
+                ? "Clause stored for review — interpretation did not yet produce an executable rule."
+                : "Plain-English rule added — review before Accept.");
         return view;
     }
 

@@ -77,21 +77,23 @@ describe('UX-4B6 P1 cleanup', () => {
     expect(canAccessAdminConfigNav('CREDIT_MANAGER')).toBe(true)
   })
 
-  it('P1-5: Prospect demo hides authoring tabs; full set restores them', () => {
-    expect(PROSPECT_DEMO_VISIBLE_TAB_IDS).toEqual([
-      'overview',
+  it('P1-5: Credit Manager primary tabs; Advanced holds technical surfaces', () => {
+    expect(PROSPECT_DEMO_VISIBLE_TAB_IDS).toEqual(['rules', 'simulation', 'lifecycle', 'overview'])
+    expect([...PROSPECT_DEMO_HIDDEN_TAB_IDS]).toEqual([
+      'kyc-eligibility',
+      'structure',
       'ambiguities',
-      'rules',
       'data-readiness',
       'tests',
-      'simulation',
       'approvals',
     ])
-    expect([...PROSPECT_DEMO_HIDDEN_TAB_IDS]).toEqual(['kyc-eligibility', 'structure', 'lifecycle'])
     const studioSrc = readFileSync(join(uiSrc, 'pages/creditIntelligence/CiPolicyStudioPage.tsx'), 'utf8')
     expect(studioSrc).toContain('Show full policy workspace')
     expect(studioSrc).toContain('Demo view')
     expect(studioSrc).toContain('PROSPECT_DEMO_VISIBLE_TAB_IDS')
+    expect(studioSrc).toContain('Save Draft')
+    expect(studioSrc).toContain("setTab('rules')")
+    expect(studioSrc).toContain('Advanced')
   })
 
   it('workbench role visibility unchanged (six-tab model; RM hides Credit Assessment)', () => {

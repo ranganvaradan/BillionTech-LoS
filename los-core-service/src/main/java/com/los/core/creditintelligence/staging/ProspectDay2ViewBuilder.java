@@ -41,19 +41,32 @@ final class ProspectDay2ViewBuilder {
         Map<String, Object> counts = out.get("counts") instanceof Map<?, ?>
                 ? new LinkedHashMap<>((Map<String, Object>) out.get("counts"))
                 : new LinkedHashMap<>();
-        long readyRules = ruleCards.stream().filter(r -> "Ready".equals(r.get("status"))).count();
-        long needsReview = ruleCards.stream().filter(r -> "Needs Review".equals(r.get("status"))).count();
+        long readyRules = ruleCards.stream()
+                .filter(r -> Set.of("Ready", "Accepted", "Edited", "Approved").contains(String.valueOf(r.get("status"))))
+                .count();
+        long needsReview = ruleCards.stream()
+                .filter(r -> Set.of("Needs your input", "Needs Review", "Blocked").contains(String.valueOf(r.get("status"))))
+                .count();
         long blockedRules = ruleCards.stream().filter(r -> "Blocked".equals(r.get("status"))).count();
-        long approvedRules = ruleCards.stream().filter(r -> "Approved".equals(r.get("status"))).count();
+        long approvedRules = ruleCards.stream()
+                .filter(r -> Set.of("Accepted", "Edited", "Approved").contains(String.valueOf(r.get("status"))))
+                .count();
+        long ignoredRules = ruleCards.stream().filter(r -> "Ignored".equals(r.get("status"))).count();
+        long deletedRules = ruleCards.stream().filter(r -> "Deleted".equals(r.get("status"))).count();
+        long manualInputRules = ruleCards.stream().filter(r -> "Manual Input".equals(r.get("status"))).count();
         long openAmb = ambiguityCards.stream()
                 .filter(a -> Boolean.TRUE.equals(a.get("open"))).count();
         long missingMetrics = ambiguityCards.stream()
                 .filter(a -> "Missing Data".equals(a.get("category")) && Boolean.TRUE.equals(a.get("open")))
                 .count();
+        counts.put("rulesTotal", ruleCards.size());
         counts.put("rulesReady", readyRules);
         counts.put("rulesNeedReview", needsReview);
         counts.put("rulesBlocked", blockedRules);
         counts.put("rulesApproved", approvedRules);
+        counts.put("rulesIgnored", ignoredRules);
+        counts.put("rulesDeleted", deletedRules);
+        counts.put("rulesManualInput", manualInputRules);
         counts.put("openAmbiguities", openAmb);
         counts.put("missingMetrics", missingMetrics);
         out.put("counts", counts);
@@ -66,16 +79,24 @@ final class ProspectDay2ViewBuilder {
         Map<String, Object> readiness = session.getReadiness() == null ? Map.of() : session.getReadiness();
         Object score = readiness.get("score");
         long openAmb = ambiguityCards.stream().filter(a -> Boolean.TRUE.equals(a.get("open"))).count();
-        long ready = ruleCards.stream().filter(r -> "Ready".equals(r.get("status")) || "Approved".equals(r.get("status"))).count();
-        long needs = ruleCards.stream().filter(r -> "Needs Review".equals(r.get("status"))).count();
+        long ready = ruleCards.stream()
+                .filter(r -> Set.of("Ready", "Accepted", "Edited", "Approved", "Manual Input")
+                        .contains(String.valueOf(r.get("status"))))
+                .count();
+        long needs = ruleCards.stream()
+                .filter(r -> Set.of("Needs your input", "Needs Review", "Blocked").contains(String.valueOf(r.get("status"))))
+                .count();
+        long ignored = ruleCards.stream().filter(r -> "Ignored".equals(r.get("status"))).count();
         long missing = ambiguityCards.stream()
                 .filter(a -> "Missing Data".equals(a.get("category")) && Boolean.TRUE.equals(a.get("open")))
                 .count();
 
         Map<String, Object> banner = new LinkedHashMap<>();
         banner.put("totalClauses", session.getClauses().size());
+        banner.put("rulesIdentified", ruleCards.size());
         banner.put("rulesReady", ready);
         banner.put("rulesNeedReview", needs);
+        banner.put("rulesIgnored", ignored);
         banner.put("missingMetrics", missing);
         banner.put("ambiguities", openAmb);
         banner.put("testsGenerated", session.getTestCases().size());
@@ -515,11 +536,13 @@ final class ProspectDay2ViewBuilder {
 
     private static int statusOrder(String status) {
         return switch (status) {
-            case "Blocked" -> 0;
-            case "Needs Review" -> 1;
-            case "Ready" -> 2;
-            case "Approved" -> 3;
-            default -> 4;
+            case "Needs your input", "Blocked", "Needs Review" -> 0;
+            case "Ready" -> 1;
+            case "Accepted", "Edited", "Approved" -> 2;
+            case "Manual Input" -> 3;
+            case "Ignored" -> 4;
+            case "Deleted" -> 5;
+            default -> 6;
         };
     }
 
@@ -572,6 +595,12 @@ final class ProspectDay2ViewBuilder {
         card.put("blockedReason", blockedReason);
         card.put("dataUsed", dataUsed.stream().map(ProspectDay2ViewBuilder::friendlyMetric).toList());
         card.put("dataFamily", dataFamily(dataUsed));
+        card.put("businessGroup", businessGroup(decisionDomain, dataUsed, r.getSystemRuleId()));
+        card.put("disposition", meta.get("disposition"));
+        card.put("excludedFromActivation", Boolean.TRUE.equals(meta.get("excludedFromActivation"))
+                || Boolean.TRUE.equals(meta.get("deleted")));
+        card.put("manualInputLabel", meta.get("manualInputLabel"));
+        card.put("manualInputType", meta.get("manualInputType"));
         card.put("visualLogic", visualLogic(r, meaning));
         card.put("reviewStatus", r.getReviewStatus());
         card.put("ruleType", r.getRuleType());
@@ -595,25 +624,48 @@ final class ProspectDay2ViewBuilder {
     }
 
     private static String ruleStatus(CiPolicyRuleCandidate r, String blockedReason) {
+        Map<String, Object> meta = r.getMetadata();
+        if (meta != null) {
+            if (Boolean.TRUE.equals(meta.get("deleted"))
+                    || "DELETED".equalsIgnoreCase(String.valueOf(meta.getOrDefault("disposition", "")))) {
+                return "Deleted";
+            }
+            if ("IGNORED".equalsIgnoreCase(String.valueOf(meta.getOrDefault("disposition", "")))
+                    || Boolean.TRUE.equals(meta.get("excludedFromActivation"))) {
+                return "Ignored";
+            }
+            if ("MANUAL_INPUT".equalsIgnoreCase(String.valueOf(meta.getOrDefault("disposition", "")))
+                    || "MANUAL".equalsIgnoreCase(String.valueOf(meta.getOrDefault("verificationMode", "")))
+                    || "MANUAL_VERIFICATION".equalsIgnoreCase(
+                    String.valueOf(meta.getOrDefault("dataGapDisposition", "")))) {
+                return "Manual Input";
+            }
+            if ("EDITED".equalsIgnoreCase(String.valueOf(meta.getOrDefault("disposition", "")))) {
+                return "Edited";
+            }
+            if ("ACCEPTED".equalsIgnoreCase(String.valueOf(meta.getOrDefault("disposition", "")))) {
+                return "Accepted";
+            }
+        }
         String rs = r.getReviewStatus() == null ? "" : r.getReviewStatus();
         if (ReviewState.CREDIT_MANAGER_APPROVED.name().equals(rs)
                 || ReviewState.CHECKER_APPROVED.name().equals(rs)
                 || ReviewState.READY_FOR_POLICY_BUILD.name().equals(rs)) {
-            return "Approved";
+            return "Accepted";
         }
         if (ReviewState.REJECTED.name().equals(rs)) {
-            return "Needs Review";
+            return "Needs your input";
         }
         if (blockedReason != null && !blockedReason.isBlank()) {
-            return "Blocked";
+            return "Needs your input";
         }
         if (r.getValidationErrors() != null && !r.getValidationErrors().isEmpty()) {
-            return "Needs Review";
+            return "Needs your input";
         }
         if (ReviewState.AI_DRAFTED.name().equals(rs)
                 || ReviewState.RULE_REVIEW.name().equals(rs)
                 || ReviewState.MAPPING_REVIEW.name().equals(rs)) {
-            return "Needs Review";
+            return "Needs your input";
         }
         return "Ready";
     }
@@ -828,6 +880,42 @@ final class ProspectDay2ViewBuilder {
             return "Bank Statement + Bureau";
         }
         return "Policy data";
+    }
+
+    /** Business family for Credit Manager grouping — only used when rules exist. */
+    private static String businessGroup(String decisionDomain, List<String> paths, String systemRuleId) {
+        String domain = decisionDomain == null ? "" : decisionDomain.toUpperCase(Locale.ROOT);
+        String sys = systemRuleId == null ? "" : systemRuleId.toUpperCase(Locale.ROOT);
+        String joined = String.join(" ", paths).toLowerCase(Locale.ROOT);
+        if ("KYC".equals(domain) || "ELIGIBILITY".equals(domain) || joined.contains("kyc.")) {
+            return "KYC & Eligibility";
+        }
+        if (joined.contains("bureau.") || sys.contains("BUREAU") || sys.contains("CIBIL") || sys.contains("SCORE")) {
+            return "Bureau";
+        }
+        if (joined.contains("banking.") || joined.contains("settlement") || sys.contains("ADB") || sys.contains("BANK")) {
+            return "Banking";
+        }
+        if (joined.contains("gst.") || sys.contains("GST")) {
+            return "GST / Business";
+        }
+        if (joined.contains("income") || joined.contains("foir") || joined.contains("financial")
+                || sys.contains("FOIR") || sys.contains("INCOME")) {
+            return "Financial / Income";
+        }
+        if (joined.contains("collateral") || sys.contains("COLLATERAL") || sys.contains("SECURITY")) {
+            return "Collateral";
+        }
+        if (sys.contains("LIMIT") || sys.contains("PRICING") || sys.contains("ROI") || sys.contains("RATE")) {
+            return "Limit & Pricing";
+        }
+        if (sys.contains("EXCEPTION") || sys.contains("RISK") || "REFER".equalsIgnoreCase(sys)) {
+            return "Risk / Exceptions";
+        }
+        if ("DECISION".equals(domain) || "REVIEW".equals(domain) || sys.contains("DECISION") || sys.contains("REVIEW")) {
+            return "Decision / Review";
+        }
+        return "Credit Rules";
     }
 
     private static String friendlyMetric(String path) {
