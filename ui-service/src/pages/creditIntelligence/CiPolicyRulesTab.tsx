@@ -52,6 +52,11 @@ const GROUP_ORDER = [
   'Risk / Exceptions',
   'Limit & Pricing',
   'Decision / Review',
+  'Product / Configuration',
+  'Documents',
+  'Portfolio Controls',
+  'Servicing',
+  'Narrative / Excluded',
   'Credit Rules',
 ] as const
 
@@ -166,6 +171,7 @@ export function CiPolicyRulesTab({
   onAddPlainEnglishRule,
   onCatalogueChanged,
   documentId,
+  ingestionBinding,
   prospectDemoMode = false,
 }: {
   cards: unknown[]
@@ -177,6 +183,7 @@ export function CiPolicyRulesTab({
   onAddPlainEnglishRule?: (group: string, text: string) => Promise<void>
   onCatalogueChanged?: (session?: unknown) => void
   documentId?: string | null
+  ingestionBinding?: Record<string, unknown> | null
   prospectDemoMode?: boolean
 }) {
   const [clauseOpen, setClauseOpen] = useState<Record<string, boolean>>({})
@@ -247,6 +254,13 @@ export function CiPolicyRulesTab({
     () =>
       cards.filter((c) => {
         const r = asRecord(c)
+        // POLICY-UX-2D — only HIGH-confidence catalogue-backed parameterized rules
+        if (r.acceptAllEligible === true) {
+          return String(r.status) === 'Ready' && !r.platformGuardrail
+        }
+        if (r.catalogueBacked || r.classification) {
+          return false
+        }
         return String(r.status) === 'Ready' && !r.blockedReason && !r.platformGuardrail
       }),
     [cards],
@@ -256,7 +270,7 @@ export function CiPolicyRulesTab({
     if (readyToAccept.length === 0) return
     if (
       !window.confirm(
-        `Accept ${readyToAccept.length} ready rule${readyToAccept.length === 1 ? '' : 's'}? Ambiguous or incomplete rules will not be accepted.`,
+        `Accept ${readyToAccept.length} high-confidence existing-capability rule${readyToAccept.length === 1 ? '' : 's'}? Manual, ambiguous, conflict, document, product, portfolio and servicing items are skipped.`,
       )
     ) {
       return
@@ -300,8 +314,20 @@ export function CiPolicyRulesTab({
           <strong>{totals.needs}</strong> need your input · <strong>{totals.manual}</strong> manual input ·{' '}
           <strong>{totals.ignored}</strong> ignored
         </p>
+        {ingestionBinding ? (
+          <p className="mt-2 text-sm text-slate-700">
+            <strong>{String(ingestionBinding.totalClauses ?? totals.total)}</strong> clauses interpreted ·{' '}
+            <strong>{String(ingestionBinding.existingAutomatedCapabilities ?? 0)}</strong> existing automated ·{' '}
+            <strong>{String(ingestionBinding.manualInputs ?? 0)}</strong> manual inputs ·{' '}
+            <strong>{String(ingestionBinding.manualReviews ?? 0)}</strong> manual review ·{' '}
+            <strong>{String(ingestionBinding.productConfiguration ?? 0)}</strong> product/config ·{' '}
+            <strong>{String(ingestionBinding.documentRequirements ?? 0)}</strong> documents ·{' '}
+            <strong>{String(ingestionBinding.portfolioControls ?? 0)}</strong> portfolio ·{' '}
+            <strong>{String(ingestionBinding.servicingOrNarrative ?? 0)}</strong> servicing/narrative
+          </p>
+        ) : null}
         <p className="mt-1 text-xs text-slate-500">
-          Save Draft anytime — unresolved items and ignored rules do not block a draft.
+          Save Draft anytime — unresolved items, documents, portfolio and servicing do not block a draft.
         </p>
       </CiExecutiveSummary>
 
@@ -443,6 +469,16 @@ export function CiPolicyRulesTab({
                             {r.capabilityBadge || r.existingCapability || r.catalogueBacked ? (
                               <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-900">
                                 {String(r.capabilityBadge ?? 'Existing capability')}
+                              </span>
+                            ) : null}
+                            {r.matchConfidence ? (
+                              <span className="rounded-full bg-sky-50 px-2 py-0.5 text-sky-900">
+                                Confidence: {String(r.matchConfidence).toLowerCase()}
+                              </span>
+                            ) : null}
+                            {r.PARAMETER_DIFFERS ? (
+                              <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-950">
+                                Policy parameter differs
                               </span>
                             ) : null}
                             {r.sourceLabel ? (

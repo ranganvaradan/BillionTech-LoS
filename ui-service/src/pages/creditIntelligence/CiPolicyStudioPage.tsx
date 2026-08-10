@@ -1006,6 +1006,7 @@ export function CiPolicyStudioPage() {
           onAddPlainEnglishRule={addPlainEnglishRule}
           onCatalogueChanged={applyCatalogueSession}
           documentId={documentId}
+          ingestionBinding={asRecord(asRecord(session).ingestionBinding)}
           prospectDemoMode={prospectDemoMode}
         />
       ) : null}

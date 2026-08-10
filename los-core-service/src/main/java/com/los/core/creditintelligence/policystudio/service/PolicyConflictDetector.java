@@ -23,6 +23,18 @@ public class PolicyConflictDetector {
                     conflicts.add(conflict(ConflictType.DUPLICATE, a, b, "Same systemRuleId"));
                     conflicts.add(conflict(ConflictType.DUPLICATE_RULE, a, b, "Same systemRuleId"));
                 }
+                // POLICY-UX-2D — same catalogue capability with identical/conflicting parameters
+                String capA = capabilityId(a);
+                String capB = capabilityId(b);
+                if (capA != null && capA.equals(capB)) {
+                    if (Objects.equals(paramsOf(a), paramsOf(b))) {
+                        conflicts.add(conflict(ConflictType.DUPLICATE, a, b,
+                                "Potential duplicate — same business capability"));
+                    } else {
+                        conflicts.add(conflict(ConflictType.DIRECT_CONFLICT, a, b,
+                                "Conflict — same capability with different parameters"));
+                    }
+                }
                 if (sameMetricFamily(a, b) && scopesOverlap(a, b) && contradictoryThresholds(a, b)) {
                     conflicts.add(conflict(ConflictType.DIRECT_CONFLICT, a, b,
                             "Contradictory thresholds on overlapping scope"));
@@ -190,5 +202,24 @@ public class PolicyConflictDetector {
                 || type == ConflictType.CONFLICTING_MISSING_DATA_POLICY);
         m.put("autoResolved", false);
         return m;
+    }
+
+    private static String capabilityId(CiPolicyRuleCandidate r) {
+        if (r.getMetadata() == null || r.getMetadata().get("businessCapabilityId") == null) {
+            return null;
+        }
+        return String.valueOf(r.getMetadata().get("businessCapabilityId"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> paramsOf(CiPolicyRuleCandidate r) {
+        if (r.getMetadata() == null) {
+            return Map.of();
+        }
+        Object p = r.getMetadata().get("parameters");
+        if (p instanceof Map<?, ?> m) {
+            return new LinkedHashMap<>((Map<String, Object>) m);
+        }
+        return Map.of();
     }
 }

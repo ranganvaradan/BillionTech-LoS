@@ -70,6 +70,18 @@ final class ProspectDay2ViewBuilder {
         counts.put("openAmbiguities", openAmb);
         counts.put("missingMetrics", missingMetrics);
         out.put("counts", counts);
+
+        // POLICY-UX-2D ingestion binding summary for post-upload Rules landing
+        Object ingestion = null;
+        if (session.getPreview() != null) {
+            ingestion = session.getPreview().get("ingestionBinding");
+        }
+        if (ingestion == null && session.getDocument() != null && session.getDocument().getMetadata() != null) {
+            ingestion = session.getDocument().getMetadata().get("ingestionBinding");
+        }
+        if (ingestion instanceof Map<?, ?>) {
+            out.put("ingestionBinding", ingestion);
+        }
     }
 
     private static Map<String, Object> readinessBanner(
@@ -556,7 +568,10 @@ final class ProspectDay2ViewBuilder {
                 ? friendlyRuleName(r.getSystemRuleId())
                 : interp.getNaturalLanguageMeaning();
         List<String> dataUsed = dataUsed(r, interp);
-        String blockedReason = blockedReason(r, dataUsed, openPhrases);
+        Map<String, Object> metaEarly = r.getMetadata() == null ? Map.of() : r.getMetadata();
+        String blockedReason = metaEarly.get("blockedReason") != null
+                ? String.valueOf(metaEarly.get("blockedReason"))
+                : blockedReason(r, dataUsed, openPhrases);
         String status = ruleStatus(r, blockedReason);
 
         Map<String, Object> meta = r.getMetadata() == null ? Map.of() : r.getMetadata();
@@ -601,9 +616,11 @@ final class ProspectDay2ViewBuilder {
         card.put("blockedReason", blockedReason);
         card.put("dataUsed", dataUsed.stream().map(ProspectDay2ViewBuilder::friendlyMetric).toList());
         card.put("dataFamily", dataFamily(dataUsed));
-        String groupOverride = meta.get("businessCapabilityId") == null
-                ? null
-                : catalogueBusinessGroup(String.valueOf(meta.get("businessCapabilityId")));
+        String groupOverride = meta.get("businessGroupOverride") != null
+                ? String.valueOf(meta.get("businessGroupOverride"))
+                : (meta.get("businessCapabilityId") == null
+                    ? null
+                    : catalogueBusinessGroup(String.valueOf(meta.get("businessCapabilityId"))));
         card.put("businessGroup", groupOverride != null
                 ? groupOverride
                 : businessGroup(decisionDomain, dataUsed, r.getSystemRuleId()));
@@ -651,8 +668,39 @@ final class ProspectDay2ViewBuilder {
         card.put("catalogueSource", meta.get("source"));
         if ("MANUAL_CATALOGUE_ADD".equals(String.valueOf(meta.getOrDefault("source", "")))) {
             card.put("sourceLabel", "Added by Credit Manager");
+        } else if ("DOCUMENT_CAPABILITY_MATCH".equals(String.valueOf(meta.getOrDefault("source", "")))) {
+            card.put("sourceLabel", "Extracted from policy");
+        }
+        card.put("classification", meta.get("classification"));
+        card.put("matchConfidence", meta.get("matchConfidence"));
+        card.put("NEEDS_INPUT", meta.get("NEEDS_INPUT"));
+        card.put("PARAMETER_DIFFERS", meta.get("PARAMETER_DIFFERS"));
+        card.put("potentialDuplicate", meta.get("potentialDuplicate"));
+        card.put("capabilityConflict", meta.get("capabilityConflict"));
+        card.put("productionReferenceParameters", meta.get("productionReferenceParameters"));
+        card.put("uploadedPolicyParameters", meta.get("uploadedPolicyParameters"));
+        card.put("implementationNote", meta.get("implementationNote"));
+        card.put("acceptAllEligible", isAcceptAllEligible(meta));
+        if (Boolean.TRUE.equals(meta.get("classificationOnly"))) {
+            card.put("executable", false);
+        } else {
+            card.put("executable", true);
         }
         return card;
+    }
+
+    private static boolean isAcceptAllEligible(Map<String, Object> meta) {
+        if (meta == null) return false;
+        if (!Boolean.TRUE.equals(meta.get("catalogueBacked"))) return false;
+        if (!"HIGH".equals(String.valueOf(meta.get("matchConfidence")))) return false;
+        if (Boolean.TRUE.equals(meta.get("NEEDS_INPUT"))) return false;
+        if (Boolean.TRUE.equals(meta.get("capabilityConflict"))) return false;
+        if (Boolean.TRUE.equals(meta.get("potentialDuplicate"))) return false;
+        if (Boolean.TRUE.equals(meta.get("excludedFromActivation"))) return false;
+        String cls = String.valueOf(meta.get("classification"));
+        return "EXACT_EXISTING_CAPABILITY".equals(cls)
+                || "EXISTING_CAPABILITY_PARAMETER_CHANGE".equals(cls)
+                || "EXISTING_CAPABILITY_MANUAL_DATA".equals(cls);
     }
 
     private static String catalogueBusinessGroup(String capabilityId) {
@@ -686,11 +734,31 @@ final class ProspectDay2ViewBuilder {
                     String.valueOf(meta.getOrDefault("dataGapDisposition", "")))) {
                 return "Manual Input";
             }
+            if (Boolean.TRUE.equals(meta.get("NEEDS_INPUT"))
+                    || Boolean.TRUE.equals(meta.get("capabilityConflict"))
+                    || Boolean.TRUE.equals(meta.get("potentialDuplicate"))
+                    || "LOW".equalsIgnoreCase(String.valueOf(meta.getOrDefault("matchConfidence", "")))) {
+                return "Needs your input";
+            }
             if ("EDITED".equalsIgnoreCase(String.valueOf(meta.getOrDefault("disposition", "")))) {
                 return "Edited";
             }
             if ("ACCEPTED".equalsIgnoreCase(String.valueOf(meta.getOrDefault("disposition", "")))) {
                 return "Accepted";
+            }
+            if (Boolean.TRUE.equals(meta.get("catalogueBacked"))
+                    && "HIGH".equalsIgnoreCase(String.valueOf(meta.getOrDefault("matchConfidence", "")))
+                    && !Boolean.TRUE.equals(meta.get("classificationOnly"))) {
+                return "Ready";
+            }
+            if (Boolean.TRUE.equals(meta.get("classificationOnly"))) {
+                String cls = String.valueOf(meta.getOrDefault("classification", ""));
+                if ("MANUAL_REVIEW".equals(cls)) return "Needs your input";
+                if ("DOCUMENT_REQUIREMENT".equals(cls) || "PRODUCT_CONFIG".equals(cls)
+                        || "PORTFOLIO_CONTROL".equals(cls) || "SERVICING_RULE".equals(cls)
+                        || "NARRATIVE".equals(cls)) {
+                    return "Ready"; // reviewable but non-blocking / non-executable
+                }
             }
         }
         String rs = r.getReviewStatus() == null ? "" : r.getReviewStatus();

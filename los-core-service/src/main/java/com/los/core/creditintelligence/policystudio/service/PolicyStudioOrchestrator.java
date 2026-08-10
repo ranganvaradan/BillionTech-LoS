@@ -1,6 +1,7 @@
 package com.los.core.creditintelligence.policystudio.service;
 
 import com.los.core.creditintelligence.config.CreditIntelligenceProperties;
+import com.los.core.creditintelligence.policystudio.catalogue.CapabilityIngestionBindingService;
 import com.los.core.creditintelligence.policystudio.domain.AmbiguityResolutionAction;
 import com.los.core.creditintelligence.policystudio.domain.CiPolicyDocument;
 import com.los.core.creditintelligence.policystudio.domain.CiPolicyMetricCandidate;
@@ -9,6 +10,7 @@ import com.los.core.creditintelligence.policystudio.domain.ReviewState;
 import com.los.core.creditintelligence.policystudio.dsl.PolicyDslSchemaValidator;
 import com.los.core.creditintelligence.policystudio.model.PolicyStudioSession;
 import com.los.core.creditintelligence.validation.service.PolicyAuthoringRegistry;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -47,6 +49,12 @@ public class PolicyStudioOrchestrator {
     private final DraftPolicyDiffService diffService;
     private final PolicyDslSchemaValidator dslValidator;
     private final PolicyStudioDashboardReadModel dashboardReadModel;
+    private CapabilityIngestionBindingService ingestionBindingService;
+
+    @Autowired(required = false)
+    public void setIngestionBindingService(CapabilityIngestionBindingService ingestionBindingService) {
+        this.ingestionBindingService = ingestionBindingService;
+    }
 
     public PolicyStudioOrchestrator(
             CreditIntelligenceProperties properties,
@@ -166,11 +174,23 @@ public class PolicyStudioOrchestrator {
         session.getAmbiguities().addAll(ambiguityDetector.detect(clauses, kind));
         session.getMetricCandidates().addAll(metricCandidateFactory.create(clauses, kind));
         session.getRuleCandidates().addAll(ruleCandidateFactory.create(doc, clauses, interpretations, kind));
+        // POLICY-UX-2D — bind clauses to existing catalogue capabilities; golden becomes fallback hint
+        CapabilityIngestionBindingService binder = ingestionBindingService != null
+                ? ingestionBindingService
+                : new CapabilityIngestionBindingService();
+        Map<String, Object> ingestionSummary = binder.bind(session);
         for (var rule : session.getRuleCandidates()) {
+            if (rule.getExpression() != null
+                    && "CLASSIFICATION".equalsIgnoreCase(String.valueOf(rule.getExpression().get("op")))) {
+                continue; // non-executable classification cards
+            }
             var vr = dslValidator.validateRuleExpression(rule.getExpression(), rule.getRuleType(), rule.getOnMissing());
             rule.setValidationErrors(new java.util.ArrayList<>(vr.errors()));
         }
-        session.getTestCases().addAll(testCaseGenerator.generate(session.getRuleCandidates()));
+        session.getTestCases().addAll(testCaseGenerator.generate(session.getRuleCandidates().stream()
+                .filter(r -> r.getExpression() == null
+                        || !"CLASSIFICATION".equalsIgnoreCase(String.valueOf(r.getExpression().get("op"))))
+                .toList()));
         session.getConflicts().clear();
         session.getConflicts().addAll(conflictDetector.detect(session.getRuleCandidates()));
 
@@ -182,7 +202,11 @@ public class PolicyStudioOrchestrator {
         session.setDependencyGraph(dependencyGraphBuilder.build(
                 session.getMetricCandidates(), session.getRuleCandidates()));
         session.setReadiness(progressScorer.score(session));
-        session.setPreview(previewService.preview(session));
+        Map<String, Object> preview = new LinkedHashMap<>(previewService.preview(session));
+        if (ingestionSummary != null && !ingestionSummary.isEmpty()) {
+            preview.put("ingestionBinding", ingestionSummary);
+        }
+        session.setPreview(preview);
 
         long open = session.getAmbiguities().stream().filter(a -> "OPEN".equals(a.getResolutionStatus())).count();
         doc.setStatus(open > 0 ? DocumentStatus.REVIEW_REQUIRED.name() : DocumentStatus.DRAFT_READY.name());

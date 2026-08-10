@@ -287,11 +287,31 @@ public class PolicyClauseExtractor {
             } else {
                 continue;
             }
-            CiPolicyClause c = base(documentId, order++, "GENERIC", body);
-            c.setClauseType(ClauseType.UNKNOWN.name());
-            out.add(c);
+            // POLICY-UX-2D — split multi-sentence lines so each rule can bind independently
+            List<String> parts = splitPolicySentences(body);
+            for (String part : parts) {
+                CiPolicyClause c = base(documentId, order++, "GENERIC", part);
+                c.setClauseType(ClauseType.UNKNOWN.name());
+                out.add(c);
+            }
         }
         return out;
+    }
+
+    /** Split on sentence terminators when multiple policy statements share a line. */
+    static List<String> splitPolicySentences(String body) {
+        if (body == null || body.isBlank()) {
+            return List.of();
+        }
+        String[] bits = body.split("(?<=[.!?])\\s+(?=[A-Z0-9\"'])");
+        List<String> out = new ArrayList<>();
+        for (String bit : bits) {
+            String t = bit == null ? "" : bit.trim();
+            if (t.length() >= 12) {
+                out.add(t);
+            }
+        }
+        return out.isEmpty() ? List.of(body.trim()) : out;
     }
 
     private CiPolicyClause base(UUID documentId, int order, String section, String body) {
