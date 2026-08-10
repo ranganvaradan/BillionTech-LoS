@@ -151,7 +151,7 @@ class GacatPolicyLineageFixTest {
                 .metadata(Map.of("failureTreatment", "REJECT"))
                 .build();
         Map<String, Object> pf = PolicyRulePresentationSemantics.passFailPresentation(r);
-        assertThat(pf.get("resultOnPass")).isEqualTo("Pass");
+        assertThat(pf.get("resultOnPass")).isEqualTo("Approve");
         assertThat(pf.get("resultOnFailure")).isEqualTo("Reject");
     }
 

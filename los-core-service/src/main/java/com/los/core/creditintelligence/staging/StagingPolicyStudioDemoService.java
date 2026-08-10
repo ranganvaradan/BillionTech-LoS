@@ -312,6 +312,13 @@ public class StagingPolicyStudioDemoService {
                             : "Accepted during Credit Manager review";
                 }
             }
+            // POLICY-CONVERGENCE-1 — CLEAN definition (session/draft only; never invent DPD=0)
+            case "DEFINE_CLEAN", "USE_EXISTING_CLEAN_DEFINITION", "MANUAL_CLEAN_INPUT" -> {
+                reviewState = ReviewState.CREDIT_MANAGER_APPROVED.name();
+                if (reason == null) {
+                    reason = "Clean history definition recorded on draft (session only)";
+                }
+            }
             default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Unsupported rule review action");
         }
@@ -366,6 +373,48 @@ public class StagingPolicyStudioDemoService {
                     meta.put("excludedFromActivation", false);
                     meta.put("deleted", false);
                 }
+                case "DEFINE_CLEAN" -> {
+                    Map<String, Object> def = com.los.core.creditintelligence.policystudio.parameters
+                            .CleanHistoryDefinitionSupport.buildDraftDefinition(body);
+                    meta.put(com.los.core.creditintelligence.policystudio.parameters
+                            .CleanHistoryDefinitionSupport.META_KEY, def);
+                    meta.put("NEEDS_INPUT", Boolean.TRUE.equals(def.get("incomplete")));
+                    meta.put("blockedReason", Boolean.TRUE.equals(def.get("incomplete"))
+                            ? "Clean credit history needs a definition."
+                            : null);
+                    meta.put("evaluatedFrom", "Bureau");
+                    meta.put("disposition", "EDITED");
+                    meta.put("excludedFromActivation", false);
+                    // Also stamp parent siblings sharing overdue exception
+                    stampCleanOnRelatedRules(session, def);
+                }
+                case "USE_EXISTING_CLEAN_DEFINITION" -> {
+                    String pid = body.get("parameterId") == null
+                            ? "bureau.credit_after_overdue.clean_history_months"
+                            : String.valueOf(body.get("parameterId"));
+                    Map<String, Object> def = com.los.core.creditintelligence.policystudio.parameters
+                            .CleanHistoryDefinitionSupport.linkExisting(pid);
+                    meta.put(com.los.core.creditintelligence.policystudio.parameters
+                            .CleanHistoryDefinitionSupport.META_KEY, def);
+                    meta.put("NEEDS_INPUT", false);
+                    meta.put("blockedReason", null);
+                    meta.put("evaluatedFrom", "Bureau");
+                    meta.put("disposition", "EDITED");
+                    stampCleanOnRelatedRules(session, def);
+                }
+                case "MANUAL_CLEAN_INPUT" -> {
+                    Map<String, Object> def = com.los.core.creditintelligence.policystudio.parameters
+                            .CleanHistoryDefinitionSupport.manualInput(
+                                    body.get("manualInputLabel") == null ? null
+                                            : String.valueOf(body.get("manualInputLabel")));
+                    meta.put(com.los.core.creditintelligence.policystudio.parameters
+                            .CleanHistoryDefinitionSupport.META_KEY, def);
+                    meta.put("disposition", "MANUAL_INPUT");
+                    meta.put("verificationMode", "MANUAL");
+                    meta.put("NEEDS_INPUT", false);
+                    meta.put("evaluatedFrom", "Manual Input");
+                    stampCleanOnRelatedRules(session, def);
+                }
                 default -> {
                     /* reject path keeps prior metadata */
                 }
@@ -413,6 +462,40 @@ public class StagingPolicyStudioDemoService {
                 "uiAction", action));
         view.put("message", "Rule review recorded.");
         return view;
+    }
+
+    /** Session/draft only — stamp CLEAN definition onto overdue-exception related rules. */
+    private static void stampCleanOnRelatedRules(PolicyStudioSession session, Map<String, Object> def) {
+        if (session == null || def == null) return;
+        for (CiPolicyRuleCandidate r : session.getRuleCandidates()) {
+            String sys = r.getSystemRuleId() == null ? "" : r.getSystemRuleId().toUpperCase(Locale.ROOT);
+            if (!(sys.contains("OVERDUE_EXCEPTION") || sys.contains("NO_OVERDUE_EXCEPT")
+                    || sys.contains("OVERDUE_CHILD_3") || sys.contains("CLEAN"))) {
+                continue;
+            }
+            Map<String, Object> m = r.getMetadata() == null
+                    ? new LinkedHashMap<>() : new LinkedHashMap<>(r.getMetadata());
+            m.put(com.los.core.creditintelligence.policystudio.parameters
+                    .CleanHistoryDefinitionSupport.META_KEY, def);
+            m.put("evaluatedFrom", "Bureau");
+            if (!com.los.core.creditintelligence.policystudio.parameters
+                    .CleanHistoryDefinitionSupport.STATUS_UNRESOLVED
+                    .equals(String.valueOf(def.get("status")))) {
+                m.put("NEEDS_INPUT", Boolean.TRUE.equals(def.get("incomplete")));
+                if (!Boolean.TRUE.equals(def.get("incomplete"))) {
+                    m.remove("blockedReason");
+                }
+            }
+            r.setMetadata(m);
+        }
+        if (session.getDocument() != null) {
+            Map<String, Object> docMeta = session.getDocument().getMetadata() == null
+                    ? new LinkedHashMap<>()
+                    : new LinkedHashMap<>(session.getDocument().getMetadata());
+            docMeta.put(com.los.core.creditintelligence.policystudio.parameters
+                    .CleanHistoryDefinitionSupport.META_KEY, def);
+            session.getDocument().setMetadata(docMeta);
+        }
     }
 
     /**

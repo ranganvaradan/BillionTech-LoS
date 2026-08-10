@@ -353,7 +353,20 @@ export function CiPolicyStudioPage() {
   const stages = asList(pipeline.stages)
   const readinessBanner = asRecord(session?.readinessBanner)
   const ambiguityCards = asList(session?.ambiguityCards)
-  const ruleCards = asList(session?.ruleCards)
+  const allRuleCards = asList(session?.ruleCards)
+  const underwritingFromSession = asList(session?.underwritingRules)
+  const ruleCards = underwritingFromSession.length > 0 ? underwritingFromSession : allRuleCards.filter((c) => {
+    const s = String(asRecord(c).status ?? '')
+    return s !== 'Data requirement' && s !== 'Metric adjustment' && s !== 'Non-underwriting' && !asRecord(c).compoundChild
+  })
+  const dataAndCalculations = (() => {
+    const fromSession = asList(session?.dataAndCalculations)
+    if (fromSession.length > 0) return fromSession
+    return allRuleCards.filter((c) => {
+      const s = String(asRecord(c).status ?? '')
+      return s === 'Data requirement' || s === 'Metric adjustment' || s === 'Non-underwriting'
+    })
+  })()
   const ambiguityCategories = asList(session?.ambiguityCategories)
   const testsCount = Number(asRecord(session?.executable).testCaseCount ?? counts.tests ?? 0)
 
@@ -1037,6 +1050,7 @@ export function CiPolicyStudioPage() {
       {tab === 'rules' && session ? (
         <CiPolicyRulesTab
           cards={ruleCards}
+          dataAndCalculations={dataAndCalculations}
           busy={busy}
           onReview={reviewRule}
           onViewTests={() => setTab('simulation')}

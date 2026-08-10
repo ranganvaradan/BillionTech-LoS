@@ -213,12 +213,16 @@ public class PolicyMetricLineageService {
     }
 
     private static String inferSource(String code) {
-        String l = code.toLowerCase(Locale.ROOT);
-        if (l.startsWith("banking.") || l.contains("bank")) return "Bank statement";
-        if (l.startsWith("bureau.")) return "Bureau report";
+        String l = code == null ? "" : code.toLowerCase(Locale.ROOT);
+        if (l.startsWith("banking.") || l.contains("bank") || l.contains("settlement")) return "Bank Statement";
+        if (l.startsWith("bureau.") || l.contains("cibil") || l.contains("overdue") || l.contains("dpd")) {
+            return "Bureau";
+        }
         if (l.startsWith("gst.")) return "GST";
-        if (l.startsWith("itr.") || l.startsWith("financial.")) return "Financial statements / ITR";
+        if (l.startsWith("itr.") || l.startsWith("financial.")) return "Financial Statements";
+        if (l.startsWith("kyc.")) return "KYC";
         if (l.startsWith("application.")) return "Application";
-        return "Application data";
+        // POLICY-CONVERGENCE-1 — never use "Policy data" as evaluation source
+        return "Needs confirmation";
     }
 }

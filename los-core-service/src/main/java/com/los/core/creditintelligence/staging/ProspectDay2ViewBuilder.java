@@ -6,6 +6,7 @@ import com.los.core.creditintelligence.policystudio.domain.CiPolicyInterpretatio
 import com.los.core.creditintelligence.policystudio.domain.CiPolicyRuleCandidate;
 import com.los.core.creditintelligence.policystudio.domain.ReviewState;
 import com.los.core.creditintelligence.policystudio.model.PolicyStudioSession;
+import com.los.core.creditintelligence.policystudio.parameters.PolicyStudioConvergencePresenter;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -32,9 +33,15 @@ final class ProspectDay2ViewBuilder {
 
         out.put("ambiguityCards", ambiguityCards);
         out.put("ruleCards", ruleCards);
+        Map<String, Object> groups = PolicyStudioConvergencePresenter.groupCards(ruleCards);
+        out.put("underwritingRules", groups.get("underwritingRules"));
+        out.put("dataAndCalculations", groups.get("dataAndCalculations"));
+        out.put("compoundChildrenAdvanced", groups.get("compoundChildrenAdvanced"));
+        out.put("ruleGroups", groups);
         out.put("readinessBanner", banner);
         out.put("ambiguityCategories", categoryCounts(ambiguityCards));
         out.put("ambiguityFilters", List.of("All", "Blocking", "Non-blocking", "Resolved"));
+        out.put("convergenceModel", "SCOPE_SOURCE_PARAMETER_RULE_TREATMENT");
 
         // Enrich counts used by summary banner
         @SuppressWarnings("unchecked")
@@ -74,8 +81,12 @@ final class ProspectDay2ViewBuilder {
         counts.put("rulesDataRequirements", dataReq);
         counts.put("rulesMetricAdjustments", metricAdj);
         counts.put("rulesNonUnderwriting", nonUw);
-        counts.put("underwritingRules",
-                ruleCards.size() - dataReq - metricAdj - nonUw - deletedRules);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> uw = out.get("underwritingRules") instanceof List<?>
+                ? (List<Map<String, Object>>) out.get("underwritingRules") : List.of();
+        counts.put("underwritingRules", uw.size());
+        counts.put("dataAndCalculations",
+                out.get("dataAndCalculations") instanceof List<?> l ? l.size() : dataReq + metricAdj);
         counts.put("openAmbiguities", openAmb);
         counts.put("missingMetrics", missingMetrics);
         out.put("counts", counts);
@@ -550,9 +561,11 @@ final class ProspectDay2ViewBuilder {
                 .map(a -> a.getPhrase() == null ? "" : a.getPhrase().toLowerCase(Locale.ROOT))
                 .collect(Collectors.toSet());
 
+        String fileName = session.getDocument() == null ? null : session.getDocument().getName();
         List<Map<String, Object>> cards = new ArrayList<>();
         for (CiPolicyRuleCandidate r : session.getRuleCandidates()) {
-            cards.add(toRuleCard(r, clauses.get(r.getClauseId()), interps.get(r.getClauseId()), openPhrases));
+            cards.add(toRuleCard(r, clauses.get(r.getClauseId()), interps.get(r.getClauseId()),
+                    openPhrases, fileName));
         }
         cards.sort(Comparator
                 .comparing((Map<String, Object> m) -> statusOrder(String.valueOf(m.get("status"))))
@@ -577,7 +590,8 @@ final class ProspectDay2ViewBuilder {
             CiPolicyRuleCandidate r,
             CiPolicyClause clause,
             CiPolicyInterpretation interp,
-            Set<String> openPhrases) {
+            Set<String> openPhrases,
+            String fileName) {
         String product = productScope(r, clause, interp);
         String meaning = interp == null || interp.getNaturalLanguageMeaning() == null
                 ? friendlyRuleName(r.getSystemRuleId())
@@ -735,6 +749,10 @@ final class ProspectDay2ViewBuilder {
             card.put("executable", !Boolean.TRUE.equals(meta.get("dataRequirementOnly"))
                     && !Boolean.TRUE.equals(meta.get("metricAdjustment")));
         }
+        card.put("dataRequirementOnly", Boolean.TRUE.equals(meta.get("dataRequirementOnly")));
+        card.put("metricAdjustment", Boolean.TRUE.equals(meta.get("metricAdjustment")));
+        // POLICY-CONVERGENCE-1 — Live Rules shaped CM fields + source/provenance split
+        PolicyStudioConvergencePresenter.applyConvergenceFields(card, r, clause, dataUsed, fileName);
         return card;
     }
 
@@ -853,8 +871,8 @@ final class ProspectDay2ViewBuilder {
             return "EDI has not been defined.";
         }
         if (openPhrases.stream().anyMatch(p -> p.contains("clean"))
-                && (joined.contains("clean") || sys.contains("CLEAN") || sys.contains("OVERDUE"))) {
-            return "CLEAN has not been defined.";
+                && (joined.contains("clean") || sys.contains("CLEAN") || sys.contains("OVERDUE_CHILD_3"))) {
+            return "Clean credit history needs a definition.";
         }
         // Settlement/QR is DERIVABLE from classified bank transactions — do not block as unavailable.
         if (openPhrases.stream().anyMatch(p -> p.contains("exactly 100") || p.contains("100 transaction"))
@@ -1050,7 +1068,8 @@ final class ProspectDay2ViewBuilder {
         if (bank && bureau) {
             return "Bank Statement + Bureau";
         }
-        return "Policy data";
+        // POLICY-CONVERGENCE-1 — never use "Policy data" as evaluation source family
+        return "Needs confirmation";
     }
 
     /** Business family for Credit Manager grouping — only used when rules exist. */
@@ -1117,17 +1136,10 @@ final class ProspectDay2ViewBuilder {
         Map<String, Object> visual = new LinkedHashMap<>();
         String op = expr.get("op") == null ? "" : String.valueOf(expr.get("op")).toUpperCase(Locale.ROOT);
 
-        if ("AND_CHILDREN".equals(op) || (meaning != null && meaning.toLowerCase(Locale.ROOT).contains("overdue exception"))) {
-            visual.put("kind", "EXCEPTION_ALL");
-            visual.put("title", "Loan overdue exists");
-            visual.put("subtitle", "EXCEPTION allowed only if ALL:");
-            visual.put("conditions", List.of(
-                    "Overdue is older than 12 months",
-                    "New credit taken after overdue",
-                    "New credit has ≥ 6 months clean history",
-                    "Overdue amount < ₹1,500"));
-            visual.put("then", "PASS exception / else FAIL");
-            return visual;
+        if ("AND_CHILDREN".equals(op) || (meaning != null && meaning.toLowerCase(Locale.ROOT).contains("overdue exception"))
+                || (r.getSystemRuleId() != null && r.getSystemRuleId().toUpperCase(Locale.ROOT)
+                .contains("OVERDUE_EXCEPTION"))) {
+            return PolicyStudioConvergencePresenter.compoundOverdueVisual(null);
         }
 
         if ("AND".equals(op) && expr.get("args") instanceof List<?> args && args.size() >= 2) {

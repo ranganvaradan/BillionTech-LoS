@@ -73,6 +73,12 @@ public class CapabilityIngestionMatcher {
             return nonUw.get();
         }
 
+        // POLICY-CONVERGENCE-1 — search canonical parameter read model (aliases) before inventing
+        Optional<MatchResult> fromRegistry = matchCanonicalParameter(text, lower);
+        if (fromRegistry.isPresent()) {
+            return fromRegistry.get();
+        }
+
         Optional<MatchResult> cap = matchCapability(text, lower);
         if (cap.isPresent()) {
             return cap.get();
@@ -580,6 +586,26 @@ public class CapabilityIngestionMatcher {
         if (s == null) return "";
         String t = s.replaceAll("\\s+", " ").trim();
         return t.length() <= max ? t : t.substring(0, max - 1) + "…";
+    }
+
+    /**
+     * POLICY-CONVERGENCE-1 — exact/alias hit on CanonicalParameterRegistry before inventing capabilities.
+     * Only returns when a known production capability id can be bound.
+     */
+    private Optional<MatchResult> matchCanonicalParameter(String text, String lower) {
+        // Synonym-only shortcuts — require score/enquiry intent; do not steal other bureau clauses
+        if ((lower.contains("cibil score") || lower.contains("credit bureau score")
+                || lower.contains("credit score") || lower.contains("bureau score"))
+                && (lower.contains("minimum") || lower.contains("at least") || lower.contains(">=")
+                || lower.contains("≥") || lower.matches(".*\\b\\d{3}\\b.*"))) {
+            Long score = extractNumber(text, "(?i)(?:minimum|at\\s+least|>=|≥)\\s*(\\d{3})",
+                    "(?i)(\\d{3})\\s*(?:or\\s+higher|and\\s+above)");
+            return Optional.of(capabilityMatch("BUREAU.MIN_SCORE",
+                    params("minimumScore", score),
+                    score != null ? "Bureau score ≥ " + score : "Bureau score (value missing)",
+                    score == null));
+        }
+        return Optional.empty();
     }
 
     /** Match many clauses; used by tests and SCF fixture reporting. */

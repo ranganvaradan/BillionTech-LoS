@@ -74,21 +74,33 @@ function VisualLogic({ visual }: { visual: Record<string, unknown> }) {
     const conditions = asList(visual.conditions)
     return (
       <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm">
-        <div className="font-semibold text-slate-900">{String(visual.title ?? 'Condition')}</div>
+        <div className="font-semibold text-slate-900">{String(visual.title ?? 'Overdue Exception Eligibility')}</div>
         <div className="mt-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-          {String(visual.subtitle ?? 'EXCEPTION allowed only if ALL:')}
+          {String(visual.subtitle ?? 'Allow only if ALL:')}
         </div>
-        <ul className="mt-2 space-y-1">
-          {conditions.map((c, i) => (
-            <li key={i} className="flex gap-2 text-slate-800">
-              <span className="text-emerald-600" aria-hidden>
-                ✓
-              </span>
-              <span>{String(c)}</span>
-            </li>
-          ))}
+        <ul className="mt-2 space-y-1.5">
+          {conditions.map((c, i) => {
+            const row = asRecord(c)
+            const structured = row.parameter != null
+            return (
+              <li key={i} className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-slate-800">
+                <span className="min-w-[10rem] font-medium">{structured ? String(row.parameter) : String(c)}</span>
+                {structured ? (
+                  <>
+                    <span className="text-slate-500">{String(row.operator ?? '')}</span>
+                    <span>{String(row.value ?? '')}</span>
+                  </>
+                ) : null}
+                {row.needsDefinition || row.badge ? (
+                  <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs font-semibold text-amber-900">
+                    {String(row.badge ?? 'Needs definition')}
+                  </span>
+                ) : null}
+              </li>
+            )
+          })}
         </ul>
-        <div className="mt-2 text-xs text-slate-600">THEN: {String(visual.then ?? '—')}</div>
+        <div className="mt-2 text-xs text-slate-600">If not satisfied: {String(visual.then ?? 'Reject')}</div>
       </div>
     )
   }
@@ -171,6 +183,7 @@ function matchesStatusFilter(status: string, filter: StatusFilter): boolean {
 
 export function CiPolicyRulesTab({
   cards,
+  dataAndCalculations = [],
   busy,
   onReview,
   onViewTests,
@@ -183,6 +196,7 @@ export function CiPolicyRulesTab({
   prospectDemoMode = false,
 }: {
   cards: unknown[]
+  dataAndCalculations?: unknown[]
   busy: boolean
   onReview: (ruleId: string, body: Record<string, unknown>) => Promise<void>
   onViewTests?: () => void
@@ -319,9 +333,9 @@ export function CiPolicyRulesTab({
       >
         <p className="text-sm text-slate-700">
           <strong>{totals.ready}</strong> ready · <strong>{totals.needs}</strong> need your input ·{' '}
-          <strong>{totals.dataReq}</strong> data / metric items · <strong>{totals.manual}</strong> manual ·{' '}
-          <strong>{totals.ignored}</strong> ignored by you
-          <span className="text-slate-500"> ({totals.total} cards total)</span>
+          <strong>{dataAndCalculations.length}</strong> data &amp; calculations ·{' '}
+          <strong>{totals.manual}</strong> manual · <strong>{totals.ignored}</strong> ignored by you
+          <span className="text-slate-500"> ({totals.total} underwriting rules)</span>
         </p>
         {ingestionBinding ? (
           <p className="mt-2 text-sm text-slate-700">
@@ -455,7 +469,6 @@ export function CiPolicyRulesTab({
                   const r = asRecord(raw)
                   const id = String(r.id ?? r.systemRuleId ?? '')
                   const status = String(r.status ?? 'Needs your input')
-                  const dataUsed = asList(r.dataUsed)
                   const visual = asRecord(r.visualLogic)
                   const isTerminal = status === 'Deleted'
                   const needsInput = status === 'Needs your input' || status === 'Blocked' || status === 'Needs Review'
@@ -472,9 +485,16 @@ export function CiPolicyRulesTab({
                           <div className="text-lg font-semibold text-slate-900">
                             {String(r.ruleName ?? 'Business rule')}
                           </div>
-                          <p className="mt-1 text-base font-medium text-slate-800">
-                            {String(r.businessRule ?? '—')}
-                          </p>
+                          {String(visual.kind ?? '') === 'EXCEPTION_ALL' ? (
+                            <div className="mt-2">
+                              <VisualLogic visual={visual} />
+                            </div>
+                          ) : (
+                            <p className="mt-1 text-base font-medium text-slate-800">
+                              {String(r.parameterName ?? 'Parameter')}:{' '}
+                              {String(r.operatorValueLabel ?? r.businessRule ?? '—')}
+                            </p>
+                          )}
                           {r.period ? (
                             <p className="mt-1 text-sm text-slate-600">Period: {String(r.period)}</p>
                           ) : null}
@@ -484,42 +504,86 @@ export function CiPolicyRulesTab({
                         </span>
                       </div>
 
-                      {needsInput && r.blockedReason ? (
-                        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-                          Needs your input: {String(r.blockedReason)}
-                        </div>
-                      ) : null}
-
                       <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
                         <div>
-                          <div className="text-xs text-slate-500">Data</div>
+                          <div className="text-xs text-slate-500">Evaluated from</div>
                           <div className="font-medium text-slate-900">
-                            {String(r.dataSource ?? r.dataFamily ?? (dataUsed.length ? dataUsed.map(String).join(', ') : '—'))}
+                            {String(r.evaluatedFrom ?? r.dataSource ?? '—')}
                           </div>
                           <div className="text-xs text-slate-600">
-                            {String(r.dataAvailabilityLabel ?? '—')}
+                            {String(r.dataAvailabilityLabel ?? '')}
                           </div>
                         </div>
                         <div>
                           <div className="text-xs text-slate-500">If rule fails</div>
                           <div className="font-medium text-slate-900">
-                            {String(r.failureTreatmentDisplay ?? r.resultOnFailure ?? r.failureTreatment ?? '—')}
+                            {String(r.treatment ?? r.failureTreatmentDisplay ?? r.resultOnFailure ?? '—')}
                           </div>
                         </div>
                       </div>
+
+                      {needsInput && r.blockedReason ? (
+                        <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+                          {String(r.blockedReason)}
+                          {asRecord(r.cleanDefinition).actions ? (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                disabled={busy}
+                                className="bt-btn bt-btn-secondary bt-btn-sm"
+                                onClick={() =>
+                                  void onReview(id, {
+                                    uiAction: 'USE_EXISTING_CLEAN_DEFINITION',
+                                    parameterId: 'bureau.credit_after_overdue.clean_history_months',
+                                    reason: 'Linked existing clean-history parameter for draft',
+                                  })
+                                }
+                              >
+                                Use existing definition
+                              </button>
+                              <button
+                                type="button"
+                                disabled={busy}
+                                className="bt-btn bt-btn-secondary bt-btn-sm"
+                                onClick={() =>
+                                  void onReview(id, {
+                                    uiAction: 'DEFINE_CLEAN',
+                                    startEvent: 'AFTER_OVERDUE',
+                                    notes: 'Draft skeleton — thresholds not invented',
+                                    reason: 'CM opened clean-history definition (session draft)',
+                                  })
+                                }
+                              >
+                                Define
+                              </button>
+                              <button
+                                type="button"
+                                disabled={busy}
+                                className="bt-btn bt-btn-secondary bt-btn-sm"
+                                onClick={() =>
+                                  void onReview(id, {
+                                    uiAction: 'MANUAL_CLEAN_INPUT',
+                                    manualInputLabel: 'Clean history months (manual)',
+                                    reason: 'Manual input for clean history',
+                                  })
+                                }
+                              >
+                                Manual input
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
 
                       {asRecord(r.howCalculated).calculation ? (
                         <details className="mt-3 rounded border border-slate-100 bg-slate-50 px-3 py-2 text-sm">
                           <summary className="cursor-pointer font-medium text-slate-800">How is this calculated?</summary>
                           <dl className="mt-2 space-y-1 text-slate-700">
-                            <div><dt className="text-xs text-slate-500">Source</dt><dd>{String(asRecord(r.howCalculated).source ?? '—')}</dd></div>
-                            <div><dt className="text-xs text-slate-500">Metric</dt><dd>{String(asRecord(r.howCalculated).metric ?? '—')}</dd></div>
+                            <div><dt className="text-xs text-slate-500">Evaluated from</dt><dd>{String(asRecord(r.howCalculated).source ?? r.evaluatedFrom ?? '—')}</dd></div>
+                            <div><dt className="text-xs text-slate-500">Parameter</dt><dd>{String(asRecord(r.howCalculated).metric ?? r.parameterName ?? '—')}</dd></div>
                             <div><dt className="text-xs text-slate-500">Calculation</dt><dd>{String(asRecord(r.howCalculated).calculation ?? '—')}</dd></div>
-                            <div><dt className="text-xs text-slate-500">Assessment period</dt><dd>{String(asRecord(r.howCalculated).assessmentPeriod ?? r.period ?? '—')}</dd></div>
+                            <div><dt className="text-xs text-slate-500">Period</dt><dd>{String(asRecord(r.howCalculated).assessmentPeriod ?? r.period ?? '—')}</dd></div>
                             <div><dt className="text-xs text-slate-500">Missing data</dt><dd>{String(asRecord(r.howCalculated).missingData ?? r.onMissing ?? '—')}</dd></div>
-                            {asRecord(r.howCalculated).incompleteMonthNote ? (
-                              <div><dt className="text-xs text-slate-500">Incomplete months</dt><dd>{String(asRecord(r.howCalculated).incompleteMonthNote)}</dd></div>
-                            ) : null}
                           </dl>
                         </details>
                       ) : null}
@@ -617,33 +681,47 @@ export function CiPolicyRulesTab({
                             className="rounded px-2 py-1 text-left text-sm hover:bg-slate-50"
                             onClick={() => setClauseOpen((prev) => ({ ...prev, [id]: !prev[id] }))}
                           >
-                            View source
+                            From policy
                           </button>
+                          <details className="rounded px-2 py-1">
+                            <summary className="cursor-pointer text-sm text-slate-700">Advanced / technical details</summary>
+                            <div className="mt-2 space-y-1 text-xs text-slate-600">
+                              {r.systemRuleId ? <div>System id: {String(r.systemRuleId)}</div> : null}
+                              {r.businessCapabilityId ? <div>Capability: {String(r.businessCapabilityId)}</div> : null}
+                              {r.matchConfidence ? <div>Confidence: {String(r.matchConfidence)}</div> : null}
+                              {r.capabilityBadge ? <div>Match: {String(r.capabilityBadge)}</div> : null}
+                              {r.metricLineageTechnical ? (
+                                <pre className="overflow-auto rounded bg-slate-100 p-2 text-[11px]">
+                                  {JSON.stringify(r.metricLineageTechnical, null, 2)}
+                                </pre>
+                              ) : null}
+                              {r.technicalExpression ? (
+                                <pre className="overflow-auto rounded bg-slate-100 p-2 text-[11px]">
+                                  {JSON.stringify(r.technicalExpression, null, 2)}
+                                </pre>
+                              ) : null}
+                            </div>
+                          </details>
                             </div>
                           </details>
                         </div>
                       ) : null}
 
-                      <CiTechnicalDetails title="Advanced / technical details" hidden={prospectDemoMode}>
-                        <div className="space-y-2 text-xs text-slate-600">
-                          <div>Domain: {decisionPolicyDomainLabel(r.decisionDomain)}</div>
-                          {r.capabilityBadge ? <div>Match: {String(r.capabilityBadge)}</div> : null}
-                          {r.matchConfidence ? <div>Confidence: {String(r.matchConfidence)}</div> : null}
-                          {r.businessCapabilityId ? <div>Capability: {String(r.businessCapabilityId)}</div> : null}
-                          {r.systemRuleId ? <div>System id: {String(r.systemRuleId)}</div> : null}
-                          {Object.keys(visual).length ? (
-                            <div className="pt-1">
-                              <div className="mb-1 font-semibold text-slate-700">Condition (technical)</div>
-                              <VisualLogic visual={visual} />
-                            </div>
-                          ) : null}
-                          {r.technicalExpression ? (
-                            <pre className="overflow-auto rounded bg-slate-100 p-2 text-[11px]">
-                              {JSON.stringify(r.technicalExpression, null, 2)}
-                            </pre>
-                          ) : null}
+                      {clauseOpen[id] ? (
+                        <div className="mt-2 rounded border border-slate-100 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                          <div className="text-xs font-semibold uppercase text-slate-500">From policy</div>
+                          <p className="mt-1">{String(r.fromPolicy ?? r.sourceClause ?? '—')}</p>
                         </div>
-                      </CiTechnicalDetails>
+                      ) : null}
+
+                      {!prospectDemoMode ? (
+                        <CiTechnicalDetails title="Advanced / technical details" hidden={false}>
+                          <div className="space-y-2 text-xs text-slate-600">
+                            <div>Domain: {decisionPolicyDomainLabel(r.decisionDomain)}</div>
+                            {r.systemRuleId ? <div>System id: {String(r.systemRuleId)}</div> : null}
+                          </div>
+                        </CiTechnicalDetails>
+                      ) : null}
 
                       {editOpen[id] ? (
                         <div className="mt-3 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
@@ -724,12 +802,6 @@ export function CiPolicyRulesTab({
                         </div>
                       ) : null}
 
-                      {clauseOpen[id] ? (
-                        <blockquote className="mt-3 whitespace-pre-wrap rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
-                          {String(r.sourceClause ?? '—')}
-                          {r.section ? `\n\nSection: ${String(r.section)}` : ''}
-                        </blockquote>
-                      ) : null}
                     </li>
                   )
                 })}
@@ -781,6 +853,38 @@ export function CiPolicyRulesTab({
           </CiSection>
         )
       })}
+
+      {dataAndCalculations.length > 0 ? (
+        <CiSection
+          title="Data & calculations"
+          description="Report fields and metric adjustments — not underwriting decision rules. No Accept required."
+        >
+          <ul className="space-y-2">
+            {dataAndCalculations.map((raw) => {
+              const r = asRecord(raw)
+              const id = String(r.id ?? r.systemRuleId ?? Math.random())
+              return (
+                <li key={id} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-medium text-slate-900">
+                      {String(r.ruleName ?? r.status ?? 'Item')}
+                    </span>
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${statusChip(String(r.status ?? ''))}`}>
+                      {String(r.status ?? '')}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-slate-700">{String(r.businessRule ?? r.sourceClause ?? '—')}</p>
+                  {r.evaluatedFrom || r.dataSource ? (
+                    <p className="mt-1 text-xs text-slate-500">
+                      Evaluated from: {String(r.evaluatedFrom ?? r.dataSource)}
+                    </p>
+                  ) : null}
+                </li>
+              )
+            })}
+          </ul>
+        </CiSection>
+      ) : null}
     </div>
   )
 }

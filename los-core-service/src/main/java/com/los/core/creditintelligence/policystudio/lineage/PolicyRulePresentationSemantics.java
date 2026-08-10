@@ -193,7 +193,7 @@ public final class PolicyRulePresentationSemantics {
     private static String friendlyOutcome(String raw) {
         if (raw == null || raw.isBlank()) return "—";
         return switch (raw.toUpperCase(Locale.ROOT)) {
-            case "PASS", "APPROVE", "OK" -> "Pass";
+            case "PASS", "APPROVE", "OK" -> "Approve";
             case "FAIL", "REJECT", "DECLINE" -> "Reject";
             case "REFER", "MANUAL_REVIEW" -> "Manual Review";
             case "DATA_INSUFFICIENT", "MISSING_INFORMATION" -> "Data insufficient";
@@ -203,11 +203,11 @@ public final class PolicyRulePresentationSemantics {
 
     private static String friendlyTreatment(String t) {
         return switch (t.toUpperCase(Locale.ROOT)) {
-            case "REJECT" -> "Reject";
-            case "MANUAL_REVIEW" -> "Manual Review";
+            case "REJECT", "FAIL" -> "Reject";
+            case "MANUAL_REVIEW", "REFER" -> "Manual Review";
             case "SCORE_IMPACT" -> "Score impact";
             case "LIMIT_ADJUSTMENT" -> "Limit adjustment";
-            case "REFER" -> "Refer";
+            case "PASS", "APPROVE" -> "Approve";
             default -> friendlyOutcome(t);
         };
     }
