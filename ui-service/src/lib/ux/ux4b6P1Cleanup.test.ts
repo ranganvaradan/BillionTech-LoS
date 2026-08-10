@@ -78,7 +78,13 @@ describe('UX-4B6 P1 cleanup', () => {
   })
 
   it('P1-5: Credit Manager primary tabs; Advanced holds technical surfaces', () => {
-    expect(PROSPECT_DEMO_VISIBLE_TAB_IDS).toEqual(['rules', 'simulation', 'lifecycle', 'overview'])
+    expect(PROSPECT_DEMO_VISIBLE_TAB_IDS).toEqual([
+      'scope',
+      'rules',
+      'simulation',
+      'lifecycle',
+      'overview',
+    ])
     expect([...PROSPECT_DEMO_HIDDEN_TAB_IDS]).toEqual([
       'kyc-eligibility',
       'structure',

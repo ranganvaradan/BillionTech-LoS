@@ -34,6 +34,7 @@ import { CiPolicyRulesTab } from '@/pages/creditIntelligence/CiPolicyRulesTab'
 import { CiPolicySimulationTab } from '@/pages/creditIntelligence/CiPolicySimulationTab'
 import { CiPolicyDataReadinessTab } from '@/pages/creditIntelligence/CiPolicyDataReadinessTab'
 import { CiPolicyLifecycleTab } from '@/pages/creditIntelligence/CiPolicyLifecycleTab'
+import { CiPolicyScopeTab } from '@/pages/creditIntelligence/CiPolicyScopeTab'
 import { CiPolicyTestsTab } from '@/pages/creditIntelligence/CiPolicyTestsTab'
 
 type TabId =
@@ -41,6 +42,7 @@ type TabId =
   | 'kyc-eligibility'
   | 'structure'
   | 'ambiguities'
+  | 'scope'
   | 'rules'
   | 'data-readiness'
   | 'tests'
@@ -68,6 +70,7 @@ function chipClass(state: string): string {
 }
 
 const TABS: { id: TabId; label: string }[] = [
+  { id: 'scope', label: 'Scope' },
   { id: 'rules', label: 'Rules' },
   { id: 'simulation', label: 'Test' },
   { id: 'lifecycle', label: 'Versions' },
@@ -110,6 +113,8 @@ export function CiPolicyStudioPage() {
   const [showAdvancedTabs, setShowAdvancedTabs] = useState(false)
   const [draftMsg, setDraftMsg] = useState<string | null>(null)
   const [dirty, setDirty] = useState(false)
+  const [scopeDirty, setScopeDirty] = useState(false)
+  const [rulesDirty, setRulesDirty] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
 
   const toggleProspectDemoMode = () => {
@@ -202,12 +207,14 @@ export function CiPolicyStudioPage() {
     if (!pendingSession) return
     setSession(pendingSession)
     setPendingSession(null)
-    setTab('rules')
+    setTab('scope')
     setView('session')
     setExpanded({})
     setError(null)
     setDirty(false)
-    setDraftMsg(null)
+    setScopeDirty(false)
+    setRulesDirty(false)
+    setDraftMsg('Set where this policy applies — then refine Rules. Save Draft anytime from either tab.')
   }
 
   const cancelAnalysis = () => {
@@ -276,6 +283,7 @@ export function CiPolicyStudioPage() {
       const data = await reviewPolicyRule(documentId, ruleId, body as Parameters<typeof reviewPolicyRule>[2])
       setSession(data)
       setDirty(true)
+      setRulesDirty(true)
       setDraftMsg(null)
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Could not record rule review')
@@ -297,6 +305,7 @@ export function CiPolicyStudioPage() {
       })
       setSession(data)
       setDirty(false)
+      setRulesDirty(false)
       setDraftMsg(String(asRecord(data).message ?? 'Draft saved.'))
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Could not save draft')
@@ -316,6 +325,7 @@ export function CiPolicyStudioPage() {
       const data = await addPlainEnglishPolicyRule(documentId, { text, group })
       setSession(data)
       setDirty(true)
+      setRulesDirty(true)
       setDraftMsg(String(asRecord(data).message ?? 'Rule added for review.'))
     } catch (e) {
       setError(e instanceof ApiError ? e.message : 'Could not add rule')
@@ -328,6 +338,7 @@ export function CiPolicyStudioPage() {
     if (data && typeof data === 'object') {
       setSession(data as typeof session)
       setDirty(true)
+      setRulesDirty(true)
       setDraftMsg(
         String(asRecord(data).message ?? 'Capability saved in draft — use Save Draft anytime.'),
       )
@@ -554,7 +565,7 @@ export function CiPolicyStudioPage() {
     <div>
       <PageHeader
         title={String(header.policyName ?? 'Policy Understanding')}
-        description="Review extracted rules, save a draft anytime, then test and check activation readiness. Draft / approved / scheduled — not live LOS production configuration."
+        description="Set Scope, refine Rules, Test, then Versions. Save Draft anytime. Draft / approved / scheduled — not live LOS production configuration."
         actions={
           <div className="flex flex-wrap gap-2">
             <button
@@ -647,9 +658,13 @@ export function CiPolicyStudioPage() {
           {draftMsg}
         </p>
       ) : null}
-      {dirty ? (
+      {dirty || scopeDirty || rulesDirty ? (
         <p className="mb-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-          Unsaved changes — use <strong>Save Draft</strong> anytime (implementability is not required).
+          Unsaved changes
+          {scopeDirty ? ' (Scope)' : ''}
+          {rulesDirty || dirty ? ' (Rules)' : ''}
+          {' — '}
+          use <strong>Save Draft</strong> anytime (implementability is not required). Scope and Rules save independently.
         </p>
       ) : null}
       {error ? (
@@ -993,6 +1008,27 @@ export function CiPolicyStudioPage() {
           onResolve={resolveAmbiguity}
           prospectDemoMode={prospectDemoMode}
         />
+      ) : null}
+
+      {tab === 'scope' && session ? (
+        documentId ? (
+          <CiPolicyScopeTab
+            documentId={documentId}
+            busy={busy}
+            setBusy={setBusy}
+            onError={setError}
+            session={session}
+            onScopeDirty={setScopeDirty}
+            onSessionRefresh={(next) => {
+              if (next) setSession(next)
+              setScopeDirty(false)
+            }}
+          />
+        ) : (
+          <CiSection title="Scope">
+            <p className="text-sm text-slate-600">Open a policy session to define where this policy applies.</p>
+          </CiSection>
+        )
       ) : null}
 
       {tab === 'rules' && session ? (

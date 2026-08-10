@@ -122,9 +122,25 @@ export function CiPolicyCataloguePage() {
                   const id = String(r.applicabilityId ?? '')
                   return (
                     <tr key={id || String(r.policyVersion)} className="border-t border-slate-100">
-                      <td className="py-2 pr-3 font-medium text-slate-900">{String(r.policyName ?? '—')}</td>
+                      <td className="py-2 pr-3 font-medium text-slate-900">
+                        <div>{String(r.policyName ?? '—')}</div>
+                        <div className="text-xs font-normal text-slate-500">
+                          {String(
+                            r.scopeSummary
+                              ?? ([
+                                  asList(r.products).map(String).join(', ') || 'All products',
+                                  r.borrowerType ? String(r.borrowerType) : null,
+                                  r.minLoanAmount || r.maxLoanAmount
+                                    ? `₹${r.minLoanAmount ?? '…'}–₹${r.maxLoanAmount ?? '…'}`
+                                    : null,
+                                ]
+                                  .filter(Boolean)
+                                  .join(' · ') || '—'),
+                          )}
+                        </div>
+                      </td>
                       <td className="py-2 pr-3">{String(r.policyVersion ?? '—')}</td>
-                      <td className="py-2 pr-3">{asList(r.products).map(String).join(', ') || '—'}</td>
+                      <td className="py-2 pr-3">{asList(r.products).map(String).join(', ') || 'All'}</td>
                       <td className="py-2 pr-3">{String(r.status ?? '—')}</td>
                       <td className="py-2 pr-3 text-xs">
                         {String(r.linkageClass ?? '—')}

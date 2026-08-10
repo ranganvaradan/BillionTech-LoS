@@ -79,6 +79,9 @@ public final class ApplicationPolicyQueryFactory {
                 "facilityType", "not on loan_applications",
                 "securedUnsecured", "not on loan_applications",
                 "programScheme", "requires sub_program join — not used in P1"));
+        e.put("mappingReliability", PolicyScopeSupport.mappingReliability());
+        e.put("nullMatchSafety",
+                "Constrained policy dimensions do not match when the application attribute is absent");
         return e;
     }
 }

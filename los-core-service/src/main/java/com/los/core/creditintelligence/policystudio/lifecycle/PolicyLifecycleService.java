@@ -69,7 +69,12 @@ public class PolicyLifecycleService {
         Map<String, Object> out = new LinkedHashMap<>();
         stampSafety(out);
         out.put("policySettings", businessHeader(session, life));
-        out.put("applicability", life.get("applicability"));
+        Map<String, Object> applicability = castMap(life.get("applicability"));
+        out.put("applicability", applicability);
+        out.put("scopeSummary", PolicyScopeSupport.summarize(applicability));
+        out.put("scopeOptions", PolicyScopeSupport.scopeOptions());
+        out.put("mappingReliability", PolicyScopeSupport.mappingReliability());
+        out.put("overlapPreview", overlapPreview(session, life));
         out.put("implementationStatus", implementationStatus(session, life));
         out.put("readyToSchedule", Boolean.TRUE.equals(life.get("readyToSchedule")));
         out.put("readyToScheduleBlockers", life.getOrDefault("readyToScheduleBlockers", List.of()));
@@ -97,7 +102,11 @@ public class PolicyLifecycleService {
                     "Approved / active policy content is immutable. Use Create New Version.");
         }
         assertNotMutatingApprovedContent(session);
-        mergeApplicability(life, body);
+        try {
+            mergeApplicability(life, body);
+        } catch (IllegalArgumentException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, ex.getMessage());
+        }
         if (body.get("policyName") != null && session.getDocument() != null) {
             session.getDocument().setName(String.valueOf(body.get("policyName")));
         }
@@ -112,6 +121,7 @@ public class PolicyLifecycleService {
         persistLifecycle(session, life);
         Map<String, Object> out = settingsView(session);
         out.put("message", "Draft policy settings saved.");
+        out.put("rulesUnchanged", true);
         return out;
     }
 
@@ -579,6 +589,7 @@ public class PolicyLifecycleService {
                 }
             }
         }
+        PolicyScopeSupport.normalizeAndValidate(app);
         if (body.get("replacesVersion") != null) {
             life.put("replacesVersion", String.valueOf(body.get("replacesVersion")));
         }
@@ -586,6 +597,32 @@ public class PolicyLifecycleService {
             life.put("policyVersion", String.valueOf(body.get("policyVersion")));
         }
         life.put("applicability", app);
+    }
+
+    /**
+     * Pre-activation overlap preview using catalogue applicability.
+     * Does not rank specificity — only surfaces potential EXACTLY_ONE conflicts.
+     */
+    private Map<String, Object> overlapPreview(PolicyStudioSession session, Map<String, Object> life) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("allowCanonicalAuthority", false);
+        try {
+            PolicyApplicabilityRecord candidate = toRecord(session, life,
+                    str(life, "businessStatus", PolicyBusinessLifecycleStatus.DRAFT));
+            UUID tenantId = session.getDocument() == null ? null : session.getDocument().getTenantId();
+            Map<String, Object> overlap = resolver.detectOverlap(candidate, catalogueList(tenantId));
+            out.put("potentialOverlap", Boolean.TRUE.equals(overlap.get("blocked")));
+            out.put("message", Boolean.TRUE.equals(overlap.get("blocked"))
+                    ? "Another scheduled/active policy may also match this scope."
+                    : "No overlapping scheduled/active policy detected for this scope.");
+            out.put("conflicts", overlap.getOrDefault("conflicts", List.of()));
+            out.put("exactlyOneSafety", "EXACTLY_ONE preserved — overlaps are not silently resolved");
+        } catch (Exception e) {
+            out.put("potentialOverlap", false);
+            out.put("message", "Overlap preview unavailable until effective dates are set.");
+            out.put("conflicts", List.of());
+        }
+        return out;
     }
 
     private void persistLifecycle(PolicyStudioSession session, Map<String, Object> life) {

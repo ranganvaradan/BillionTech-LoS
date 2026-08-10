@@ -80,12 +80,21 @@ public record PolicyApplicabilityRecord(
         return effectiveUntil == null || !asOf.isAfter(effectiveUntil);
     }
 
+    /**
+     * Shadow routing match.
+     * POLICY-UX-2B null-match safety: when the policy constrains a dimension and the
+     * application attribute is absent, result is NOT MATCH (not soft-null success).
+     * Unconstrained policy dimensions (null / blank / empty products) still mean All.
+     */
     public boolean matchesScope(ApplicationPolicyQuery q) {
         if (q == null) {
             return false;
         }
-        if (products != null && !products.isEmpty()) {
+        if (products != null && !products.isEmpty() && !productsAreWildcard(products)) {
             String product = q.productCode() == null ? "" : q.productCode().trim().toUpperCase(Locale.ROOT);
+            if (product.isBlank()) {
+                return false;
+            }
             boolean hit = products.stream()
                     .filter(Objects::nonNull)
                     .map(p -> p.trim().toUpperCase(Locale.ROOT))
@@ -94,27 +103,25 @@ public record PolicyApplicabilityRecord(
                 return false;
             }
         }
-        if (notBlank(facilityType) && notBlank(q.facilityType())
-                && !facilityType.equalsIgnoreCase(q.facilityType())) {
+        if (!dimensionMatches(facilityType, q.facilityType())) {
             return false;
         }
-        if (notBlank(customerSegment) && notBlank(q.customerSegment())
-                && !customerSegment.equalsIgnoreCase(q.customerSegment())) {
+        if (!dimensionMatches(customerSegment, q.customerSegment())) {
             return false;
         }
-        if (notBlank(borrowerType) && notBlank(q.borrowerType())
-                && !borrowerType.equalsIgnoreCase(q.borrowerType())) {
+        if (!dimensionMatches(borrowerType, q.borrowerType())) {
             return false;
         }
-        if (notBlank(securedUnsecured) && notBlank(q.securedUnsecured())
-                && !securedUnsecured.equalsIgnoreCase(q.securedUnsecured())) {
+        if (!dimensionMatches(securedUnsecured, q.securedUnsecured())) {
             return false;
         }
-        if (notBlank(programScheme) && notBlank(q.programScheme())
-                && !programScheme.equalsIgnoreCase(q.programScheme())) {
+        if (!dimensionMatches(programScheme, q.programScheme())) {
             return false;
         }
-        if (q.loanAmount() != null) {
+        if (minLoanAmount != null || maxLoanAmount != null) {
+            if (q.loanAmount() == null) {
+                return false;
+            }
             if (minLoanAmount != null && q.loanAmount().compareTo(minLoanAmount) < 0) {
                 return false;
             }
@@ -123,6 +130,24 @@ public record PolicyApplicabilityRecord(
             }
         }
         return true;
+    }
+
+    /** Policy constrains a dimension → app value required and must equal. */
+    private static boolean dimensionMatches(String policyValue, String appValue) {
+        if (!notBlank(policyValue)) {
+            return true; // All
+        }
+        if (!notBlank(appValue)) {
+            return false; // constrained + missing app attribute → NOT MATCH
+        }
+        return policyValue.equalsIgnoreCase(appValue);
+    }
+
+    private static boolean productsAreWildcard(List<String> products) {
+        return products.stream()
+                .filter(Objects::nonNull)
+                .map(p -> p.trim().toUpperCase(Locale.ROOT))
+                .anyMatch(p -> p.equals("ALL") || p.equals("*"));
     }
 
     private static boolean notBlank(String s) {

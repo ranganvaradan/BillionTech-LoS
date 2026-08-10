@@ -159,6 +159,32 @@ public class PolicyApplicabilityResolver {
     }
 
     private boolean scopesOverlap(PolicyApplicabilityRecord a, PolicyApplicabilityRecord b) {
+        if (!productsOverlap(a, b)) {
+            return false;
+        }
+        // POLICY-UX-2B — also consider mapped dims so distinct borrower/amount scopes do not false-conflict
+        if (!scalarDimOverlaps(a.borrowerType(), b.borrowerType())) {
+            return false;
+        }
+        if (!scalarDimOverlaps(a.customerSegment(), b.customerSegment())) {
+            return false;
+        }
+        if (!amountBandsOverlap(a.minLoanAmount(), a.maxLoanAmount(), b.minLoanAmount(), b.maxLoanAmount())) {
+            return false;
+        }
+        if (!scalarDimOverlaps(a.facilityType(), b.facilityType())) {
+            return false;
+        }
+        if (!scalarDimOverlaps(a.securedUnsecured(), b.securedUnsecured())) {
+            return false;
+        }
+        if (!scalarDimOverlaps(a.programScheme(), b.programScheme())) {
+            return false;
+        }
+        return true;
+    }
+
+    private boolean productsOverlap(PolicyApplicabilityRecord a, PolicyApplicabilityRecord b) {
         if (a.products().isEmpty() || b.products().isEmpty()) {
             return true;
         }
@@ -172,6 +198,24 @@ public class PolicyApplicabilityResolver {
             }
         }
         return false;
+    }
+
+    /** Null/blank on either side = All → overlaps. Distinct non-blank values → no overlap. */
+    private boolean scalarDimOverlaps(String a, String b) {
+        if (a == null || a.isBlank() || b == null || b.isBlank()) {
+            return true;
+        }
+        return a.equalsIgnoreCase(b);
+    }
+
+    private boolean amountBandsOverlap(
+            java.math.BigDecimal aMin, java.math.BigDecimal aMax,
+            java.math.BigDecimal bMin, java.math.BigDecimal bMax) {
+        java.math.BigDecimal aLo = aMin == null ? java.math.BigDecimal.ZERO : aMin;
+        java.math.BigDecimal aHi = aMax == null ? new java.math.BigDecimal("999999999999") : aMax;
+        java.math.BigDecimal bLo = bMin == null ? java.math.BigDecimal.ZERO : bMin;
+        java.math.BigDecimal bHi = bMax == null ? new java.math.BigDecimal("999999999999") : bMax;
+        return aLo.compareTo(bHi) <= 0 && bLo.compareTo(aHi) <= 0;
     }
 
     private boolean dateWindowsOverlap(LocalDate aFrom, LocalDate aUntil, LocalDate bFrom, LocalDate bUntil) {

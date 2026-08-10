@@ -133,11 +133,17 @@ export function CiPolicyLifecycleTab({
         </p>
       </div>
 
-      <CiExecutiveSummary title="Policy Settings / Applicability">
+      <CiExecutiveSummary title="Versions & activation">
         <p>
-          Define where this policy applies and when it becomes effective. Normal application processing
-          resolves to exactly one policy — never compares multiple policies.
+          Scope (which applications) is edited on the <strong>Scope</strong> tab. This tab handles
+          version status, schedule, and shadow checks. Normal processing resolves to exactly one policy.
         </p>
+        {asRecord(settings?.scopeSummary).appliesTo ? (
+          <p className="mt-2 text-sm text-slate-800">
+            <span className="text-slate-500">Applies to · </span>
+            {String(asRecord(settings?.scopeSummary).appliesTo)}
+          </p>
+        ) : null}
       </CiExecutiveSummary>
 
       <CiSection title="Policy definition" description="Business metadata — no technical IDs.">
@@ -172,25 +178,6 @@ export function CiPolicyLifecycleTab({
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <label className="text-sm">
-            <span className="text-slate-600">Applicable product(s)</span>
-            <input
-              className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
-              value={products}
-              onChange={(e) => setProducts(e.target.value)}
-              placeholder="DIGILEAP, SMART_SWITCH"
-              disabled={busy}
-            />
-          </label>
-          <label className="text-sm">
-            <span className="text-slate-600">Customer / borrower segment</span>
-            <input
-              className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
-              value={customerSegment}
-              onChange={(e) => setCustomerSegment(e.target.value)}
-              disabled={busy}
-            />
-          </label>
-          <label className="text-sm">
             <span className="text-slate-600">Effective from</span>
             <input
               type="date"
@@ -220,6 +207,10 @@ export function CiPolicyLifecycleTab({
             />
           </label>
         </div>
+        <p className="mt-3 text-xs text-slate-500">
+          Product / borrower / amount scope: edit on the Scope tab (not free-text JSON here).
+          Current products for schedule payload: {products || 'All'}.
+        </p>
       </CiSection>
 
       <CiSection title="Policy implementation status">

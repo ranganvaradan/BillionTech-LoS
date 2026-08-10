@@ -334,6 +334,7 @@ export function collateralOverviewCopy(opts: {
  * Technical surfaces remain under Advanced in the Studio page.
  */
 export const PROSPECT_DEMO_VISIBLE_TAB_IDS = [
+  'scope',
   'rules',
   'simulation',
   'lifecycle',
@@ -351,6 +352,7 @@ export const PROSPECT_DEMO_HIDDEN_TAB_IDS = [
 ] as const
 
 export const POLICY_STUDIO_PRIMARY_TAB_IDS = [
+  'scope',
   'rules',
   'simulation',
   'lifecycle',
