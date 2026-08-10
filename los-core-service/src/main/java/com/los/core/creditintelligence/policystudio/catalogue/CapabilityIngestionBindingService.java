@@ -67,6 +67,7 @@ public class CapabilityIngestionBindingService {
 
         for (CiPolicyClause clause : clauses) {
             CapabilityIngestionMatcher.MatchResult match = matcher.match(clause.getSourceText());
+            match = overrideByClauseType(clause, match);
             classificationCounts.merge(match.classification().name(), 1, Integer::sum);
 
             Map<String, Object> clauseMeta = clause.getMetadata() == null
@@ -170,12 +171,14 @@ public class CapabilityIngestionBindingService {
             keepMeta.put("matchConfidence", "MEDIUM");
             keepMeta.put("source", "GOLDEN_FALLBACK");
             keepMeta.put("provenance", "DETERMINISTIC_GOLDEN_V1");
-            keepMeta.put("capabilityBadge", "Studio template (no catalogue match)");
+            keepMeta.put("capabilityBadge", "Policy rule");
             keepMeta.put("authoringOnly", true);
             keepMeta.put("allowCanonicalAuthority", false);
             keepMeta.put("activationIncluded", true);
             keepMeta.put("excludedFromActivation", false);
             keepMeta.put("disposition", "EXTRACTED");
+            keepMeta.put("NEEDS_INPUT", false);
+            stampGoldenBusinessTitle(existing, keepMeta, clause);
             existing.setMetadata(keepMeta);
             existing.setLineage(lineage);
             return existing;
@@ -208,9 +211,11 @@ public class CapabilityIngestionBindingService {
             meta.put("capabilityBadge", match.parameterDiffers()
                     ? "Existing capability · Policy parameter differs"
                     : "Existing capability · extracted from policy");
+            // excludedFromActivation ≠ Ignored (CM disposition). Needs-input stays reviewable.
             meta.put("activationIncluded", !match.needsInput() && !"LOW".equals(match.confidence()));
             meta.put("excludedFromActivation", match.needsInput() || "LOW".equals(match.confidence()));
             if (match.needsInput()) {
+                meta.put("NEEDS_INPUT", true);
                 meta.put("blockedReason", "Parameter value missing — confirm before Accept");
             }
             if (match.parameterDiffers()) {
@@ -251,6 +256,36 @@ public class CapabilityIngestionBindingService {
         return classificationOnly(doc, clause, ruleId, lineage, meta, match);
     }
 
+    /**
+     * Clause-type overrides from extractor (Fields Required / ADB adjustments)
+     * take precedence over free-text AMBIGUOUS matches.
+     */
+    private CapabilityIngestionMatcher.MatchResult overrideByClauseType(
+            CiPolicyClause clause, CapabilityIngestionMatcher.MatchResult match) {
+        if (clause == null || match == null) {
+            return match;
+        }
+        String type = clause.getClauseType() == null ? "" : clause.getClauseType();
+        String text = clause.getSourceText() == null ? "" : clause.getSourceText();
+        if (ClauseType.INFORMATION_REQUIREMENT.name().equals(type)) {
+            return new CapabilityIngestionMatcher.MatchResult(
+                    IngestionMatchClassification.DATA_REQUIREMENT,
+                    null, Map.of(), Map.of(), false, false, "HIGH", null,
+                    "Data / report requirement — not an underwriting hard rule",
+                    text.length() > 160 ? text.substring(0, 159) + "…" : text,
+                    false, null, null);
+        }
+        if (ClauseType.METRIC_ADJUSTMENT.name().equals(type)) {
+            return new CapabilityIngestionMatcher.MatchResult(
+                    IngestionMatchClassification.METRIC_ADJUSTMENT,
+                    null, Map.of(), Map.of(), false, false, "HIGH", null,
+                    "Metric definition adjustment for Average Daily Balance",
+                    text.length() > 160 ? text.substring(0, 159) + "…" : text,
+                    false, null, null);
+        }
+        return match;
+    }
+
     private CiPolicyRuleCandidate classificationOnly(
             CiPolicyDocument doc,
             CiPolicyClause clause,
@@ -267,6 +302,17 @@ public class CapabilityIngestionBindingService {
         meta.put("activationIncluded", false);
         meta.put("excludedFromActivation", true);
         meta.put("classificationOnly", true);
+        if (match.classification() == IngestionMatchClassification.DATA_REQUIREMENT
+                || match.classification() == IngestionMatchClassification.REPORT_FIELD
+                || match.classification() == IngestionMatchClassification.DOCUMENT_REQUIREMENT) {
+            meta.put("dataRequirementOnly", true);
+            meta.put("disposition", "EXTRACTED");
+        }
+        if (match.classification() == IngestionMatchClassification.METRIC_ADJUSTMENT) {
+            meta.put("metricAdjustment", true);
+            meta.put("affectedMetric", "banking.avg_daily_balance_3m");
+            meta.put("disposition", "EXTRACTED");
+        }
         if (match.classification() == IngestionMatchClassification.MANUAL_INPUT) {
             meta.put("disposition", "MANUAL_INPUT");
             meta.put("verificationMode", "MANUAL");
@@ -385,16 +431,66 @@ public class CapabilityIngestionBindingService {
     private boolean acceptAllEligible(CiPolicyRuleCandidate r) {
         Map<String, Object> meta = r.getMetadata();
         if (meta == null) return false;
-        if (!Boolean.TRUE.equals(meta.get("catalogueBacked"))) return false;
-        if (!"HIGH".equals(String.valueOf(meta.get("matchConfidence")))) return false;
         if (Boolean.TRUE.equals(meta.get("NEEDS_INPUT"))) return false;
         if (Boolean.TRUE.equals(meta.get("capabilityConflict"))) return false;
         if (Boolean.TRUE.equals(meta.get("potentialDuplicate"))) return false;
-        if (Boolean.TRUE.equals(meta.get("excludedFromActivation"))) return false;
+        if (Boolean.TRUE.equals(meta.get("dataRequirementOnly"))) return false;
+        if (Boolean.TRUE.equals(meta.get("metricAdjustment"))) return false;
+        if (Boolean.TRUE.equals(meta.get("classificationOnly"))
+                && !IngestionMatchClassification.NEW_AUTOMATABLE_RULE.name()
+                .equals(String.valueOf(meta.get("classification")))) {
+            return false;
+        }
+        String avail = String.valueOf(meta.getOrDefault("dataAvailability", ""));
+        if ("UNAVAILABLE".equals(avail) || "NEEDS_CONFIGURATION".equals(avail)) return false;
         String cls = String.valueOf(meta.get("classification"));
-        return "EXACT_EXISTING_CAPABILITY".equals(cls)
+        boolean executable = "EXACT_EXISTING_CAPABILITY".equals(cls)
                 || "EXISTING_CAPABILITY_PARAMETER_CHANGE".equals(cls)
-                || "EXISTING_CAPABILITY_MANUAL_DATA".equals(cls);
+                || "EXISTING_CAPABILITY_MANUAL_DATA".equals(cls)
+                || "NEW_AUTOMATABLE_RULE".equals(cls)
+                || Boolean.TRUE.equals(meta.get("catalogueBacked"))
+                || "GOLDEN_FALLBACK".equals(String.valueOf(meta.get("source")));
+        return executable && !Boolean.TRUE.equals(meta.get("excludedFromActivation"));
+    }
+
+    private static void stampGoldenBusinessTitle(
+            CiPolicyRuleCandidate existing, Map<String, Object> meta, CiPolicyClause clause) {
+        String sys = existing.getSystemRuleId() == null ? "" : existing.getSystemRuleId().toUpperCase(Locale.ROOT);
+        String src = clause.getSourceText() == null ? "" : clause.getSourceText();
+        if (sys.contains("SETTLEMENT_COUNT") || src.toLowerCase(Locale.ROOT).contains("number of settlements")) {
+            meta.put("businessTitle", "Average monthly settlements");
+            meta.put("businessSummary", "At least 20 per month");
+            meta.put("dataAvailability", "DERIVABLE_FROM_AVAILABLE_DATA");
+            meta.put("failureTreatment", "REJECT");
+        } else if (sys.contains("SETTLEMENT_DIV") || src.toLowerCase(Locale.ROOT).contains("daily settlements")) {
+            meta.put("businessTitle", "Settlement capacity vs EDI");
+            meta.put("businessSummary", "One tenth of average daily settlements ≥ proposed EDI");
+            meta.put("dataAvailability", "DERIVABLE_FROM_AVAILABLE_DATA");
+            meta.put("failureTreatment", "REJECT");
+        } else if (sys.contains("INWARD_RETURN")) {
+            meta.put("businessTitle", "Inward cheque / ECS / ENACH returns");
+            meta.put("businessSummary",
+                    "If transactions > 100 in last 3 months: return ratio ≤ 5%; if < 100: return count ≤ 5");
+            meta.put("businessCapabilityId", "BANK.INWARD_RETURN_MAX");
+            meta.put("dataAvailability", "AVAILABLE_AUTOMATICALLY");
+            meta.put("failureTreatment", "REJECT");
+        } else if (sys.contains("ADB") || sys.contains("STARTER") || sys.contains("DIGILEAP")
+                || sys.contains("REBOOST")) {
+            if (meta.get("businessTitle") == null) {
+                meta.put("businessTitle", friendlyGoldenTitle(sys));
+            }
+            meta.put("dataAvailability", "AVAILABLE_AUTOMATICALLY");
+            meta.put("failureTreatment", meta.getOrDefault("failureTreatment", "REJECT"));
+        }
+    }
+
+    private static String friendlyGoldenTitle(String sys) {
+        if (sys.contains("STARTER")) return "Starter — banking capacity (ADB ≥ EDI)";
+        if (sys.contains("DIGILEAP") && sys.contains("TXN")) return "DigiLeap — monthly transactions";
+        if (sys.contains("DIGILEAP")) return "DigiLeap — banking capacity";
+        if (sys.contains("REBOOST") && sys.contains("TXN")) return "Reboost — monthly transactions";
+        if (sys.contains("REBOOST")) return "Reboost — banking capacity";
+        return "Banking policy rule";
     }
 
     private static long countClass(Map<String, Integer> counts, String key) {
@@ -427,6 +523,8 @@ public class CapabilityIngestionBindingService {
             case MANUAL_INPUT -> "Manual input required";
             case PRODUCT_CONFIG -> "Product / configuration";
             case DOCUMENT_REQUIREMENT -> "Document requirement";
+            case DATA_REQUIREMENT, REPORT_FIELD -> "Data requirement";
+            case METRIC_ADJUSTMENT -> "Metric adjustment";
             case PORTFOLIO_CONTROL -> "Portfolio control";
             case SERVICING_RULE -> "Servicing rule";
             case NARRATIVE -> "Narrative";
@@ -441,11 +539,13 @@ public class CapabilityIngestionBindingService {
             case MANUAL_INPUT -> "Manual input";
             case PRODUCT_CONFIG -> "Product / configuration";
             case DOCUMENT_REQUIREMENT -> "Document requirement";
+            case DATA_REQUIREMENT, REPORT_FIELD -> "Data requirement";
+            case METRIC_ADJUSTMENT -> "Metric adjustment";
             case PORTFOLIO_CONTROL -> "Portfolio control";
             case SERVICING_RULE -> "Servicing";
             case NARRATIVE -> "Narrative";
             case AMBIGUOUS -> "Ambiguous";
-            case NEW_AUTOMATABLE_RULE -> "New automatable rule";
+            case NEW_AUTOMATABLE_RULE -> "Policy rule";
             default -> "Classified";
         };
     }

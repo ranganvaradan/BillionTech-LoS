@@ -54,6 +54,9 @@ final class ProspectDay2ViewBuilder {
         long ignoredRules = ruleCards.stream().filter(r -> "Ignored".equals(r.get("status"))).count();
         long deletedRules = ruleCards.stream().filter(r -> "Deleted".equals(r.get("status"))).count();
         long manualInputRules = ruleCards.stream().filter(r -> "Manual Input".equals(r.get("status"))).count();
+        long dataReq = ruleCards.stream().filter(r -> "Data requirement".equals(r.get("status"))).count();
+        long metricAdj = ruleCards.stream().filter(r -> "Metric adjustment".equals(r.get("status"))).count();
+        long nonUw = ruleCards.stream().filter(r -> "Non-underwriting".equals(r.get("status"))).count();
         long openAmb = ambiguityCards.stream()
                 .filter(a -> Boolean.TRUE.equals(a.get("open"))).count();
         long missingMetrics = ambiguityCards.stream()
@@ -65,8 +68,14 @@ final class ProspectDay2ViewBuilder {
         counts.put("rulesBlocked", blockedRules);
         counts.put("rulesApproved", approvedRules);
         counts.put("rulesIgnored", ignoredRules);
+        counts.put("rulesIgnoredByYou", ignoredRules);
         counts.put("rulesDeleted", deletedRules);
         counts.put("rulesManualInput", manualInputRules);
+        counts.put("rulesDataRequirements", dataReq);
+        counts.put("rulesMetricAdjustments", metricAdj);
+        counts.put("rulesNonUnderwriting", nonUw);
+        counts.put("underwritingRules",
+                ruleCards.size() - dataReq - metricAdj - nonUw - deletedRules);
         counts.put("openAmbiguities", openAmb);
         counts.put("missingMetrics", missingMetrics);
         out.put("counts", counts);
@@ -99,6 +108,8 @@ final class ProspectDay2ViewBuilder {
                 .filter(r -> Set.of("Needs your input", "Needs Review", "Blocked").contains(String.valueOf(r.get("status"))))
                 .count();
         long ignored = ruleCards.stream().filter(r -> "Ignored".equals(r.get("status"))).count();
+        long dataReq = ruleCards.stream().filter(r -> "Data requirement".equals(r.get("status"))).count();
+        long metricAdj = ruleCards.stream().filter(r -> "Metric adjustment".equals(r.get("status"))).count();
         long missing = ambiguityCards.stream()
                 .filter(a -> "Missing Data".equals(a.get("category")) && Boolean.TRUE.equals(a.get("open")))
                 .count();
@@ -109,6 +120,9 @@ final class ProspectDay2ViewBuilder {
         banner.put("rulesReady", ready);
         banner.put("rulesNeedReview", needs);
         banner.put("rulesIgnored", ignored);
+        banner.put("rulesIgnoredByYou", ignored);
+        banner.put("rulesDataRequirements", dataReq);
+        banner.put("rulesMetricAdjustments", metricAdj);
         banner.put("missingMetrics", missing);
         banner.put("ambiguities", openAmb);
         banner.put("testsGenerated", session.getTestCases().size());
@@ -551,10 +565,11 @@ final class ProspectDay2ViewBuilder {
             case "Needs your input", "Blocked", "Needs Review" -> 0;
             case "Ready" -> 1;
             case "Accepted", "Edited", "Approved" -> 2;
-            case "Manual Input" -> 3;
-            case "Ignored" -> 4;
-            case "Deleted" -> 5;
-            default -> 6;
+            case "Manual Input", "Manual Review" -> 3;
+            case "Data requirement", "Metric adjustment", "Non-underwriting" -> 4;
+            case "Ignored" -> 5;
+            case "Deleted" -> 6;
+            default -> 7;
         };
     }
 
@@ -592,11 +607,13 @@ final class ProspectDay2ViewBuilder {
         Map<String, Object> card = new LinkedHashMap<>();
         card.put("id", r.getId() == null ? null : r.getId().toString());
         card.put("systemRuleId", r.getSystemRuleId());
-        card.put("ruleName", (kycDomain || catalogueBacked) ? businessTitle : friendlyRuleName(r.getSystemRuleId()));
+        card.put("ruleName", meta.get("businessTitle") != null || kycDomain || catalogueBacked
+                ? businessTitle
+                : friendlyRuleName(r.getSystemRuleId()));
         card.put("sourceClause", clause == null ? null : clause.getSourceText());
         card.put("section", clause == null ? null : clause.getSection());
         card.put("productScope", product);
-        String businessRule = catalogueBacked && meta.get("businessSummary") != null
+        String businessRule = meta.get("businessSummary") != null
                 ? String.valueOf(meta.get("businessSummary"))
                 : businessRuleText(r, meaning, product);
         card.put("businessRule", businessRule);
@@ -604,13 +621,20 @@ final class ProspectDay2ViewBuilder {
         card.put("onMissing", friendlyMissing(
                 meta.get("outcomeOnMissing") != null ? String.valueOf(meta.get("outcomeOnMissing")) : r.getOnMissing()));
         if (kycDomain) {
-            // KYC authoring: condition success/failure from stamped outcomes (not banking inverted convention)
+            // KYC authoring: condition success/failure from stamped outcomes
             card.put("resultOnPass", friendlyOutcome(String.valueOf(meta.getOrDefault("outcomeOnSuccess", r.getOnTrue()))));
             card.put("resultOnFailure", friendlyOutcome(String.valueOf(meta.getOrDefault("outcomeOnFailure", r.getOnFalse()))));
             card.put("outcomeOnMissing", friendlyOutcome(String.valueOf(meta.getOrDefault("outcomeOnMissing", "MISSING_INFORMATION"))));
         } else {
-            card.put("resultOnFailure", friendlyOutcome(r.getOnTrue()));
-            card.put("resultOnPass", friendlyOutcome(r.getOnFalse()));
+            Map<String, Object> pf = com.los.core.creditintelligence.policystudio.lineage.PolicyRulePresentationSemantics
+                    .passFailPresentation(r);
+            card.put("resultOnPass", pf.get("resultOnPass"));
+            card.put("resultOnFailure", pf.get("resultOnFailure"));
+            card.put("failureTreatmentDisplay", pf.get("failureTreatment"));
+            card.put("dslOrientation", pf.get("dslOrientation"));
+            if (pf.get("configurationAnomaly") != null) {
+                card.put("configurationAnomaly", pf.get("configurationAnomaly"));
+            }
         }
         card.put("status", status);
         card.put("blockedReason", blockedReason);
@@ -680,27 +704,58 @@ final class ProspectDay2ViewBuilder {
         card.put("productionReferenceParameters", meta.get("productionReferenceParameters"));
         card.put("uploadedPolicyParameters", meta.get("uploadedPolicyParameters"));
         card.put("implementationNote", meta.get("implementationNote"));
-        card.put("acceptAllEligible", isAcceptAllEligible(meta));
-        if (Boolean.TRUE.equals(meta.get("classificationOnly"))) {
+        // Metric lineage (GACAT) — business-facing; technical under Advanced
+        com.los.core.creditintelligence.policystudio.lineage.PolicyMetricLineageService lineageSvc =
+                new com.los.core.creditintelligence.policystudio.lineage.PolicyMetricLineageService();
+        var lineage = lineageSvc.resolveFromInputs(dataUsed, r.getSystemRuleId());
+        if (lineage == null && meta.get("dataAvailability") != null) {
+            lineage = lineageSvc.resolve(String.valueOf(meta.getOrDefault("businessCapabilityId", "")));
+        }
+        if (lineage != null) {
+            card.put("metricLineage", lineage.toBusinessView());
+            card.put("howCalculated", lineageSvc.howCalculated(lineage));
+            card.put("dataAvailability", lineage.availability());
+            card.put("dataAvailabilityLabel",
+                    com.los.core.creditintelligence.policystudio.lineage.PolicyMetricLineageService
+                            .friendlyAvailability(lineage.availability()));
+            card.put("dataSource", lineage.source());
+            card.put("metricLineageTechnical", lineage.toTechnicalView());
+        } else if (meta.get("dataAvailability") != null) {
+            card.put("dataAvailability", meta.get("dataAvailability"));
+            card.put("dataAvailabilityLabel",
+                    com.los.core.creditintelligence.policystudio.lineage.PolicyMetricLineageService
+                            .friendlyAvailability(String.valueOf(meta.get("dataAvailability"))));
+        }
+        card.put("acceptAllEligible", isAcceptAllEligible(card, meta));
+        if (Boolean.TRUE.equals(meta.get("classificationOnly"))
+                && !Boolean.TRUE.equals(meta.get("metricAdjustment"))
+                && !Boolean.TRUE.equals(meta.get("dataRequirementOnly"))) {
             card.put("executable", false);
         } else {
-            card.put("executable", true);
+            card.put("executable", !Boolean.TRUE.equals(meta.get("dataRequirementOnly"))
+                    && !Boolean.TRUE.equals(meta.get("metricAdjustment")));
         }
         return card;
     }
 
-    private static boolean isAcceptAllEligible(Map<String, Object> meta) {
+    private static boolean isAcceptAllEligible(Map<String, Object> card, Map<String, Object> meta) {
+        if (com.los.core.creditintelligence.policystudio.lineage.PolicyRulePresentationSemantics
+                .acceptAllReadyEligible(card)) {
+            return true;
+        }
         if (meta == null) return false;
-        if (!Boolean.TRUE.equals(meta.get("catalogueBacked"))) return false;
-        if (!"HIGH".equals(String.valueOf(meta.get("matchConfidence")))) return false;
         if (Boolean.TRUE.equals(meta.get("NEEDS_INPUT"))) return false;
         if (Boolean.TRUE.equals(meta.get("capabilityConflict"))) return false;
         if (Boolean.TRUE.equals(meta.get("potentialDuplicate"))) return false;
+        if (Boolean.TRUE.equals(meta.get("dataRequirementOnly"))) return false;
+        if (Boolean.TRUE.equals(meta.get("metricAdjustment"))) return false;
         if (Boolean.TRUE.equals(meta.get("excludedFromActivation"))) return false;
         String cls = String.valueOf(meta.get("classification"));
         return "EXACT_EXISTING_CAPABILITY".equals(cls)
                 || "EXISTING_CAPABILITY_PARAMETER_CHANGE".equals(cls)
-                || "EXISTING_CAPABILITY_MANUAL_DATA".equals(cls);
+                || "EXISTING_CAPABILITY_MANUAL_DATA".equals(cls)
+                || "NEW_AUTOMATABLE_RULE".equals(cls)
+                || "GOLDEN_FALLBACK".equals(String.valueOf(meta.get("source")));
     }
 
     private static String catalogueBusinessGroup(String capabilityId) {
@@ -718,16 +773,22 @@ final class ProspectDay2ViewBuilder {
     }
 
     private static String ruleStatus(CiPolicyRuleCandidate r, String blockedReason) {
+        // GACAT-POLICY-LINEAGE-FIX-1 — Ignored = CM disposition only
+        String semantic = com.los.core.creditintelligence.policystudio.lineage.PolicyRulePresentationSemantics
+                .ruleStatus(r, blockedReason);
+        if (semantic != null && !"Needs your input".equals(semantic)) {
+            return semantic;
+        }
         Map<String, Object> meta = r.getMetadata();
         if (meta != null) {
             if (Boolean.TRUE.equals(meta.get("deleted"))
                     || "DELETED".equalsIgnoreCase(String.valueOf(meta.getOrDefault("disposition", "")))) {
                 return "Deleted";
             }
-            if ("IGNORED".equalsIgnoreCase(String.valueOf(meta.getOrDefault("disposition", "")))
-                    || Boolean.TRUE.equals(meta.get("excludedFromActivation"))) {
+            if ("IGNORED".equalsIgnoreCase(String.valueOf(meta.getOrDefault("disposition", "")))) {
                 return "Ignored";
             }
+            // excludedFromActivation must NOT map to Ignored
             if ("MANUAL_INPUT".equalsIgnoreCase(String.valueOf(meta.getOrDefault("disposition", "")))
                     || "MANUAL".equalsIgnoreCase(String.valueOf(meta.getOrDefault("verificationMode", "")))
                     || "MANUAL_VERIFICATION".equalsIgnoreCase(
@@ -795,11 +856,7 @@ final class ProspectDay2ViewBuilder {
                 && (joined.contains("clean") || sys.contains("CLEAN") || sys.contains("OVERDUE"))) {
             return "CLEAN has not been defined.";
         }
-        if (openPhrases.stream().anyMatch(p -> p.contains("settlement") || p.contains("qr")
-                || p.contains("average daily settlement"))
-                && (joined.contains("settlement") || sys.contains("SETTLEMENT"))) {
-            return "QR settlement metric not available from current data.";
-        }
+        // Settlement/QR is DERIVABLE from classified bank transactions — do not block as unavailable.
         if (openPhrases.stream().anyMatch(p -> p.contains("exactly 100") || p.contains("100 transaction"))
                 && sys.contains("INWARD") && sys.contains("100")) {
             return "Exactly-100 transaction boundary has not been decided.";
@@ -1082,7 +1139,8 @@ final class ProspectDay2ViewBuilder {
                 }
             }
             visual.put("conditions", parts);
-            visual.put("then", friendlyOutcome(r.getOnTrue()));
+            visual.put("then", com.los.core.creditintelligence.policystudio.lineage.PolicyRulePresentationSemantics
+                    .passFailPresentation(r).get("resultOnPass"));
             return visual;
         }
 
@@ -1097,7 +1155,8 @@ final class ProspectDay2ViewBuilder {
         visual.put("kind", "SIMPLE");
         Map<String, Object> cond = simpleCondition(expr);
         visual.put("if", cond);
-        visual.put("then", friendlyOutcome(r.getOnTrue()));
+        visual.put("then", com.los.core.creditintelligence.policystudio.lineage.PolicyRulePresentationSemantics
+                .passFailPresentation(r).get("resultOnPass"));
         return visual;
     }
 

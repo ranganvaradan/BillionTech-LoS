@@ -359,6 +359,17 @@ export const POLICY_STUDIO_PRIMARY_TAB_IDS = [
   'overview',
 ] as const
 
+/** GACAT lineage — statuses that are not CM "Ignored". */
+export const POLICY_RULE_NON_CM_STATUSES = [
+  'Data requirement',
+  'Metric adjustment',
+  'Non-underwriting',
+  'Needs your input',
+  'Ready',
+  'Manual Input',
+  'Manual Review',
+] as const
+
 export const POLICY_STUDIO_ADVANCED_TAB_IDS = [
   'kyc-eligibility',
   'structure',

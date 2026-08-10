@@ -706,8 +706,11 @@ export function CiPolicyStudioPage() {
               input
             </span>
             <span>
-              <strong className="text-slate-700">{String(readinessBanner.rulesIgnored ?? counts.rulesIgnored ?? 0)}</strong>{' '}
-              ignored
+              <strong className="text-slate-700">{String(readinessBanner.rulesIgnoredByYou ?? readinessBanner.rulesIgnored ?? counts.rulesIgnoredByYou ?? counts.rulesIgnored ?? 0)}</strong>{' '}
+              ignored by you
+              {' · '}
+              <strong className="text-slate-700">{String(readinessBanner.rulesDataRequirements ?? counts.rulesDataRequirements ?? 0)}</strong>{' '}
+              data requirements
             </span>
           </div>
         </div>

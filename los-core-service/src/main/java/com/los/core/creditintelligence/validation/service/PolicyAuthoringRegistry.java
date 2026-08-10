@@ -165,10 +165,25 @@ public class PolicyAuthoringRegistry {
                 "Business transaction count excluding transfers", "COUNT", "TRAILING_3M", true, List.of()));
         list.add(metric("banking.credit_transaction_count.average_monthly_3m",
                 "Credit transaction count only", "COUNT", "TRAILING_3M", true, List.of()));
-        list.add(metric("banking.settlement.avg_daily_3m", "Average Daily Settlement / QR settlement 3m",
-                "INR", "TRAILING_3M", false, List.of("Average Daily Settlement", "Average Daily QR Settlement")));
-        list.add(metric("banking.settlement.count_monthly_avg_3m", "Average Monthly Settlement count 3m",
-                "COUNT", "TRAILING_3M", false, List.of("Average Monthly Settlement count")));
+        // Bound to PolicyBankingMetricService QR settlement helpers (not a separate engine).
+        Map<String, Object> settleDaily = metric("banking.settlement.avg_daily_3m",
+                "Average Daily Settlement / QR settlement 3m",
+                "INR", "TRAILING_3M", true, List.of("Average Daily Settlement", "Average Daily QR Settlement"));
+        settleDaily.put("computeHelperCode", "banking.qr_settlement.average_daily_3m");
+        settleDaily.put("classifiedCategory", "QR_SETTLEMENT");
+        settleDaily.put("availabilityDetail", "DERIVABLE_FROM_AVAILABLE_DATA");
+        settleDaily.put("derivation",
+                "Sum of QR settlement credit amounts in trailing 3 months ÷ 90");
+        list.add(settleDaily);
+        Map<String, Object> settleCount = metric("banking.settlement.count_monthly_avg_3m",
+                "Average Monthly Settlement count 3m",
+                "COUNT", "TRAILING_3M", true, List.of("Average Monthly Settlement count"));
+        settleCount.put("computeHelperCode", "banking.qr_settlement.average_monthly_count_3m");
+        settleCount.put("classifiedCategory", "QR_SETTLEMENT");
+        settleCount.put("availabilityDetail", "DERIVABLE_FROM_AVAILABLE_DATA");
+        settleCount.put("derivation",
+                "Count of QR settlement credits in trailing 3 months ÷ 3");
+        list.add(settleCount);
         list.add(metric("banking.inward_return.ratio_3m", "Inward cheque/ECS/ENACH return ratio 3m",
                 "PERCENT", "TRAILING_3M", true, List.of("Inward Cheque Return")));
         list.add(metric("banking.inward_return.count_3m", "Inward return count 3m",

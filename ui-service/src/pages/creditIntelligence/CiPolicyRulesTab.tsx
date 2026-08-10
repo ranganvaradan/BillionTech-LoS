@@ -5,10 +5,7 @@ import {
   CiSection,
   CiTechnicalDetails,
 } from '@/components/creditIntelligence/CiSection'
-import {
-  decisionPolicyDomainLabel,
-  kycRequirementTypeLabel,
-} from '@/lib/creditIntelligence/businessLexicon'
+import { decisionPolicyDomainLabel } from '@/lib/creditIntelligence/businessLexicon'
 import { CiCapabilityCataloguePanel } from '@/pages/creditIntelligence/CiCapabilityCataloguePanel'
 
 function asRecord(v: unknown): Record<string, unknown> {
@@ -28,7 +25,12 @@ function statusChip(status: string): string {
     case 'Ready':
       return 'bg-sky-100 text-sky-900'
     case 'Manual Input':
+    case 'Manual Review':
       return 'bg-indigo-100 text-indigo-900'
+    case 'Data requirement':
+    case 'Metric adjustment':
+    case 'Non-underwriting':
+      return 'bg-slate-100 text-slate-700'
     case 'Ignored':
       return 'bg-slate-200 text-slate-700'
     case 'Deleted':
@@ -36,6 +38,8 @@ function statusChip(status: string): string {
     case 'Blocked':
     case 'Needs your input':
     case 'Needs Review':
+    case 'Needs configuration':
+    case 'Unavailable':
       return 'bg-amber-100 text-amber-900'
     default:
       return 'bg-amber-100 text-amber-900'
@@ -52,6 +56,8 @@ const GROUP_ORDER = [
   'Risk / Exceptions',
   'Limit & Pricing',
   'Decision / Review',
+  'Data requirements',
+  'Metric adjustments',
   'Product / Configuration',
   'Documents',
   'Portfolio Controls',
@@ -60,7 +66,7 @@ const GROUP_ORDER = [
   'Credit Rules',
 ] as const
 
-type StatusFilter = 'ALL' | 'NEEDS_REVIEW' | 'ACCEPTED' | 'MANUAL_INPUT' | 'IGNORED'
+type StatusFilter = 'ALL' | 'NEEDS_REVIEW' | 'ACCEPTED' | 'MANUAL_INPUT' | 'DATA_REQ' | 'IGNORED'
 
 function VisualLogic({ visual }: { visual: Record<string, unknown> }) {
   const kind = String(visual.kind ?? 'SIMPLE')
@@ -153,9 +159,11 @@ function matchesStatusFilter(status: string, filter: StatusFilter): boolean {
     case 'ACCEPTED':
       return status === 'Accepted' || status === 'Edited' || status === 'Approved'
     case 'MANUAL_INPUT':
-      return status === 'Manual Input'
+      return status === 'Manual Input' || status === 'Manual Review'
+    case 'DATA_REQ':
+      return status === 'Data requirement' || status === 'Metric adjustment' || status === 'Non-underwriting'
     case 'IGNORED':
-      return status === 'Ignored' || status === 'Deleted'
+      return status === 'Ignored'
     default:
       return true
   }
@@ -244,7 +252,8 @@ export function CiPolicyRulesTab({
       total: cards.length,
       ready: all.filter((s) => s === 'Ready' || s === 'Accepted' || s === 'Edited' || s === 'Approved').length,
       needs: all.filter((s) => s === 'Needs your input' || s === 'Needs Review' || s === 'Blocked').length,
-      manual: all.filter((s) => s === 'Manual Input').length,
+      manual: all.filter((s) => s === 'Manual Input' || s === 'Manual Review').length,
+      dataReq: all.filter((s) => s === 'Data requirement' || s === 'Metric adjustment').length,
       ignored: all.filter((s) => s === 'Ignored').length,
       accepted: all.filter((s) => s === 'Accepted' || s === 'Edited' || s === 'Approved').length,
     }
@@ -254,14 +263,13 @@ export function CiPolicyRulesTab({
     () =>
       cards.filter((c) => {
         const r = asRecord(c)
-        // POLICY-UX-2D — only HIGH-confidence catalogue-backed parameterized rules
-        if (r.acceptAllEligible === true) {
-          return String(r.status) === 'Ready' && !r.platformGuardrail
-        }
-        if (r.catalogueBacked || r.classification) {
-          return false
-        }
-        return String(r.status) === 'Ready' && !r.blockedReason && !r.platformGuardrail
+        if (String(r.status) !== 'Ready' || r.platformGuardrail) return false
+        if (r.acceptAllEligible === true) return true
+        if (r.dataRequirementOnly || r.metricAdjustment) return false
+        if (r.capabilityConflict || r.potentialDuplicate || r.NEEDS_INPUT) return false
+        const avail = String(r.dataAvailability ?? '')
+        if (avail === 'UNAVAILABLE' || avail === 'NEEDS_CONFIGURATION') return false
+        return !r.blockedReason
       }),
     [cards],
   )
@@ -270,7 +278,7 @@ export function CiPolicyRulesTab({
     if (readyToAccept.length === 0) return
     if (
       !window.confirm(
-        `Accept ${readyToAccept.length} high-confidence existing-capability rule${readyToAccept.length === 1 ? '' : 's'}? Manual, ambiguous, conflict, document, product, portfolio and servicing items are skipped.`,
+        `Accept ${readyToAccept.length} ready rule${readyToAccept.length === 1 ? '' : 's'}? Data requirements, metric adjustments, manual, conflict and unavailable items are skipped.`,
       )
     ) {
       return
@@ -310,9 +318,10 @@ export function CiPolicyRulesTab({
         }
       >
         <p className="text-sm text-slate-700">
-          <strong>{totals.total}</strong> rules identified · <strong>{totals.ready}</strong> ready ·{' '}
-          <strong>{totals.needs}</strong> need your input · <strong>{totals.manual}</strong> manual input ·{' '}
-          <strong>{totals.ignored}</strong> ignored
+          <strong>{totals.ready}</strong> ready · <strong>{totals.needs}</strong> need your input ·{' '}
+          <strong>{totals.dataReq}</strong> data / metric items · <strong>{totals.manual}</strong> manual ·{' '}
+          <strong>{totals.ignored}</strong> ignored by you
+          <span className="text-slate-500"> ({totals.total} cards total)</span>
         </p>
         {ingestionBinding ? (
           <p className="mt-2 text-sm text-slate-700">
@@ -366,7 +375,8 @@ export function CiPolicyRulesTab({
             ['NEEDS_REVIEW', 'Needs review'],
             ['ACCEPTED', 'Accepted'],
             ['MANUAL_INPUT', 'Manual input'],
-            ['IGNORED', 'Ignored'],
+            ['DATA_REQ', 'Data / metrics'],
+            ['IGNORED', 'Ignored by you'],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -458,49 +468,19 @@ export function CiPolicyRulesTab({
                       }`}
                     >
                       <div className="flex flex-wrap items-start justify-between gap-2">
-                        <div>
+                        <div className="min-w-0 flex-1">
                           <div className="text-lg font-semibold text-slate-900">
                             {String(r.ruleName ?? 'Business rule')}
                           </div>
-                          <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-600">
-                            <span className="rounded-full bg-slate-100 px-2 py-0.5">
-                              {decisionPolicyDomainLabel(r.decisionDomain)}
-                            </span>
-                            {r.capabilityBadge || r.existingCapability || r.catalogueBacked ? (
-                              <span className="rounded-full bg-emerald-50 px-2 py-0.5 font-medium text-emerald-900">
-                                {String(r.capabilityBadge ?? 'Existing capability')}
-                              </span>
-                            ) : null}
-                            {r.matchConfidence ? (
-                              <span className="rounded-full bg-sky-50 px-2 py-0.5 text-sky-900">
-                                Confidence: {String(r.matchConfidence).toLowerCase()}
-                              </span>
-                            ) : null}
-                            {r.PARAMETER_DIFFERS ? (
-                              <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-950">
-                                Policy parameter differs
-                              </span>
-                            ) : null}
-                            {r.sourceLabel ? (
-                              <span className="rounded-full bg-slate-50 px-2 py-0.5 text-slate-700">
-                                {String(r.sourceLabel)}
-                              </span>
-                            ) : null}
-                            {r.kycRequirementType ? (
-                              <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-indigo-900">
-                                {kycRequirementTypeLabel(r.kycRequirementType)}
-                              </span>
-                            ) : null}
-                            {Boolean(r.manualReviewRequired) ||
-                            String(r.failureTreatment ?? '').toUpperCase() === 'MANUAL_REVIEW' ? (
-                              <span className="rounded-full bg-violet-100 px-2 py-0.5 font-semibold text-violet-950">
-                                Manual review
-                              </span>
-                            ) : null}
-                          </div>
+                          <p className="mt-1 text-base font-medium text-slate-800">
+                            {String(r.businessRule ?? '—')}
+                          </p>
+                          {r.period ? (
+                            <p className="mt-1 text-sm text-slate-600">Period: {String(r.period)}</p>
+                          ) : null}
                         </div>
                         <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusChip(status)}`}>
-                          {status === 'Needs Review' ? 'Needs your input' : status}
+                          {status === 'Needs Review' ? 'Needs your input' : status === 'Ignored' ? 'Ignored by you' : status}
                         </span>
                       </div>
 
@@ -510,39 +490,43 @@ export function CiPolicyRulesTab({
                         </div>
                       ) : null}
 
-                      <div className="mt-3 space-y-2 text-sm">
+                      <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
                         <div>
-                          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                            Business statement
+                          <div className="text-xs text-slate-500">Data</div>
+                          <div className="font-medium text-slate-900">
+                            {String(r.dataSource ?? r.dataFamily ?? (dataUsed.length ? dataUsed.map(String).join(', ') : '—'))}
                           </div>
-                          <p className="mt-1 font-medium text-slate-900">{String(r.businessRule ?? '—')}</p>
+                          <div className="text-xs text-slate-600">
+                            {String(r.dataAvailabilityLabel ?? '—')}
+                          </div>
                         </div>
-                        <dl className="grid gap-2 sm:grid-cols-3">
-                          <div>
-                            <dt className="text-xs text-slate-500">Outcome if fails</dt>
-                            <dd className="font-medium">{String(r.resultOnFailure ?? '—')}</dd>
+                        <div>
+                          <div className="text-xs text-slate-500">If rule fails</div>
+                          <div className="font-medium text-slate-900">
+                            {String(r.failureTreatmentDisplay ?? r.resultOnFailure ?? r.failureTreatment ?? '—')}
                           </div>
-                          <div>
-                            <dt className="text-xs text-slate-500">Data / source</dt>
-                            <dd className="font-medium">
-                              {dataUsed.length ? dataUsed.map(String).join(', ') : String(r.dataFamily ?? '—')}
-                            </dd>
-                          </div>
-                          <div>
-                            <dt className="text-xs text-slate-500">If information missing</dt>
-                            <dd className="font-medium">{String(r.onMissing ?? '—')}</dd>
-                          </div>
-                        </dl>
-                        <div className="mt-2">
-                          <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                            Key condition
-                          </div>
-                          <VisualLogic visual={visual} />
                         </div>
                       </div>
 
+                      {asRecord(r.howCalculated).calculation ? (
+                        <details className="mt-3 rounded border border-slate-100 bg-slate-50 px-3 py-2 text-sm">
+                          <summary className="cursor-pointer font-medium text-slate-800">How is this calculated?</summary>
+                          <dl className="mt-2 space-y-1 text-slate-700">
+                            <div><dt className="text-xs text-slate-500">Source</dt><dd>{String(asRecord(r.howCalculated).source ?? '—')}</dd></div>
+                            <div><dt className="text-xs text-slate-500">Metric</dt><dd>{String(asRecord(r.howCalculated).metric ?? '—')}</dd></div>
+                            <div><dt className="text-xs text-slate-500">Calculation</dt><dd>{String(asRecord(r.howCalculated).calculation ?? '—')}</dd></div>
+                            <div><dt className="text-xs text-slate-500">Assessment period</dt><dd>{String(asRecord(r.howCalculated).assessmentPeriod ?? r.period ?? '—')}</dd></div>
+                            <div><dt className="text-xs text-slate-500">Missing data</dt><dd>{String(asRecord(r.howCalculated).missingData ?? r.onMissing ?? '—')}</dd></div>
+                            {asRecord(r.howCalculated).incompleteMonthNote ? (
+                              <div><dt className="text-xs text-slate-500">Incomplete months</dt><dd>{String(asRecord(r.howCalculated).incompleteMonthNote)}</dd></div>
+                            ) : null}
+                          </dl>
+                        </details>
+                      ) : null}
+
                       {!isTerminal ? (
-                        <div className="mt-4 flex flex-wrap gap-2">
+                        <div className="mt-4 flex flex-wrap items-center gap-2">
+                          {status !== 'Data requirement' && status !== 'Metric adjustment' && status !== 'Non-underwriting' ? (
                           <button
                             type="button"
                             disabled={busy || status === 'Accepted' || status === 'Approved' || Boolean(r.platformGuardrail)}
@@ -556,6 +540,7 @@ export function CiPolicyRulesTab({
                           >
                             Accept
                           </button>
+                          ) : null}
                           <button
                             type="button"
                             disabled={busy || Boolean(r.platformGuardrail)}
@@ -580,10 +565,15 @@ export function CiPolicyRulesTab({
                           >
                             Edit
                           </button>
+                          <details className="relative">
+                            <summary className="bt-btn bt-btn-secondary bt-btn-sm list-none cursor-pointer">
+                              More…
+                            </summary>
+                            <div className="absolute z-10 mt-1 flex min-w-[10rem] flex-col gap-1 rounded border border-slate-200 bg-white p-2 shadow-md">
                           <button
                             type="button"
                             disabled={busy || status === 'Ignored'}
-                            className="bt-btn bt-btn-secondary bt-btn-sm"
+                            className="rounded px-2 py-1 text-left text-sm hover:bg-slate-50 disabled:opacity-50"
                             onClick={() =>
                               void onReview(id, {
                                 uiAction: 'IGNORE',
@@ -596,7 +586,7 @@ export function CiPolicyRulesTab({
                           <button
                             type="button"
                             disabled={busy || Boolean(r.platformGuardrail)}
-                            className="bt-btn bt-btn-secondary bt-btn-sm"
+                            className="rounded px-2 py-1 text-left text-sm hover:bg-slate-50 disabled:opacity-50"
                             onClick={() => {
                               setUndoStack((s) => [...s, { id, prev: r }])
                               void onReview(id, {
@@ -610,7 +600,7 @@ export function CiPolicyRulesTab({
                           <button
                             type="button"
                             disabled={busy}
-                            className="bt-btn bt-btn-secondary bt-btn-sm"
+                            className="rounded px-2 py-1 text-left text-sm hover:bg-slate-50 disabled:opacity-50"
                             onClick={() => {
                               setManualOpen((p) => ({ ...p, [id]: !p[id] }))
                               setManualLabel((p) => ({
@@ -624,13 +614,36 @@ export function CiPolicyRulesTab({
                           </button>
                           <button
                             type="button"
-                            className="bt-btn bt-btn-secondary bt-btn-sm"
+                            className="rounded px-2 py-1 text-left text-sm hover:bg-slate-50"
                             onClick={() => setClauseOpen((prev) => ({ ...prev, [id]: !prev[id] }))}
                           >
                             View source
                           </button>
+                            </div>
+                          </details>
                         </div>
                       ) : null}
+
+                      <CiTechnicalDetails title="Advanced / technical details" hidden={prospectDemoMode}>
+                        <div className="space-y-2 text-xs text-slate-600">
+                          <div>Domain: {decisionPolicyDomainLabel(r.decisionDomain)}</div>
+                          {r.capabilityBadge ? <div>Match: {String(r.capabilityBadge)}</div> : null}
+                          {r.matchConfidence ? <div>Confidence: {String(r.matchConfidence)}</div> : null}
+                          {r.businessCapabilityId ? <div>Capability: {String(r.businessCapabilityId)}</div> : null}
+                          {r.systemRuleId ? <div>System id: {String(r.systemRuleId)}</div> : null}
+                          {Object.keys(visual).length ? (
+                            <div className="pt-1">
+                              <div className="mb-1 font-semibold text-slate-700">Condition (technical)</div>
+                              <VisualLogic visual={visual} />
+                            </div>
+                          ) : null}
+                          {r.technicalExpression ? (
+                            <pre className="overflow-auto rounded bg-slate-100 p-2 text-[11px]">
+                              {JSON.stringify(r.technicalExpression, null, 2)}
+                            </pre>
+                          ) : null}
+                        </div>
+                      </CiTechnicalDetails>
 
                       {editOpen[id] ? (
                         <div className="mt-3 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
@@ -717,19 +730,6 @@ export function CiPolicyRulesTab({
                           {r.section ? `\n\nSection: ${String(r.section)}` : ''}
                         </blockquote>
                       ) : null}
-
-                      <CiTechnicalDetails hidden={prospectDemoMode}>
-                        {JSON.stringify(
-                          {
-                            systemRuleId: r.systemRuleId,
-                            reviewStatus: r.reviewStatus,
-                            disposition: r.disposition,
-                            expression: r.technicalExpression,
-                          },
-                          null,
-                          2,
-                        )}
-                      </CiTechnicalDetails>
                     </li>
                   )
                 })}

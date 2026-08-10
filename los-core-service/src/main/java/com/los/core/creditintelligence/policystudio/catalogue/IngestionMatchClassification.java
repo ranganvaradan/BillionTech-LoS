@@ -12,6 +12,11 @@ public enum IngestionMatchClassification {
     MANUAL_REVIEW,
     PRODUCT_CONFIG,
     DOCUMENT_REQUIREMENT,
+    /** Banking "Fields Required in Excel Report" and similar report/data lines. */
+    DATA_REQUIREMENT,
+    REPORT_FIELD,
+    /** ADB exclusion / metric definition clauses — not independent HARD rules. */
+    METRIC_ADJUSTMENT,
     PORTFOLIO_CONTROL,
     SERVICING_RULE,
     NARRATIVE,
@@ -31,6 +36,8 @@ public enum IngestionMatchClassification {
             case MANUAL_INPUT, MANUAL_REVIEW -> "Decision / Review";
             case PRODUCT_CONFIG -> "Product / Configuration";
             case DOCUMENT_REQUIREMENT -> "Documents";
+            case DATA_REQUIREMENT, REPORT_FIELD -> "Data requirements";
+            case METRIC_ADJUSTMENT -> "Metric adjustments";
             case PORTFOLIO_CONTROL -> "Portfolio Controls";
             case SERVICING_RULE -> "Servicing";
             case NARRATIVE, AMBIGUOUS -> "Narrative / Excluded";

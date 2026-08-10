@@ -114,10 +114,13 @@ public class CapabilityIngestionMatcher {
                     max == null));
         }
 
-        // Enquiries
+        // Enquiries — support word numbers ("three") so incomplete parse → Needs input, not silent fail
         if (containsAny(lower, "enquir", "inquir")) {
             Long max = extractNumber(text, "(?i)(?:not\\s+exceed|maximum|max|<=|≤|upto|up\\s+to)\\s*(\\d+)",
                     "(?i)(\\d+)\\s*(?:enquir|inquir)");
+            if (max == null) {
+                max = extractWordNumber(lower, "(?i)(?:more\\s+than|not\\s+exceed|maximum|max|upto|up\\s+to)\\s+(one|two|three|four|five|six|seven|eight|nine|ten)");
+            }
             Long window = extractWindowMonths(text, lower);
             Map<String, Object> p = new LinkedHashMap<>();
             if (max != null) p.put("maximumCount", max);
@@ -127,9 +130,16 @@ public class CapabilityIngestionMatcher {
                     max == null));
         }
 
-        // Cheque bounce / return
+        // Inward return branched BRE — do NOT map to BANK.CHEQUE_BOUNCE_MAX.
+        // Leave unmatched so golden BANK_INWARD_RETURN_BRANCHED_100 is preserved.
+        if (lower.contains("inward") && containsAny(lower, "return", "cheque", "ecs", "enach")) {
+            return Optional.empty();
+        }
+
+        // Cheque bounce / return (production-style max) — exclude inward-return BRE wording
         if (containsAny(lower, "cheque bounce", "check bounce", "cheque return", "bounce during",
-                "cheque/payment return", "no cheque bounce", "cheque bounces")) {
+                "cheque/payment return", "no cheque bounce", "cheque bounces")
+                && !lower.contains("inward")) {
             Long window = extractWindowMonths(text, lower);
             Long max;
             if (containsAny(lower, "no cheque", "nil", "zero", "should not have", "must not have", "without any")) {
@@ -485,6 +495,26 @@ public class CapabilityIngestionMatcher {
             }
         }
         return null;
+    }
+
+    private static Long extractWordNumber(String lower, String pattern) {
+        Matcher m = Pattern.compile(pattern).matcher(lower);
+        if (!m.find()) {
+            return null;
+        }
+        return switch (m.group(1).toLowerCase(Locale.ROOT)) {
+            case "one" -> 1L;
+            case "two" -> 2L;
+            case "three" -> 3L;
+            case "four" -> 4L;
+            case "five" -> 5L;
+            case "six" -> 6L;
+            case "seven" -> 7L;
+            case "eight" -> 8L;
+            case "nine" -> 9L;
+            case "ten" -> 10L;
+            default -> null;
+        };
     }
 
     private static BigDecimal extractDecimal(String text, String... patterns) {

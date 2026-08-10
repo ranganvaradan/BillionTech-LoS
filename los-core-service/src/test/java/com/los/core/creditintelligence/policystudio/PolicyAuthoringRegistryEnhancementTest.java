@@ -27,7 +27,12 @@ class PolicyAuthoringRegistryEnhancementTest {
         assertThat(metrics).anyMatch(m -> "bureau.inquiries.current_month".equals(m.get("code")));
         assertThat(metrics).anyMatch(m ->
                 "banking.settlement.avg_daily_3m".equals(m.get("code"))
-                        && "UNAVAILABLE".equals(m.get("availability")));
+                        && "AVAILABLE".equals(m.get("availability"))
+                        && "banking.qr_settlement.average_daily_3m".equals(m.get("computeHelperCode")));
+        assertThat(metrics).anyMatch(m ->
+                "banking.settlement.count_monthly_avg_3m".equals(m.get("code"))
+                        && "AVAILABLE".equals(m.get("availability"))
+                        && "banking.qr_settlement.average_monthly_count_3m".equals(m.get("computeHelperCode")));
         assertThat(reg.hasCanonicalPath("application.proposed_edi")).isTrue();
         assertThat(reg.hasCanonicalPath("invented.path.xyz")).isFalse();
     }

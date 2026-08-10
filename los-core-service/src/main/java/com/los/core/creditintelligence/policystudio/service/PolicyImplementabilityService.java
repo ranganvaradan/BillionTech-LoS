@@ -396,13 +396,20 @@ public class PolicyImplementabilityService {
             status = MAPPING_REQUIRED;
             recommendedAction = "No registry definition found for this path — complete metric/fact mapping.";
         } else if ("UNAVAILABLE".equalsIgnoreCase(registryAvailability)) {
-            status = path.contains("settlement") || path.contains("overdue.age")
-                    || path.contains("credit_after_overdue") || path.contains("clean_history")
-                    ? METRIC_REQUIRED
-                    : DATA_SOURCE_REQUIRED;
-            recommendedAction = recommendedForMissing(path, status);
-            // Fallback listed but unavailable primary — still not READY_WITH_FALLBACK unless fallback proven available
-            fallbackCompatible = false;
+            // Settlement/QR is bound to PolicyBankingMetricService helpers — treat as derivable when coded settlement.*
+            if (path != null && path.contains("settlement")) {
+                status = "READY";
+                recommendedAction = "Derived from QR settlement credits (trailing 3m) via banking helper — not unavailable.";
+                fallbackCompatible = true;
+            } else {
+                status = path.contains("overdue.age")
+                        || path.contains("credit_after_overdue") || path.contains("clean_history")
+                        ? METRIC_REQUIRED
+                        : DATA_SOURCE_REQUIRED;
+                recommendedAction = recommendedForMissing(path, status);
+                // Fallback listed but unavailable primary — still not READY_WITH_FALLBACK unless fallback proven available
+                fallbackCompatible = false;
+            }
         } else if ("CANDIDATE".equalsIgnoreCase(registryAvailability)
                 || path.startsWith("application.")
                 || Boolean.TRUE.equals(catalog.get("manualCaptureAllowed"))) {
@@ -481,10 +488,7 @@ public class PolicyImplementabilityService {
                 && sys.contains("INWARD")) {
             return true;
         }
-        if (openPhrases.stream().anyMatch(x -> x.contains("settlement") || x.contains("qr"))
-                && p.contains("settlement")) {
-            return true;
-        }
+        // Settlement/QR is derivable — do not treat open settlement phrases as a missing metric.
         if (openPhrases.stream().anyMatch(x -> x.contains("deposition") || x.contains("deposit"))
                 && (p.contains("deposit") || sys.contains("BULK"))) {
             return true;
