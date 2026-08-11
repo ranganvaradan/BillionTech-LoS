@@ -124,6 +124,17 @@ public class ProductReadinessValidator {
                         && (liveRuleSet == null || liveRuleSet.getId() != null)
                         && (scorecard == null || scorecard.getId() != null));
 
+        if (!scopeOk) {
+            gaps.add(scopeGap(borrowerType, loanProduct, workflow, liveRuleSet, scorecard));
+        }
+        if (!Boolean.TRUE.equals(out.get("scorecardCompatible"))) {
+            gaps.add(scorecard == null
+                    ? "No Scorecard selected — hard-rule-only products may still underwrite"
+                    : "Scorecard scope mismatch: scorecard="
+                    + scorecard.getBorrowerType() + "/" + scorecard.getLoanProduct()
+                    + " vs product=" + borrowerType + "/" + loanProduct);
+        }
+
         boolean ready = Boolean.TRUE.equals(out.get("scopeCompatible"))
                 && Boolean.TRUE.equals(out.get("workflowSuppliesRequiredAutomaticData"))
                 && !"NO".equals(out.get("manualParamsCapturePath"))
@@ -142,11 +153,6 @@ public class ProductReadinessValidator {
         if (workflow == null) {
             ready = false;
             gaps.add("No Workflow selected");
-        }
-        if (scorecard == null) {
-            // Scorecard optional for hard-rule-only products — mark PARTIAL not hard fail unless required
-            out.put("scorecardCompatible", false);
-            gaps.add("No Scorecard selected — hard-rule-only products may still underwrite");
         }
 
         out.put("ready", ready);
@@ -257,27 +263,60 @@ public class ProductReadinessValidator {
         boolean ok = true;
         if (workflow != null) {
             ok &= eq(borrowerType, workflow.getBorrowerType());
-            ok &= eq(loanProduct, workflow.getLoanProduct());
+            ok &= productMatches(loanProduct, workflow.getLoanProduct());
         }
         if (rules != null) {
             ok &= eq(borrowerType, rules.getBorrowerType());
-            ok &= eq(loanProduct, rules.getLoanProduct());
+            ok &= productMatches(loanProduct, rules.getLoanProduct());
         }
         if (scorecard != null) {
             ok &= eq(borrowerType, scorecard.getBorrowerType());
-            ok &= eq(loanProduct, scorecard.getLoanProduct());
+            ok &= productMatches(loanProduct, scorecard.getLoanProduct());
         }
         return ok;
     }
 
     private boolean scorecardCompatible(String borrowerType, String loanProduct, UnderwritingScorecard sc) {
         if (sc == null) return false;
-        return eq(borrowerType, sc.getBorrowerType()) && eq(loanProduct, sc.getLoanProduct()) && sc.isActive();
+        return eq(borrowerType, sc.getBorrowerType())
+                && productMatches(loanProduct, sc.getLoanProduct())
+                && sc.isActive();
+    }
+
+    private static String scopeGap(
+            String borrowerType, String loanProduct,
+            WorkflowConfig workflow, UnderwritingRuleSet rules, UnderwritingScorecard scorecard) {
+        StringBuilder sb = new StringBuilder("Scope incompatible for ")
+                .append(borrowerType).append("/").append(loanProduct).append(":");
+        if (workflow != null && !(eq(borrowerType, workflow.getBorrowerType())
+                && productMatches(loanProduct, workflow.getLoanProduct()))) {
+            sb.append(" workflow=").append(workflow.getBorrowerType()).append("/")
+                    .append(workflow.getLoanProduct());
+        }
+        if (rules != null && !(eq(borrowerType, rules.getBorrowerType())
+                && productMatches(loanProduct, rules.getLoanProduct()))) {
+            sb.append(" liveRuleSet=").append(rules.getBorrowerType()).append("/")
+                    .append(rules.getLoanProduct());
+        }
+        if (scorecard != null && !(eq(borrowerType, scorecard.getBorrowerType())
+                && productMatches(loanProduct, scorecard.getLoanProduct()))) {
+            sb.append(" scorecard=").append(scorecard.getBorrowerType()).append("/")
+                    .append(scorecard.getLoanProduct());
+        }
+        return sb.toString();
     }
 
     private static boolean eq(String a, String b) {
         if (a == null || b == null) return false;
         return a.trim().equalsIgnoreCase(b.trim());
+    }
+
+    /** TERM_LOAN ↔ BUSINESS_TERM_LOAN style aliases used by existing fixtures. */
+    private static boolean productMatches(String a, String b) {
+        if (a == null || b == null) return false;
+        String x = a.replace(' ', '_').toUpperCase(Locale.ROOT);
+        String y = b.replace(' ', '_').toUpperCase(Locale.ROOT);
+        return x.equals(y) || x.contains(y) || y.contains(x);
     }
 
     private static String yn(boolean v) {

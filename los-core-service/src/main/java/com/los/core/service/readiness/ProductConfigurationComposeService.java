@@ -279,8 +279,9 @@ public class ProductConfigurationComposeService {
         return m;
     }
 
+    /** Always false — readiness compose must never advertise production canonical authority. */
     private boolean cutoverFalse() {
-        return properties.getCutover() == null || !properties.getCutover().isAllowCanonicalAuthority();
+        return false;
     }
 
     private static boolean productMatches(String a, String b) {

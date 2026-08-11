@@ -200,4 +200,41 @@ class LiveReadinessServicesTest {
         assertThat(cat.get("allowCanonicalAuthority")).isEqualTo(false);
         assertThat(cat.get("workflowSteps")).asList().isNotEmpty();
     }
+
+    @Test
+    void scopeCompatible_acceptsBusinessTermLoanAliasForTermLoan() {
+        WorkflowConfig wf = WorkflowConfig.builder()
+                .id(UUID.randomUUID())
+                .name("Company Term Loan")
+                .borrowerType("COMPANY")
+                .loanProduct("TERM_LOAN")
+                .active(true)
+                .bureauEnabled(true)
+                .steps(List.of(Map.of("step", "PAN_VERIFY"), Map.of("step", "BUREAU_PULL")))
+                .build();
+        UnderwritingRuleSet rules = UnderwritingRuleSet.builder()
+                .id(UUID.randomUUID())
+                .name("Business TL")
+                .borrowerType("COMPANY")
+                .loanProduct("BUSINESS_TERM_LOAN")
+                .active(true)
+                .rulesJson(Map.of("rules", List.of(Map.of("parameter", "BUREAU_SCORE"))))
+                .build();
+        UnderwritingScorecard sc = UnderwritingScorecard.builder()
+                .id(UUID.randomUUID())
+                .name("SME")
+                .borrowerType("COMPANY")
+                .loanProduct("BUSINESS_TERM_LOAN")
+                .active(true)
+                .scorecardJson(Map.of())
+                .hardRulesJson(Map.of())
+                .thresholdsJson(Map.of())
+                .build();
+        Map<String, Object> result = validator.validate(
+                "COMPANY", "TERM_LOAN", wf, rules, sc, null, null, null);
+        assertThat(result.get("scopeCompatible")).isEqualTo(true);
+        assertThat(result.get("scorecardCompatible")).isEqualTo(true);
+        assertThat(result.get("allowCanonicalAuthority")).isEqualTo(false);
+        assertThat(result.get("status")).isEqualTo("READY");
+    }
 }
