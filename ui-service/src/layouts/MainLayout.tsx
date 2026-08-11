@@ -129,6 +129,13 @@ export function MainLayout() {
                     key={item.to}
                     to={item.to}
                     end={item.end}
+                    onClick={(e) => {
+                      if (item.to !== '/credit-intelligence/policy-studio') return
+                      e.preventDefault()
+                      nav('/credit-intelligence/policy-studio', {
+                        state: { openPoliciesLanding: true, ts: Date.now() },
+                      })
+                    }}
                     className={() => {
                       const active = item.isActivePath
                         ? item.isActivePath(pathname)

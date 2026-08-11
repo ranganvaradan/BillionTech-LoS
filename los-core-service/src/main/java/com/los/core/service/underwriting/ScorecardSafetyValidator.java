@@ -163,12 +163,19 @@ public final class ScorecardSafetyValidator {
                 problems.add(f.get("factor") + ": hard-rule operand effective policy must be REQUIRED");
             }
         }
+        // SCORECARD-CONVERGENCE-1 — canonical binding or justified legacy/custom
+        List<String> bindingProblems = validateCanonicalBindings(card);
+        problems.addAll(bindingProblems);
+        boolean hardOk = base.factors().stream().noneMatch(f ->
+                Boolean.TRUE.equals(f.get("hardRule"))
+                        && !POLICY_REQUIRED.equals(String.valueOf(f.get("effectiveMissingData"))));
         boolean ok = base.bandsSafe()
                 && base.denominatorSafe()
                 && base.thresholdsCoherent()
                 && base.missingPoliciesExplicit()
                 && base.missingPoliciesConfirmed()
-                && problems.stream().noneMatch(p -> p.contains("hard-rule"));
+                && hardOk
+                && bindingProblems.isEmpty();
         return new ValidationResult(
                 ok,
                 base.bandsSafe(),
@@ -179,6 +186,50 @@ public final class ScorecardSafetyValidator {
                 base.thresholdsCoherent(),
                 problems,
                 base.factors());
+    }
+
+    @SuppressWarnings("unchecked")
+    static List<String> validateCanonicalBindings(UnderwritingScorecard card) {
+        List<String> problems = new ArrayList<>();
+        Map<String, Object> scj = card.getScorecardJson() != null ? card.getScorecardJson() : Map.of();
+        Object rawRows = scj.get("rows");
+        if (!(rawRows instanceof List<?> list)) return problems;
+        Set<String> seen = new LinkedHashSet<>();
+        for (Object o : list) {
+            if (!(o instanceof Map<?, ?> rm)) continue;
+            Map<String, Object> row = (Map<String, Object>) rm;
+            String param = str(row.get("parameter"));
+            if (param == null || !seen.add(param)) continue;
+            String status = str(row.get("mappingStatus"));
+            String canonicalId = str(row.get("canonicalParameterId"));
+            boolean legacyCustom = Boolean.TRUE.equals(row.get("legacyCustomJustified"))
+                    || ScorecardCanonicalFactorMapper.LEGACY_CUSTOM.equalsIgnoreCase(status);
+            if (canonicalId != null && !canonicalId.isBlank()
+                    && (ScorecardCanonicalFactorMapper.EXACT.equalsIgnoreCase(status)
+                    || ScorecardCanonicalFactorMapper.SAFE_ALIAS.equalsIgnoreCase(status))) {
+                if (row.get("canonicalDefinitionVersion") == null) {
+                    problems.add(param + ": canonicalDefinitionVersion required when canonicalParameterId is set");
+                }
+                continue;
+            }
+            if (legacyCustom) {
+                continue;
+            }
+            ScorecardCanonicalFactorMapper.Binding inferred = ScorecardCanonicalFactorMapper.resolve(param);
+            if (ScorecardCanonicalFactorMapper.EXACT.equals(inferred.mappingStatus())
+                    || ScorecardCanonicalFactorMapper.SAFE_ALIAS.equals(inferred.mappingStatus())) {
+                problems.add(param + ": canonical binding required before activation (inferred "
+                        + inferred.mappingStatus() + " → " + inferred.canonicalParameterId()
+                        + "). Stamp binding or mark legacyCustomJustified.");
+            } else if (ScorecardCanonicalFactorMapper.AMBIGUOUS.equals(inferred.mappingStatus())) {
+                problems.add(param + ": AMBIGUOUS GACAT mapping — resolve or mark legacyCustomJustified. "
+                        + inferred.reason());
+            } else if (ScorecardCanonicalFactorMapper.NO_MATCH.equals(inferred.mappingStatus())) {
+                problems.add(param + ": NO_MATCH in GACAT — mark legacyCustomJustified for manual/custom factors "
+                        + "or add a safe catalogue binding");
+            }
+        }
+        return problems;
     }
 
     /**

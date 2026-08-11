@@ -2,6 +2,7 @@ import { useState } from 'react'
 import type { ScorecardParameterDef, ScorecardParamOption, ScorecardRow } from '@/api/scorecards'
 import { DependencyConditionsEditor } from '@/components/scorecard/DependencyConditionsEditor'
 import { EditorModal } from '@/components/scorecard/EditorModal'
+import { GacatFactorPicker, type GacatFactorPick } from '@/components/scorecard/GacatFactorPicker'
 import { ScorecardConditionEditor } from '@/components/scorecard/ScorecardConditionEditor'
 import { FormulaEditor, type FormulaDefinition } from '@/components/scorecard/FormulaEditor'
 import {
@@ -206,12 +207,36 @@ export function ScorecardParameterEditor({
   const activeFormulaRow = rows.find((r) => r.id === formulaRowId) ?? null
   const activeDependencyRow = rows.find((r) => r.id === dependencyRowId) ?? null
 
+  function addFromGacat(pick: GacatFactorPick) {
+    const legacy =
+      pick.legacyScorecardKey?.trim() ||
+      pick.canonicalParameterId.replace(/\./g, '_').toUpperCase()
+    const source = pick.suggestedScorecardSource || 'SCORECARD'
+    const pDef = paramDef(source, legacy)
+    const nextRow: ScorecardRow = {
+      id: `r${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      parameter: legacy,
+      source,
+      condition: defaultConditionForParam(pDef),
+      weight: 1,
+      score: 20,
+      canonicalParameterId: pick.canonicalParameterId,
+      canonicalDefinitionVersion: pick.canonicalDefinitionVersion,
+      mappingStatus: pick.legacyScorecardKey ? 'EXACT' : 'SAFE_ALIAS',
+      legacyParameterKey: legacy,
+      factorLabel: pick.businessName,
+      missingData: 'REQUIRED',
+    }
+    updateRows([...rows, nextRow])
+  }
+
   return (
     <div className="space-y-3">
+      <GacatFactorPicker onPick={addFromGacat} />
+
       <div className="rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs text-slate-600">
-        For <strong>Other (manual)</strong> custom parameters, choose <strong>Number</strong>, <strong>Text</strong>,
-        or <strong>Dropdown</strong>. For <strong>Computed (formula)</strong>, define a derived metric from existing
-        parameters and then apply the scoring condition below it.
+        Primary authoring: <strong>Source → Parameter → Bands → Points → Missing-data policy</strong>. Weight is not
+        used in scoring. Advanced (computed formulas, dependencies, legacy keys) is collapsed per factor.
       </div>
 
       {rows.length === 0 ? (
@@ -235,9 +260,13 @@ export function ScorecardParameterEditor({
             const pDef = effectiveParamDef(src, row)
             const dependencyCount = row.dependsOn?.conditions?.length ?? 0
             const expanded = expandedRowIds.has(row.id)
-            const parameterLabel = pDef?.label ?? (row.parameter || 'Unnamed parameter')
+            const parameterLabel =
+              row.factorLabel ?? pDef?.label ?? (row.parameter || 'Unnamed parameter')
             const sourceLabel = sourceDef(src)?.label ?? src
             const pointsLabel = scoreSummary(row, optionScored)
+            const mapping = row.mappingStatus ?? (row.canonicalParameterId ? 'EXACT' : 'NO_MATCH')
+            const needsMapping =
+              mapping === 'AMBIGUOUS' || mapping === 'NO_MATCH' || mapping === 'SEMANTIC_MISMATCH'
 
             return (
               <li
@@ -274,7 +303,12 @@ export function ScorecardParameterEditor({
                     <span className="block truncate text-sm font-semibold text-slate-900">{parameterLabel}</span>
                     <span className="mt-0.5 block truncate text-xs text-slate-500">
                       {sourceLabel}
-                      {row.parameter ? ` · ${row.parameter}` : ''}
+                      {row.canonicalParameterId
+                        ? ` · ${row.canonicalParameterId}`
+                        : row.parameter
+                          ? ` · ${row.parameter}`
+                          : ''}
+                      {needsMapping ? ' · Needs mapping' : ''}
                       {dependencyCount > 0 ? ` · ${dependencyCount} dep.` : ''}
                     </span>
                   </span>
@@ -306,6 +340,34 @@ export function ScorecardParameterEditor({
 
                 {expanded ? (
                   <div className="space-y-3 border-t border-slate-200 bg-slate-50/60 px-3 py-3 sm:px-4">
+                    {row.canonicalParameterId ? (
+                      <div className="rounded border border-emerald-200 bg-emerald-50/60 px-2 py-1.5 text-[11px] text-emerald-950">
+                        Canonical: <strong>{row.canonicalParameterId}</strong>
+                        {row.canonicalDefinitionVersion != null
+                          ? ` · def v${row.canonicalDefinitionVersion}`
+                          : ''}
+                        {row.legacyParameterKey ? ` · legacy ${row.legacyParameterKey}` : ''}
+                      </div>
+                    ) : needsMapping ? (
+                      <div className="rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-950">
+                        Legacy / Custom factor — status: {mapping}. Justify as manual/custom before activation if no
+                        safe GACAT binding.
+                        <label className="mt-1 flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(row.legacyCustomJustified)}
+                            onChange={(e) =>
+                              updateRow(i, {
+                                legacyCustomJustified: e.target.checked,
+                                mappingStatus: e.target.checked ? 'LEGACY_CUSTOM' : mapping,
+                              })
+                            }
+                          />
+                          Justify as Manual / Custom (legacy)
+                        </label>
+                      </div>
+                    ) : null}
+
                     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
                       <label className="block text-xs font-medium text-slate-700">
                         Source
@@ -313,6 +375,7 @@ export function ScorecardParameterEditor({
                           className="bt-input bt-input-sm mt-1 w-full"
                           value={src}
                           onChange={(e) => onSourceChange(i, e.target.value)}
+                          disabled={Boolean(row.canonicalParameterId)}
                         >
                           {sourceOptions.map((s) => (
                             <option key={s.value} value={s.value}>
@@ -320,6 +383,11 @@ export function ScorecardParameterEditor({
                             </option>
                           ))}
                         </select>
+                        {row.canonicalParameterId ? (
+                          <span className="mt-0.5 block text-[10px] text-slate-500">
+                            Derived from GACAT (no contradictory override)
+                          </span>
+                        ) : null}
                       </label>
 
                       <label className="block text-xs font-medium text-slate-700 sm:col-span-1 lg:col-span-2">
@@ -328,6 +396,7 @@ export function ScorecardParameterEditor({
                           className="bt-input bt-input-sm mt-1 w-full"
                           value={selectValue}
                           onChange={(e) => onParameterChange(i, src, e.target.value)}
+                          disabled={Boolean(row.canonicalParameterId)}
                         >
                           {params.map((p) => (
                             <option key={p.value} value={p.value}>
@@ -366,13 +435,8 @@ export function ScorecardParameterEditor({
                         </>
                       ) : null}
 
-                      {/* SCORECARD-SAFETY-FOUNDATION-1: weight is legacy metadata only — not used in scoring */}
-                      <p className="text-[11px] text-slate-500 sm:col-span-2">
-                        Scoring uses exclusive-band points only (earned ÷ max × 100). Stored weight is non-scoring metadata.
-                      </p>
-
                       <label className="block text-xs font-medium text-slate-700">
-                        Score (points)
+                        Points
                         {optionScored ? (
                           <span className="mt-1 block rounded border border-slate-200 bg-white px-2 py-2 text-xs text-slate-500">
                             From dropdown options
@@ -387,23 +451,37 @@ export function ScorecardParameterEditor({
                         )}
                       </label>
 
-                      {showAttachment ? (
-                        <label className="block text-xs font-medium text-slate-700">
-                          Attachment
-                          <input
-                            className="bt-input bt-input-sm mt-1 w-full"
-                            value={row.attachment ?? ''}
-                            onChange={(e) => updateRow(i, { attachment: e.target.value })}
-                            placeholder="e.g. BUREAU_REPORT"
-                          />
-                        </label>
-                      ) : null}
+                      <label className="block text-xs font-medium text-slate-700 sm:col-span-2">
+                        Missing data
+                        <select
+                          className="bt-input bt-input-sm mt-1 w-full"
+                          value={row.missingData ?? ''}
+                          onChange={(e) =>
+                            updateRow(i, {
+                              missingData: (e.target.value || undefined) as ScorecardRow['missingData'],
+                            })
+                          }
+                        >
+                          <option value="">— Select (required for activation) —</option>
+                          <option value="REQUIRED">Required</option>
+                          <option value="OPTIONAL_DEPRESS">Optional — missing lowers score</option>
+                          <option value="OPTIONAL_SKIP">Optional — ignore if unavailable</option>
+                        </select>
+                        <span className="mt-0.5 block text-[10px] text-slate-500">
+                          Required blocks when missing. Optional–lower keeps max in denominator (0 earned). Optional–ignore
+                          removes factor from denominator.
+                        </span>
+                      </label>
                     </div>
 
                     <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
                       <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                        Condition / options
+                        Band / condition (exclusive ranges)
                       </div>
+                      <p className="mb-2 text-[10px] text-slate-500">
+                        Use exclusive ladders (e.g. &lt;650, 650–699, 700–749, ≥750). Overlaps and double-match are blocked
+                        at activation.
+                      </p>
                       {isComputed ? (
                         <div className="space-y-3">
                           <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
@@ -517,28 +595,56 @@ export function ScorecardParameterEditor({
                       )}
                     </div>
 
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <button
-                          type="button"
-                          className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                          onClick={() => setDependencyRowId(row.id)}
-                        >
-                          Dependencies
-                          {dependencyCount > 0 ? ` (${dependencyCount})` : ''}
-                        </button>
-                        <span className="text-[11px] text-slate-500">
-                          {dependencyCount > 0
-                            ? 'Only score when dependencies match'
-                            : 'Always evaluate unless dependencies are added'}
-                        </span>
+                    <details className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                      <summary className="cursor-pointer text-xs font-semibold text-slate-700">
+                        Advanced technical settings
+                      </summary>
+                      <div className="mt-2 space-y-2">
+                        <p className="text-[11px] text-slate-500">
+                          Weight is legacy non-scoring metadata only (not used in formula).
+                        </p>
+                        {showAttachment ? (
+                          <label className="block text-xs font-medium text-slate-700">
+                            Attachment
+                            <input
+                              className="bt-input bt-input-sm mt-1 w-full"
+                              value={row.attachment ?? ''}
+                              onChange={(e) => updateRow(i, { attachment: e.target.value })}
+                              placeholder="e.g. BUREAU_REPORT"
+                            />
+                          </label>
+                        ) : null}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            className="rounded border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                            onClick={() => setDependencyRowId(row.id)}
+                          >
+                            Dependencies
+                            {dependencyCount > 0 ? ` (${dependencyCount})` : ''}
+                          </button>
+                          <span className="text-[11px] text-slate-500">
+                            {dependencyCount > 0
+                              ? 'Only score when dependencies match'
+                              : 'Always evaluate unless dependencies are added'}
+                          </span>
+                        </div>
+                        <div className="font-mono text-[10px] text-slate-500">
+                          legacy key: {row.legacyParameterKey ?? row.parameter}
+                          {row.canonicalParameterId
+                            ? ` · canonical: ${row.canonicalParameterId}@v${row.canonicalDefinitionVersion ?? 1}`
+                            : ''}
+                        </div>
                       </div>
+                    </details>
+
+                    <div className="flex flex-wrap items-center justify-end gap-2">
                       <button
                         type="button"
                         className="rounded border border-rose-200 bg-white px-2 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50"
                         onClick={() => updateRows(rows.filter((_, j) => j !== i))}
                       >
-                        Remove parameter
+                        Remove factor band
                       </button>
                     </div>
                   </div>

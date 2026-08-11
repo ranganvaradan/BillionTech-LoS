@@ -135,6 +135,8 @@ public class UnderwritingScorecardAdminService {
                 .max()
                 .orElse(source.getVersion()) + 1;
 
+        Map<String, Object> stampedJson = ScorecardCanonicalFactorMapper.stampScorecardJson(
+                copyMap(source.getScorecardJson()));
         UnderwritingScorecard draft = UnderwritingScorecard.builder()
                 .name(source.getName())
                 .borrowerType(source.getBorrowerType())
@@ -144,7 +146,7 @@ public class UnderwritingScorecardAdminService {
                 .minAmount(source.getMinAmount())
                 .maxAmount(source.getMaxAmount())
                 .geography(copyMap(source.getGeography()))
-                .scorecardJson(copyMap(source.getScorecardJson()))
+                .scorecardJson(stampedJson)
                 .thresholdsJson(copyMap(source.getThresholdsJson()))
                 .hardRulesJson(copyMap(source.getHardRulesJson()))
                 // Inherit recommended missing-data classifications; confirmation required before activate
@@ -205,7 +207,8 @@ public class UnderwritingScorecardAdminService {
         e.setMinAmount(r.getMinAmount());
         e.setMaxAmount(r.getMaxAmount());
         e.setGeography(r.getGeography());
-        e.setScorecardJson(safeMap(r.getScorecardJson()));
+        // Stamp GACAT bindings on save (DRAFT); does not alter bands/points
+        e.setScorecardJson(ScorecardCanonicalFactorMapper.stampScorecardJson(safeMap(r.getScorecardJson())));
         e.setThresholdsJson(safeMap(r.getThresholdsJson()));
         e.setHardRulesJson(safeMap(r.getHardRulesJson()));
         Map<String, Object> safety = new LinkedHashMap<>();

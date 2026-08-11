@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom'
+import { NavLink, useNavigate } from 'react-router-dom'
 import type { WorkspaceNavItem } from '@/nav/workspaceNav'
 
 type Props = {
@@ -9,6 +9,7 @@ type Props = {
 }
 
 export function WorkspaceSubNav({ items, ariaLabel, contextLabel }: Props) {
+  const navigate = useNavigate()
   if (items.length === 0) return null
 
   return (
@@ -22,6 +23,13 @@ export function WorkspaceSubNav({ items, ariaLabel, contextLabel }: Props) {
             key={item.to}
             to={item.to}
             end={item.end}
+            onClick={(e) => {
+              if (item.to !== '/credit-intelligence/policy-studio') return
+              e.preventDefault()
+              navigate('/credit-intelligence/policy-studio', {
+                state: { openPoliciesLanding: true, ts: Date.now() },
+              })
+            }}
             className={({ isActive }) => (isActive ? 'bt-tab active' : 'bt-tab')}
           >
             {item.label}

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   copyPolicyStudioDocument,
   createPolicyFromScratch,
@@ -75,6 +76,8 @@ function chipClass(state: string): string {
 const PRIMARY_TAB_IDS = POLICY_STUDIO_PRIMARY_TAB_IDS as readonly string[]
 
 export function CiPolicyStudioPage() {
+  const location = useLocation()
+  const navigate = useNavigate()
   const [landing, setLanding] = useState<PolicyStudioLanding | null>(null)
   const [view, setView] = useState<StudioView>('landing')
   const [session, setSession] = useState<StagingPolicyStudio | null>(null)
@@ -152,6 +155,27 @@ export function CiPolicyStudioPage() {
   useEffect(() => {
     void loadLanding()
   }, [loadLanding])
+
+  /** Sidebar / workspace "Policies" must always return to the policy landing list. */
+  const returnToPoliciesLanding = useCallback(() => {
+    setView('landing')
+    setSession(null)
+    setError(null)
+    setDemoMsg(null)
+    setSavedLabel(null)
+    setDetailsOpen(false)
+    setDirty(false)
+    setScopeDirty(false)
+    setRulesDirty(false)
+    void loadLanding()
+  }, [loadLanding])
+
+  useEffect(() => {
+    const st = location.state as { openPoliciesLanding?: boolean } | null
+    if (!st?.openPoliciesLanding) return
+    returnToPoliciesLanding()
+    navigate(location.pathname, { replace: true, state: {} })
+  }, [location.state, location.pathname, navigate, returnToPoliciesLanding])
 
   useEffect(() => {
     if (!moreOpen) return
@@ -412,15 +436,8 @@ export function CiPolicyStudioPage() {
           <button
             type="button"
             className="mb-1 text-xs text-slate-500 hover:text-slate-800"
-            onClick={() => {
-              setView('landing')
-              setSession(null)
-              setError(null)
-              setDemoMsg(null)
-              setSavedLabel(null)
-              setDetailsOpen(false)
-              void loadLanding()
-            }}
+            data-testid="policies-breadcrumb"
+            onClick={() => returnToPoliciesLanding()}
           >
             ← Policies
           </button>

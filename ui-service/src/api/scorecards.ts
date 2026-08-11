@@ -48,6 +48,14 @@ export interface ScorecardRow {
   options?: ScorecardParamOption[]
   formula?: FormulaDefinition
   dependsOn?: DependencyGroup
+  /** SCORECARD-CONVERGENCE-1 */
+  canonicalParameterId?: string
+  canonicalDefinitionVersion?: number
+  mappingStatus?: string
+  legacyParameterKey?: string
+  factorLabel?: string
+  missingData?: 'REQUIRED' | 'OPTIONAL_DEPRESS' | 'OPTIONAL_SKIP'
+  legacyCustomJustified?: boolean
 }
 
 export interface HardRuleRow {
@@ -74,6 +82,11 @@ export interface UnderwritingScorecardResponse {
   thresholdsJson: Record<string, unknown>
   hardRulesJson: Record<string, unknown>
   active: boolean
+  status?: string
+  lineageId?: string | null
+  parentScorecardId?: string | null
+  activatedAt?: string | null
+  safetyJson?: Record<string, unknown>
   createdAt: string | null
   updatedAt: string | null
 }
@@ -126,6 +139,44 @@ export async function deleteScorecard(id: string): Promise<void> {
 export async function createScorecardNewVersion(id: string): Promise<UnderwritingScorecardResponse> {
   const { data } = await http.post<UnderwritingScorecardResponse>(
     `/underwriting/scorecards/${id}/new-version`,
+  )
+  return data
+}
+
+/** SCORECARD-CONVERGENCE-1 — GACAT-backed factor picker */
+export async function listGacatScorecardFactors(q?: string): Promise<{
+  parameters: Array<Record<string, unknown>>
+  count: number
+  catalogueAuthority?: string
+}> {
+  const { data } = await http.get<{
+    parameters: Array<Record<string, unknown>>
+    count: number
+    catalogueAuthority?: string
+  }>('/underwriting/scorecards/gacat-factors', { params: q ? { q } : {} })
+  return data
+}
+
+export async function previewScorecard(body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const { data } = await http.post<Record<string, unknown>>('/underwriting/scorecards/preview', body)
+  return data
+}
+
+export async function suggestScorecardFactorsFromPolicy(
+  parameterIds: string[],
+): Promise<{ suggestions: Array<Record<string, unknown>>; note?: string }> {
+  const { data } = await http.post<{ suggestions: Array<Record<string, unknown>>; note?: string }>(
+    '/underwriting/scorecards/suggest-from-policy',
+    { parameterIds },
+  )
+  return data
+}
+
+export async function confirmScorecardMissingDataPolicies(
+  id: string,
+): Promise<UnderwritingScorecardResponse> {
+  const { data } = await http.post<UnderwritingScorecardResponse>(
+    `/underwriting/scorecards/${id}/confirm-missing-data-policies`,
   )
   return data
 }

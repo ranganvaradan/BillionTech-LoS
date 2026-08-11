@@ -2,6 +2,7 @@ package com.los.core.controller;
 
 import com.los.core.model.dto.request.UnderwritingScorecardRequest;
 import com.los.core.model.dto.response.UnderwritingScorecardResponse;
+import com.los.core.service.underwriting.ScorecardConvergenceService;
 import com.los.core.service.underwriting.UnderwritingScorecardAdminService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -12,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -21,6 +23,7 @@ import java.util.UUID;
 public class UnderwritingScorecardController {
 
     private final UnderwritingScorecardAdminService adminService;
+    private final ScorecardConvergenceService convergenceService;
 
     @GetMapping
     @Operation(summary = "List scorecards")
@@ -52,6 +55,34 @@ public class UnderwritingScorecardController {
     @Operation(summary = "Confirm explicit missing-data classifications on a DRAFT before activation")
     public ResponseEntity<UnderwritingScorecardResponse> confirmMissingDataPolicies(@PathVariable UUID id) {
         return ResponseEntity.ok(adminService.confirmMissingDataPolicies(id));
+    }
+
+    @GetMapping("/gacat-factors")
+    @Operation(summary = "GACAT-backed factor picker catalogue for scorecard authoring")
+    public ResponseEntity<Map<String, Object>> gacatFactors(@RequestParam(required = false) String q) {
+        return ResponseEntity.ok(convergenceService.factorCatalogue(q));
+    }
+
+    @GetMapping("/mapping-inventory")
+    @Operation(summary = "Inventory of ACTIVE scorecard factor → GACAT mapping status")
+    public ResponseEntity<Map<String, Object>> mappingInventory() {
+        return ResponseEntity.ok(convergenceService.mappingInventory());
+    }
+
+    @PostMapping("/preview")
+    @Operation(summary = "Preview scorecard math without mutating an application")
+    public ResponseEntity<Map<String, Object>> preview(@RequestBody Map<String, Object> body) {
+        return ResponseEntity.ok(convergenceService.preview(body));
+    }
+
+    @PostMapping("/suggest-from-policy")
+    @Operation(summary = "Suggest scorecard factors from policy parameters (no auto-create)")
+    public ResponseEntity<Map<String, Object>> suggestFromPolicy(@RequestBody Map<String, Object> body) {
+        @SuppressWarnings("unchecked")
+        List<String> ids = body.get("parameterIds") instanceof List<?> list
+                ? list.stream().map(String::valueOf).toList()
+                : List.of();
+        return ResponseEntity.ok(convergenceService.suggestFromPolicy(ids));
     }
 
     @DeleteMapping("/{id}")

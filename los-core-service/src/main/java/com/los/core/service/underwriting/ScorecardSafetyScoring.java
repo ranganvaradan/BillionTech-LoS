@@ -118,6 +118,7 @@ public final class ScorecardSafetyScoring {
             row.put("factorMaxPoints", factor.maxPoints());
             // Closure invariant: factorMax is MAX of exclusive bands, never SUM of alternatives
             row.put("denominatorContribution", "FACTOR_MAX_EQUALS_MAX_BAND_POINTS");
+            enrichCanonicalBinding(row, parameter, rowMaps);
 
             boolean physicallyAbsent = value == null && (stringValue == null || stringValue.isBlank());
             boolean requiredUnsatisfied = MISSING_REQUIRED.equals(missingPolicy)
@@ -256,6 +257,7 @@ public final class ScorecardSafetyScoring {
             one.put("authoritativeForDecision",
                     valueUsed != null && !ScorecardValueProvenance.isNonAuthoritative(provenance));
             one.put("bandMode", "LEGACY_SINGLE");
+            enrichCanonicalBinding(one, parameter, rowMaps);
             paramResults.add(one);
         }
 
@@ -372,6 +374,35 @@ public final class ScorecardSafetyScoring {
             String parameter, Map<String, Object> factorPolicies, boolean hardRuleOperand) {
         return resolveMissingPolicy(parameter, factorPolicies == null ? Map.of() : factorPolicies,
                 hardRuleOperand ? Set.of(parameter) : Set.of()).policy();
+    }
+
+    /** SCORECARD-CONVERGENCE-1 — attach canonical id/version for evidence (runtime key unchanged). */
+    private static void enrichCanonicalBinding(
+            Map<String, Object> resultRow, String parameter, List<Map<String, Object>> rowMaps) {
+        if (parameter == null || resultRow == null) return;
+        Map<String, Object> sourceRow = null;
+        for (Map<String, Object> r : rowMaps) {
+            if (parameter.equals(str(r.get("parameter")))) {
+                sourceRow = r;
+                break;
+            }
+        }
+        String canonicalId = sourceRow != null ? str(sourceRow.get("canonicalParameterId")) : null;
+        Integer defVer = null;
+        if (sourceRow != null && sourceRow.get("canonicalDefinitionVersion") instanceof Number n) {
+            defVer = n.intValue();
+        }
+        String mappingStatus = sourceRow != null ? str(sourceRow.get("mappingStatus")) : null;
+        if (canonicalId == null) {
+            ScorecardCanonicalFactorMapper.Binding b = ScorecardCanonicalFactorMapper.resolve(parameter);
+            canonicalId = b.canonicalParameterId();
+            defVer = b.canonicalDefinitionVersion() > 0 ? b.canonicalDefinitionVersion() : null;
+            mappingStatus = b.mappingStatus();
+        }
+        resultRow.put("legacyParameterKey", parameter);
+        resultRow.put("canonicalParameterId", canonicalId);
+        resultRow.put("canonicalDefinitionVersion", defVer);
+        resultRow.put("mappingStatus", mappingStatus);
     }
 
     private static Set<String> hardRuleParameters(UnderwritingScorecard card) {

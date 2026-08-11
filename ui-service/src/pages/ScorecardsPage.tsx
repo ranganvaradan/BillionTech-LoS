@@ -4,6 +4,8 @@ import {
   createScorecardNewVersion,
   deleteScorecard,
   listScorecards,
+  previewScorecard,
+  suggestScorecardFactorsFromPolicy,
   updateScorecard,
   type HardRuleRow,
   type ScorecardParameterDef,
@@ -96,6 +98,11 @@ export function ScorecardsPage() {
   const [parameterDefs, setParameterDefs] = useState<Record<string, ScorecardParameterDef>>({})
   const [hards, setHards] = useState<HardRuleRow[]>([])
   const [mapOpen, setMapOpen] = useState(false)
+  const [previewInputs, setPreviewInputs] = useState('{"BUREAU_SCORE":760,"MONTHLY_INCOME":60000,"OBLIGATION_RATIO":30,"AVERAGE_BANK_BALANCE":25000,"KYC_QUALITY":1}')
+  const [previewResult, setPreviewResult] = useState<Record<string, unknown> | null>(null)
+  const [previewBusy, setPreviewBusy] = useState(false)
+  const [policySuggestRaw, setPolicySuggestRaw] = useState('bureau.score\nobligation.ratio\napplication.business_vintage_months')
+  const [policySuggestions, setPolicySuggestions] = useState<Array<Record<string, unknown>>>([])
 
   const load = useCallback(async () => {
     setLoadError(null)
@@ -168,6 +175,10 @@ export function ScorecardsPage() {
             ((dependsOnRaw as { conditions: unknown[] }).conditions?.length ?? 0) > 0
               ? (dependsOnRaw as ScorecardRow['dependsOn'])
               : undefined
+          const safetyPolicies =
+            (r.safetyJson as { factorPolicies?: Record<string, { missingData?: string }> } | undefined)
+              ?.factorPolicies ?? {}
+          const missingFromSafety = safetyPolicies[parameter]?.missingData
           return {
             id: String(x.id ?? `e${i}`),
             parameter,
@@ -176,6 +187,23 @@ export function ScorecardsPage() {
             weight: Number(x.weight) || 1,
             score: Number(x.score) || 0,
             attachment: x.attachment != null ? String(x.attachment) : undefined,
+            canonicalParameterId: x.canonicalParameterId != null ? String(x.canonicalParameterId) : undefined,
+            canonicalDefinitionVersion:
+              x.canonicalDefinitionVersion != null ? Number(x.canonicalDefinitionVersion) : undefined,
+            mappingStatus: x.mappingStatus != null ? String(x.mappingStatus) : undefined,
+            legacyParameterKey: x.legacyParameterKey != null ? String(x.legacyParameterKey) : undefined,
+            factorLabel: x.factorLabel != null ? String(x.factorLabel) : undefined,
+            legacyCustomJustified: Boolean(x.legacyCustomJustified),
+            missingData:
+              missingFromSafety === 'REQUIRED' ||
+              missingFromSafety === 'OPTIONAL_DEPRESS' ||
+              missingFromSafety === 'OPTIONAL_SKIP'
+                ? missingFromSafety
+                : x.missingData === 'REQUIRED' ||
+                    x.missingData === 'OPTIONAL_DEPRESS' ||
+                    x.missingData === 'OPTIONAL_SKIP'
+                  ? x.missingData
+                  : undefined,
             ...(dependsOn ? { dependsOn } : {}),
             ...(def
               ? {
@@ -231,7 +259,7 @@ export function ScorecardsPage() {
     setMaxAmount('')
     setGeoState('')
     setGeoCity('')
-    setActive(true)
+    setActive(false)
     setApproveMin(70)
     setManualMin(40)
     setGrid([newRow(), newRow()])
@@ -266,6 +294,17 @@ export function ScorecardsPage() {
           score: r.score,
           ...(r.attachment?.trim() ? { attachment: r.attachment.trim() } : {}),
           ...(r.dependsOn?.conditions?.length ? { dependsOn: r.dependsOn } : {}),
+          ...(r.canonicalParameterId
+            ? {
+                canonicalParameterId: r.canonicalParameterId,
+                canonicalDefinitionVersion: r.canonicalDefinitionVersion ?? 1,
+                mappingStatus: r.mappingStatus ?? 'EXACT',
+                legacyParameterKey: r.legacyParameterKey ?? r.parameter,
+              }
+            : {}),
+          ...(r.factorLabel ? { factorLabel: r.factorLabel } : {}),
+          ...(r.legacyCustomJustified ? { legacyCustomJustified: true, mappingStatus: 'LEGACY_CUSTOM' } : {}),
+          ...(r.missingData ? { missingData: r.missingData } : {}),
         })),
         ...(Object.keys(buildParameterDefsFromRows(grid)).length
           ? { parameterDefs: buildParameterDefsFromRows(grid) }
@@ -274,6 +313,17 @@ export function ScorecardsPage() {
       thresholdsJson: { approveMinPercent: approveMin, manualMinPercent: manualMin },
       // Hard rules are managed on Underwriting Rules; preserve existing scorecard hard-rules JSON.
       hardRulesJson: selected?.hardRulesJson ?? { rules: [] },
+      safetyJson: {
+        ...(selected?.safetyJson ?? {}),
+        factorPolicies: Object.fromEntries(
+          grid
+            .filter((r) => r.parameter && r.missingData)
+            .map((r) => [r.parameter, { missingData: r.missingData }]),
+        ),
+        weightSemantics: 'METADATA_ONLY_NOT_USED_IN_FORMULA',
+        bandSemantics: 'EXCLUSIVE_RANGES',
+        denominatorSemantics: 'SUM_OF_FACTOR_MAX_WHERE_FACTOR_MAX_IS_MAX_BAND_POINTS',
+      },
       active,
     }
   }
@@ -333,6 +383,79 @@ export function ScorecardsPage() {
     } finally {
       setSaving(false)
     }
+  }
+
+  async function onPreview() {
+    setActionError(null)
+    setPreviewBusy(true)
+    setPreviewResult(null)
+    try {
+      let inputs: Record<string, unknown> = {}
+      try {
+        inputs = JSON.parse(previewInputs) as Record<string, unknown>
+      } catch {
+        throw new Error('Preview inputs must be valid JSON object of parameter → value')
+      }
+      const body = selected?.id
+        ? { scorecardId: selected.id, inputs }
+        : {
+            borrowerType,
+            loanProduct,
+            scorecardJson: toRequest().scorecardJson,
+            thresholdsJson: toRequest().thresholdsJson,
+            hardRulesJson: toRequest().hardRulesJson,
+            safetyJson: toRequest().safetyJson,
+            inputs,
+          }
+      setPreviewResult(await previewScorecard(body))
+    } catch (e) {
+      setActionError(e instanceof ApiError ? e.message : e instanceof Error ? e.message : 'Preview failed')
+    } finally {
+      setPreviewBusy(false)
+    }
+  }
+
+  async function onLoadPolicySuggestions() {
+    setActionError(null)
+    try {
+      const ids = policySuggestRaw
+        .split(/[\n,]+/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+      const res = await suggestScorecardFactorsFromPolicy(ids)
+      setPolicySuggestions(res.suggestions ?? [])
+    } catch (e) {
+      setActionError(
+        e instanceof ApiError ? e.message : e instanceof Error ? e.message : 'Suggest from policy failed',
+      )
+    }
+  }
+
+  function addSuggestedFactor(s: Record<string, unknown>) {
+    const legacy =
+      (s.legacyScorecardKey != null ? String(s.legacyScorecardKey) : null) ||
+      String(s.canonicalParameterId ?? '').replace(/\./g, '_').toUpperCase()
+    if (grid.some((r) => r.parameter === legacy || r.canonicalParameterId === s.canonicalParameterId)) {
+      return
+    }
+    const source = String(s.suggestedScorecardSource ?? 'SCORECARD')
+    setGrid((g) => [
+      ...g,
+      {
+        id: `r${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        parameter: legacy,
+        source,
+        condition: defaultConditionForParam(paramDef(source, legacy)),
+        weight: 1,
+        score: 20,
+        canonicalParameterId: String(s.canonicalParameterId),
+        canonicalDefinitionVersion: Number(s.canonicalDefinitionVersion) || 1,
+        mappingStatus: s.legacyScorecardKey ? 'EXACT' : 'SAFE_ALIAS',
+        legacyParameterKey: legacy,
+        factorLabel: String(s.businessName ?? legacy),
+        missingData: 'REQUIRED',
+      },
+    ])
   }
 
   const showForm = selected !== null || isCreating
@@ -522,8 +645,8 @@ export function ScorecardsPage() {
                 </DetailSection>
 
                 <DetailSection
-                  title="Parameters"
-                  description="Select source first — only parameters for that source are listed. OTHER custom parameters support Number, Text, or Dropdown (with per-option scores)."
+                  title="Factors"
+                  description="GACAT Source → Parameter → exclusive bands → Points → Missing-data policy. Hard eligibility stays in Policy / Underwriting Rules."
                 >
                   <ScorecardParameterEditor
                     rows={grid}
@@ -533,20 +656,109 @@ export function ScorecardsPage() {
                     loanProduct={loanProduct}
                   />
                   <button type="button" className="bt-btn bt-btn-ghost bt-btn-sm mt-3" onClick={() => setGrid((g) => [...g, newRow()])}>
-                    + Add parameter
+                    + Add legacy / custom band
                   </button>
                 </DetailSection>
 
-                <DetailSection title="Hard rules" description="Managed from Underwriting Rules now; scorecards keep legacy rules only as migration fallback.">
+                <DetailSection
+                  title="Suggested from policy"
+                  description="Read-only suggestions from an APPROVED policy’s parameters. Add or Ignore — never auto-created; thresholds are not copied."
+                >
+                  <textarea
+                    className="bt-input font-mono text-xs"
+                    rows={3}
+                    value={policySuggestRaw}
+                    onChange={(e) => setPolicySuggestRaw(e.target.value)}
+                    placeholder="bureau.score&#10;obligation.ratio&#10;application.business_vintage_months"
+                  />
+                  <button
+                    type="button"
+                    className="bt-btn bt-btn-secondary bt-btn-sm mt-2"
+                    onClick={() => void onLoadPolicySuggestions()}
+                  >
+                    Load suggestions
+                  </button>
+                  {policySuggestions.length > 0 ? (
+                    <ul className="mt-3 space-y-2">
+                      {policySuggestions.map((s) => (
+                        <li
+                          key={String(s.canonicalParameterId)}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded border border-slate-200 bg-white px-3 py-2 text-sm"
+                        >
+                          <span>
+                            <strong>{String(s.businessName)}</strong>
+                            <span className="ml-2 text-xs text-slate-500">{String(s.canonicalParameterId)}</span>
+                          </span>
+                          <span className="flex gap-2">
+                            <button
+                              type="button"
+                              className="bt-btn bt-btn-primary bt-btn-sm"
+                              disabled={isActiveImmutable}
+                              onClick={() => addSuggestedFactor(s)}
+                            >
+                              Add
+                            </button>
+                            <button
+                              type="button"
+                              className="bt-btn bt-btn-ghost bt-btn-sm"
+                              onClick={() =>
+                                setPolicySuggestions((prev) =>
+                                  prev.filter((x) => x.canonicalParameterId !== s.canonicalParameterId),
+                                )
+                              }
+                            >
+                              Ignore
+                            </button>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 text-xs text-slate-500">No suggestions loaded.</p>
+                  )}
+                </DetailSection>
+
+                <DetailSection title="Test / preview" description="Uses ScorecardPolicyEngine / safety scoring. Does not mutate applications.">
+                  <textarea
+                    className="bt-input font-mono text-xs"
+                    rows={3}
+                    value={previewInputs}
+                    onChange={(e) => setPreviewInputs(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="bt-btn bt-btn-secondary bt-btn-sm mt-2"
+                    disabled={previewBusy}
+                    onClick={() => void onPreview()}
+                  >
+                    {previewBusy ? 'Running…' : 'Run preview'}
+                  </button>
+                  {previewResult ? (
+                    <div className="mt-3 overflow-x-auto rounded border border-slate-200 bg-white p-3 text-xs">
+                      <div className="mb-2 font-semibold text-slate-800">
+                        Earned {String(previewResult.earnedPoints)} / Max {String(previewResult.maxPoints)} ·{' '}
+                        {String(previewResult.normalizedPercent)}% · {String(previewResult.policyDecision)}
+                      </div>
+                      <pre className="max-h-64 overflow-auto whitespace-pre-wrap text-[11px] text-slate-700">
+                        {JSON.stringify(previewResult.parameterResults ?? previewResult.evidence ?? previewResult, null, 2)}
+                      </pre>
+                    </div>
+                  ) : null}
+                </DetailSection>
+
+                <DetailSection
+                  title="Hard rules (scorecard)"
+                  description="Distinct from scoring factors. Hard eligibility prefers Underwriting Rules / Policy; legacy scorecard hard rules remain executable."
+                >
                   <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-                    Configure new hard rules in <strong>Underwriting Rules</strong>. Scorecard hard rules remain read-only
-                    here until legacy policies are migrated.
+                    Hard rule ≠ scoring factor. Example: Bureau Score &lt;600 → Reject (hard) vs bands → points (soft).
+                    Same canonical parameter may appear in both; value is not calculated twice.
                   </div>
                   {hards.length > 0 ? (
                     <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-slate-700">
                       {hards.map((h) => (
                         <li key={h.id}>
-                          {h.source} / {h.parameter} / {h.condition} → {h.decision}
+                          Hard rule: {h.source} / {h.parameter} / {h.condition} → {h.decision}
                         </li>
                       ))}
                     </ul>

@@ -264,6 +264,21 @@ class ScorecardSafetyClosure1Test {
         draft.setActive(false);
         draft.setStatus("DRAFT");
         draft.setVersion(2);
+        // Stamp EXACT bindings; justify AMBIGUOUS MONTHLY_INCOME as legacy custom
+        Map<String, Object> stamped = ScorecardCanonicalFactorMapper.stampScorecardJson(draft.getScorecardJson());
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) stamped.get("rows");
+        List<Map<String, Object>> next = new ArrayList<>();
+        for (Map<String, Object> r : rows) {
+            Map<String, Object> copy = new LinkedHashMap<>(r);
+            if ("MONTHLY_INCOME".equals(copy.get("parameter"))) {
+                copy.put("legacyCustomJustified", true);
+                copy.put("mappingStatus", ScorecardCanonicalFactorMapper.LEGACY_CUSTOM);
+            }
+            next.add(copy);
+        }
+        stamped.put("rows", next);
+        draft.setScorecardJson(stamped);
         draft.setSafetyJson(inherited);
         var beforeConfirm = ScorecardSafetyValidator.validateForActivation(draft);
         assertFalse(beforeConfirm.ok());
