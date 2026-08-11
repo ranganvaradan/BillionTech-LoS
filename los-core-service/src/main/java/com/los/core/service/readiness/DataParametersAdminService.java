@@ -1,10 +1,12 @@
 package com.los.core.service.readiness;
 
+import com.los.core.creditintelligence.policystudio.parameters.AuthoringValueTypes;
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterDefinition;
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterRegistry;
 import com.los.core.creditintelligence.policystudio.parameters.GacatCatalogueAuthority;
 import com.los.core.creditintelligence.policystudio.parameters.GacatCatalogueRepository;
 import com.los.core.creditintelligence.policystudio.parameters.PolicyStudioConvergencePresenter;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -26,6 +28,8 @@ public class DataParametersAdminService {
         this(null);
     }
 
+    /** Production: Spring must inject the JDBC catalogue repository (do not use the no-arg ctor). */
+    @Autowired
     public DataParametersAdminService(GacatCatalogueRepository catalogueRepository) {
         this.catalogueRepository = catalogueRepository;
     }
@@ -184,6 +188,7 @@ public class DataParametersAdminService {
 
     private Map<String, Object> enrich(CanonicalParameterDefinition d) {
         Map<String, Object> m = new LinkedHashMap<>(d.toBusinessView());
+        m.put("source", d.evaluatedFrom());
         m.put("lineage", lineage(d));
         Map<String, Object> version = dbCataloguePresent()
                 ? catalogueRepository.parameterVersionView(d.id()) : Map.of();
@@ -194,12 +199,23 @@ public class DataParametersAdminService {
         } else {
             m.put("definitionVersion", 1);
         }
+        List<Map<String, String>> allowed = List.of();
         if (dbCataloguePresent()) {
-            List<Map<String, String>> allowed = catalogueRepository.allowedValues(d.id());
-            if (!allowed.isEmpty()) {
-                m.put("allowedValues", allowed);
-            }
+            allowed = catalogueRepository.allowedValues(d.id());
         }
+        if (allowed.isEmpty()) {
+            // Authoring enums remain available even if DB overlay missed a row (still registry-backed).
+            allowed = AuthoringValueTypes.allowedValues(d.id());
+        }
+        if (!allowed.isEmpty()) {
+            m.put("allowedValues", allowed);
+        }
+        String valueControl = AuthoringValueTypes.valueControl(d);
+        if (!allowed.isEmpty()) {
+            valueControl = AuthoringValueTypes.CONTROL_ENUM;
+        }
+        m.put("authoringValueType", valueControl);
+        m.put("valueType", valueControl);
         Map<String, Object> advanced = new LinkedHashMap<>();
         advanced.put("existingImplementationBinding", d.existingImplementationBinding());
         advanced.put("liveRuleParameter", d.liveRuleParameter());
@@ -207,6 +223,7 @@ public class DataParametersAdminService {
         advanced.put("id", d.id());
         advanced.put("canonicalId", d.id());
         advanced.put("definitionVersion", m.get("definitionVersion"));
+        advanced.put("authoringValueType", valueControl);
         if (d.capability() != null) {
             advanced.put("providerFieldPath", d.capability().providerFieldPath());
             advanced.put("schema", d.capability().schema());
