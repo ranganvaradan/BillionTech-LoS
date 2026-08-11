@@ -335,59 +335,61 @@ export function CiPolicyRulesTab({
   return (
     <div className="space-y-3">
       {compactShell ? (
-        <div className="flex flex-wrap items-end justify-between gap-2">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-900">Rules</h2>
-            <p className="text-sm text-slate-600">
-              {totals.total} underwriting rules · {totals.ready} ready · {totals.needs} need input
-              {dataAndCalculations.length > 0 ? (
-                <span className="text-slate-500">
-                  {' '}
-                  · {dataAndCalculations.length} in Data &amp; calculations
-                </span>
-              ) : null}
-              {otherPolicyContent.length > 0 ? (
-                <span className="text-slate-500">
-                  {' '}
-                  · {otherPolicyContent.length} other policy content
-                </span>
-              ) : null}
-            </p>
+        <>
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">Rules</h2>
+              <p className="text-sm text-slate-600">
+                {totals.total} underwriting rules · {totals.ready} ready · {totals.needs} need input
+                {dataAndCalculations.length > 0 ? (
+                  <span className="text-slate-500">
+                    {' '}
+                    · {dataAndCalculations.length} in Data &amp; calculations
+                  </span>
+                ) : null}
+                {otherPolicyContent.length > 0 ? (
+                  <span className="text-slate-500">
+                    {' '}
+                    · {otherPolicyContent.length} other policy content
+                  </span>
+                ) : null}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="bt-btn bt-btn-primary bt-btn-sm"
+                data-testid="add-rule"
+                onClick={() => setAuthoringOpen((v) => !v)}
+              >
+                {authoringOpen ? 'Hide add rule' : '+ Add rule'}
+              </button>
+              <button
+                type="button"
+                className="bt-btn bt-btn-secondary bt-btn-sm"
+                onClick={() => {
+                  setCatalogueEdit(null)
+                  setCatalogueOpen((v) => !v)
+                }}
+              >
+                {catalogueOpen ? 'Hide catalogue' : 'Browse catalogue'}
+              </button>
+            </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              className="bt-btn bt-btn-primary bt-btn-sm"
-              data-testid="add-rule"
-              onClick={() => setAuthoringOpen((v) => !v)}
-            >
-              {authoringOpen ? 'Hide add rule' : '+ Add rule'}
-            </button>
-            <button
-              type="button"
-              className="bt-btn bt-btn-secondary bt-btn-sm"
-              onClick={() => {
-                setCatalogueEdit(null)
-                setCatalogueOpen((v) => !v)
+          {authoringOpen && documentId && setBusy && onError && onSession ? (
+            <CiRuleAuthoringPanel
+              documentId={documentId}
+              busy={busy}
+              setBusy={setBusy}
+              onError={onError}
+              onSession={(data) => {
+                onSession(data)
+                setAuthoringOpen(false)
               }}
-            >
-              {catalogueOpen ? 'Hide catalogue' : 'Browse catalogue'}
-            </button>
-          </div>
-        </div>
-        {authoringOpen && documentId && setBusy && onError && onSession ? (
-          <CiRuleAuthoringPanel
-            documentId={documentId}
-            busy={busy}
-            setBusy={setBusy}
-            onError={onError}
-            onSession={(data) => {
-              onSession(data)
-              setAuthoringOpen(false)
-            }}
-            onClose={() => setAuthoringOpen(false)}
-          />
-        ) : null}
+              onClose={() => setAuthoringOpen(false)}
+            />
+          ) : null}
+        </>
       ) : (
         <>
           <CiExecutiveSummary
