@@ -7,6 +7,7 @@ import {
 } from '@/components/creditIntelligence/CiSection'
 import { decisionPolicyDomainLabel } from '@/lib/creditIntelligence/businessLexicon'
 import { CiCapabilityCataloguePanel } from '@/pages/creditIntelligence/CiCapabilityCataloguePanel'
+import { CiParameterResolverPanel } from '@/pages/creditIntelligence/CiParameterResolverPanel'
 
 function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {}
@@ -240,6 +241,10 @@ export function CiPolicyRulesTab({
     businessCapabilityId: string
     parameters?: Record<string, unknown>
     failureTreatment?: string
+  } | null>(null)
+  const [resolver, setResolver] = useState<{
+    ruleId: string
+    operand: Record<string, unknown>
   } | null>(null)
 
   const filtered = useMemo(() => {
@@ -580,7 +585,69 @@ export function CiPolicyRulesTab({
                         </div>
                       </div>
 
-                      {needsInput && r.blockedReason ? (
+                      {asList(r.operands).length > 0 ? (
+                        <div className="mt-3 space-y-2" data-testid="rule-operands">
+                          {asList(r.operands).map((opRaw, oi) => {
+                            const op = asRecord(opRaw)
+                            const unresolved = Boolean(op.unresolved)
+                            const unavailable = Boolean(op.unavailable)
+                            return (
+                              <div
+                                key={oi}
+                                className={`rounded-lg border px-3 py-2 text-sm ${
+                                  unresolved
+                                    ? 'border-amber-200 bg-amber-50'
+                                    : unavailable
+                                      ? 'border-slate-300 bg-slate-50'
+                                      : 'border-slate-200 bg-white'
+                                }`}
+                              >
+                                <div className="font-medium text-slate-900">
+                                  {String(op.businessName ?? op.label ?? 'Parameter')}
+                                </div>
+                                {unresolved ? (
+                                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                                    <span className="text-amber-900">Not yet mapped</span>
+                                    <button
+                                      type="button"
+                                      disabled={busy}
+                                      className="bt-btn bt-btn-secondary bt-btn-sm"
+                                      data-testid={`resolve-parameter-${String(op.operandKey ?? oi)}`}
+                                      onClick={() => setResolver({ ruleId: id, operand: op })}
+                                    >
+                                      Resolve parameter
+                                    </button>
+                                  </div>
+                                ) : unavailable ? (
+                                  <p className="mt-1 text-slate-700">
+                                    {String(
+                                      op.message ??
+                                        'Understood, but unavailable from current data sources.',
+                                    )}
+                                  </p>
+                                ) : (
+                                  <div className="mt-1 text-slate-700">
+                                    {String(op.evaluatedFrom ?? '—')} ·{' '}
+                                    {String(op.availabilityLabel ?? op.resolutionState ?? '—')}
+                                    {op.howCalculated ? (
+                                      <details className="mt-1">
+                                        <summary className="cursor-pointer text-xs font-medium text-slate-600">
+                                          How calculated
+                                        </summary>
+                                        <p className="mt-1 text-xs text-slate-600">
+                                          {String(op.howCalculated)}
+                                        </p>
+                                      </details>
+                                    ) : null}
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      ) : null}
+
+                      {needsInput && r.blockedReason && asList(r.operands).length === 0 ? (
                         <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
                           {String(r.blockedReason)}
                           {asRecord(r.cleanDefinition).actions ? (
@@ -590,43 +657,17 @@ export function CiPolicyRulesTab({
                                 disabled={busy}
                                 className="bt-btn bt-btn-secondary bt-btn-sm"
                                 onClick={() =>
-                                  void onReview(id, {
-                                    uiAction: 'USE_EXISTING_CLEAN_DEFINITION',
-                                    parameterId: 'bureau.credit_after_overdue.clean_history_months',
-                                    reason: 'Linked existing clean-history parameter for draft',
+                                  setResolver({
+                                    ruleId: id,
+                                    operand: {
+                                      operandKey: 'clean_history',
+                                      businessName: 'Clean credit history',
+                                      unresolved: true,
+                                    },
                                   })
                                 }
                               >
-                                Use existing definition
-                              </button>
-                              <button
-                                type="button"
-                                disabled={busy}
-                                className="bt-btn bt-btn-secondary bt-btn-sm"
-                                onClick={() =>
-                                  void onReview(id, {
-                                    uiAction: 'DEFINE_CLEAN',
-                                    startEvent: 'AFTER_OVERDUE',
-                                    notes: 'Draft skeleton — thresholds not invented',
-                                    reason: 'CM opened clean-history definition (session draft)',
-                                  })
-                                }
-                              >
-                                Define
-                              </button>
-                              <button
-                                type="button"
-                                disabled={busy}
-                                className="bt-btn bt-btn-secondary bt-btn-sm"
-                                onClick={() =>
-                                  void onReview(id, {
-                                    uiAction: 'MANUAL_CLEAN_INPUT',
-                                    manualInputLabel: 'Clean history months (manual)',
-                                    reason: 'Manual input for clean history',
-                                  })
-                                }
-                              >
-                                Manual input
+                                Resolve parameter
                               </button>
                             </div>
                           ) : null}
@@ -943,6 +984,15 @@ export function CiPolicyRulesTab({
           </ul>
         </CiSection>
       ) : null}
+
+      <CiParameterResolverPanel
+        open={Boolean(resolver)}
+        onClose={() => setResolver(null)}
+        operand={resolver?.operand ?? {}}
+        ruleId={resolver?.ruleId ?? ''}
+        busy={busy}
+        onResolve={onReview}
+      />
     </div>
   )
 }

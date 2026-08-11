@@ -117,6 +117,32 @@ export async function searchCreditCapabilities(
   return data
 }
 
+/** POLICY-PARAMETER-RESOLVER-1 — CanonicalParameterRegistry read model */
+export async function getParameterCatalogue(source?: string): Promise<Record<string, unknown>> {
+  const { data } = await http.get<Record<string, unknown>>(`${BASE}/policy-studio/parameters`, {
+    params: source ? { source } : undefined,
+  })
+  return data
+}
+
+export async function searchCanonicalParameters(q: string): Promise<Record<string, unknown>> {
+  const { data } = await http.get<Record<string, unknown>>(`${BASE}/policy-studio/parameters/search`, {
+    params: { q },
+  })
+  return data
+}
+
+export async function proposeParameterDefinition(body: {
+  term: string
+  description: string
+}): Promise<Record<string, unknown>> {
+  const { data } = await http.post<Record<string, unknown>>(
+    `${BASE}/policy-studio/parameters/propose-definition`,
+    body,
+  )
+  return data
+}
+
 export type CatalogueCapabilityAddBody = {
   businessCapabilityId: string
   parameters?: Record<string, unknown>
@@ -247,6 +273,13 @@ export type ReviewRuleBody = {
     | 'EXCLUDE'
     | 'MANUAL_INPUT'
     | 'MANUAL_VERIFICATION'
+    | 'DEFINE_CLEAN'
+    | 'USE_EXISTING_CLEAN_DEFINITION'
+    | 'MANUAL_CLEAN_INPUT'
+    | 'RESOLVE_PARAMETER_MAP'
+    | 'RESOLVE_PARAMETER_MANUAL'
+    | 'RESOLVE_PARAMETER_USE_PROPOSAL'
+    | 'RESOLVE_PARAMETER_UNAVAILABLE'
   reviewer?: string
   reviewerRole?: string
   reviewState?: string
@@ -257,6 +290,14 @@ export type ReviewRuleBody = {
   manualInputLabel?: string
   manualInputType?: string
   requiredActor?: string
+  /** POLICY-PARAMETER-RESOLVER-1 */
+  operandKey?: string
+  originalTerm?: string
+  parameterId?: string
+  unit?: string
+  guidance?: string
+  proposal?: Record<string, unknown>
+  [key: string]: unknown
 }
 
 export async function reviewPolicyRule(

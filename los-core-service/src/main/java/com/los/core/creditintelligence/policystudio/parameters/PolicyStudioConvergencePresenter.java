@@ -233,12 +233,17 @@ public final class PolicyStudioConvergencePresenter {
         @SuppressWarnings("unchecked")
         Map<String, Object> visual = card.get("visualLogic") instanceof Map<?, ?>
                 ? (Map<String, Object>) card.get("visualLogic") : Map.of();
+        Object cleanMetaObj = meta.get(CleanHistoryDefinitionSupport.META_KEY);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> cleanMap = cleanMetaObj instanceof Map<?, ?>
+                ? (Map<String, Object>) cleanMetaObj : null;
         if (isOverdueExceptionParent(r.getSystemRuleId())) {
-            Object cleanMeta = meta.get(CleanHistoryDefinitionSupport.META_KEY);
-            @SuppressWarnings("unchecked")
-            Map<String, Object> cleanMap = cleanMeta instanceof Map<?, ?>
-                    ? (Map<String, Object>) cleanMeta : null;
-            visual = compoundOverdueVisual(cleanMap);
+            Map<String, Object> cleanForVisual = cleanMap;
+            Map<String, Object> cleanRes = ParameterResolutionSupport.resolutionFor(meta, "clean_history");
+            if (ParameterResolutionSupport.isResolved(cleanRes)) {
+                cleanForVisual = ParameterResolutionSupport.toCleanHistoryBridge(cleanRes);
+            }
+            visual = compoundOverdueVisual(cleanForVisual);
             card.put("visualLogic", visual);
             card.put("ruleName", "Overdue Exception Eligibility");
             card.put("businessRule", "Allow only if ALL compound Bureau conditions are met");
@@ -246,8 +251,12 @@ public final class PolicyStudioConvergencePresenter {
             card.put("parameterName", "Overdue exception eligibility");
             if (cleanMap == null || CleanHistoryDefinitionSupport.STATUS_UNRESOLVED
                     .equals(String.valueOf(cleanMap.getOrDefault("status", STATUS_UNRESOLVED_FALLBACK)))) {
-                card.put("cleanDefinition", CleanHistoryDefinitionSupport.unresolvedCardPayload(REGISTRY));
-                card.put("blockedReason", "Clean credit history needs a definition.");
+                Map<String, Object> cleanPayload = CleanHistoryDefinitionSupport.unresolvedCardPayload(REGISTRY);
+                cleanPayload.put("useGenericResolver", true);
+                cleanPayload.put("headline", "Clean credit history — Not yet mapped");
+                card.put("cleanDefinition", cleanPayload);
+                // Primary message is operand "Not yet mapped" — avoid stacked "needs a definition"
+                card.put("blockedReason", null);
                 if (!"Ignored".equals(card.get("status")) && !"Deleted".equals(card.get("status"))) {
                     card.put("status", "Needs your input");
                 }
@@ -281,6 +290,40 @@ public final class PolicyStudioConvergencePresenter {
             Map<String, Object> how = LINEAGE.howCalculated(lineage);
             how.put("source", normalizeEvalSource(String.valueOf(how.getOrDefault("source", evalFrom))));
             card.put("howCalculated", how);
+        }
+        // POLICY-PARAMETER-RESOLVER-1 — independent operands (ADB/EDI, CLEAN, …)
+        @SuppressWarnings("unchecked")
+        Map<String, Object> visualForOperands = card.get("visualLogic") instanceof Map<?, ?>
+                ? (Map<String, Object>) card.get("visualLogic") : visual;
+        List<Map<String, Object>> operands = RuleOperandPresenter.buildOperands(
+                r.getSystemRuleId(), dataUsed, meta, visualForOperands);
+        if (!operands.isEmpty()) {
+            card.put("operands", operands);
+            card.put("parameterResolver", true);
+            boolean anyUnresolved = operands.stream()
+                    .anyMatch(o -> Boolean.TRUE.equals(o.get("unresolved")));
+            boolean anyUnavailable = operands.stream()
+                    .anyMatch(o -> Boolean.TRUE.equals(o.get("unavailable")));
+            if (anyUnresolved) {
+                card.put("blockedReason", null);
+                if (!"Ignored".equals(card.get("status")) && !"Deleted".equals(card.get("status"))) {
+                    card.put("status", "Needs your input");
+                }
+                // CLEAN still exposes legacy payload for advanced, but primary UX is Resolve parameter
+                if (isOverdueExceptionParent(r.getSystemRuleId())
+                        && (cleanMap == null || CleanHistoryDefinitionSupport.STATUS_UNRESOLVED
+                        .equals(String.valueOf(
+                                cleanMap == null ? STATUS_UNRESOLVED_FALLBACK
+                                        : cleanMap.getOrDefault("status", STATUS_UNRESOLVED_FALLBACK))))) {
+                    Map<String, Object> cleanPayload = CleanHistoryDefinitionSupport.unresolvedCardPayload(REGISTRY);
+                    cleanPayload.put("useGenericResolver", true);
+                    cleanPayload.put("headline", "Clean credit history — Not yet mapped");
+                    card.put("cleanDefinition", cleanPayload);
+                }
+            } else if (anyUnavailable) {
+                card.put("blockedReason",
+                        "Parameter understood but unavailable from current data sources.");
+            }
         }
     }
 

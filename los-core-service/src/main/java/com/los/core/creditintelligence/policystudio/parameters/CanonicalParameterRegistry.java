@@ -91,13 +91,136 @@ public class CanonicalParameterRegistry {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("count", all.size());
         out.put("parameters", all.stream().map(CanonicalParameterDefinition::toBusinessView).toList());
+        out.put("sources", sources());
         out.put("readModelOnly", true);
         out.put("allowCanonicalAuthority", false);
         return out;
     }
 
+    /** Distinct business sources for resolver Source dropdown. */
+    public List<String> sources() {
+        LinkedHashMap<String, Boolean> ordered = new LinkedHashMap<>();
+        for (String s : List.of(
+                "Application", "Bureau", "Bank Statement", "GST", "Financial Statements",
+                "KYC", "Program / Product", "Customer / Borrower", "Manual Input", "Computed / Derived")) {
+            ordered.put(s, Boolean.FALSE);
+        }
+        for (CanonicalParameterDefinition p : all) {
+            if (p.evaluatedFrom() != null && !p.evaluatedFrom().isBlank()) {
+                ordered.putIfAbsent(p.evaluatedFrom(), Boolean.TRUE);
+            }
+        }
+        return new ArrayList<>(ordered.keySet());
+    }
+
+    /** Browse RAW then DERIVED for a source — only known registry entries. */
+    public Map<String, Object> browseBySource(String source) {
+        String src = source == null ? "" : source.trim();
+        List<Map<String, Object>> raw = new ArrayList<>();
+        List<Map<String, Object>> derived = new ArrayList<>();
+        List<Map<String, Object>> manual = new ArrayList<>();
+        for (CanonicalParameterDefinition p : all) {
+            if (!sourceMatches(p.evaluatedFrom(), src)) continue;
+            Map<String, Object> view = p.toBusinessView();
+            if (CanonicalParameterDefinition.RAW.equals(p.type())) raw.add(view);
+            else if (CanonicalParameterDefinition.MANUAL.equals(p.type())) manual.add(view);
+            else derived.add(view);
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("source", src);
+        out.put("raw", raw);
+        out.put("derived", derived);
+        out.put("manual", manual);
+        out.put("count", raw.size() + derived.size() + manual.size());
+        out.put("invented", false);
+        out.put("allowCanonicalAuthority", false);
+        return out;
+    }
+
+    /**
+     * Business-language search across names, aliases, sources, live rule/scorecard vocab.
+     * Does not manufacture new parameters.
+     */
+    public Map<String, Object> search(String query) {
+        String q = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
+        List<Map<String, Object>> hits = new ArrayList<>();
+        if (!q.isBlank()) {
+            for (CanonicalParameterDefinition p : all) {
+                int score = matchScore(p, q);
+                if (score <= 0) continue;
+                Map<String, Object> row = new LinkedHashMap<>(p.toBusinessView());
+                row.put("matchScore", score);
+                hits.add(row);
+            }
+            hits.sort((a, b) -> Integer.compare(
+                    ((Number) b.getOrDefault("matchScore", 0)).intValue(),
+                    ((Number) a.getOrDefault("matchScore", 0)).intValue()));
+        }
+        // Deduplicate by id
+        LinkedHashMap<String, Map<String, Object>> dedup = new LinkedHashMap<>();
+        for (Map<String, Object> h : hits) {
+            dedup.putIfAbsent(String.valueOf(h.get("id")), h);
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("query", query);
+        out.put("count", dedup.size());
+        out.put("results", new ArrayList<>(dedup.values()));
+        out.put("createsParameter", false);
+        out.put("allowCanonicalAuthority", false);
+        return out;
+    }
+
+    private static boolean sourceMatches(String evaluatedFrom, String selected) {
+        if (selected == null || selected.isBlank()) return true;
+        if (evaluatedFrom == null) return false;
+        return evaluatedFrom.equalsIgnoreCase(selected.trim())
+                || evaluatedFrom.toLowerCase(Locale.ROOT).contains(selected.trim().toLowerCase(Locale.ROOT));
+    }
+
+    private static int matchScore(CanonicalParameterDefinition p, String q) {
+        int score = 0;
+        if (p.id() != null && p.id().toLowerCase(Locale.ROOT).contains(q)) score = Math.max(score, 80);
+        if (p.businessName() != null) {
+            String n = p.businessName().toLowerCase(Locale.ROOT);
+            if (n.equals(q)) score = Math.max(score, 100);
+            else if (n.contains(q) || q.contains(n)) score = Math.max(score, 90);
+        }
+        if (p.evaluatedFrom() != null && p.evaluatedFrom().toLowerCase(Locale.ROOT).contains(q)) {
+            score = Math.max(score, 40);
+        }
+        if (p.liveRuleParameter() != null && p.liveRuleParameter().toLowerCase(Locale.ROOT).contains(q)) {
+            score = Math.max(score, 85);
+        }
+        if (p.liveScorecardParameter() != null
+                && p.liveScorecardParameter().toLowerCase(Locale.ROOT).contains(q)) {
+            score = Math.max(score, 85);
+        }
+        if (p.aliases() != null) {
+            for (String a : p.aliases()) {
+                if (a == null) continue;
+                String al = a.toLowerCase(Locale.ROOT);
+                if (al.equals(q)) score = Math.max(score, 98);
+                else if (al.contains(q) || q.contains(al)) score = Math.max(score, 92);
+            }
+        }
+        return score;
+    }
+
     private static List<CanonicalParameterDefinition> seed() {
         List<CanonicalParameterDefinition> p = new ArrayList<>();
+        // RAW bureau primitives (browse)
+        p.add(def("bureau.tradeline.payment_history", "Payment history", "Bureau",
+                CanonicalParameterDefinition.RAW, "HISTORY", null, "AVAILABLE_AUTOMATICALLY",
+                null, List.of(), "Bureau tradeline payment history",
+                List.of("payment history", "tradeline history"), null, null));
+        p.add(def("bureau.tradeline.account_open_date", "Account open date", "Bureau",
+                CanonicalParameterDefinition.RAW, "DATE", null, "AVAILABLE_AUTOMATICALLY",
+                null, List.of(), "Bureau tradeline open date",
+                List.of("account open date", "tradeline open date"), null, null));
+        p.add(def("bureau.inquiry", "Bureau enquiry event", "Bureau",
+                CanonicalParameterDefinition.RAW, "EVENT", null, "AVAILABLE_AUTOMATICALLY",
+                null, List.of(), "Bureau enquiry record",
+                List.of("enquiry event", "inquiry event"), null, null));
         p.add(def("bureau.score", "Bureau score", "Bureau", CanonicalParameterDefinition.RAW,
                 "SCORE", null, "AVAILABLE_AUTOMATICALLY", null, List.of(),
                 "BureauMetricService / CreditControl bureauScore",
@@ -160,6 +283,39 @@ public class CanonicalParameterRegistry {
                 "PolicyBureauMetricService.cleanHistoryMonths (vocabulary-gated)",
                 List.of("clean history", "clean credit history", "clean string", "6 months clean"),
                 null, "REPAYMENT_HISTORY"));
+        // RAW bank primitives (browse)
+        p.add(def("bank.transaction.amount", "Transaction amount", "Bank Statement",
+                CanonicalParameterDefinition.RAW, "INR", null, "AVAILABLE_AUTOMATICALLY",
+                null, List.of(), "Bank transaction amount",
+                List.of("txn amount", "transaction amount"), null, null));
+        p.add(def("bank.transaction.date", "Transaction date", "Bank Statement",
+                CanonicalParameterDefinition.RAW, "DATE", null, "AVAILABLE_AUTOMATICALLY",
+                null, List.of(), "Bank transaction date",
+                List.of("txn date", "transaction date"), null, null));
+        p.add(def("bank.account.closing_balance", "Closing balance", "Bank Statement",
+                CanonicalParameterDefinition.RAW, "INR", null, "AVAILABLE_AUTOMATICALLY",
+                null, List.of(), "End-of-day / closing balance",
+                List.of("closing balance", "eod balance"), null, null));
+        p.add(def("bank.transaction.credit_debit", "Credit/debit indicator", "Bank Statement",
+                CanonicalParameterDefinition.RAW, "FLAG", null, "AVAILABLE_AUTOMATICALLY",
+                null, List.of(), "Credit vs debit flag",
+                List.of("credit debit", "dr cr"), null, null));
+        p.add(def("bank.transaction.classification", "Transaction classification", "Bank Statement",
+                CanonicalParameterDefinition.RAW, "CODE", null, "AVAILABLE_AUTOMATICALLY",
+                null, List.of(), "Transaction classification / category",
+                List.of("txn classification", "transaction category"), null, null));
+        p.add(def("banking.monthly_credits_3m", "Monthly credits", "Bank Statement",
+                CanonicalParameterDefinition.DERIVED, "INR", "TRAILING_3M", "DERIVABLE_FROM_AVAILABLE_DATA",
+                "Sum of credit transactions over trailing months",
+                List.of("bank.transaction"),
+                "PolicyBankingMetricService",
+                List.of("monthly credits", "credit sum"), null, null));
+        p.add(def("banking.cheque_return_count_3m", "Cheque return count", "Bank Statement",
+                CanonicalParameterDefinition.DERIVED, "COUNT", "TRAILING_3M", "AVAILABLE_AUTOMATICALLY",
+                "Count of cheque/ECS returns in trailing 3 months",
+                List.of("bank.transaction", "CHEQUE_RETURN"),
+                "PolicyBankingMetricService",
+                List.of("cheque return count", "bounce count"), null, null));
         p.add(def("banking.settlement.count_monthly_avg_3m", "Average monthly settlements", "Bank Statement",
                 CanonicalParameterDefinition.DERIVED, "COUNT", "TRAILING_3M", "DERIVABLE_FROM_AVAILABLE_DATA",
                 "Number of qualifying QR settlement credits during the trailing 3 months ÷ 3",

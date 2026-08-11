@@ -163,6 +163,52 @@ public class StagingDemoController {
         return creditCapabilityCatalogueService.search(q, advanced);
     }
 
+    /**
+     * POLICY-PARAMETER-RESOLVER-1 — CanonicalParameterRegistry browse/search (read model only).
+     */
+    @GetMapping("/policy-studio/parameters")
+    public Map<String, Object> parameterCatalogue(
+            @RequestHeader(value = "X-Internal-Token", required = false) String token,
+            @RequestParam(value = "source", required = false) String source) {
+        assertInternalToken(token);
+        assertStagingDemoEnabled();
+        var registry = com.los.core.creditintelligence.policystudio.parameters
+                .PolicyStudioConvergencePresenter.registry();
+        if (source != null && !source.isBlank()) {
+            return registry.browseBySource(source);
+        }
+        return registry.catalogueView();
+    }
+
+    @GetMapping("/policy-studio/parameters/search")
+    public Map<String, Object> searchParameters(
+            @RequestHeader(value = "X-Internal-Token", required = false) String token,
+            @RequestParam(value = "q", required = false) String q) {
+        assertInternalToken(token);
+        assertStagingDemoEnabled();
+        return com.los.core.creditintelligence.policystudio.parameters
+                .PolicyStudioConvergencePresenter.registry().search(q);
+    }
+
+    @PostMapping("/policy-studio/parameters/propose-definition")
+    public Map<String, Object> proposeParameterDefinition(
+            @RequestHeader(value = "X-Internal-Token", required = false) String token,
+            @RequestBody Map<String, Object> body) {
+        assertInternalToken(token);
+        assertStagingDemoEnabled();
+        String term = body == null || body.get("term") == null ? "" : String.valueOf(body.get("term"));
+        String description = body == null || body.get("description") == null
+                ? "" : String.valueOf(body.get("description"));
+        var planner = new com.los.core.creditintelligence.policystudio.parameters
+                .ParameterDerivationPlanner(
+                com.los.core.creditintelligence.policystudio.parameters
+                        .PolicyStudioConvergencePresenter.registry());
+        Map<String, Object> proposal = planner.propose(term, description);
+        proposal.put("actions", java.util.List.of("USE_THIS_DEFINITION", "EDIT", "CANCEL"));
+        proposal.put("autoAccepted", false);
+        return proposal;
+    }
+
     @GetMapping("/policy-studio/capabilities/scf-representability")
     public Map<String, Object> scfRepresentability(
             @RequestHeader(value = "X-Internal-Token", required = false) String token) {

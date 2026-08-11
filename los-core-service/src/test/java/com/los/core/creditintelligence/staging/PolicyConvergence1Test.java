@@ -76,12 +76,20 @@ class PolicyConvergence1Test {
                 .findFirst()
                 .orElseThrow();
         assertThat(parent.get("evaluatedFrom")).isEqualTo("Bureau");
-        assertThat(String.valueOf(parent.get("blockedReason"))).containsIgnoringCase("definition");
+        // POLICY-PARAMETER-RESOLVER-1 — CLEAN uses generic Resolve parameter (not invented DPD=0)
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> operands = (List<Map<String, Object>>) parent.get("operands");
+        assertThat(operands).isNotNull();
+        assertThat(operands.stream().anyMatch(o ->
+                "clean_history".equals(o.get("operandKey"))
+                        && Boolean.TRUE.equals(o.get("unresolved"))
+                        && Boolean.TRUE.equals(o.get("resolveAction")))).isTrue();
         assertThat(parent.get("cleanDefinition")).isNotNull();
         @SuppressWarnings("unchecked")
         Map<String, Object> clean = (Map<String, Object>) parent.get("cleanDefinition");
         assertThat(clean.get("doNotInvent")).isEqualTo(true);
         assertThat(clean.get("status")).isEqualTo(CleanHistoryDefinitionSupport.STATUS_UNRESOLVED);
+        assertThat(clean.get("useGenericResolver")).isEqualTo(true);
         // Children not in primary underwriting list
         assertThat(uw.stream().noneMatch(c -> Boolean.TRUE.equals(c.get("compoundChild")))).isTrue();
         @SuppressWarnings("unchecked")

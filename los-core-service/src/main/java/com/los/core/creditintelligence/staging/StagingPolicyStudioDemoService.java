@@ -319,6 +319,14 @@ public class StagingPolicyStudioDemoService {
                     reason = "Clean history definition recorded on draft (session only)";
                 }
             }
+            // POLICY-PARAMETER-RESOLVER-1 — generic parameter resolution (session/draft only)
+            case "RESOLVE_PARAMETER_MAP", "RESOLVE_PARAMETER_MANUAL",
+                 "RESOLVE_PARAMETER_USE_PROPOSAL", "RESOLVE_PARAMETER_UNAVAILABLE" -> {
+                reviewState = ReviewState.CREDIT_MANAGER_APPROVED.name();
+                if (reason == null) {
+                    reason = "Parameter resolution recorded on draft (session only)";
+                }
+            }
             default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Unsupported rule review action");
         }
@@ -415,6 +423,10 @@ public class StagingPolicyStudioDemoService {
                     meta.put("evaluatedFrom", "Manual Input");
                     stampCleanOnRelatedRules(session, def);
                 }
+                case "RESOLVE_PARAMETER_MAP", "RESOLVE_PARAMETER_MANUAL",
+                     "RESOLVE_PARAMETER_USE_PROPOSAL", "RESOLVE_PARAMETER_UNAVAILABLE" -> {
+                    applyParameterResolution(session, rule, meta, action, body);
+                }
                 default -> {
                     /* reject path keeps prior metadata */
                 }
@@ -462,6 +474,138 @@ public class StagingPolicyStudioDemoService {
                 "uiAction", action));
         view.put("message", "Rule review recorded.");
         return view;
+    }
+
+    /**
+     * POLICY-PARAMETER-RESOLVER-1 — persist policy-scoped operand resolution (session draft only).
+     * Does not invent CLEAN=DPD0. Does not grant production authority.
+     */
+    private void applyParameterResolution(
+            PolicyStudioSession session,
+            CiPolicyRuleCandidate rule,
+            Map<String, Object> meta,
+            String action,
+            Map<String, Object> body) {
+        String operandKey = body.get("operandKey") == null
+                ? com.los.core.creditintelligence.policystudio.parameters.ParameterResolutionSupport
+                .normalizeOperandKey(String.valueOf(body.getOrDefault("originalTerm", "parameter")))
+                : String.valueOf(body.get("operandKey"));
+        String originalTerm = body.get("originalTerm") == null
+                ? operandKey : String.valueOf(body.get("originalTerm"));
+        var registry = com.los.core.creditintelligence.policystudio.parameters
+                .PolicyStudioConvergencePresenter.registry();
+        Map<String, Object> resolution;
+        switch (action) {
+            case "RESOLVE_PARAMETER_MAP" -> {
+                String parameterId = String.valueOf(body.getOrDefault("parameterId", ""));
+                var def = registry.findById(parameterId)
+                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                                "Unknown parameter — search/browse only returns registry entries."));
+                resolution = com.los.core.creditintelligence.policystudio.parameters
+                        .ParameterResolutionSupport.mapToExisting(def, originalTerm);
+            }
+            case "RESOLVE_PARAMETER_MANUAL" -> resolution = com.los.core.creditintelligence.policystudio.parameters
+                    .ParameterResolutionSupport.manual(
+                            body.get("manualInputLabel") == null ? null
+                                    : String.valueOf(body.get("manualInputLabel")),
+                            body.get("manualInputType") == null ? null
+                                    : String.valueOf(body.get("manualInputType")),
+                            body.get("unit") == null ? null : String.valueOf(body.get("unit")),
+                            body.get("requiredActor") == null ? null
+                                    : String.valueOf(body.get("requiredActor")),
+                            body.get("guidance") == null ? null : String.valueOf(body.get("guidance")),
+                            originalTerm);
+            case "RESOLVE_PARAMETER_USE_PROPOSAL" -> {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> proposal = body.get("proposal") instanceof Map<?, ?>
+                        ? new LinkedHashMap<>((Map<String, Object>) body.get("proposal"))
+                        : Map.of();
+                if (proposal.isEmpty()) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "Proposal required — describe-meaning must be confirmed explicitly.");
+                }
+                resolution = com.los.core.creditintelligence.policystudio.parameters
+                        .ParameterResolutionSupport.acceptProposal(proposal, originalTerm);
+            }
+            case "RESOLVE_PARAMETER_UNAVAILABLE" -> resolution = com.los.core.creditintelligence.policystudio.parameters
+                    .ParameterResolutionSupport.unavailable(
+                            body.get("parameterId") == null ? null : String.valueOf(body.get("parameterId")),
+                            body.get("reason") == null ? null : String.valueOf(body.get("reason")),
+                            originalTerm);
+            default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported resolve action");
+        }
+        Map<String, Object> all = com.los.core.creditintelligence.policystudio.parameters
+                .ParameterResolutionSupport.resolutionsOf(meta);
+        all.put(operandKey, resolution);
+        meta.put(com.los.core.creditintelligence.policystudio.parameters
+                .ParameterResolutionSupport.META_KEY, all);
+        meta.put("disposition", "EDITED");
+        meta.put("excludedFromActivation", false);
+        meta.put("NEEDS_INPUT", !com.los.core.creditintelligence.policystudio.parameters
+                .ParameterResolutionSupport.isResolved(resolution)
+                || com.los.core.creditintelligence.policystudio.parameters
+                .ParameterResolutionSupport.STATUS_UNAVAILABLE.equals(
+                        String.valueOf(resolution.get("status"))));
+        if (com.los.core.creditintelligence.policystudio.parameters
+                .ParameterResolutionSupport.isResolved(resolution)) {
+            meta.remove("blockedReason");
+        }
+        // CLEAN bridge — preserve compound ALL parent relationship
+        if ("clean_history".equals(operandKey)) {
+            Map<String, Object> bridge = com.los.core.creditintelligence.policystudio.parameters
+                    .ParameterResolutionSupport.toCleanHistoryBridge(resolution);
+            if (bridge != null) {
+                meta.put(com.los.core.creditintelligence.policystudio.parameters
+                        .CleanHistoryDefinitionSupport.META_KEY, bridge);
+                stampCleanOnRelatedRules(session, bridge);
+            }
+        }
+        // Share EDI (and other) draft mappings across sibling rules in this session
+        if ("proposed_edi".equals(operandKey) || "clean_history".equals(operandKey)) {
+            stampParameterResolutionOnRelatedRules(session, operandKey, resolution);
+        }
+        stampParameterResolutionOnDocument(session, operandKey, resolution);
+        rule.setMetadata(meta);
+    }
+
+    private static void stampParameterResolutionOnRelatedRules(
+            PolicyStudioSession session, String operandKey, Map<String, Object> resolution) {
+        if (session == null || resolution == null || operandKey == null) return;
+        for (CiPolicyRuleCandidate r : session.getRuleCandidates()) {
+            String sys = r.getSystemRuleId() == null ? "" : r.getSystemRuleId().toUpperCase(Locale.ROOT);
+            boolean match = ("proposed_edi".equals(operandKey) && sys.contains("EDI"))
+                    || ("clean_history".equals(operandKey)
+                    && (sys.contains("OVERDUE_EXCEPTION") || sys.contains("CLEAN")
+                    || sys.contains("OVERDUE_CHILD_3") || sys.contains("NO_OVERDUE_EXCEPT")));
+            if (!match) continue;
+            Map<String, Object> m = r.getMetadata() == null
+                    ? new LinkedHashMap<>() : new LinkedHashMap<>(r.getMetadata());
+            Map<String, Object> all = com.los.core.creditintelligence.policystudio.parameters
+                    .ParameterResolutionSupport.resolutionsOf(m);
+            all.put(operandKey, resolution);
+            m.put(com.los.core.creditintelligence.policystudio.parameters
+                    .ParameterResolutionSupport.META_KEY, all);
+            if (com.los.core.creditintelligence.policystudio.parameters
+                    .ParameterResolutionSupport.isResolved(resolution)) {
+                m.remove("blockedReason");
+            }
+            r.setMetadata(m);
+        }
+    }
+
+    private static void stampParameterResolutionOnDocument(
+            PolicyStudioSession session, String operandKey, Map<String, Object> resolution) {
+        if (session == null || session.getDocument() == null || resolution == null) return;
+        Map<String, Object> docMeta = session.getDocument().getMetadata() == null
+                ? new LinkedHashMap<>() : new LinkedHashMap<>(session.getDocument().getMetadata());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> maps = docMeta.get(com.los.core.creditintelligence.policystudio.parameters
+                .ParameterResolutionSupport.DOC_META_KEY) instanceof Map<?, ?> m
+                ? new LinkedHashMap<>((Map<String, Object>) m) : new LinkedHashMap<>();
+        maps.put(operandKey, resolution);
+        docMeta.put(com.los.core.creditintelligence.policystudio.parameters
+                .ParameterResolutionSupport.DOC_META_KEY, maps);
+        session.getDocument().setMetadata(docMeta);
     }
 
     /** Session/draft only — stamp CLEAN definition onto overdue-exception related rules. */
