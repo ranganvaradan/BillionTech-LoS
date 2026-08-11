@@ -9,6 +9,7 @@ import com.los.core.creditintelligence.policystudio.model.PolicyStudioSession;
 import com.los.core.creditintelligence.policystudio.service.PolicyImplementabilityService;
 import com.los.core.creditintelligence.policystudio.service.PolicyStudioOrchestrator;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -28,6 +29,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * Business policy lifecycle for single-NBFC staging. Maps onto existing Studio
  * sessions without renaming backend enums. Never enables production authority.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class PolicyLifecycleService {
@@ -287,17 +289,23 @@ public class PolicyLifecycleService {
                 persistLifecycle(session, life);
                 out.put("durableCatalogue", scheduledDurable);
                 out.put("durableApplicabilityId", draft.getId().toString());
-            } catch (ResponseStatusException e) {
-                throw e;
             } catch (Exception e) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT,
-                        "Durable catalogue schedule failed: " + e.getMessage());
+                // Scratch / in-memory Studio sessions may lack a durable ci_policy_document row.
+                // Business schedule already succeeded above — surface a warning, do not roll back
+                // SCHEDULED/ACTIVE or fake production authority.
+                log.warn("Durable catalogue schedule deferred after business {}: {}",
+                        next, e.getMessage());
+                out.put("durableCatalogueWarning",
+                        "Business schedule applied. Durable catalogue sync deferred for this session draft.");
             }
         }
 
-        out.put("message", alreadyActive
+        String durableWarn = out.get("durableCatalogueWarning") == null
+                ? "" : (" " + out.get("durableCatalogueWarning"));
+        out.put("message", (alreadyActive
                 ? "Policy business status ACTIVE for scheduling window. Credit Intelligence production authority remains DISABLED."
-                : "Policy SCHEDULED. Applicability uses evaluation date; durable catalogue persisted. Production authority remains DISABLED.");
+                : "Policy SCHEDULED. Applicability uses evaluation date. Production authority remains DISABLED.")
+                + durableWarn);
         out.put("scheduledRecord", registered.toBusinessView());
         out.put("overlapCheck", overlap);
         return out;
