@@ -5,6 +5,7 @@ import com.los.core.model.entity.UnderwritingScorecard;
 import com.los.core.repository.UnderwritingScorecardRepository;
 import com.los.core.service.credit.EffectiveUnderwritingContext;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -27,10 +28,25 @@ public class ScorecardPolicyEngine {
 
     private final UnderwritingScorecardRepository scorecardRepository;
 
+    /** SCORECARD-SAFETY-FOUNDATION-1 — never let demo/gap defaults drive production decisions. */
+    @Value("${los.underwriting.scorecard.block-non-authoritative-defaults:true}")
+    private boolean blockNonAuthoritativeDefaults = true;
+
+    /**
+     * When true (staging demos only), demo/gap values may score but evidence is marked
+     * DEMO_NON_PRODUCTION / authoritativeForDecision=false.
+     */
+    @Value("${los.underwriting.scorecard.allow-non-production-demo-scoring:false}")
+    private boolean allowNonProductionDemoScoring = false;
+
     public record ScorecardEvalResult(
             MultiRuleEvalResult multi,
             UUID scorecardId,
-            List<Map<String, Object>> parameterResults) {
+            List<Map<String, Object>> parameterResults,
+            Map<String, Object> evidence) {
+        public ScorecardEvalResult(MultiRuleEvalResult multi, UUID scorecardId, List<Map<String, Object>> parameterResults) {
+            this(multi, scorecardId, parameterResults, Map.of());
+        }
     }
 
     public Optional<ScorecardEvalResult> evaluate(LoanApplication app, EffectiveUnderwritingContext ctx, String kycMeta) {
@@ -126,14 +142,24 @@ public class ScorecardPolicyEngine {
             if (v == null && "COMPUTED".equalsIgnoreCase(source)) {
                 v = resolveComputed(p, parameterDefs, app, ctx);
             }
-            boolean hardMatched = depsMatched && conditionMatchesWithRef(cond, v, app, ctx);
+            String provenance = ScorecardSafetyScoring.resolveProvenancePublic(p, ctx);
+            boolean nonAuth = ScorecardValueProvenance.isNonAuthoritative(provenance);
+            if (nonAuth && blockNonAuthoritativeDefaults && !allowNonProductionDemoScoring) {
+                v = null;
+            }
+            // Hard-rule operands are REQUIRED: UNKNOWN/MISSING/blocked demo cannot pass or fail the rule
+            boolean hardOperandSatisfied = ScorecardValueProvenance.canSatisfyRequired(
+                    provenance, allowNonProductionDemoScoring) && v != null;
             Map<String, Object> traceRow = new LinkedHashMap<>();
             traceRow.put("rowId", str(hr.get("id")));
             traceRow.put("parameter", p);
             traceRow.put("source", source);
             traceRow.put("condition", cond);
-            traceRow.put("valueUsed", v != null ? v.toPlainString() : null);
-            traceRow.put("matched", hardMatched);
+            traceRow.put("valueUsed", hardOperandSatisfied && v != null ? v.toPlainString() : null);
+            traceRow.put("valueProvenance", provenance);
+            traceRow.put("authoritativeForDecision",
+                    hardOperandSatisfied && ScorecardValueProvenance.isAuthoritative(provenance));
+            traceRow.put("missingDataPolicy", ScorecardSafetyScoring.MISSING_REQUIRED);
             traceRow.put("decision", str(hr.get("decision")));
             traceRow.put("reason", str(hr.get("reason")));
             traceRow.put("pointsEarned", 0);
@@ -145,10 +171,31 @@ public class ScorecardPolicyEngine {
             if (breakdown != null) {
                 traceRow.put("formulaBreakdown", breakdown);
             }
-            hardTrace.add(traceRow);
             if (!depsMatched) {
+                traceRow.put("matched", false);
+                hardTrace.add(traceRow);
                 continue;
             }
+            if (!hardOperandSatisfied) {
+                traceRow.put("matched", false);
+                traceRow.put("dataInsufficient", true);
+                traceRow.put("reason", "REQUIRED_HARD_RULE_OPERAND_MISSING");
+                hardTrace.add(traceRow);
+                return finishHard(
+                        c,
+                        app,
+                        ctx,
+                        kycMeta,
+                        "MANUAL_REVIEW",
+                        "MANUAL_REVIEW",
+                        50,
+                        List.of("DATA_INSUFFICIENT: hard-rule operand missing authoritative value: " + p),
+                        true,
+                        hardTrace);
+            }
+            boolean hardMatched = conditionMatchesWithRef(cond, v, app, ctx);
+            traceRow.put("matched", hardMatched);
+            hardTrace.add(traceRow);
             if (hardMatched) {
                 String dec = str(hr.get("decision"));
                 String msg = str(hr.get("message"));
@@ -179,155 +226,28 @@ public class ScorecardPolicyEngine {
             }
         }
 
-        List<Map<String, Object>> rowMaps = new ArrayList<>();
-        Object rows = scj.get("rows");
-        if (rows instanceof List<?> rlist) {
-            for (Object o : rlist) {
-                if (o instanceof Map) {
-                    rowMaps.add((Map<String, Object>) o);
-                }
-            }
-        }
+        // SCORECARD-SAFETY-FOUNDATION-1 — exclusive bands + provenance + missing-data policy
+        ScorecardSafetyScoring.ScoreOutcome outcome = ScorecardSafetyScoring.score(
+                c, app, ctx, blockNonAuthoritativeDefaults, allowNonProductionDemoScoring);
 
-        int maxPoints = 0;
-        int earned = 0;
-        List<Map<String, Object>> paramResults = new ArrayList<>();
-        for (Map<String, Object> row : rowMaps) {
-            String p = str(row.get("parameter"));
-            String source = str(row.get("source"));
-            String cond = str(row.get("condition"));
-            int w = intOrNull(row.get("weight"));
-            if (w <= 0) {
-                w = 1;
-            }
-            int maxRow = intOrNull(row.get("score"));
-            if (maxRow < 0) {
-                maxRow = 0;
-            }
-
-            Map<String, Object> def = parameterDefs.get(p);
-            boolean matchOption = "MATCH_OPTION".equalsIgnoreCase(cond)
-                    || (def != null && isOptionScoredInputType(def) && (cond == null || cond.isBlank()));
-            boolean textTyped = def != null && "text".equalsIgnoreCase(str(def.get("inputType")));
-
-            String stringValue = resolveStringValue(source, p, app, ctx);
-            BigDecimal v = resolve(source, p, app, ctx);
-            if (v == null && "COMPUTED".equalsIgnoreCase(source)) {
-                v = resolveComputed(p, parameterDefs, app, ctx);
-            }
-            Map<String, Object> dependencyOutcome = evaluateDependencyGroup(row.get("dependsOn"), parameterDefs, app, ctx);
-            boolean depsMatched = !(dependencyOutcome.get("matched") instanceof Boolean b) || b;
-            Map<String, Object> breakdown = formulaBreakdown(p, parameterDefs, app, ctx);
-            if (!depsMatched) {
-                Map<String, Object> skipped = new LinkedHashMap<>();
-                skipped.put("rowId", str(row.get("id")));
-                skipped.put("parameter", p);
-                skipped.put("source", source);
-                skipped.put("condition", cond);
-                skipped.put("weight", w);
-                skipped.put("maxScore", maxRow);
-                skipped.put("valueUsed", v != null ? v.toPlainString() : stringValue);
-                skipped.put("valueSource", describeSource(source, p, ctx, app));
-                skipped.put("matched", false);
-                skipped.put("pointsEarned", 0);
-                skipped.put("attachment", str(row.get("attachment")));
-                skipped.put("dependencyOutcome", dependencyOutcome);
-                skipped.put("skippedDueToDependency", true);
-                if (breakdown != null) {
-                    skipped.put("formulaBreakdown", breakdown);
-                }
-                paramResults.add(skipped);
-                continue;
-            }
-            boolean m;
-            int add;
-            String valueUsed;
-
-            if (matchOption && def != null) {
-                int optionMax = maxOptionScore(def);
-                if (optionMax > 0) {
-                    maxRow = optionMax;
-                }
-                maxPoints += maxRow;
-                Integer optionScore = lookupOptionScore(def, stringValue);
-                m = optionScore != null;
-                add = m ? optionScore : 0;
-                valueUsed = stringValue;
-            } else if (textTyped || isStringCondition(cond, v, stringValue)) {
-                maxPoints += maxRow;
-                m = stringConditionMatches(cond, stringValue);
-                add = m ? maxRow : 0;
-                valueUsed = stringValue;
-            } else {
-                maxPoints += maxRow;
-                m = conditionMatchesWithRef(cond, v, app, ctx);
-                add = m ? maxRow : 0;
-                valueUsed = v != null ? v.toPlainString() : stringValue;
-            }
-            earned += add;
-            Map<String, Object> one = new LinkedHashMap<>();
-            one.put("rowId", str(row.get("id")));
-            one.put("parameter", p);
-            one.put("source", source);
-            one.put("condition", cond);
-            one.put("weight", w);
-            one.put("maxScore", maxRow);
-            one.put("valueUsed", valueUsed);
-            one.put("valueSource", describeSource(source, p, ctx, app));
-            one.put("matched", m);
-            one.put("pointsEarned", add);
-            one.put("attachment", str(row.get("attachment")));
-            one.put("dependencyOutcome", dependencyOutcome);
-            one.put("skippedDueToDependency", false);
-            if (breakdown != null) {
-                one.put("formulaBreakdown", breakdown);
-            }
-            paramResults.add(one);
-        }
-
-        if (maxPoints == 0) {
-            return finishHard(
-                    c,
-                    app,
-                    ctx,
-                    kycMeta,
-                    "MANUAL_REVIEW",
-                    "MANUAL_REVIEW",
-                    50,
-                    List.of("Scorecard has no parameter rows; manual review required."),
-                    true,
-                    paramResults);
-        }
-
-        int normalized = BigDecimal.valueOf(100L * earned)
-                .divide(BigDecimal.valueOf(maxPoints), 0, RoundingMode.HALF_UP)
-                .intValue();
-
-        String policyDecision;
-        String creditDecision;
-        if (normalized >= approveMin) {
-            policyDecision = "APPROVE";
-            creditDecision = "APPROVED";
-        } else if (normalized >= manualMin) {
-            policyDecision = "MANUAL_REVIEW";
-            creditDecision = "MANUAL_REVIEW";
-        } else {
-            policyDecision = "REJECT";
-            creditDecision = "REJECTED";
-        }
+        List<Map<String, Object>> paramResults = new ArrayList<>(hardTrace);
+        paramResults.addAll(outcome.parameterResults());
 
         Map<String, Object> matched = new LinkedHashMap<>();
         matched.put("engine", "STRUCTURED_SCORECARD");
         matched.put("scorecardId", c.getId().toString());
         matched.put("scorecardName", c.getName());
         matched.put("scorecardVersion", c.getVersion());
-        matched.put("normalizedPercent", normalized);
-        matched.put("earnedPoints", earned);
-        matched.put("maxPoints", maxPoints);
+        matched.put("normalizedPercent", outcome.normalizedPercent());
+        matched.put("earnedPoints", outcome.earned());
+        matched.put("maxPoints", outcome.maxPoints());
         matched.put("approveMinPercent", approveMin);
         matched.put("manualMinPercent", manualMin);
         matched.put("kycOutcomeForRules", kycMeta);
         matched.put("parameterResults", paramResults);
+        matched.put("weightSemantics", "METADATA_ONLY_NOT_USED_IN_FORMULA");
+        matched.put("bandSemantics", "EXCLUSIVE_RANGES");
+        matched.putAll(outcome.evidence());
 
         Map<String, Object> src = new LinkedHashMap<>(ctx.toMap());
         src.put("kycOutcomeForRules", kycMeta);
@@ -335,16 +255,20 @@ public class ScorecardPolicyEngine {
         MultiRuleEvalResult.PerRuleEval per = new MultiRuleEvalResult.PerRuleEval(
                 c.getId().toString(),
                 c.getName(),
-                policyDecision,
-                creditDecision,
-                normalized,
-                List.of(),
+                outcome.policyDecision(),
+                outcome.creditDecision(),
+                outcome.normalizedPercent(),
+                outcome.reasons() == null ? List.of() : outcome.reasons(),
                 "SCORECARD",
                 matched,
                 src);
         var multi = new MultiRuleEvalResult(
-                List.of(per), policyDecision, creditDecision, normalized, List.of());
-        return new ScorecardEvalResult(multi, c.getId(), paramResults);
+                List.of(per),
+                outcome.policyDecision(),
+                outcome.creditDecision(),
+                outcome.normalizedPercent(),
+                outcome.reasons() == null ? List.of() : outcome.reasons());
+        return new ScorecardEvalResult(multi, c.getId(), paramResults, outcome.evidence());
     }
 
     private ScorecardEvalResult finishHard(
@@ -375,7 +299,19 @@ public class ScorecardPolicyEngine {
         matched.put("engine", "STRUCTURED_SCORECARD");
         matched.put("scorecardId", c.getId().toString());
         matched.put("scorecardName", c.getName());
+        matched.put("scorecardVersion", c.getVersion());
+        matched.put("scorecardStatus", c.getStatus());
+        matched.put("lineageId", c.getLineageId() == null ? null : c.getLineageId().toString());
         matched.put("hardRule", true);
+        matched.put("weightSemantics", "METADATA_ONLY_NOT_USED_IN_FORMULA");
+        matched.put("bandSemantics", "EXCLUSIVE_RANGES");
+        if (allowNonProductionDemoScoring) {
+            matched.put("evaluationAuthority", "DEMO_NON_PRODUCTION");
+            matched.put("authoritativeForDecision", false);
+        } else {
+            matched.put("evaluationAuthority", "PRODUCTION");
+            matched.put("authoritativeForDecision", true);
+        }
         if (includeEmptyParams) {
             matched.put("parameterResults", paramResults);
         }
@@ -392,7 +328,7 @@ public class ScorecardPolicyEngine {
                 matched,
                 src);
         var multi = new MultiRuleEvalResult(List.of(per), policy, creditAgg, risk, reasons);
-        return new ScorecardEvalResult(multi, c.getId(), paramResults);
+        return new ScorecardEvalResult(multi, c.getId(), paramResults, matched);
     }
 
     private static String describeSource(String source, String param, EffectiveUnderwritingContext ctx, LoanApplication app) {
@@ -788,12 +724,12 @@ public class ScorecardPolicyEngine {
         return out;
     }
 
-    private static boolean isOptionScoredInputType(Map<String, Object> def) {
+    static boolean isOptionScoredInputType(Map<String, Object> def) {
         String inputType = str(def.get("inputType"));
         return "dropdown".equalsIgnoreCase(inputType);
     }
 
-    private static int maxOptionScore(Map<String, Object> def) {
+    static int maxOptionScore(Map<String, Object> def) {
         Object optionsRaw = def.get("options");
         if (!(optionsRaw instanceof List<?> list)) {
             return 0;
@@ -807,7 +743,7 @@ public class ScorecardPolicyEngine {
         return max;
     }
 
-    private static Integer lookupOptionScore(Map<String, Object> def, String collected) {
+    static Integer lookupOptionScore(Map<String, Object> def, String collected) {
         if (collected == null || collected.isBlank()) {
             return null;
         }
@@ -829,7 +765,7 @@ public class ScorecardPolicyEngine {
         return null;
     }
 
-    private static boolean isStringCondition(String cond, BigDecimal numericValue, String stringValue) {
+    static boolean isStringCondition(String cond, BigDecimal numericValue, String stringValue) {
         if (cond == null || cond.isBlank() || stringValue == null || stringValue.isBlank()) {
             return false;
         }
@@ -857,7 +793,7 @@ public class ScorecardPolicyEngine {
         }
     }
 
-    private static boolean stringConditionMatches(String cond, String stringValue) {
+    static boolean stringConditionMatches(String cond, String stringValue) {
         if (cond == null || cond.isBlank() || stringValue == null) {
             return false;
         }
@@ -886,7 +822,7 @@ public class ScorecardPolicyEngine {
         return false;
     }
 
-    private static String resolveStringValue(
+    static String resolveStringValue(
             String source, String param, LoanApplication app, EffectiveUnderwritingContext ctx) {
         if (param == null) {
             return null;

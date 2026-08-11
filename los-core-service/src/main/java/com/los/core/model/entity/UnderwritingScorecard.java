@@ -71,6 +71,29 @@ public class UnderwritingScorecard {
     @Builder.Default
     private boolean active = false;
 
+    /** DRAFT | ACTIVE | RETIRED — SCORECARD-SAFETY-FOUNDATION-1 */
+    @Column(nullable = false, length = 20)
+    @Builder.Default
+    private String status = "DRAFT";
+
+    @Column(name = "lineage_id")
+    private UUID lineageId;
+
+    @Column(name = "parent_scorecard_id")
+    private UUID parentScorecardId;
+
+    @Column(name = "activated_at")
+    private Instant activatedAt;
+
+    /**
+     * Safety metadata: factorPolicies (missingData REQUIRED|OPTIONAL_SKIP|OPTIONAL_DEPRESS),
+     * exclusiveBandMode, validation snapshot. Weight is never used for scoring.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "safety_json", columnDefinition = "jsonb", nullable = false)
+    @Builder.Default
+    private Map<String, Object> safetyJson = Map.of();
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false, nullable = false)
     private Instant createdAt;
@@ -78,4 +101,8 @@ public class UnderwritingScorecard {
     @UpdateTimestamp
     @Column(name = "updated_at")
     private Instant updatedAt;
+
+    public boolean isExecutionActive() {
+        return active || "ACTIVE".equalsIgnoreCase(status);
+    }
 }

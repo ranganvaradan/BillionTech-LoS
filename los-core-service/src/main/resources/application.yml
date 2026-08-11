@@ -56,6 +56,11 @@ los:
   underwriting:
     # When false, do not invent bank/GST/ITR/SCF scorecard placeholders (live-safe). Staging may enable temporarily.
     provider-gap-defaults-enabled: ${LOS_PROVIDER_GAP_DEFAULTS_ENABLED:false}
+    scorecard:
+      # SCORECARD-SAFETY-FOUNDATION-1 — demo/gap defaults cannot drive production decisions
+      block-non-authoritative-defaults: ${LOS_SCORECARD_BLOCK_NON_AUTH_DEFAULTS:true}
+      # Staging-only: allow scoring demo/gap values but mark evaluation DEMO_NON_PRODUCTION
+      allow-non-production-demo-scoring: ${LOS_SCORECARD_ALLOW_DEMO_SCORING:false}
   # Set true in local profile or a secure env; enables DELETE /api/v1/demo/applications. Never in prod default.
   demo:
     enabled: ${LOS_DEMO_ENABLED:false}

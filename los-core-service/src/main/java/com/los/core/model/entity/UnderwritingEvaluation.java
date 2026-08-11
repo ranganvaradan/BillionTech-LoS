@@ -55,6 +55,18 @@ public class UnderwritingEvaluation {
     @Column(name = "scorecard_id")
     private UUID scorecardId;
 
+    /** Immutable scorecard version at evaluation time (SCORECARD-SAFETY-FOUNDATION-1). */
+    @Column(name = "scorecard_version")
+    private Integer scorecardVersion;
+
+    /**
+     * Immutable scoring evidence snapshot: bands, provenance, thresholds, hard-rule outcome.
+     * Do not reconstruct old decisions from today's mutable scorecard rows.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "scorecard_evidence_json", columnDefinition = "jsonb")
+    private Map<String, Object> scorecardEvidenceJson;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "parameter_results_json", columnDefinition = "jsonb")
     private List<Map<String, Object>> parameterResultsJson;

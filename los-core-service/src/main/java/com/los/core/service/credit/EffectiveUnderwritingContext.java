@@ -18,7 +18,35 @@ public record EffectiveUnderwritingContext(
         String incomeSource,
         String kycSource,
         /** Scorecard parameters (GST income, bank income, ABB, ratio, etc.). */
-        Map<String, BigDecimal> scorecard) {
+        Map<String, BigDecimal> scorecard,
+        /** SCORECARD-SAFETY-FOUNDATION-1 — per-key provenance (REAL_PROVIDER / GAP_DEFAULT / …). */
+        Map<String, String> scorecardProvenance) {
+
+    /** Backward-compatible constructor (empty provenance). */
+    public EffectiveUnderwritingContext(
+            int effectiveBureauScore,
+            boolean kycPassEffective,
+            BigDecimal effectiveIncome,
+            BigDecimal effectiveObligation,
+            String effectiveState,
+            String effectiveCity,
+            String bureauSource,
+            String incomeSource,
+            String kycSource,
+            Map<String, BigDecimal> scorecard) {
+        this(
+                effectiveBureauScore,
+                kycPassEffective,
+                effectiveIncome,
+                effectiveObligation,
+                effectiveState,
+                effectiveCity,
+                bureauSource,
+                incomeSource,
+                kycSource,
+                scorecard,
+                Map.of());
+    }
 
     public Map<String, Object> toMap() {
         Map<String, Object> m = new LinkedHashMap<>();
@@ -39,6 +67,9 @@ public record EffectiveUnderwritingContext(
                 }
             }
             m.put("scorecard", sc);
+        }
+        if (scorecardProvenance != null && !scorecardProvenance.isEmpty()) {
+            m.put("scorecardProvenance", new LinkedHashMap<>(scorecardProvenance));
         }
         return m;
     }

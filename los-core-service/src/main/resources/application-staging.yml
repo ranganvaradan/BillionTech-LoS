@@ -28,6 +28,10 @@ los:
   underwriting:
     # Staging retains gap defaults for existing demos; production must keep false
     provider-gap-defaults-enabled: true
+    scorecard:
+      # Gap/demo values may score on staging only when explicitly marked DEMO_NON_PRODUCTION
+      block-non-authoritative-defaults: true
+      allow-non-production-demo-scoring: true
   demo:
     enabled: true
   plp:

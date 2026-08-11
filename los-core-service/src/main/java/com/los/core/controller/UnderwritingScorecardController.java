@@ -42,6 +42,18 @@ public class UnderwritingScorecardController {
         return ResponseEntity.ok(adminService.update(id, request));
     }
 
+    @PostMapping("/{id}/new-version")
+    @Operation(summary = "Create DRAFT vN+1 from an existing scorecard (ACTIVE remains immutable)")
+    public ResponseEntity<UnderwritingScorecardResponse> createNewVersion(@PathVariable UUID id) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(adminService.createNewVersion(id));
+    }
+
+    @PostMapping("/{id}/confirm-missing-data-policies")
+    @Operation(summary = "Confirm explicit missing-data classifications on a DRAFT before activation")
+    public ResponseEntity<UnderwritingScorecardResponse> confirmMissingDataPolicies(@PathVariable UUID id) {
+        return ResponseEntity.ok(adminService.confirmMissingDataPolicies(id));
+    }
+
     @DeleteMapping("/{id}")
     @Operation(summary = "Delete a scorecard (only when inactive)")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {

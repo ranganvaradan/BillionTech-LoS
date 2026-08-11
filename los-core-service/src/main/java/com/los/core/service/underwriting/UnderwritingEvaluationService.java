@@ -90,6 +90,19 @@ public class UnderwritingEvaluationService {
         }
         Map<String, Object> eff = new HashMap<>();
         eff.putAll(ctx.toMap());
+        Integer scorecardVersion = null;
+        Map<String, Object> evidence = extractScorecardEvidence(multi);
+        if (evidence != null && evidence.get("scorecardVersion") instanceof Number n) {
+            scorecardVersion = n.intValue();
+        } else if (scorecardId != null) {
+            scorecardVersion = scorecardRepository.findById(scorecardId)
+                    .map(com.los.core.model.entity.UnderwritingScorecard::getVersion)
+                    .orElse(null);
+        }
+        if (evidence != null) {
+            src.put("scorecardEvidence", evidence);
+            src.put("scorecardVersion", scorecardVersion);
+        }
         UnderwritingEvaluation e = UnderwritingEvaluation.builder()
                 .applicationId(applicationId)
                 .evaluatedAt(Instant.now())
@@ -99,10 +112,29 @@ public class UnderwritingEvaluationService {
                 .ruleResultsJson(rules)
                 .selectedSourceJson(new HashMap<>(src))
                 .scorecardId(scorecardId)
+                .scorecardVersion(scorecardVersion)
+                .scorecardEvidenceJson(evidence)
                 .parameterResultsJson(parameterResults != null ? parameterResults : List.of())
                 .evaluatedBy(evaluatedBy)
                 .build();
         return repository.save(e);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> extractScorecardEvidence(MultiRuleEvalResult multi) {
+        if (multi == null || multi.perRule() == null) {
+            return null;
+        }
+        for (MultiRuleEvalResult.PerRuleEval p : multi.perRule()) {
+            if (p == null || p.matchedConditions() == null || p.matchedConditions().isEmpty()) {
+                continue;
+            }
+            if ("SCORECARD".equalsIgnoreCase(p.kind())
+                    || "STRUCTURED_SCORECARD".equalsIgnoreCase(String.valueOf(p.matchedConditions().get("engine")))) {
+                return new LinkedHashMap<>(p.matchedConditions());
+            }
+        }
+        return null;
     }
 
     private Map<String, Object> perRuleToMap(MultiRuleEvalResult.PerRuleEval p) {
@@ -138,17 +170,22 @@ public class UnderwritingEvaluationService {
         m.put("selectedSources", e.getSelectedSourceJson());
         m.put("evaluatedBy", e.getEvaluatedBy());
         m.put("scorecardId", e.getScorecardId() != null ? e.getScorecardId().toString() : null);
+        m.put("scorecardVersion", e.getScorecardVersion());
+        m.put("scorecardEvidence", e.getScorecardEvidenceJson());
         m.put("parameterResults", e.getParameterResultsJson());
         if (e.getScorecardId() != null) {
             scorecardRepository.findById(e.getScorecardId()).ifPresent(sc -> {
                 m.put("scorecardName", sc.getName());
-                m.put("scorecardVersion", sc.getVersion());
+                if (e.getScorecardVersion() == null) {
+                    m.put("scorecardVersion", sc.getVersion());
+                }
                 m.put("scorecardPriority", sc.getPriority());
                 m.put("scorecardBorrowerType", sc.getBorrowerType());
                 m.put("scorecardLoanProduct", sc.getLoanProduct());
                 m.put("scorecardMinAmount", sc.getMinAmount() != null ? sc.getMinAmount().toPlainString() : null);
                 m.put("scorecardMaxAmount", sc.getMaxAmount() != null ? sc.getMaxAmount().toPlainString() : null);
                 m.put("scorecardGeography", sc.getGeography());
+                m.put("scorecardStatus", sc.getStatus());
             });
         }
         return m;

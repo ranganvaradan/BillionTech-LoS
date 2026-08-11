@@ -91,6 +91,11 @@ export interface UnderwritingScorecardRequest {
   thresholdsJson: Record<string, unknown>
   hardRulesJson: Record<string, unknown>
   active: boolean
+  status?: string
+  lineageId?: string | null
+  parentScorecardId?: string | null
+  activatedAt?: string | null
+  safetyJson?: Record<string, unknown>
 }
 
 export async function listScorecards(): Promise<UnderwritingScorecardResponse[]> {
@@ -115,4 +120,12 @@ export async function updateScorecard(
 
 export async function deleteScorecard(id: string): Promise<void> {
   await http.delete(`/underwriting/scorecards/${id}`)
+}
+
+/** SCORECARD-SAFETY-FOUNDATION-1 — clone ACTIVE/DRAFT into editable DRAFT vN+1 */
+export async function createScorecardNewVersion(id: string): Promise<UnderwritingScorecardResponse> {
+  const { data } = await http.post<UnderwritingScorecardResponse>(
+    `/underwriting/scorecards/${id}/new-version`,
+  )
+  return data
 }

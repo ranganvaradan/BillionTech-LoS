@@ -352,22 +352,35 @@ public class CreditControlService {
         putManualField(manual, key, value.trim().toUpperCase());
     }
 
-    private static void putScorecardValue(Map<String, Object> manual, Map<String, BigDecimal> out, String key, String manKey) {
+    private static void putScorecardValue(
+            Map<String, Object> manual,
+            Map<String, BigDecimal> out,
+            Map<String, String> provenance,
+            String key,
+            String manKey) {
         if (manual.get(manKey) == null) {
             return;
         }
         BigDecimal b = toYesNoOrNumberBd(unwrapValue(manual.get(manKey)));
         if (b != null) {
             out.put(key, b);
+            if (provenance != null) {
+                provenance.put(key, com.los.core.service.underwriting.ScorecardValueProvenance.MANUAL_AUTHORISED);
+            }
         }
     }
 
-    private static void putScorecardValueExact(Map<String, Object> manual, Map<String, BigDecimal> out, String key) {
-        putScorecardValue(manual, out, key, key);
+    private static void putScorecardValueExact(
+            Map<String, Object> manual,
+            Map<String, BigDecimal> out,
+            Map<String, String> provenance,
+            String key) {
+        putScorecardValue(manual, out, provenance, key, key);
     }
 
     @SuppressWarnings("unchecked")
-    private static void mergeScorecardMetricsMap(Map<String, Object> manual, Map<String, BigDecimal> out) {
+    private static void mergeScorecardMetricsMap(
+            Map<String, Object> manual, Map<String, BigDecimal> out, Map<String, String> provenance) {
         Object raw = manual.get("scorecardMetrics");
         if (!(raw instanceof Map<?, ?> map)) {
             return;
@@ -380,6 +393,9 @@ public class CreditControlService {
             BigDecimal b = toYesNoOrNumberBd(unwrapValue(e.getValue()));
             if (b != null) {
                 out.put(key, b);
+                if (provenance != null) {
+                    provenance.put(key, com.los.core.service.underwriting.ScorecardValueProvenance.MANUAL_AUTHORISED);
+                }
             }
         }
     }
@@ -472,84 +488,111 @@ public class CreditControlService {
         }
 
         Map<String, BigDecimal> sc = new LinkedHashMap<>();
-        putScorecardValue(manual, sc, "GST_INCOME", "gstIncome");
-        putScorecardValue(manual, sc, "BANK_STATEMENT_INCOME", "bankStatementIncome");
-        putScorecardValue(manual, sc, "AVERAGE_BANK_BALANCE", "averageBankBalance");
-        putScorecardValue(manual, sc, "PROPERTY_VALUE", "propertyValue");
-        putScorecardValue(manual, sc, "EBITDA_PROXY", "ebitdaProxy");
-        putScorecardValue(manual, sc, "LEVERAGE_RATIO", "leverageRatio");
-        putScorecardValue(manual, sc, "BUSINESS_VINTAGE_MONTHS", "businessVintageMonths");
-        putScorecardValueExact(manual, sc, "avgDailyBalance3m");
-        putScorecardValueExact(manual, sc, "avgMonthlyTransactions3m");
-        putScorecardValueExact(manual, sc, "avgMonthlySettlements3m");
-        putScorecardValueExact(manual, sc, "monthlyTransactions3m");
-        putScorecardValueExact(manual, sc, "inwardChequeReturns3m");
-        putScorecardValueExact(manual, sc, "avgDailySettlements3m");
-        putScorecardValueExact(manual, sc, "noOfTxns60days");
-        putScorecardValueExact(manual, sc, "txnMth1");
-        putScorecardValueExact(manual, sc, "txnMth2");
-        putScorecardValueExact(manual, sc, "txnMth3");
-        putScorecardValueExact(manual, sc, "avgGmv3m");
-        putScorecardValueExact(manual, sc, "active90days");
-        putScorecardValue(manual, sc, "ANNUAL_GST_TURNOVER", "annualGstTurnover");
-        putScorecardValue(manual, sc, "ITR_INCOME", "itrIncome");
-        putScorecardValue(manual, sc, "PAT", "pat");
-        putScorecardValue(manual, sc, "INTEREST_COVERAGE", "interestCoverage");
-        putScorecardValue(manual, sc, "DEBT_TO_EQUITY", "debtToEquity");
-        putScorecardValue(manual, sc, "EBITDA", "ebitda");
-        putScorecardValue(manual, sc, "DEBT_SERVICE", "debtService");
-        putScorecardValue(manual, sc, "ANNUAL_BANKING_TURNOVER", "annualBankingTurnover");
-        putScorecardValue(manual, sc, "BANKING_TURNOVER_PCT_GST", "bankingTurnoverPctGst");
-        putScorecardValue(manual, sc, "ABB_OBLIGATION_MULTIPLE", "abbObligationMultiple");
-        putScorecardValue(manual, sc, "CC_UTILISATION_PCT", "ccUtilisationPct");
-        putScorecardValue(manual, sc, "CHEQUE_BOUNCES_12M", "chequeBounces12m");
-        putScorecardValue(manual, sc, "CHEQUE_BOUNCES_3M", "chequeBounces3m");
-        putScorecardValue(manual, sc, "LIVE_UNSECURED_LOAN_COUNT", "liveUnsecuredLoanCount");
-        putScorecardValue(manual, sc, "BUREAU_ENQUIRIES_3M", "bureauEnquiries3m");
-        putScorecardValue(manual, sc, "NTC_FLAG", "ntcFlag");
-        putScorecardValueExact(manual, sc, "residenceOwned");
-        putScorecardValueExact(manual, sc, "residenceStability");
-        putScorecardValueExact(manual, sc, "businessStability");
-        putScorecardValueExact(manual, sc, "existingLoanTrackRecordAll");
-        putScorecardValueExact(manual, sc, "existingLoanTrackRecord15d");
-        putScorecardValueExact(manual, sc, "qrTxnEDI");
-        putScorecardValueExact(manual, sc, "eligibleOnePointFiveX");
-        putScorecardValue(manual, sc, "EXISTING_FB_LIMITS", "existingFbLimits");
-        putScorecardValue(manual, sc, "EXISTING_NFB_LIMITS", "existingNfbLimits");
-        putScorecardValue(manual, sc, "TOL_TNW", "tolTnw");
-        putScorecardValueExact(manual, sc, "officeOwned");
-        putScorecardValue(manual, sc, "DSCR", "dscr");
-        mergeScorecardMetricsMap(manual, sc);
+        Map<String, String> provenance = new LinkedHashMap<>();
+        putScorecardValue(manual, sc, provenance, "GST_INCOME", "gstIncome");
+        putScorecardValue(manual, sc, provenance, "BANK_STATEMENT_INCOME", "bankStatementIncome");
+        putScorecardValue(manual, sc, provenance, "AVERAGE_BANK_BALANCE", "averageBankBalance");
+        putScorecardValue(manual, sc, provenance, "PROPERTY_VALUE", "propertyValue");
+        putScorecardValue(manual, sc, provenance, "EBITDA_PROXY", "ebitdaProxy");
+        putScorecardValue(manual, sc, provenance, "LEVERAGE_RATIO", "leverageRatio");
+        putScorecardValue(manual, sc, provenance, "BUSINESS_VINTAGE_MONTHS", "businessVintageMonths");
+        putScorecardValueExact(manual, sc, provenance, "avgDailyBalance3m");
+        putScorecardValueExact(manual, sc, provenance, "avgMonthlyTransactions3m");
+        putScorecardValueExact(manual, sc, provenance, "avgMonthlySettlements3m");
+        putScorecardValueExact(manual, sc, provenance, "monthlyTransactions3m");
+        putScorecardValueExact(manual, sc, provenance, "inwardChequeReturns3m");
+        putScorecardValueExact(manual, sc, provenance, "avgDailySettlements3m");
+        putScorecardValueExact(manual, sc, provenance, "noOfTxns60days");
+        putScorecardValueExact(manual, sc, provenance, "txnMth1");
+        putScorecardValueExact(manual, sc, provenance, "txnMth2");
+        putScorecardValueExact(manual, sc, provenance, "txnMth3");
+        putScorecardValueExact(manual, sc, provenance, "avgGmv3m");
+        putScorecardValueExact(manual, sc, provenance, "active90days");
+        putScorecardValue(manual, sc, provenance, "ANNUAL_GST_TURNOVER", "annualGstTurnover");
+        putScorecardValue(manual, sc, provenance, "ITR_INCOME", "itrIncome");
+        putScorecardValue(manual, sc, provenance, "PAT", "pat");
+        putScorecardValue(manual, sc, provenance, "INTEREST_COVERAGE", "interestCoverage");
+        putScorecardValue(manual, sc, provenance, "DEBT_TO_EQUITY", "debtToEquity");
+        putScorecardValue(manual, sc, provenance, "EBITDA", "ebitda");
+        putScorecardValue(manual, sc, provenance, "DEBT_SERVICE", "debtService");
+        putScorecardValue(manual, sc, provenance, "ANNUAL_BANKING_TURNOVER", "annualBankingTurnover");
+        putScorecardValue(manual, sc, provenance, "BANKING_TURNOVER_PCT_GST", "bankingTurnoverPctGst");
+        putScorecardValue(manual, sc, provenance, "ABB_OBLIGATION_MULTIPLE", "abbObligationMultiple");
+        putScorecardValue(manual, sc, provenance, "CC_UTILISATION_PCT", "ccUtilisationPct");
+        putScorecardValue(manual, sc, provenance, "CHEQUE_BOUNCES_12M", "chequeBounces12m");
+        putScorecardValue(manual, sc, provenance, "CHEQUE_BOUNCES_3M", "chequeBounces3m");
+        putScorecardValue(manual, sc, provenance, "LIVE_UNSECURED_LOAN_COUNT", "liveUnsecuredLoanCount");
+        putScorecardValue(manual, sc, provenance, "BUREAU_ENQUIRIES_3M", "bureauEnquiries3m");
+        putScorecardValue(manual, sc, provenance, "NTC_FLAG", "ntcFlag");
+        putScorecardValueExact(manual, sc, provenance, "residenceOwned");
+        putScorecardValueExact(manual, sc, provenance, "residenceStability");
+        putScorecardValueExact(manual, sc, provenance, "businessStability");
+        putScorecardValueExact(manual, sc, provenance, "existingLoanTrackRecordAll");
+        putScorecardValueExact(manual, sc, provenance, "existingLoanTrackRecord15d");
+        putScorecardValueExact(manual, sc, provenance, "qrTxnEDI");
+        putScorecardValueExact(manual, sc, provenance, "eligibleOnePointFiveX");
+        putScorecardValue(manual, sc, provenance, "EXISTING_FB_LIMITS", "existingFbLimits");
+        putScorecardValue(manual, sc, provenance, "EXISTING_NFB_LIMITS", "existingNfbLimits");
+        putScorecardValue(manual, sc, provenance, "TOL_TNW", "tolTnw");
+        putScorecardValueExact(manual, sc, provenance, "officeOwned");
+        putScorecardValue(manual, sc, provenance, "DSCR", "dscr");
+        mergeScorecardMetricsMap(manual, sc, provenance);
         // GST / ITR / bank OCR extract overrides stub manual values for extract-backed keys.
+        Map<String, BigDecimal> beforeExtract = new LinkedHashMap<>(sc);
         applyDocumentExtractScorecardValues(app, sc);
-        applyApplicationScorecardParameters(app, sc);
+        for (var e : sc.entrySet()) {
+            BigDecimal prev = beforeExtract.get(e.getKey());
+            if (prev == null || prev.compareTo(e.getValue()) != 0) {
+                provenance.put(e.getKey(),
+                        com.los.core.service.underwriting.ScorecardValueProvenance.REAL_PROVIDER);
+            }
+        }
+        applyApplicationScorecardParameters(app, sc, provenance);
         if (inc != null) {
             sc.put("MONTHLY_INCOME", inc);
+            provenance.putIfAbsent("MONTHLY_INCOME",
+                    "DEMO_FALLBACK".equals(incomeSource)
+                            ? com.los.core.service.underwriting.ScorecardValueProvenance.DEMO_DEFAULT
+                            : com.los.core.service.underwriting.ScorecardValueProvenance.DERIVED);
         }
         if (obl != null) {
             sc.put("EMI_OBLIGATION", obl);
             sc.put("MONTHLY_OBLIGATION", obl);
+            provenance.putIfAbsent("EMI_OBLIGATION",
+                    com.los.core.service.underwriting.ScorecardValueProvenance.DERIVED);
+            provenance.putIfAbsent("MONTHLY_OBLIGATION",
+                    com.los.core.service.underwriting.ScorecardValueProvenance.DERIVED);
         }
         if (manual.get("emiObligation") != null) {
             BigDecimal emiO = toBd(unwrapValue(manual.get("emiObligation")));
             if (emiO != null) {
                 sc.put("EMI_OBLIGATION", emiO);
+                provenance.put("EMI_OBLIGATION",
+                        com.los.core.service.underwriting.ScorecardValueProvenance.MANUAL_AUTHORISED);
             }
         }
         BigDecimal ratio = null;
         if (manual.get("obligationRatio") != null) {
             ratio = toBd(unwrapValue(manual.get("obligationRatio")));
+            if (ratio != null) {
+                provenance.put("OBLIGATION_RATIO",
+                        com.los.core.service.underwriting.ScorecardValueProvenance.MANUAL_AUTHORISED);
+            }
         }
         if (ratio == null && inc != null && obl != null && inc.compareTo(BigDecimal.ZERO) > 0) {
             ratio = obl.divide(inc, 6, RoundingMode.HALF_UP);
+            provenance.put("OBLIGATION_RATIO",
+                    com.los.core.service.underwriting.ScorecardValueProvenance.DERIVED);
         }
         if (ratio == null && safeDemoFallback) {
             ratio = DEMO_DEFAULT_FOIR_RATIO;
+            provenance.put("OBLIGATION_RATIO",
+                    com.los.core.service.underwriting.ScorecardValueProvenance.DEMO_DEFAULT);
         }
         if (ratio != null) {
             sc.put("OBLIGATION_RATIO", ratio.multiply(BigDecimal.valueOf(100)));
         }
-        applyMissingScorecardDefaults(app, sc, inc, obl);
+        applyMissingScorecardDefaults(app, sc, provenance, inc, obl);
         if (inc == null && sc.get("MONTHLY_INCOME") != null) {
             inc = sc.get("MONTHLY_INCOME");
         }
@@ -557,60 +600,82 @@ public class CreditControlService {
             obl = sc.get("EMI_OBLIGATION");
         }
         if (manual.get("ltv") != null) {
-            putScorecardValue(manual, sc, "LTV", "ltv");
+            putScorecardValue(manual, sc, provenance, "LTV", "ltv");
         } else if (app.getRequestedAmount() != null) {
             BigDecimal prop = sc.get("PROPERTY_VALUE");
             if (prop != null && prop.compareTo(BigDecimal.ZERO) > 0) {
                 sc.put("LTV", app.getRequestedAmount()
                         .divide(prop, 4, RoundingMode.HALF_UP)
                         .multiply(BigDecimal.valueOf(100)));
+                provenance.put("LTV", com.los.core.service.underwriting.ScorecardValueProvenance.DERIVED);
             }
         }
         String ind = str(unwrapValue(manual.get("industryRisk")));
         if (ind != null && !ind.isBlank()) {
             sc.put("INDUSTRY_RISK", "LOW".equalsIgnoreCase(ind) ? BigDecimal.ONE : BigDecimal.ZERO);
+            provenance.put("INDUSTRY_RISK",
+                    com.los.core.service.underwriting.ScorecardValueProvenance.MANUAL_AUTHORISED);
         }
         String rep = str(unwrapValue(manual.get("repaymentHistory")));
         if (rep != null && !rep.isBlank()) {
             sc.put("REPAYMENT_HISTORY", "CLEAN".equalsIgnoreCase(rep) ? BigDecimal.ONE : BigDecimal.ZERO);
+            provenance.put("REPAYMENT_HISTORY",
+                    com.los.core.service.underwriting.ScorecardValueProvenance.MANUAL_AUTHORISED);
         }
         if (kycPass) {
             sc.put("KYC_QUALITY", BigDecimal.ONE);
         } else {
             sc.put("KYC_QUALITY", BigDecimal.ZERO);
         }
+        provenance.put("KYC_QUALITY",
+                "DEMO_FALLBACK".equals(kycSource)
+                        ? com.los.core.service.underwriting.ScorecardValueProvenance.DEMO_DEFAULT
+                        : com.los.core.service.underwriting.ScorecardValueProvenance.DERIVED);
         if (safeDemoFallback) {
             sc.put("DEMO_FALLBACK_ACTIVE", BigDecimal.ONE);
         }
         sc.put("BUREAU_SCORE", BigDecimal.valueOf(effBureau));
-        applyProgramInputScorecardValues(app, sc);
+        provenance.put("BUREAU_SCORE",
+                "DEMO_FALLBACK".equals(bureauSource)
+                        ? com.los.core.service.underwriting.ScorecardValueProvenance.DEMO_DEFAULT
+                        : (SRC_MANUAL.equals(bureauSource)
+                        ? com.los.core.service.underwriting.ScorecardValueProvenance.MANUAL_AUTHORISED
+                        : com.los.core.service.underwriting.ScorecardValueProvenance.REAL_PROVIDER));
+        applyProgramInputScorecardValues(app, sc, provenance);
         limitSizingService.applyComputedMetrics(app, sc);
         return new EffectiveUnderwritingContext(
-                effBureau, kycPass, inc, obl, st, city, bureauSource, incomeSource, kycSource, sc);
+                effBureau, kycPass, inc, obl, st, city, bureauSource, incomeSource, kycSource, sc, provenance);
     }
 
-    private void applyProgramInputScorecardValues(LoanApplication app, Map<String, BigDecimal> sc) {
+    private void applyProgramInputScorecardValues(
+            LoanApplication app, Map<String, BigDecimal> sc, Map<String, String> provenance) {
         invoiceDiscountingVintageService.evaluate(app).ifPresent(v -> {
-            putScorecardIfPresent(sc, "DEPENDENCY_VINTAGE_PERCENT", v.getBorrowerDependencyVintagePercent());
+            putScorecardIfPresent(sc, provenance, "DEPENDENCY_VINTAGE_PERCENT", v.getBorrowerDependencyVintagePercent());
             if (v.getBorrowerAnchorRelationshipVintageMonths() != null) {
                 putScorecardIfPresent(
                         sc,
+                        provenance,
                         "ANCHOR_RELATIONSHIP_VINTAGE_MONTHS",
                         BigDecimal.valueOf(v.getBorrowerAnchorRelationshipVintageMonths()));
             }
-            putScorecardIfPresent(sc, "PROGRAM_DEPENDENCY_VINTAGE_PERCENT", v.getProgramDependencyVintagePercent());
+            putScorecardIfPresent(sc, provenance, "PROGRAM_DEPENDENCY_VINTAGE_PERCENT", v.getProgramDependencyVintagePercent());
             if (v.getProgramAnchorRelationshipVintageMonths() != null) {
                 putScorecardIfPresent(
                         sc,
+                        provenance,
                         "PROGRAM_ANCHOR_RELATIONSHIP_VINTAGE_MONTHS",
                         BigDecimal.valueOf(v.getProgramAnchorRelationshipVintageMonths()));
             }
         });
     }
 
-    private static void putScorecardIfPresent(Map<String, BigDecimal> sc, String key, BigDecimal value) {
+    private static void putScorecardIfPresent(
+            Map<String, BigDecimal> sc, Map<String, String> provenance, String key, BigDecimal value) {
         if (value != null) {
             sc.put(key, value);
+            if (provenance != null) {
+                provenance.putIfAbsent(key, com.los.core.service.underwriting.ScorecardValueProvenance.APPLICATION);
+            }
         }
     }
 
@@ -764,8 +829,14 @@ public class CreditControlService {
      * Banking/GST/ITR/SCF invent fills require {@code los.underwriting.provider-gap-defaults-enabled=true}.
      */
     private void applyMissingScorecardDefaults(
-            LoanApplication app, Map<String, BigDecimal> sc, BigDecimal income, BigDecimal obligation) {
+            LoanApplication app,
+            Map<String, BigDecimal> sc,
+            Map<String, String> provenance,
+            BigDecimal income,
+            BigDecimal obligation) {
         boolean applied = false;
+        String GAP = com.los.core.service.underwriting.ScorecardValueProvenance.GAP_DEFAULT;
+        String DER = com.los.core.service.underwriting.ScorecardValueProvenance.DERIVED;
         // Safe derived fills from application facts (not invented provider metrics)
         if (!sc.containsKey("MONTHLY_INCOME") || isZeroOrMissing(sc.get("MONTHLY_INCOME"))) {
             BigDecimal fallback = income;
@@ -774,9 +845,11 @@ public class CreditControlService {
             }
             if (fallback != null && fallback.compareTo(BigDecimal.ZERO) > 0) {
                 sc.put("MONTHLY_INCOME", fallback);
+                provenance.put("MONTHLY_INCOME", DER);
                 applied = true;
             } else if (providerGapDefaultsEnabled) {
                 sc.put("MONTHLY_INCOME", GAP_DEFAULT_MONTHLY_INCOME);
+                provenance.put("MONTHLY_INCOME", GAP);
                 applied = true;
             }
         }
@@ -785,14 +858,19 @@ public class CreditControlService {
             if (fallback != null && fallback.compareTo(BigDecimal.ZERO) >= 0) {
                 sc.put("EMI_OBLIGATION", fallback);
                 sc.put("MONTHLY_OBLIGATION", fallback);
+                provenance.put("EMI_OBLIGATION", DER);
+                provenance.put("MONTHLY_OBLIGATION", DER);
                 applied = true;
             } else if (providerGapDefaultsEnabled) {
                 sc.put("EMI_OBLIGATION", GAP_DEFAULT_MONTHLY_OBLIGATION);
                 sc.put("MONTHLY_OBLIGATION", GAP_DEFAULT_MONTHLY_OBLIGATION);
+                provenance.put("EMI_OBLIGATION", GAP);
+                provenance.put("MONTHLY_OBLIGATION", GAP);
                 applied = true;
             }
         } else if (!sc.containsKey("MONTHLY_OBLIGATION") || isZeroOrMissing(sc.get("MONTHLY_OBLIGATION"))) {
             sc.put("MONTHLY_OBLIGATION", sc.get("EMI_OBLIGATION"));
+            provenance.putIfAbsent("MONTHLY_OBLIGATION", DER);
             applied = true;
         }
         if (!sc.containsKey("DTI_RATIO") || isZeroOrMissing(sc.get("DTI_RATIO"))) {
@@ -802,9 +880,11 @@ public class CreditControlService {
                 sc.put(
                         "DTI_RATIO",
                         obl.divide(inc, 6, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100)));
+                provenance.put("DTI_RATIO", DER);
                 applied = true;
             } else if (providerGapDefaultsEnabled) {
                 sc.put("DTI_RATIO", GAP_DEFAULT_DTI_RATIO);
+                provenance.put("DTI_RATIO", GAP);
                 applied = true;
             }
         }
@@ -815,9 +895,11 @@ public class CreditControlService {
                 sc.put(
                         "OBLIGATION_RATIO",
                         obl.divide(inc, 6, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100)));
+                provenance.put("OBLIGATION_RATIO", DER);
                 applied = true;
             } else if (providerGapDefaultsEnabled) {
                 sc.put("OBLIGATION_RATIO", GAP_DEFAULT_FOIR_PERCENT);
+                provenance.put("OBLIGATION_RATIO", GAP);
                 applied = true;
             }
         }
@@ -829,44 +911,44 @@ public class CreditControlService {
         }
         if (!sc.containsKey("AVERAGE_BANK_BALANCE") || isZeroOrMissing(sc.get("AVERAGE_BANK_BALANCE"))) {
             sc.put("AVERAGE_BANK_BALANCE", GAP_DEFAULT_AVERAGE_BANK_BALANCE);
+            provenance.put("AVERAGE_BANK_BALANCE", GAP);
             applied = true;
         }
-        applied |= putBankGapDefault(sc, "avgDailyBalance3m", GAP_DEFAULT_AVERAGE_BANK_BALANCE);
-        applied |= putBankGapDefault(sc, "avgMonthlyTransactions3m", GAP_DEFAULT_BANK_METRIC);
-        applied |= putBankGapDefault(sc, "avgMonthlySettlements3m", GAP_DEFAULT_BANK_METRIC);
-        applied |= putBankGapDefault(sc, "monthlyTransactions3m", GAP_DEFAULT_BANK_METRIC);
-        applied |= putBankGapDefault(sc, "inwardChequeReturns3m", BigDecimal.ZERO);
-        applied |= putBankGapDefault(sc, "avgDailySettlements3m", GAP_DEFAULT_BANK_METRIC);
-        applied |= putBankGapDefault(sc, "noOfTxns60days", GAP_DEFAULT_BANK_COUNT);
-        applied |= putBankGapDefault(sc, "txnMth1", GAP_DEFAULT_BANK_METRIC);
-        applied |= putBankGapDefault(sc, "txnMth2", GAP_DEFAULT_BANK_METRIC);
-        applied |= putBankGapDefault(sc, "txnMth3", GAP_DEFAULT_BANK_METRIC);
-        // SCF / invoice-discounting friendly dummies — fill when missing or implausible stubs.
-        applied |= putScfGapDefault(sc, "ANNUAL_GST_TURNOVER", SCF_GAP_ANNUAL_GST_TURNOVER, SCF_MIN_ANNUAL_GST_TURNOVER);
-        applied |= putScfGapDefault(sc, "ANNUAL_BANKING_TURNOVER", SCF_GAP_ANNUAL_BANKING_TURNOVER, new BigDecimal("1000000"));
-        applied |= putScfGapDefault(sc, "ITR_INCOME", SCF_GAP_ITR_INCOME, new BigDecimal("300000"));
-        applied |= putScfGapDefault(sc, "PAT", SCF_GAP_PAT, new BigDecimal("1000"));
-        applied |= putScfGapDefault(sc, "INTEREST_COVERAGE", SCF_GAP_INTEREST_COVERAGE, new BigDecimal("0.1"));
-        applied |= putScfGapDefault(sc, "DEBT_TO_EQUITY", SCF_GAP_DEBT_TO_EQUITY, new BigDecimal("0.1"));
-        applied |= putScfGapDefault(sc, "EBITDA", SCF_GAP_EBITDA, new BigDecimal("1000"));
-        applied |= putScfGapDefault(sc, "DEBT_SERVICE", SCF_GAP_DEBT_SERVICE, new BigDecimal("1000"));
-        applied |= putBankGapDefault(sc, "TOL", new BigDecimal("3500000"));
-        applied |= putBankGapDefault(sc, "TNW", new BigDecimal("5000000"));
-        applied |= putBankGapDefault(sc, "LIVE_UNSECURED_LOAN_COUNT", new BigDecimal("2"));
-        applied |= putBankGapDefault(sc, "BUREAU_ENQUIRIES_3M", new BigDecimal("5"));
-        applied |= putBankGapDefault(sc, "NTC_FLAG", BigDecimal.ZERO);
-        applied |= putBankGapDefault(sc, "BANKING_TURNOVER_PCT_GST", new BigDecimal("80"));
-        applied |= putBankGapDefault(sc, "ABB_OBLIGATION_MULTIPLE", new BigDecimal("1.2"));
-        applied |= putBankGapDefault(sc, "CC_UTILISATION_PCT", new BigDecimal("70"));
-        applied |= putBankGapDefault(sc, "CHEQUE_BOUNCES_12M", new BigDecimal("2"));
-        applied |= putBankGapDefault(sc, "CHEQUE_BOUNCES_3M", BigDecimal.ZERO);
-        applied |= putBankGapDefault(sc, "EXISTING_FB_LIMITS", new BigDecimal("1000000"));
-        applied |= putBankGapDefault(sc, "EXISTING_NFB_LIMITS", new BigDecimal("500000"));
-        applied |= putBankGapDefault(sc, "officeOwned", BigDecimal.ONE);
-        applied |= putBankGapDefault(sc, "residenceOwned", BigDecimal.ONE);
-        applied |= putBankGapDefault(sc, "businessStability", new BigDecimal("3"));
-        applied |= putBankGapDefault(sc, "DSCR", new BigDecimal("1.3"));
-        applied |= putBankGapDefault(sc, "TOL_TNW", new BigDecimal("5"));
+        applied |= putBankGapDefault(sc, provenance, "avgDailyBalance3m", GAP_DEFAULT_AVERAGE_BANK_BALANCE);
+        applied |= putBankGapDefault(sc, provenance, "avgMonthlyTransactions3m", GAP_DEFAULT_BANK_METRIC);
+        applied |= putBankGapDefault(sc, provenance, "avgMonthlySettlements3m", GAP_DEFAULT_BANK_METRIC);
+        applied |= putBankGapDefault(sc, provenance, "monthlyTransactions3m", GAP_DEFAULT_BANK_METRIC);
+        applied |= putBankGapDefault(sc, provenance, "inwardChequeReturns3m", BigDecimal.ZERO);
+        applied |= putBankGapDefault(sc, provenance, "avgDailySettlements3m", GAP_DEFAULT_BANK_METRIC);
+        applied |= putBankGapDefault(sc, provenance, "noOfTxns60days", GAP_DEFAULT_BANK_COUNT);
+        applied |= putBankGapDefault(sc, provenance, "txnMth1", GAP_DEFAULT_BANK_METRIC);
+        applied |= putBankGapDefault(sc, provenance, "txnMth2", GAP_DEFAULT_BANK_METRIC);
+        applied |= putBankGapDefault(sc, provenance, "txnMth3", GAP_DEFAULT_BANK_METRIC);
+        applied |= putScfGapDefault(sc, provenance, "ANNUAL_GST_TURNOVER", SCF_GAP_ANNUAL_GST_TURNOVER, SCF_MIN_ANNUAL_GST_TURNOVER);
+        applied |= putScfGapDefault(sc, provenance, "ANNUAL_BANKING_TURNOVER", SCF_GAP_ANNUAL_BANKING_TURNOVER, new BigDecimal("1000000"));
+        applied |= putScfGapDefault(sc, provenance, "ITR_INCOME", SCF_GAP_ITR_INCOME, new BigDecimal("300000"));
+        applied |= putScfGapDefault(sc, provenance, "PAT", SCF_GAP_PAT, new BigDecimal("1000"));
+        applied |= putScfGapDefault(sc, provenance, "INTEREST_COVERAGE", SCF_GAP_INTEREST_COVERAGE, new BigDecimal("0.1"));
+        applied |= putScfGapDefault(sc, provenance, "DEBT_TO_EQUITY", SCF_GAP_DEBT_TO_EQUITY, new BigDecimal("0.1"));
+        applied |= putScfGapDefault(sc, provenance, "EBITDA", SCF_GAP_EBITDA, new BigDecimal("1000"));
+        applied |= putScfGapDefault(sc, provenance, "DEBT_SERVICE", SCF_GAP_DEBT_SERVICE, new BigDecimal("1000"));
+        applied |= putBankGapDefault(sc, provenance, "TOL", new BigDecimal("3500000"));
+        applied |= putBankGapDefault(sc, provenance, "TNW", new BigDecimal("5000000"));
+        applied |= putBankGapDefault(sc, provenance, "LIVE_UNSECURED_LOAN_COUNT", new BigDecimal("2"));
+        applied |= putBankGapDefault(sc, provenance, "BUREAU_ENQUIRIES_3M", new BigDecimal("5"));
+        applied |= putBankGapDefault(sc, provenance, "NTC_FLAG", BigDecimal.ZERO);
+        applied |= putBankGapDefault(sc, provenance, "BANKING_TURNOVER_PCT_GST", new BigDecimal("80"));
+        applied |= putBankGapDefault(sc, provenance, "ABB_OBLIGATION_MULTIPLE", new BigDecimal("1.2"));
+        applied |= putBankGapDefault(sc, provenance, "CC_UTILISATION_PCT", new BigDecimal("70"));
+        applied |= putBankGapDefault(sc, provenance, "CHEQUE_BOUNCES_12M", new BigDecimal("2"));
+        applied |= putBankGapDefault(sc, provenance, "CHEQUE_BOUNCES_3M", BigDecimal.ZERO);
+        applied |= putBankGapDefault(sc, provenance, "EXISTING_FB_LIMITS", new BigDecimal("1000000"));
+        applied |= putBankGapDefault(sc, provenance, "EXISTING_NFB_LIMITS", new BigDecimal("500000"));
+        applied |= putBankGapDefault(sc, provenance, "officeOwned", BigDecimal.ONE);
+        applied |= putBankGapDefault(sc, provenance, "residenceOwned", BigDecimal.ONE);
+        applied |= putBankGapDefault(sc, provenance, "businessStability", new BigDecimal("3"));
+        applied |= putBankGapDefault(sc, provenance, "DSCR", new BigDecimal("1.3"));
+        applied |= putBankGapDefault(sc, provenance, "TOL_TNW", new BigDecimal("5"));
         if (applied) {
             sc.put("PROVIDER_GAP_DEFAULT_ACTIVE", BigDecimal.ONE);
         }
@@ -1049,9 +1131,13 @@ public class CreditControlService {
         }
     }
 
-    private static boolean putBankGapDefault(Map<String, BigDecimal> sc, String key, BigDecimal fallback) {
+    private static boolean putBankGapDefault(
+            Map<String, BigDecimal> sc, Map<String, String> provenance, String key, BigDecimal fallback) {
         if (!sc.containsKey(key) || isZeroOrMissing(sc.get(key))) {
             sc.put(key, fallback);
+            if (provenance != null) {
+                provenance.put(key, com.los.core.service.underwriting.ScorecardValueProvenance.GAP_DEFAULT);
+            }
             return true;
         }
         return false;
@@ -1059,11 +1145,18 @@ public class CreditControlService {
 
     /** Gap-fill when missing/zero, or when a stub value is below the SCF policy floor. */
     private static boolean putScfGapDefault(
-            Map<String, BigDecimal> sc, String key, BigDecimal fallback, BigDecimal minAcceptable) {
+            Map<String, BigDecimal> sc,
+            Map<String, String> provenance,
+            String key,
+            BigDecimal fallback,
+            BigDecimal minAcceptable) {
         BigDecimal current = sc.get(key);
         if (current == null || isZeroOrMissing(current)
                 || (minAcceptable != null && current.compareTo(minAcceptable) < 0)) {
             sc.put(key, fallback);
+            if (provenance != null) {
+                provenance.put(key, com.los.core.service.underwriting.ScorecardValueProvenance.GAP_DEFAULT);
+            }
             return true;
         }
         return false;
@@ -1109,20 +1202,29 @@ public class CreditControlService {
         return cell;
     }
 
-    private void applyApplicationScorecardParameters(LoanApplication app, Map<String, BigDecimal> sc) {
+    private void applyApplicationScorecardParameters(
+            LoanApplication app, Map<String, BigDecimal> sc, Map<String, String> provenance) {
         Map<String, Object> personal = app.getPersonalInfo() != null ? app.getPersonalInfo() : Map.of();
-        putIfNotNull(sc, "AGE", ApplicationScorecardParameterResolver.ageYears(personal));
+        putIfNotNull(sc, provenance, "AGE", ApplicationScorecardParameterResolver.ageYears(personal));
         if (app.getRequestedAmount() != null) {
             sc.put("REQUESTED_AMOUNT", app.getRequestedAmount());
+            provenance.put("REQUESTED_AMOUNT",
+                    com.los.core.service.underwriting.ScorecardValueProvenance.APPLICATION);
         }
         if (app.getTenureMonths() != null) {
             sc.put("TENURE_MONTHS", BigDecimal.valueOf(app.getTenureMonths()));
+            provenance.put("TENURE_MONTHS",
+                    com.los.core.service.underwriting.ScorecardValueProvenance.APPLICATION);
         }
     }
 
-    private static void putIfNotNull(Map<String, BigDecimal> sc, String key, BigDecimal value) {
+    private static void putIfNotNull(
+            Map<String, BigDecimal> sc, Map<String, String> provenance, String key, BigDecimal value) {
         if (value != null) {
             sc.put(key, value);
+            if (provenance != null) {
+                provenance.put(key, com.los.core.service.underwriting.ScorecardValueProvenance.APPLICATION);
+            }
         }
     }
 

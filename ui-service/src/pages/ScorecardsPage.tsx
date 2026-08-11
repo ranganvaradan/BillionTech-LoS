@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   createScorecard,
+  createScorecardNewVersion,
   deleteScorecard,
   listScorecards,
   updateScorecard,
@@ -315,7 +316,27 @@ export function ScorecardsPage() {
     }
   }
 
+  async function onCreateNewVersion() {
+    if (!selected) return
+    setActionError(null)
+    setSaving(true)
+    try {
+      const draft = await createScorecardNewVersion(selected.id)
+      setIsCreating(false)
+      setSelected(draft)
+      setRows(await listScorecards())
+      apply(draft)
+    } catch (e) {
+      setActionError(
+        e instanceof ApiError ? e.message : e instanceof Error ? e.message : 'Create new version failed',
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const showForm = selected !== null || isCreating
+  const isActiveImmutable = Boolean(selected?.active && !isCreating)
 
   return (
     <div>
@@ -393,10 +414,21 @@ export function ScorecardsPage() {
                     <button type="button" className="bt-btn bt-btn-ghost" onClick={() => setMapOpen(true)}>
                       View mapping
                     </button>
-                    <button type="button" onClick={() => void onSave()} disabled={saving} className="bt-btn bt-btn-primary">
-                      {saving ? 'Saving…' : isCreating ? 'Create scorecard' : 'Save changes'}
-                    </button>
-                    {selected && !isCreating ? (
+                    {isActiveImmutable ? (
+                      <button
+                        type="button"
+                        onClick={() => void onCreateNewVersion()}
+                        disabled={saving}
+                        className="bt-btn bt-btn-primary"
+                      >
+                        {saving ? 'Creating…' : 'Create new version'}
+                      </button>
+                    ) : (
+                      <button type="button" onClick={() => void onSave()} disabled={saving} className="bt-btn bt-btn-primary">
+                        {saving ? 'Saving…' : isCreating ? 'Create scorecard' : 'Save changes'}
+                      </button>
+                    )}
+                    {selected && !isCreating && !isActiveImmutable ? (
                       <button type="button" onClick={() => void onDelete()} className="bt-btn bt-btn-secondary text-rose-700">
                         Delete
                       </button>
@@ -410,6 +442,12 @@ export function ScorecardsPage() {
                 }
               >
                 {actionError ? <BtAlert tone="error">{actionError}</BtAlert> : null}
+                {isActiveImmutable ? (
+                  <BtAlert tone="warning">
+                    ACTIVE scorecard is immutable for bands, points, thresholds, and hard rules. Use Create new version
+                    to edit a DRAFT v{(selected?.version ?? 1) + 1}; the live version stays unchanged.
+                  </BtAlert>
+                ) : null}
 
                 <DetailSection title="Identity & scope">
                   <div className="bt-form-grid">

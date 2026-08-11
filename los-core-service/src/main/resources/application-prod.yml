@@ -5,6 +5,9 @@ los:
     enforce-production-hardening: true
   underwriting:
     provider-gap-defaults-enabled: false
+    scorecard:
+      block-non-authoritative-defaults: true
+      allow-non-production-demo-scoring: false
   demo:
     enabled: false
   document:

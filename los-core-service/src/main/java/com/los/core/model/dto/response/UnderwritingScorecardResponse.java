@@ -24,6 +24,12 @@ public class UnderwritingScorecardResponse {
     private Map<String, Object> thresholdsJson;
     private Map<String, Object> hardRulesJson;
     private boolean active;
+    private String status;
+    private UUID lineageId;
+    private UUID parentScorecardId;
+    private Instant activatedAt;
+    /** Factor missing-data policies / validation; weight is metadata-only. */
+    private Map<String, Object> safetyJson;
     private Instant createdAt;
     private Instant updatedAt;
 }

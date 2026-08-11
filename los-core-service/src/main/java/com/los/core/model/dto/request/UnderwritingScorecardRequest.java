@@ -33,5 +33,10 @@ public class UnderwritingScorecardRequest {
     private Map<String, Object> thresholdsJson;
     /** {@code { "rules": [ { parameter, source, condition, decision, message? } ] }} */
     private Map<String, Object> hardRulesJson;
+    /**
+     * SCORECARD-SAFETY-CLOSURE-1 — factorPolicies / missingDataPoliciesConfirmed.
+     * Required for activation of new versions.
+     */
+    private Map<String, Object> safetyJson;
     private boolean active;
 }

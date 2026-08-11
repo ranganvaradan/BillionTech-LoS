@@ -280,15 +280,9 @@ export function ScorecardParameterEditor({
                   </span>
 
                   <span className="hidden shrink-0 items-center gap-2 sm:flex">
-                    <span className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-center">
-                      <span className="block text-[9px] font-semibold uppercase tracking-wide text-slate-500">
-                        Weight
-                      </span>
-                      <span className="block text-sm font-semibold tabular-nums text-slate-900">{row.weight}</span>
-                    </span>
                     <span className="rounded-md border border-emerald-200 bg-emerald-50/80 px-2.5 py-1 text-center">
                       <span className="block text-[9px] font-semibold uppercase tracking-wide text-emerald-700/80">
-                        Score
+                        Points
                       </span>
                       <span className="block text-sm font-semibold tabular-nums text-emerald-900">
                         {optionScored ? pointsLabel : row.score}
@@ -297,11 +291,8 @@ export function ScorecardParameterEditor({
                   </span>
 
                   <span className="flex shrink-0 flex-col items-end gap-0.5 sm:hidden">
-                    <span className="text-[10px] text-slate-500">
-                      W <strong className="text-slate-800">{row.weight}</strong>
-                    </span>
                     <span className="text-[10px] text-emerald-700">
-                      S <strong>{optionScored ? pointsLabel : row.score}</strong>
+                      Pts <strong>{optionScored ? pointsLabel : row.score}</strong>
                     </span>
                   </span>
 
@@ -375,15 +366,10 @@ export function ScorecardParameterEditor({
                         </>
                       ) : null}
 
-                      <label className="block text-xs font-medium text-slate-700">
-                        Weight
-                        <input
-                          type="number"
-                          className="bt-input mt-1 w-full"
-                          value={row.weight}
-                          onChange={(e) => updateRow(i, { weight: Number(e.target.value) || 0 })}
-                        />
-                      </label>
+                      {/* SCORECARD-SAFETY-FOUNDATION-1: weight is legacy metadata only — not used in scoring */}
+                      <p className="text-[11px] text-slate-500 sm:col-span-2">
+                        Scoring uses exclusive-band points only (earned ÷ max × 100). Stored weight is non-scoring metadata.
+                      </p>
 
                       <label className="block text-xs font-medium text-slate-700">
                         Score (points)

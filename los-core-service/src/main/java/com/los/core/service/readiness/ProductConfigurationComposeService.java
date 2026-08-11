@@ -21,6 +21,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -346,6 +347,44 @@ public class ProductConfigurationComposeService {
             messages.add("Selected scorecardId=" + selectedScorecard.getId()
                     + " is not uniquely authoritative among active peers");
         }
+
+        // SCORECARD-SAFETY-FOUNDATION-1 — Product Configuration selection vs runtime priority routing
+        UnderwritingScorecard runtimeSelected = null;
+        if (borrowerType != null && loanProduct != null) {
+            List<UnderwritingScorecard> ordered = scorecardRepository
+                    .findByBorrowerTypeAndLoanProductAndActiveIsTrueOrderByPriorityDesc(
+                            borrowerType, loanProduct);
+            if (!ordered.isEmpty()) {
+                runtimeSelected = ordered.get(0);
+            }
+        }
+        Map<String, Object> routing = new LinkedHashMap<>();
+        routing.put("productConfigurationScorecardId",
+                selectedScorecard == null || selectedScorecard.getId() == null
+                        ? null : selectedScorecard.getId().toString());
+        routing.put("runtimeSelectedScorecardId",
+                runtimeSelected == null || runtimeSelected.getId() == null
+                        ? null : runtimeSelected.getId().toString());
+        routing.put("runtimeSelectionReason",
+                "ScorecardPolicyEngine: borrowerType+loanProduct+active=true order by priority DESC (first match after scope)");
+        if (runtimeSelected != null) {
+            routing.put("runtimePriority", runtimeSelected.getPriority());
+            routing.put("runtimeName", runtimeSelected.getName());
+            routing.put("runtimeVersion", runtimeSelected.getVersion());
+        }
+        boolean match = selectedScorecard == null || runtimeSelected == null
+                || Objects.equals(selectedScorecard.getId(), runtimeSelected.getId());
+        routing.put("productConfigMatchesRuntime", match);
+        out.put("scorecardRouting", routing);
+        if (selectedScorecard != null && runtimeSelected != null && !match) {
+            messages.add("SCORECARD_ROUTING_MISMATCH: Product Configuration scorecardId="
+                    + selectedScorecard.getId()
+                    + " disagrees with runtime-selected scorecardId="
+                    + runtimeSelected.getId()
+                    + " (priority=" + runtimeSelected.getPriority()
+                    + ", name=" + runtimeSelected.getName() + "). Live-product readiness blocked.");
+        }
+
         out.put("messages", messages);
         out.put("ambiguous", !messages.isEmpty());
         return out;
