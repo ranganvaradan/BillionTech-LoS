@@ -251,9 +251,22 @@ public final class PolicyExecutionReadiness {
         blockers.addAll(requiredAdjustmentBlockers(session));
         // Genuine boundary / material ambiguities attached to included rules
         blockers.addAll(ambiguityBlockers(session));
-        // Deduplicate by key
+        // Deduplicate by key; drop stale MATERIAL "more/less than 100" when BOUNDARY already covers the rule
+        Set<String> boundaryRules = new java.util.LinkedHashSet<>();
+        for (Map<String, Object> b : blockers) {
+            if (BLOCKER_BOUNDARY_AMBIGUITY.equals(b.get("blockerType"))) {
+                boundaryRules.add(String.valueOf(b.get("ruleId")));
+            }
+        }
         LinkedHashMap<String, Map<String, Object>> dedup = new LinkedHashMap<>();
         for (Map<String, Object> b : blockers) {
+            if (BLOCKER_MATERIAL_AMBIGUITY.equals(b.get("blockerType"))
+                    && boundaryRules.contains(String.valueOf(b.get("ruleId")))) {
+                String reason = String.valueOf(b.getOrDefault("reason", "")).toLowerCase(Locale.ROOT);
+                if (reason.contains("100") || reason.contains("more than") || reason.contains("less than")) {
+                    continue; // stale duplicate of BOUNDARY_AMBIGUITY
+                }
+            }
             dedup.putIfAbsent(blockerKey(b), b);
         }
         return new ArrayList<>(dedup.values());
