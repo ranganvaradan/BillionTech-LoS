@@ -1,6 +1,5 @@
 package com.los.core.service.readiness;
 
-import com.los.core.creditintelligence.config.CreditIntelligenceProperties;
 import com.los.core.creditintelligence.policystudio.model.PolicyStudioSession;
 import com.los.core.creditintelligence.policystudio.service.PolicyStudioOrchestrator;
 import com.los.core.model.entity.AssignmentRuleSet;
@@ -40,7 +39,6 @@ public class ProductConfigurationComposeService {
     private final AssignmentRuleSetRepository assignmentRuleSetRepository;
     private final ProductReadinessValidator readinessValidator;
     private final PolicyRequiredParameterExtractor parameterExtractor;
-    private final CreditIntelligenceProperties properties;
 
     @Autowired(required = false)
     private PolicyStudioOrchestrator policyStudioOrchestrator;
@@ -150,7 +148,7 @@ public class ProductConfigurationComposeService {
         }
 
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("allowCanonicalAuthority", cutoverFalse());
+        out.put("allowCanonicalAuthority", false);
         out.put("compose", compose);
         out.put("studioRequiredParameters", studioRequired);
         out.put("readiness", readiness);
@@ -277,11 +275,6 @@ public class ProductConfigurationComposeService {
         m.put("loanProduct", a.getLoanProduct());
         m.put("active", a.isActive());
         return m;
-    }
-
-    /** Always false — readiness compose must never advertise production canonical authority. */
-    private boolean cutoverFalse() {
-        return false;
     }
 
     private static boolean productMatches(String a, String b) {
