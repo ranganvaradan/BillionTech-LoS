@@ -35,6 +35,13 @@ public class CmRuleAuthoringService {
             "(>=|<=|>|<|=|at least|at most|not exceed|no more than|less than|greater than|more than)?\\s*"
                     + "(\\d+(?:\\.\\d+)?)\\s*(%|percent|months?|m)?",
             Pattern.CASE_INSENSITIVE);
+    /** Period window phrases — numbers here must never become condition thresholds. */
+    private static final Pattern PERIOD_PHRASE = Pattern.compile(
+            "\\b(?:in\\s+)?(?:the\\s+)?last\\s+\\d+(?:\\.\\d+)?\\s*(?:months?|years?|days?|m)\\b",
+            Pattern.CASE_INSENSITIVE);
+    private static final Pattern TRAILING_PERIOD = Pattern.compile(
+            "\\b\\d+(?:\\.\\d+)?\\s*(?:months?|years?|days?)\\b",
+            Pattern.CASE_INSENSITIVE);
 
     public Map<String, Object> sources() {
         Map<String, List<Map<String, Object>>> bySource = new LinkedHashMap<>();
@@ -66,6 +73,12 @@ public class CmRuleAuthoringService {
     /** Preview structured or plain-English rule — does not persist. */
     public Map<String, Object> preview(Map<String, Object> body) {
         String mode = str(body, "mode", "DESCRIBE");
+        if ("COMPOUND".equalsIgnoreCase(mode) || body.get("branches") instanceof List<?>) {
+            return previewCompound(body);
+        }
+        if ("PRESERVE".equalsIgnoreCase(mode) && body.get("existingExpression") instanceof Map<?, ?>) {
+            return previewPreserve(body);
+        }
         DraftDraft draft;
         if ("BUILD".equalsIgnoreCase(mode) || body.get("parameterId") != null) {
             draft = fromStructured(body);
@@ -78,16 +91,23 @@ public class CmRuleAuthoringService {
     /**
      * Confirm & add (or replace) an underwriting rule on the draft session.
      * When replaceRuleId is set, rewrites that candidate in place (provenance retained).
+     * Compound IF rules use mode=COMPOUND / PRESERVE — never collapse via flat PE.
      */
     public Map<String, Object> confirm(
             PolicyStudioSession session, Map<String, Object> body) {
+        String mode = str(body, "mode", "DESCRIBE");
+        if ("COMPOUND".equalsIgnoreCase(mode) || "PRESERVE".equalsIgnoreCase(mode)
+                || body.get("branches") instanceof List<?>) {
+            return confirmCompound(session, body);
+        }
+
         Map<String, Object> preview = preview(body);
         if (!Boolean.TRUE.equals(preview.get("complete"))) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                     String.valueOf(preview.getOrDefault("message",
                             "I couldn't turn this into a complete rule. Complete the missing fields.")));
         }
-        DraftDraft draft = "BUILD".equalsIgnoreCase(str(body, "mode", ""))
+        DraftDraft draft = "BUILD".equalsIgnoreCase(mode)
                 || body.get("parameterId") != null
                 ? fromStructured(mergePreviewDefaults(body, preview))
                 : fromPlainEnglish(str(body, "text", str(body, "businessRule", "")));
@@ -116,21 +136,228 @@ public class CmRuleAuthoringService {
         if (body.get("period") != null) draft.period = String.valueOf(body.get("period"));
         if (body.get("durationUnit") != null) draft.durationUnit = String.valueOf(body.get("durationUnit"));
 
+        // Guard: never let flat authoring destroy an existing compound IF rule
+        UUID replaceProbe = parseReplaceId(body);
+        if (replaceProbe != null) {
+            CiPolicyRuleCandidate existing = session.getRuleCandidates().stream()
+                    .filter(r -> replaceProbe.equals(r.getId()))
+                    .findFirst().orElse(null);
+            if (existing != null && InwardReturnCompoundSupport.isIfExpression(existing.getExpression())) {
+                try {
+                    InwardReturnCompoundSupport.assertNonDestructiveReplace(
+                            existing.getExpression(), buildExpression(draft));
+                } catch (IllegalArgumentException ex) {
+                    throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
+                }
+            }
+        }
+
+        return persistFlatDraft(session, body, draft);
+    }
+
+    private UUID parseReplaceId(Map<String, Object> body) {
+        if (body.get("replaceRuleId") == null || String.valueOf(body.get("replaceRuleId")).isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(String.valueOf(body.get("replaceRuleId")));
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid replaceRuleId");
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> confirmCompound(PolicyStudioSession session, Map<String, Object> body) {
+        CiPolicyDocument doc = session.getDocument();
+        if (doc == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Policy document not found");
+        }
+        UUID replaceId = parseReplaceId(body);
+        if (replaceId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Compound rule confirm requires replaceRuleId (edit existing rule)");
+        }
+        CiPolicyRuleCandidate existing = session.getRuleCandidates().stream()
+                .filter(r -> replaceId.equals(r.getId()))
+                .findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Rule to edit not found"));
+
+        Map<String, Object> priorExpr = existing.getExpression() == null
+                ? Map.of() : new LinkedHashMap<>(existing.getExpression());
+        Map<String, Object> priorMeta = existing.getMetadata() == null
+                ? new LinkedHashMap<>() : new LinkedHashMap<>(existing.getMetadata());
+        Map<String, Object> priorLineage = existing.getLineage() == null
+                ? new LinkedHashMap<>() : new LinkedHashMap<>(existing.getLineage());
+
+        Map<String, Object> nextExpr;
+        String summary;
+        if ("PRESERVE".equalsIgnoreCase(str(body, "mode", ""))
+                || Boolean.TRUE.equals(body.get("noChange"))) {
+            nextExpr = priorExpr;
+            summary = String.valueOf(priorMeta.getOrDefault("businessSummary",
+                    InwardReturnCompoundSupport.toEditableModel(priorExpr, priorMeta).get("plainEnglish")));
+        } else if (body.get("branches") instanceof List<?>) {
+            List<Map<String, Object>> branches = new ArrayList<>();
+            for (Object o : (List<?>) body.get("branches")) {
+                if (o instanceof Map<?, ?> m) {
+                    branches.add(new LinkedHashMap<>((Map<String, Object>) m));
+                }
+            }
+            try {
+                nextExpr = InwardReturnCompoundSupport.buildExpressionFromBranches(branches);
+                summary = InwardReturnCompoundSupport.businessSummaryFromBranches(branches);
+            } catch (IllegalArgumentException ex) {
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
+            }
+        } else if (body.get("boundaryOption") != null) {
+            try {
+                String opt = String.valueOf(body.get("boundaryOption"));
+                nextExpr = InwardReturnCompoundSupport.patchBoundary(priorExpr, opt);
+                summary = InwardReturnCompoundSupport.businessSummaryAfterBoundary(opt);
+            } catch (IllegalArgumentException ex) {
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
+            }
+        } else {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Compound confirm requires branches, boundaryOption, or mode=PRESERVE");
+        }
+
+        try {
+            InwardReturnCompoundSupport.assertNonDestructiveReplace(priorExpr, nextExpr);
+        } catch (IllegalArgumentException ex) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, ex.getMessage());
+        }
+
+        Map<String, Object> lineage = new LinkedHashMap<>(priorLineage);
+        lineage.put("priorExpression", priorExpr);
+        lineage.put("priorSystemRuleId", existing.getSystemRuleId());
+        lineage.put("editedByCm", true);
+        lineage.put("compoundRoundtrip", true);
+        if (lineage.get("sourceText") == null && priorLineage.get("sourceText") != null) {
+            lineage.put("sourceText", priorLineage.get("sourceText"));
+        }
+        lineage.put("historicalSourceText", priorLineage.getOrDefault("sourceText",
+                priorLineage.get("historicalSourceText")));
+
+        Map<String, Object> meta = new LinkedHashMap<>(priorMeta);
+        meta.put("disposition", "EDITED");
+        meta.put("businessSummary", summary);
+        meta.put("businessTitle", priorMeta.getOrDefault("businessTitle",
+                "Inward cheque / ECS / ENACH returns"));
+        meta.put("compoundRule", true);
+        meta.put("cmAuthored", true);
+        meta.put("plainEnglishAdded", false);
+        meta.put("replacedNarrative", false);
+        meta.put("period", "TRAILING_3M");
+        if (body.get("treatment") != null) {
+            meta.put("failureTreatment", treatmentCode(String.valueOf(body.get("treatment"))));
+        }
+        // Keep canonical mapping provenance
+        meta.put("parameterId", InwardReturnCompoundSupport.TXN_METRIC);
+        meta.put("mappedParameters", List.of(
+                InwardReturnCompoundSupport.TXN_METRIC,
+                InwardReturnCompoundSupport.RATIO_METRIC,
+                InwardReturnCompoundSupport.COUNT_METRIC));
+
+        existing.setExpression(nextExpr);
+        existing.setMetadata(meta);
+        existing.setLineage(lineage);
+        // Do not change systemRuleId — preserve BANK_INWARD_RETURN_BRANCHED_100 binding
+        if (existing.getSystemRuleId() == null || existing.getSystemRuleId().startsWith("CM_")) {
+            existing.setSystemRuleId("BANK_INWARD_RETURN_BRANCHED_100");
+        }
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("confirmed", true);
+        out.put("ruleId", existing.getId().toString());
+        out.put("systemRuleId", existing.getSystemRuleId());
+        out.put("replaced", true);
+        out.put("compound", true);
+        out.put("message", "Compound rule updated without losing branches or mappings.");
+        out.put("preview", previewCompound(Map.of(
+                "branches", InwardReturnCompoundSupport.toEditableModel(nextExpr, meta).get("branches"),
+                "mode", "COMPOUND")));
+        out.put("editableModel", InwardReturnCompoundSupport.toEditableModel(nextExpr, meta));
+        out.put("gacatMutated", false);
+        out.put("allowCanonicalAuthority", false);
+        return out;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> previewCompound(Map<String, Object> body) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("mode", "COMPOUND");
+        List<Map<String, Object>> branches = new ArrayList<>();
+        if (body.get("branches") instanceof List<?> raw) {
+            for (Object o : raw) {
+                if (o instanceof Map<?, ?> m) branches.add(new LinkedHashMap<>((Map<String, Object>) m));
+            }
+        } else if (body.get("existingExpression") instanceof Map<?, ?> expr) {
+            Map<String, Object> model = InwardReturnCompoundSupport.toEditableModel(
+                    new LinkedHashMap<>((Map<String, Object>) expr), Map.of());
+            Object b = model.get("branches");
+            if (b instanceof List<?> list) {
+                for (Object o : list) {
+                    if (o instanceof Map<?, ?> m) branches.add(new LinkedHashMap<>((Map<String, Object>) m));
+                }
+            }
+        }
+        if (branches.size() < 2) {
+            out.put("complete", false);
+            out.put("message", "Could not safely interpret this rule — compound IF needs two branches.");
+            return out;
+        }
+        Map<String, Object> expr;
+        try {
+            expr = InwardReturnCompoundSupport.buildExpressionFromBranches(branches);
+        } catch (IllegalArgumentException ex) {
+            out.put("complete", false);
+            out.put("message", ex.getMessage());
+            return out;
+        }
+        out.put("complete", true);
+        out.put("expression", expr);
+        out.put("branches", branches);
+        out.put("plainEnglish", InwardReturnCompoundSupport.businessSummaryFromBranches(branches));
+        out.put("period", "Last 3 months");
+        out.put("parameterId", InwardReturnCompoundSupport.TXN_METRIC);
+        out.put("parameterName", "Transaction count");
+        out.put("mappedParameters", List.of(
+                InwardReturnCompoundSupport.TXN_METRIC,
+                InwardReturnCompoundSupport.RATIO_METRIC,
+                InwardReturnCompoundSupport.COUNT_METRIC));
+        out.put("treatment", str(body, "treatment", "Reject"));
+        out.put("message", "Compound rule preview — both branches preserved");
+        return out;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> previewPreserve(Map<String, Object> body) {
+        Map<String, Object> expr = new LinkedHashMap<>((Map<String, Object>) body.get("existingExpression"));
+        Map<String, Object> model = InwardReturnCompoundSupport.toEditableModel(expr, Map.of());
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("mode", "PRESERVE");
+        out.put("complete", Boolean.TRUE.equals(model.get("complete")));
+        out.put("expression", expr);
+        out.put("editableModel", model);
+        out.put("plainEnglish", model.get("plainEnglish"));
+        out.put("parameterId", InwardReturnCompoundSupport.TXN_METRIC);
+        out.put("mappedParameters", List.of(
+                InwardReturnCompoundSupport.TXN_METRIC,
+                InwardReturnCompoundSupport.RATIO_METRIC,
+                InwardReturnCompoundSupport.COUNT_METRIC));
+        out.put("message", "Existing compound rule preserved — semantically identical");
+        return out;
+    }
+
+    private Map<String, Object> persistFlatDraft(
+            PolicyStudioSession session, Map<String, Object> body, DraftDraft draft) {
         CiPolicyDocument doc = session.getDocument();
         if (doc == null) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Policy document not found");
         }
 
-        final UUID replaceId;
-        if (body.get("replaceRuleId") != null && !String.valueOf(body.get("replaceRuleId")).isBlank()) {
-            try {
-                replaceId = UUID.fromString(String.valueOf(body.get("replaceRuleId")));
-            } catch (IllegalArgumentException e) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid replaceRuleId");
-            }
-        } else {
-            replaceId = null;
-        }
+        final UUID replaceId = parseReplaceId(body);
 
         String sourceText = draft.sourceText != null ? draft.sourceText
                 : draft.businessName + " " + draft.operator + " " + draft.value;
@@ -359,6 +586,15 @@ public class CmRuleAuthoringService {
         String lower = d.sourceText.toLowerCase(Locale.ROOT);
         d.treatment = inferTreatment(lower);
 
+        // POLICY-RULE-EDITOR-ROUNDTRIP-P0 — compound IF wording is not safely flat-parseable
+        if (looksLikeCompoundPlainEnglish(lower)) {
+            d.complete = false;
+            d.message = "Could not safely interpret this rule — it has multiple branches. "
+                    + "Use Build (compound) or Define boundary; do not rewrite from free text.";
+            d.missing.add("compound");
+            return d;
+        }
+
         // Multi-parameter phrases first
         if ((lower.contains("bank") || lower.contains("banking") || lower.contains("turnover"))
                 && lower.contains("gst")) {
@@ -499,7 +735,16 @@ public class CmRuleAuthoringService {
                     : CanonicalParameterRegistry.shared().findById(d.parameterId).orElse(null);
             Object num = extractNumber(lower, null);
             if (num != null) {
-                String dur = lower.contains("year") ? "Years" : (lower.contains("month") ? "Months" : null);
+                String dur = null;
+                if (AuthoringValueTypes.CONTROL_DURATION.equals(d.valueControl)
+                        || lower.matches(".*\\b\\d+(?:\\.\\d+)?\\s*months?\\b.*")
+                        && (lower.contains("at least") || lower.contains("vintage")
+                        || lower.contains(">= ") || lower.contains("minimum"))) {
+                    dur = lower.contains("year") ? "Years" : "Months";
+                } else if (AuthoringValueTypes.CONTROL_DURATION.equals(d.valueControl)
+                        && lower.contains("year")) {
+                    dur = "Years";
+                }
                 d.durationUnit = dur;
                 d.value = AuthoringValueTypes.coerce(num, def, dur);
             }
@@ -699,19 +944,54 @@ public class CmRuleAuthoringService {
         };
     }
 
+    private static boolean looksLikeCompoundPlainEnglish(String lower) {
+        if (lower == null) return false;
+        boolean multiIf = lower.split("\\bif\\b").length > 2;
+        boolean semiBranches = lower.contains(";") && (lower.contains("if <") || lower.contains("if >")
+                || lower.contains("if ≤") || lower.contains("if ≥") || lower.contains("if <=")
+                || lower.contains("if >="));
+        boolean ratioAndCount = (lower.contains("ratio") || lower.contains("%"))
+                && lower.contains("count")
+                && (lower.contains("100") || lower.contains("transaction"));
+        boolean colonBranches = lower.contains(":") && lower.contains(";")
+                && (lower.contains("return") || lower.contains("ratio"));
+        return multiIf || semiBranches || ratioAndCount || colonBranches;
+    }
+
     private static Object extractNumber(String lower, Object defaultVal) {
-        Matcher m = NUM.matcher(lower);
+        // Strip period windows so "last 3 months" never becomes the threshold
+        String scrubbed = PERIOD_PHRASE.matcher(lower == null ? "" : lower).replaceAll(" ");
+        Matcher m = NUM.matcher(scrubbed);
         Double last = null;
+        Double lastWithOp = null;
         while (m.find()) {
             try {
-                last = Double.parseDouble(m.group(2));
+                double v = Double.parseDouble(m.group(2));
+                String unit = m.group(3);
+                // Skip bare "3 months" only when it is a period residue after "last …" already stripped;
+                // keep "at least 24 months" for duration thresholds (op group present or valueControl duration).
+                if (unit != null) {
+                    String u = unit.toLowerCase(Locale.ROOT);
+                    String op = m.group(1);
+                    boolean periodUnit = u.startsWith("month") || u.equals("m") || u.startsWith("year") || u.startsWith("day");
+                    if (periodUnit && (op == null || op.isBlank())) {
+                        // No comparison operator attached — likely leftover period text; skip
+                        continue;
+                    }
+                }
+                last = v;
+                String op = m.group(1);
+                if (op != null && !op.isBlank()) {
+                    lastWithOp = v;
+                }
             } catch (Exception ignored) {
                 // continue
             }
         }
-        if (last == null) return defaultVal;
-        if (last == Math.rint(last)) return last.longValue();
-        return last;
+        Double chosen = lastWithOp != null ? lastWithOp : last;
+        if (chosen == null) return defaultVal;
+        if (chosen == Math.rint(chosen)) return chosen.longValue();
+        return chosen;
     }
 
     private static String opCode(String op) {

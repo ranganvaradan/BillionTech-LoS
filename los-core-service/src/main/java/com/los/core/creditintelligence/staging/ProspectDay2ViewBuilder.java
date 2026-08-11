@@ -802,6 +802,20 @@ final class ProspectDay2ViewBuilder {
         }
         card.put("dataRequirementOnly", Boolean.TRUE.equals(meta.get("dataRequirementOnly")));
         card.put("metricAdjustment", Boolean.TRUE.equals(meta.get("metricAdjustment")));
+        // POLICY-RULE-EDITOR-ROUNDTRIP-P0 — Accepted vs boundary incomplete
+        boolean open100 = openPhrases.stream().anyMatch(p ->
+                p.contains("exactly 100") || p.contains("100 transaction") || p.equals("exactly 100 transactions"));
+        if (open100 && com.los.core.creditintelligence.policystudio.parameters
+                .InwardReturnCompoundSupport.looksLikeInwardReturnCompound(r)
+                && !Boolean.TRUE.equals(meta.get("boundaryResolved"))) {
+            card.put("boundaryIncomplete", true);
+        }
+        if (com.los.core.creditintelligence.policystudio.parameters
+                .InwardReturnCompoundSupport.isIfExpression(r.getExpression())) {
+            card.put("compoundEditable", true);
+            card.put("editableModel", com.los.core.creditintelligence.policystudio.parameters
+                    .InwardReturnCompoundSupport.toEditableModel(r.getExpression(), meta));
+        }
         // POLICY-CONVERGENCE-1 — Live Rules shaped CM fields + source/provenance split
         PolicyStudioConvergencePresenter.applyConvergenceFields(card, r, clause, dataUsed, fileName);
         com.los.core.creditintelligence.policystudio.parameters.PolicyAuthoringCompleteness

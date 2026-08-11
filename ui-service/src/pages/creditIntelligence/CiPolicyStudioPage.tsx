@@ -950,6 +950,9 @@ export function CiPolicyStudioPage() {
           onSession={applyAuthoringSession}
           documentId={documentId}
           ingestionBinding={asRecord(asRecord(session).ingestionBinding)}
+          ambiguities={asList(asRecord(session).ambiguities).length
+            ? asList(asRecord(session).ambiguities)
+            : asList(asRecord(session).ambiguityCards)}
           prospectDemoMode={prospectDemoMode}
           compactShell
         />

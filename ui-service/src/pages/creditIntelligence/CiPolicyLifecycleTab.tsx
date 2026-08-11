@@ -308,7 +308,16 @@ export function CiPolicyLifecycleTab({
                     {ruleName ? <span className="font-medium">{ruleName}: </span> : null}
                     {reason}{' '}
                     {action ? <span className="text-amber-900">[{action}]</span> : null}{' '}
-                    {b.tab ? (
+                    {String(b.action ?? '').includes('Define boundary') || b.defineBoundary ? (
+                      <button
+                        type="button"
+                        className="font-semibold text-sky-900 underline"
+                        data-testid={`versions-define-boundary-${i}`}
+                        onClick={() => onNavigateTab?.('rules')}
+                      >
+                        Define boundary
+                      </button>
+                    ) : b.tab ? (
                       <button
                         type="button"
                         className="font-semibold text-sky-900 underline"

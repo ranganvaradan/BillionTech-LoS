@@ -15,6 +15,10 @@ import {
 } from '@/pages/creditIntelligence/CiDataCalcResolutionPanel'
 import { CiRuleAuthoringPanel } from '@/pages/creditIntelligence/CiRuleAuthoringPanel'
 import {
+  CiBoundaryResolverPanel,
+  findOpenBoundaryAmbiguity,
+} from '@/pages/creditIntelligence/CiBoundaryResolverPanel'
+import {
   cmStatusLabel,
   filterParameterGroups,
   groupDataCalculations,
@@ -242,6 +246,7 @@ export function CiPolicyRulesTab({
   onSession,
   documentId,
   ingestionBinding,
+  ambiguities,
   prospectDemoMode = false,
   compactShell = false,
 }: {
@@ -260,6 +265,7 @@ export function CiPolicyRulesTab({
   onSession?: (session: Record<string, unknown>) => void
   documentId?: string | null
   ingestionBinding?: Record<string, unknown> | null
+  ambiguities?: unknown[]
   prospectDemoMode?: boolean
   /** POLICY-UX-SHELL-1 — start with rules, not a large summary block. */
   compactShell?: boolean
@@ -290,6 +296,10 @@ export function CiPolicyRulesTab({
     parameterId: string
     title: string
     kind: DataCalcResolveKind
+  } | null>(null)
+  const [boundaryOpen, setBoundaryOpen] = useState<{
+    ambiguityId: string
+    ruleName?: string
   } | null>(null)
   const [dataCalcFilter, setDataCalcFilter] = useState<
     'ALL' | 'READY' | 'NEEDS_INPUT' | 'NEEDS_CONFIGURATION' | 'MANUAL' | 'UNAVAILABLE'
@@ -645,7 +655,9 @@ export function CiPolicyRulesTab({
                           <div className="text-lg font-semibold text-slate-900">
                             {String(r.ruleName ?? 'Business rule')}
                           </div>
-                          {String(visual.kind ?? '') === 'EXCEPTION_ALL' ? (
+                      {String(visual.kind ?? '') === 'EXCEPTION_ALL'
+                        || String(visual.kind ?? '') === 'BRANCH'
+                        || String(visual.kind ?? '') === 'COMPOUND' ? (
                             <div className="mt-2">
                               <VisualLogic visual={visual} />
                             </div>
@@ -658,6 +670,16 @@ export function CiPolicyRulesTab({
                               )}
                             </p>
                           )}
+                      {r.reviewBadge ? (
+                        <p className="mt-1 text-xs font-semibold text-emerald-800" data-testid="rule-review-badge">
+                          {String(r.reviewBadge)}
+                          {r.executionReadinessLabel ? (
+                            <span className="ml-2 font-normal text-amber-800">
+                              · Execution: {String(r.executionReadinessLabel)}
+                            </span>
+                          ) : null}
+                        </p>
+                      ) : null}
                           {r.period ? (
                             <p className="mt-1 text-sm text-slate-600">Period: {String(r.period)}</p>
                           ) : null}
@@ -818,6 +840,27 @@ export function CiPolicyRulesTab({
                           >
                             Edit
                           </button>
+                          {Boolean(r.boundaryIncomplete) || String(r.reviewBadge ?? '').includes('Boundary') ? (
+                            <button
+                              type="button"
+                              className="bt-btn bt-btn-primary bt-btn-sm"
+                              disabled={busy || !documentId}
+                              data-testid={`define-boundary-${id}`}
+                              onClick={() => {
+                                const ambId = findOpenBoundaryAmbiguity(ambiguities ?? [])
+                                if (!ambId) {
+                                  onError?.('No open boundary ambiguity found — open Ambiguities or Versions.')
+                                  return
+                                }
+                                setBoundaryOpen({
+                                  ambiguityId: ambId,
+                                  ruleName: String(r.ruleName ?? r.businessTitle ?? ''),
+                                })
+                              }}
+                            >
+                              Define boundary
+                            </button>
+                          ) : null}
                           <details className="relative">
                             <summary className="bt-btn bt-btn-secondary bt-btn-sm list-none cursor-pointer">
                               More…
@@ -976,6 +1019,8 @@ export function CiPolicyRulesTab({
                             onError={onError}
                             replaceRuleId={id}
                             initialText={String(r.businessRule ?? r.sourceClause ?? '')}
+                            initialExpression={asRecord(r.technicalExpression ?? r.expression)}
+                            initialEditableModel={asRecord(r.editableModel)}
                             onSession={(data) => {
                               onSession(data)
                               setEditOpen((p) => ({ ...p, [id]: false }))
@@ -1361,6 +1406,8 @@ export function CiPolicyRulesTab({
                             onError={onError}
                             replaceRuleId={id}
                             initialText={String(r.businessRule ?? r.sourceClause ?? '')}
+                            initialExpression={asRecord(r.technicalExpression ?? r.expression)}
+                            initialEditableModel={asRecord(r.editableModel)}
                             onSession={(data) => {
                               onSession(data)
                               setEditOpen((p) => ({ ...p, [id]: false }))
@@ -1397,6 +1444,22 @@ export function CiPolicyRulesTab({
         busy={busy}
         onResolve={onReview}
       />
+      {documentId && setBusy && onError && onSession && boundaryOpen ? (
+        <CiBoundaryResolverPanel
+          open={Boolean(boundaryOpen)}
+          onClose={() => setBoundaryOpen(null)}
+          documentId={documentId}
+          ambiguityId={boundaryOpen.ambiguityId}
+          ruleName={boundaryOpen.ruleName}
+          busy={busy}
+          setBusy={setBusy}
+          onError={onError}
+          onSession={(data) => {
+            onSession(data)
+            setBoundaryOpen(null)
+          }}
+        />
+      ) : null}
     </div>
   )
 }

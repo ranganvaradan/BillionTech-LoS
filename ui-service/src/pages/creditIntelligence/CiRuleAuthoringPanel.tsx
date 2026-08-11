@@ -16,10 +16,24 @@ import {
   type ValueControl,
 } from '@/lib/ux/ruleAuthoringTypedValue'
 
-type Path = 'menu' | 'build' | 'describe'
+type Path = 'menu' | 'build' | 'describe' | 'compound'
+
+type CompoundBranch = {
+  label?: string
+  whenParameterId?: string
+  whenParameterName?: string
+  whenOperator: string
+  whenValue: string | number
+  thenParameterId?: string
+  thenParameterName?: string
+  thenOperator: string
+  thenValue: string | number
+  thenUnit?: string
+}
 
 /**
- * POLICY-TYPED-RULE-AUTHORING-1 — Build / Describe / Edit with metadata-driven typed values.
+ * POLICY-TYPED-RULE-AUTHORING-1 / POLICY-RULE-EDITOR-ROUNDTRIP-P0 —
+ * Build / Describe / Edit with typed values + lossless compound IF editing.
  */
 export function CiRuleAuthoringPanel({
   documentId,
@@ -29,6 +43,8 @@ export function CiRuleAuthoringPanel({
   onSession,
   replaceRuleId,
   initialText,
+  initialExpression,
+  initialEditableModel,
   onClose,
 }: {
   documentId: string
@@ -38,9 +54,16 @@ export function CiRuleAuthoringPanel({
   onSession: (data: Record<string, unknown>) => void
   replaceRuleId?: string
   initialText?: string
+  initialExpression?: Record<string, unknown> | null
+  initialEditableModel?: Record<string, unknown> | null
   onClose?: () => void
 }) {
-  const [path, setPath] = useState<Path>(replaceRuleId ? 'describe' : 'menu')
+  const isCompound = Boolean(
+    initialEditableModel?.kind === 'COMPOUND_IF'
+      || String(asRecord(initialExpression).op ?? '').toUpperCase() === 'IF'
+      || String(initialText ?? '').includes(';'),
+  )
+  const [path, setPath] = useState<Path>(replaceRuleId ? (isCompound ? 'compound' : 'build') : 'menu')
   const [sources, setSources] = useState<Record<string, unknown> | null>(null)
   const [source, setSource] = useState('')
   const [parameterId, setParameterId] = useState('')
@@ -53,6 +76,49 @@ export function CiRuleAuthoringPanel({
   const [text, setText] = useState(initialText ?? '')
   const [preview, setPreview] = useState<Record<string, unknown> | null>(null)
   const [feedback, setFeedback] = useState<string | null>(null)
+  const seedBranches = asList(initialEditableModel?.branches).map((b) => {
+    const r = asRecord(b)
+    return {
+      label: String(r.label ?? ''),
+      whenParameterId: String(r.whenParameterId ?? 'banking.transaction_count.total_3m'),
+      whenParameterName: String(r.whenParameterName ?? 'Transaction count'),
+      whenOperator: String(r.whenOperator ?? '>'),
+      whenValue: (r.whenValue as string | number) ?? 100,
+      thenParameterId: String(r.thenParameterId ?? ''),
+      thenParameterName: String(r.thenParameterName ?? ''),
+      thenOperator: String(r.thenOperator ?? '<='),
+      thenValue: (r.thenValue as string | number) ?? 5,
+      thenUnit: String(r.thenUnit ?? ''),
+    } satisfies CompoundBranch
+  })
+  const [branches, setBranches] = useState<CompoundBranch[]>(
+    seedBranches.length >= 2
+      ? seedBranches
+      : [
+          {
+            label: 'Branch 1',
+            whenParameterName: 'Transaction count',
+            whenOperator: '>',
+            whenValue: 100,
+            thenParameterName: 'Inward return ratio',
+            thenParameterId: 'banking.inward_return.ratio_3m',
+            thenOperator: '<=',
+            thenValue: 5,
+            thenUnit: '%',
+          },
+          {
+            label: 'Branch 2',
+            whenParameterName: 'Transaction count',
+            whenOperator: '<=',
+            whenValue: 100,
+            thenParameterName: 'Inward return count',
+            thenParameterId: 'banking.inward_return.count_3m',
+            thenOperator: '<=',
+            thenValue: 5,
+            thenUnit: 'count',
+          },
+        ],
+  )
 
   useEffect(() => {
     void getRuleAuthoringSources()
@@ -129,16 +195,24 @@ export function CiRuleAuthoringPanel({
     setFeedback(null)
     try {
       const body =
-        path === 'build'
-          ? buildBody()
-          : {
-              mode: 'DESCRIBE',
-              text,
+        path === 'compound'
+          ? {
+              mode: 'COMPOUND',
+              branches,
               treatment,
               ...(replaceRuleId ? { replaceRuleId } : {}),
+              ...(initialExpression ? { existingExpression: initialExpression } : {}),
             }
+          : path === 'build'
+            ? buildBody()
+            : {
+                mode: 'DESCRIBE',
+                text,
+                treatment,
+                ...(replaceRuleId ? { replaceRuleId } : {}),
+              }
       const data = await previewPolicyRule(documentId, body)
-      const p = asRecord(data.preview)
+      const p = asRecord(data.preview ?? data)
       setPreview(p)
       if (p.complete) {
         setFeedback(String(p.message ?? 'Ready to confirm'))
@@ -173,16 +247,26 @@ export function CiRuleAuthoringPanel({
     onError(null)
     setFeedback(null)
     try {
-      const body: Record<string, unknown> = {
-        confirm: true,
-        mode: path === 'build' ? 'BUILD' : 'DESCRIBE',
-        text: path === 'describe' ? text : undefined,
-        parameterId: parameterId || asRecord(preview).parameterId,
-        operator: operator || asRecord(preview).operator,
-        treatment,
-        ...(replaceRuleId ? { replaceRuleId } : {}),
-        ...(path === 'build' ? buildBody() : {}),
-      }
+      const body: Record<string, unknown> =
+        path === 'compound'
+          ? {
+              confirm: true,
+              mode: 'COMPOUND',
+              branches,
+              treatment,
+              ...(replaceRuleId ? { replaceRuleId } : {}),
+              ...(initialExpression ? { existingExpression: initialExpression } : {}),
+            }
+          : {
+              confirm: true,
+              mode: path === 'build' ? 'BUILD' : 'DESCRIBE',
+              text: path === 'describe' ? text : undefined,
+              parameterId: parameterId || asRecord(preview).parameterId,
+              operator: operator || asRecord(preview).operator,
+              treatment,
+              ...(replaceRuleId ? { replaceRuleId } : {}),
+              ...(path === 'build' ? buildBody() : {}),
+            }
       // Prefer preview canonical value when describe path filled it
       if (path === 'describe' && asRecord(preview).value != null) {
         body.value = asRecord(preview).value
@@ -195,6 +279,29 @@ export function CiRuleAuthoringPanel({
       setPreview(null)
       setText('')
       setPath('menu')
+      onClose?.()
+    } catch (e) {
+      const msg = e instanceof ApiError ? e.message : 'Could not save rule'
+      setFeedback(msg)
+      onError(msg)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const saveUnchanged = async () => {
+    if (!replaceRuleId || !initialExpression) return
+    setBusy(true)
+    onError(null)
+    try {
+      const data = await addPlainEnglishPolicyRule(documentId, {
+        confirm: true,
+        mode: 'PRESERVE',
+        noChange: true,
+        replaceRuleId,
+        existingExpression: initialExpression,
+      })
+      onSession(data as Record<string, unknown>)
       onClose?.()
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : 'Could not save rule'
@@ -230,20 +337,42 @@ export function CiRuleAuthoringPanel({
     <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3" data-testid="rule-authoring-panel">
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-semibold text-slate-900">
-          {replaceRuleId ? 'Edit rule' : path === 'build' ? 'Build rule' : 'Describe rule'}
+          {replaceRuleId
+            ? path === 'compound'
+              ? 'Edit compound rule'
+              : 'Edit rule'
+            : path === 'build'
+              ? 'Build rule'
+              : path === 'compound'
+                ? 'Build compound rule'
+                : 'Describe rule'}
         </h3>
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            className="text-xs text-sky-800 hover:underline"
-            onClick={() => {
-              setPath(path === 'build' ? 'describe' : 'build')
-              setPreview(null)
-              setFeedback(null)
-            }}
-          >
-            Switch to {path === 'build' ? 'Describe' : 'Build'}
-          </button>
+          {isCompound ? (
+            <button
+              type="button"
+              className="text-xs text-sky-800 hover:underline"
+              onClick={() => {
+                setPath(path === 'compound' ? 'describe' : 'compound')
+                setPreview(null)
+                setFeedback(null)
+              }}
+            >
+              Switch to {path === 'compound' ? 'Describe' : 'Build'}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="text-xs text-sky-800 hover:underline"
+              onClick={() => {
+                setPath(path === 'build' ? 'describe' : 'build')
+                setPreview(null)
+                setFeedback(null)
+              }}
+            >
+              Switch to {path === 'build' ? 'Describe' : 'Build'}
+            </button>
+          )}
           <button
             type="button"
             className="text-xs text-slate-600 hover:underline"
@@ -258,6 +387,120 @@ export function CiRuleAuthoringPanel({
         </div>
       </div>
 
+      {path === 'compound' ? (
+        <div className="space-y-3 text-sm" data-testid="compound-rule-editor">
+          <p className="text-xs text-slate-500">
+            Period: Last 3 months · Source: Bank Statement · Mapped parameters preserved
+          </p>
+          {branches.map((b, idx) => (
+            <div key={idx} className="rounded border border-slate-200 bg-white px-3 py-2 space-y-2">
+              <p className="text-xs font-semibold uppercase text-slate-500">{b.label || `Branch ${idx + 1}`}</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium">IF {b.whenParameterName || 'Transaction count'}</span>
+                <select
+                  className="rounded border border-slate-300 px-2 py-1"
+                  value={b.whenOperator}
+                  disabled={busy}
+                  data-testid={`compound-when-op-${idx}`}
+                  onChange={(e) => {
+                    const next = [...branches]
+                    next[idx] = { ...next[idx], whenOperator: e.target.value }
+                    if (idx === 0 && next[1]) {
+                      const comp =
+                        e.target.value === '>'
+                          ? '<='
+                          : e.target.value === '>='
+                            ? '<'
+                            : e.target.value === '<'
+                              ? '>='
+                              : '>'
+                      next[1] = { ...next[1], whenOperator: comp }
+                    }
+                    setBranches(next)
+                    setPreview(null)
+                  }}
+                >
+                  <option value=">">&gt;</option>
+                  <option value=">=">≥</option>
+                  <option value="<">&lt;</option>
+                  <option value="<=">≤</option>
+                </select>
+                <input
+                  className="w-20 rounded border border-slate-300 px-2 py-1"
+                  value={String(b.whenValue)}
+                  disabled={busy}
+                  onChange={(e) => {
+                    const next = [...branches]
+                    next[idx] = { ...next[idx], whenValue: e.target.value }
+                    if (next[1] && idx === 0) next[1] = { ...next[1], whenValue: e.target.value }
+                    setBranches(next)
+                    setPreview(null)
+                  }}
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium">THEN {b.thenParameterName || 'Parameter'}</span>
+                <select
+                  className="rounded border border-slate-300 px-2 py-1"
+                  value={b.thenOperator}
+                  disabled={busy}
+                  data-testid={`compound-then-op-${idx}`}
+                  onChange={(e) => {
+                    const next = [...branches]
+                    next[idx] = { ...next[idx], thenOperator: e.target.value }
+                    setBranches(next)
+                    setPreview(null)
+                  }}
+                >
+                  <option value="<=">≤</option>
+                  <option value="<">&lt;</option>
+                  <option value=">=">≥</option>
+                  <option value=">">&gt;</option>
+                </select>
+                <input
+                  className="w-20 rounded border border-slate-300 px-2 py-1"
+                  value={String(b.thenValue)}
+                  disabled={busy}
+                  onChange={(e) => {
+                    const next = [...branches]
+                    next[idx] = { ...next[idx], thenValue: e.target.value }
+                    setBranches(next)
+                    setPreview(null)
+                  }}
+                />
+                {b.thenUnit ? <span className="text-slate-500">{b.thenUnit}</span> : null}
+              </div>
+            </div>
+          ))}
+          <label className="block text-sm sm:w-60">
+            <span className="text-slate-600">If rule fails</span>
+            <select
+              className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+              value={treatment}
+              onChange={(e) => setTreatment(e.target.value)}
+              disabled={busy}
+            >
+              {(treatments.length ? treatments : ['Reject', 'Manual Review', 'Refer', 'Info']).map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </label>
+          {replaceRuleId && initialExpression ? (
+            <button
+              type="button"
+              className="text-xs text-sky-800 underline"
+              disabled={busy}
+              onClick={() => void saveUnchanged()}
+              data-testid="compound-save-unchanged"
+            >
+              Save without changes (round-trip preserve)
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
       {path === 'describe' ? (
         <label className="block text-sm">
           <span className="text-slate-600">Describe the rule in plain English</span>
@@ -270,8 +513,13 @@ export function CiRuleAuthoringPanel({
             onChange={(e) => setText(e.target.value)}
             data-testid="describe-rule-text"
           />
+          {isCompound ? (
+            <p className="mt-1 text-xs text-amber-800">
+              This is a compound rule. Prefer Build to edit branches — free-text rewrite cannot safely keep both branches.
+            </p>
+          ) : null}
         </label>
-      ) : (
+      ) : path === 'compound' ? null : (
         <div className="grid gap-2 sm:grid-cols-2">
           <label className="block text-sm">
             <span className="text-slate-600">Source</span>
@@ -536,7 +784,10 @@ export function CiRuleAuthoringPanel({
         <button
           type="button"
           className="bt-btn bt-btn-secondary bt-btn-sm"
-          disabled={busy || (path === 'describe' ? !text.trim() : !canPreviewBuild)}
+          disabled={
+            busy ||
+            (path === 'describe' ? !text.trim() : path === 'compound' ? branches.length < 2 : !canPreviewBuild)
+          }
           onClick={() => void runPreview()}
           data-testid="preview-rule"
         >

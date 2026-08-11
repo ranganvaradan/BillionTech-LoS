@@ -238,11 +238,14 @@ public class PolicyReviewService {
             }
         }
 
-        // Exactly-100 boundary: regenerate inward-return tests after human selection
+        // Exactly-100 boundary: patch IF operators + regenerate tests after human selection
         if (amb.getPhrase() != null && amb.getPhrase().toLowerCase(Locale.ROOT).contains("100")
                 && ("RESOLVED".equals(amb.getResolutionStatus()))) {
+            patchInwardReturnBoundaryExpression(session, resolvedOption);
             regenerateInwardReturnTests(session, resolvedOption);
             resultExtras.put("inwardReturnTestsRegenerated", true);
+            resultExtras.put("inwardReturnBoundaryPatched", true);
+            resultExtras.put("boundaryOption", resolvedOption);
         }
 
         amb.setResolvedBy(resolvedBy);
@@ -255,6 +258,41 @@ public class PolicyReviewService {
 
         persistenceService.saveSessionSnapshot(session);
         return new CiPolicyAmbiguityResolveResult(amb.getId(), amb.getResolutionStatus(), amb.getResolvedOption(), act.name(), resultExtras);
+    }
+
+    private void patchInwardReturnBoundaryExpression(PolicyStudioSession session, String selection) {
+        var rule = session.getRuleCandidates().stream()
+                .filter(r -> com.los.core.creditintelligence.policystudio.parameters
+                        .InwardReturnCompoundSupport.looksLikeInwardReturnCompound(r))
+                .findFirst().orElse(null);
+        if (rule == null || rule.getExpression() == null) return;
+        String opt = selection == null ? "" : selection;
+        if (!com.los.core.creditintelligence.policystudio.parameters
+                .InwardReturnCompoundSupport.boundaryClosedForReadiness(rule.getExpression(), opt)) {
+            return;
+        }
+        try {
+            Map<String, Object> prior = rule.getExpression();
+            Map<String, Object> next = com.los.core.creditintelligence.policystudio.parameters
+                    .InwardReturnCompoundSupport.patchBoundary(prior, opt);
+            Map<String, Object> lineage = rule.getLineage() == null
+                    ? new LinkedHashMap<>() : new LinkedHashMap<>(rule.getLineage());
+            lineage.put("priorExpression", prior);
+            lineage.put("boundaryResolvedOption", opt);
+            lineage.put("boundaryPatchedAt", Instant.now().toString());
+            rule.setExpression(next);
+            rule.setLineage(lineage);
+            Map<String, Object> meta = rule.getMetadata() == null
+                    ? new LinkedHashMap<>() : new LinkedHashMap<>(rule.getMetadata());
+            meta.put("businessSummary", com.los.core.creditintelligence.policystudio.parameters
+                    .InwardReturnCompoundSupport.businessSummaryAfterBoundary(opt));
+            meta.put("boundaryResolved", true);
+            meta.put("boundaryOption", opt);
+            meta.put("disposition", meta.getOrDefault("disposition", "ACCEPTED"));
+            rule.setMetadata(meta);
+        } catch (IllegalArgumentException ignored) {
+            // leave expression unchanged; tests still regenerate
+        }
     }
 
     private void regenerateInwardReturnTests(PolicyStudioSession session, String selection) {

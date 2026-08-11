@@ -381,7 +381,19 @@ public final class PolicyExecutionReadiness {
             String reason = lower.contains("exactly 100") || lower.contains("100 transactions")
                     ? "Behaviour when transaction count = 100 is not defined."
                     : ("Unresolved: " + phrase);
-            out.add(blocker(type, ruleId, ruleName, null, reason, "Edit rule / Define boundary"));
+            Map<String, Object> b = blocker(type, ruleId, ruleName, null, reason,
+                    type.equals(BLOCKER_BOUNDARY_AMBIGUITY) ? "Define boundary" : "Edit rule / Define boundary");
+            if (a.getId() != null) {
+                b.put("ambiguityId", a.getId().toString());
+            }
+            if (type.equals(BLOCKER_BOUNDARY_AMBIGUITY)
+                    && (lower.contains("exactly 100") || lower.contains("100 transactions"))) {
+                b.putAll(com.los.core.creditintelligence.policystudio.parameters
+                        .InwardReturnCompoundSupport.boundaryResolverPayload(
+                                a.getId() == null ? null : a.getId().toString(), ruleId));
+                b.put("action", "Define boundary");
+            }
+            out.add(b);
         }
         return out;
     }
@@ -541,6 +553,25 @@ public final class PolicyExecutionReadiness {
         String disposition = String.valueOf(meta.getOrDefault("disposition", ""));
         if ("ACCEPTED".equalsIgnoreCase(disposition) || "EDITED".equalsIgnoreCase(disposition)) {
             card.put("reviewDisposition", disposition.toUpperCase(Locale.ROOT));
+        }
+        boolean boundaryIncomplete = Boolean.TRUE.equals(card.get("boundaryIncomplete"))
+                && !Boolean.TRUE.equals(meta.get("boundaryResolved"));
+        if (("ACCEPTED".equalsIgnoreCase(disposition) || "EDITED".equalsIgnoreCase(disposition))
+                && boundaryIncomplete) {
+            card.put("reviewBadge", "Accepted · Boundary incomplete");
+            card.put("executionReadinessLabel", "NEEDS RULE COMPLETION");
+            card.put("boundaryIncomplete", true);
+        } else if ("ACCEPTED".equalsIgnoreCase(disposition) && execReady) {
+            card.put("reviewBadge", "Accepted");
+            card.put("executionReadinessLabel", "READY");
+        } else if ("ACCEPTED".equalsIgnoreCase(disposition) || "EDITED".equalsIgnoreCase(disposition)) {
+            card.put("reviewBadge", disposition.equalsIgnoreCase("EDITED") ? "Edited" : "Accepted");
+            card.put("executionReadinessLabel", execReady ? "READY" : "NEEDS RULE COMPLETION");
+        }
+        if (InwardReturnCompoundSupport.isIfExpression(r.getExpression())) {
+            card.put("compoundEditable", true);
+            card.put("editableModel", InwardReturnCompoundSupport.toEditableModel(r.getExpression(), meta));
+            card.put("technicalExpression", r.getExpression());
         }
         if (!included) {
             return;
