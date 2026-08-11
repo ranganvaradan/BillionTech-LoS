@@ -51,10 +51,6 @@ function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {}
 }
 
-function asList(v: unknown): unknown[] {
-  return Array.isArray(v) ? v : []
-}
-
 function clauseText(r: Record<string, unknown>): string {
   return String(r.sourceClause ?? r.businessRule ?? r.ruleName ?? '').trim()
 }
