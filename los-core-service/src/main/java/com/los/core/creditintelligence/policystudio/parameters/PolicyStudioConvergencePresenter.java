@@ -145,6 +145,8 @@ public final class PolicyStudioConvergencePresenter {
         out.put("operator", friendlyOp(op));
         Object thr = expr.get("threshold") != null ? expr.get("threshold")
                 : expr.get("value") != null ? expr.get("value") : expr.get("right");
+        // Authoring threshold only (unwrap DSL {const: N}) — never an applicant runtime fact
+        thr = PolicyAuthoringCompleteness.unwrapConst(thr);
         out.put("value", thr);
         return out;
     }

@@ -101,12 +101,16 @@ public class CapabilityIngestionMatcher {
         if (containsAny(lower, "bureau score", "cibil", "credit bureau score", "credit score")
                 || (lower.contains("bureau") && lower.contains("score"))
                 || (lower.contains("cibil") && (lower.contains("minimum") || lower.contains("at least") || lower.contains("gte")))) {
-            Long score = extractNumber(text, "(?i)(?:minimum|at\\s+least|>=|≥|min(?:imum)?\\s*(?:of)?)\\s*(\\d{3})",
+            Long score = extractNumber(text,
+                    "(?i)(?:minimum|at\\s+least|>=|≥|min(?:imum)?\\s*(?:of)?)\\s*(\\d{3})",
                     "(?i)(?:score|cibil).*?(?:of\\s+)?(\\d{3})",
-                    "(?i)(\\d{3})\\s*(?:or\\s+higher|and\\s+above)");
+                    "(?i)(\\d{3})\\s*(?:or\\s+higher|and\\s+above)",
+                    "(?i)(?:<|>|<=|>=|below|under|less\\s+than|greater\\s+than)\\s*(\\d{3})",
+                    "(?i)(?:lt|lte|gt|gte)\\s*:?\\s*(\\d{3})",
+                    "(?i)\\b(\\d{3})\\b");
             return Optional.of(capabilityMatch("BUREAU.MIN_SCORE",
                     params("minimumScore", score),
-                    score != null ? "Bureau score ≥ " + score : "Bureau score (value missing)",
+                    score != null ? "Bureau Score must be >= " + score : "Bureau score (threshold missing)",
                     score == null));
         }
 
@@ -352,10 +356,13 @@ public class CapabilityIngestionMatcher {
             }
         }
         boolean differs = parameterDiffers(params, defaults);
+        // POLICY-AUTHORING-VALUE — NEEDS_INPUT only when the policy threshold/config is still absent.
+        // Catalogue defaults (e.g. minimumScore=650) are authoring-complete; they are not runtime values.
+        boolean missingAuthoringThreshold = primaryAuthoringThresholdMissing(capabilityId, params);
+        needsInput = missingAuthoringThreshold;
         IngestionMatchClassification classification;
-        if (needsInput || usedDefault && extracted.isEmpty()) {
+        if (needsInput) {
             classification = IngestionMatchClassification.EXACT_EXISTING_CAPABILITY;
-            needsInput = true;
         } else if (differs) {
             classification = IngestionMatchClassification.EXISTING_CAPABILITY_PARAMETER_CHANGE;
         } else {
@@ -364,7 +371,8 @@ public class CapabilityIngestionMatcher {
         if (cap != null && cap.manualInputPossible() && containsAny(summary.toLowerCase(Locale.ROOT), "manual")) {
             classification = IngestionMatchClassification.EXISTING_CAPABILITY_MANUAL_DATA;
         }
-        String confidence = needsInput ? "MEDIUM" : (extracted.isEmpty() ? "MEDIUM" : "HIGH");
+        String confidence = needsInput ? "MEDIUM"
+                : (extracted.isEmpty() && usedDefault ? "MEDIUM" : "HIGH");
         String treatment = cap != null && !cap.supportedTreatments().isEmpty()
                 ? cap.supportedTreatments().get(0) : "REJECT";
         return new MatchResult(
@@ -372,7 +380,7 @@ public class CapabilityIngestionMatcher {
                 capabilityId,
                 params,
                 defaults,
-                needsInput || usedDefault && extracted.values().stream().allMatch(v -> v == null),
+                needsInput,
                 differs,
                 confidence,
                 treatment,
@@ -381,6 +389,33 @@ public class CapabilityIngestionMatcher {
                 !needsInput,
                 null,
                 null);
+    }
+
+    /**
+     * True only when the capability's primary policy threshold is still null after merge.
+     * Does not consider applicant/runtime bureau score (or any application fact).
+     */
+    private static boolean primaryAuthoringThresholdMissing(String capabilityId, Map<String, Object> params) {
+        if (params == null) return true;
+        String key = switch (capabilityId == null ? "" : capabilityId) {
+            case "BUREAU.MIN_SCORE", "ELIG.MIN_BUREAU_SCORE" -> "minimumScore";
+            case "BUREAU.LIVE_UNSECURED_MAX", "BUREAU.ENQUIRIES_MAX", "BANK.CHEQUE_BOUNCE_MAX" -> "maximumCount";
+            case "BUREAU.MAX_DPD" -> "maximumDays";
+            case "BUREAU.CC_OVERDUE_MAX" -> "maximumAmount";
+            case "FIN.FOIR_MAX" -> "maximumPercentage";
+            case "BANK.TURNOVER_PCT_GST_MIN", "BANK.ADB_PCT_EDI_MIN" -> "minimumPercentage";
+            case "ELIG.BUSINESS_VINTAGE_MIN" -> "minimumValue";
+            case "FIN.DSCR_MIN" -> "minimumRatio";
+            case "LIMIT.ABS_CAP", "LIMIT.MAX_TICKET" -> "maximumAmount";
+            case "ELIG.REQUIRE_KYC_PASS" -> null; // no numeric threshold
+            default -> null;
+        };
+        if (key == null) {
+            // Unknown / non-threshold capability — complete if no explicit nulls left for known keys
+            return false;
+        }
+        Object v = params.get(key);
+        return v == null || String.valueOf(v).isBlank();
     }
 
     private boolean parameterDiffers(Map<String, Object> extractedOrMerged, Map<String, Object> defaults) {
@@ -599,10 +634,12 @@ public class CapabilityIngestionMatcher {
                 && (lower.contains("minimum") || lower.contains("at least") || lower.contains(">=")
                 || lower.contains("≥") || lower.matches(".*\\b\\d{3}\\b.*"))) {
             Long score = extractNumber(text, "(?i)(?:minimum|at\\s+least|>=|≥)\\s*(\\d{3})",
-                    "(?i)(\\d{3})\\s*(?:or\\s+higher|and\\s+above)");
+                    "(?i)(\\d{3})\\s*(?:or\\s+higher|and\\s+above)",
+                    "(?i)(?:<|>|<=|>=|below|under|less\\s+than)\\s*(\\d{3})",
+                    "(?i)\\b(\\d{3})\\b");
             return Optional.of(capabilityMatch("BUREAU.MIN_SCORE",
                     params("minimumScore", score),
-                    score != null ? "Bureau score ≥ " + score : "Bureau score (value missing)",
+                    score != null ? "Bureau Score must be >= " + score : "Bureau score (threshold missing)",
                     score == null));
         }
         return Optional.empty();

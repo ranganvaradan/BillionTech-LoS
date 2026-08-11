@@ -52,10 +52,26 @@ public final class PolicyRulePresentationSemantics {
         if (Boolean.TRUE.equals(meta.get("potentialDuplicate"))) {
             return "Possible duplicate";
         }
-        if (Boolean.TRUE.equals(meta.get("NEEDS_INPUT"))
-                || "LOW".equalsIgnoreCase(String.valueOf(meta.getOrDefault("matchConfidence", "")))
-                || (blockedReason != null && !blockedReason.isBlank())) {
+        // Authoring-complete rules (threshold present) are not blocked by legacy NEEDS_INPUT
+        // that confused runtime/application values with policy thresholds.
+        boolean authoringComplete = com.los.core.creditintelligence.policystudio.parameters
+                .PolicyAuthoringCompleteness.isAuthoringComplete(r);
+        String authoringGap = com.los.core.creditintelligence.policystudio.parameters
+                .PolicyAuthoringCompleteness.authoringGapMessage(r);
+        if (!authoringComplete && (Boolean.TRUE.equals(meta.get("NEEDS_INPUT"))
+                || (authoringGap != null && !authoringGap.isBlank()))) {
             return "Needs your input";
+        }
+        if (!authoringComplete && "LOW".equalsIgnoreCase(String.valueOf(meta.getOrDefault("matchConfidence", "")))) {
+            return "Needs your input";
+        }
+        if (!authoringComplete && blockedReason != null && !blockedReason.isBlank()) {
+            return "Needs your input";
+        }
+        if (authoringComplete && blockedReason != null
+                && (blockedReason.contains("Parameter value missing")
+                || blockedReason.contains("Policy threshold missing"))) {
+            blockedReason = null; // ignore obsolete runtime-confused reason
         }
         if ("UNAVAILABLE".equalsIgnoreCase(String.valueOf(meta.getOrDefault("dataAvailability", "")))) {
             return "Unavailable";

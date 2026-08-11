@@ -203,6 +203,16 @@ public class CapabilityIngestionBindingService {
             meta.put("businessTitle", cap.businessName());
             meta.put("businessSummary", match.businessSummary() != null ? match.businessSummary() : built.businessSummary());
             meta.put("parameters", params);
+            Object authoringThr = params.get("minimumScore");
+            if (authoringThr == null) authoringThr = params.get("maximumCount");
+            if (authoringThr == null) authoringThr = params.get("maximumPercentage");
+            if (authoringThr == null) authoringThr = params.get("minimumPercentage");
+            if (authoringThr == null) authoringThr = params.get("minimumValue");
+            if (authoringThr == null) authoringThr = params.get("maximumAmount");
+            if (authoringThr == null) authoringThr = params.get("minimumRatio");
+            if (authoringThr != null) {
+                meta.put("threshold", authoringThr);
+            }
             meta.put("failureTreatment", match.failureTreatment() != null ? match.failureTreatment() : "REJECT");
             meta.put("dataSource", cap.dataSource());
             meta.put("dataRequirement", cap.dataAvailability());
@@ -216,7 +226,13 @@ public class CapabilityIngestionBindingService {
             meta.put("excludedFromActivation", match.needsInput() || "LOW".equals(match.confidence()));
             if (match.needsInput()) {
                 meta.put("NEEDS_INPUT", true);
-                meta.put("blockedReason", "Parameter value missing — confirm before Accept");
+                // Authoring threshold missing — not a runtime/application value
+                meta.put("blockedReason",
+                        com.los.core.creditintelligence.policystudio.parameters
+                                .PolicyAuthoringCompleteness.MSG_THRESHOLD_MISSING);
+            } else {
+                meta.put("NEEDS_INPUT", false);
+                meta.remove("blockedReason");
             }
             if (match.parameterDiffers()) {
                 meta.put("productionReferenceParameters", match.catalogueDefaultParameters());

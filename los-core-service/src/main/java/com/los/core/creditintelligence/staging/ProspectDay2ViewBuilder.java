@@ -612,10 +612,20 @@ final class ProspectDay2ViewBuilder {
                 ? friendlyRuleName(r.getSystemRuleId())
                 : interp.getNaturalLanguageMeaning();
         List<String> dataUsed = dataUsed(r, interp);
+        // Heal legacy NEEDS_INPUT that confused runtime applicant values with policy thresholds
+        com.los.core.creditintelligence.policystudio.parameters.PolicyAuthoringCompleteness.healMetadata(r);
         Map<String, Object> metaEarly = r.getMetadata() == null ? Map.of() : r.getMetadata();
         String blockedReason = metaEarly.get("blockedReason") != null
                 ? String.valueOf(metaEarly.get("blockedReason"))
                 : blockedReason(r, dataUsed, openPhrases);
+        if (com.los.core.creditintelligence.policystudio.parameters.PolicyAuthoringCompleteness
+                .isAuthoringComplete(r)
+                && (com.los.core.creditintelligence.policystudio.parameters.PolicyAuthoringCompleteness
+                .LEGACY_VALUE_MISSING.equals(blockedReason)
+                || com.los.core.creditintelligence.policystudio.parameters.PolicyAuthoringCompleteness
+                .MSG_THRESHOLD_MISSING.equals(blockedReason))) {
+            blockedReason = null;
+        }
         String status = ruleStatus(r, blockedReason);
 
         Map<String, Object> meta = r.getMetadata() == null ? Map.of() : r.getMetadata();
@@ -776,6 +786,8 @@ final class ProspectDay2ViewBuilder {
         card.put("metricAdjustment", Boolean.TRUE.equals(meta.get("metricAdjustment")));
         // POLICY-CONVERGENCE-1 — Live Rules shaped CM fields + source/provenance split
         PolicyStudioConvergencePresenter.applyConvergenceFields(card, r, clause, dataUsed, fileName);
+        com.los.core.creditintelligence.policystudio.parameters.PolicyAuthoringCompleteness
+                .reconcileCard(card, r);
         return card;
     }
 

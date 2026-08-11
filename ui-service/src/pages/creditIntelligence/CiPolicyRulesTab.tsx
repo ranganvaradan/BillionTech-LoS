@@ -591,12 +591,18 @@ export function CiPolicyRulesTab({
                             </div>
                           ) : (
                             <p className="mt-1 text-base font-medium text-slate-800">
-                              {String(r.parameterName ?? 'Parameter')}:{' '}
-                              {String(r.operatorValueLabel ?? r.businessRule ?? '—')}
+                              {String(
+                                r.businessRule ||
+                                  [r.parameterName, r.operatorValueLabel].filter(Boolean).join(' ') ||
+                                  '—',
+                              )}
                             </p>
                           )}
                           {r.period ? (
                             <p className="mt-1 text-sm text-slate-600">Period: {String(r.period)}</p>
+                          ) : null}
+                          {r.failureConditionLabel ? (
+                            <p className="mt-1 text-sm text-slate-600">{String(r.failureConditionLabel)}</p>
                           ) : null}
                         </div>
                         <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusChip(status)}`}>
@@ -615,7 +621,9 @@ export function CiPolicyRulesTab({
                           </div>
                         </div>
                         <div>
-                          <div className="text-xs text-slate-500">If rule fails</div>
+                          <div className="text-xs text-slate-500">
+                            {r.failureConditionLabel ? 'Treatment' : 'If rule fails'}
+                          </div>
                           <div className="font-medium text-slate-900">
                             {String(r.treatment ?? r.failureTreatmentDisplay ?? r.resultOnFailure ?? '—')}
                           </div>
