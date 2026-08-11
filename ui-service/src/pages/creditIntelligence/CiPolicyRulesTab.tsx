@@ -9,6 +9,13 @@ import { decisionPolicyDomainLabel } from '@/lib/creditIntelligence/businessLexi
 import { CiCapabilityCataloguePanel } from '@/pages/creditIntelligence/CiCapabilityCataloguePanel'
 import { CiParameterResolverPanel } from '@/pages/creditIntelligence/CiParameterResolverPanel'
 import { CiRuleAuthoringPanel } from '@/pages/creditIntelligence/CiRuleAuthoringPanel'
+import {
+  cmStatusLabel,
+  filterParameterGroups,
+  groupDataCalculations,
+  itemKindLabel,
+  type CmParamStatus,
+} from '@/pages/creditIntelligence/policyDataCalculationGroups'
 
 function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {}
@@ -16,6 +23,23 @@ function asRecord(v: unknown): Record<string, unknown> {
 
 function asList(v: unknown): unknown[] {
   return Array.isArray(v) ? v : []
+}
+
+function cmStatusChip(status: CmParamStatus): string {
+  switch (status) {
+    case 'READY':
+      return 'bg-emerald-100 text-emerald-900'
+    case 'NEEDS_YOUR_INPUT':
+      return 'bg-amber-100 text-amber-950'
+    case 'NEEDS_CONFIGURATION':
+      return 'bg-orange-100 text-orange-950'
+    case 'MANUAL_INPUT':
+      return 'bg-indigo-100 text-indigo-900'
+    case 'NOT_CURRENTLY_AVAILABLE':
+      return 'bg-slate-200 text-slate-700'
+    default:
+      return 'bg-slate-100 text-slate-700'
+  }
 }
 
 function statusChip(status: string): string {
@@ -252,6 +276,27 @@ export function CiPolicyRulesTab({
     ruleId: string
     operand: Record<string, unknown>
   } | null>(null)
+  const [dataCalcFilter, setDataCalcFilter] = useState<'ALL' | 'READY' | 'NEEDS_INPUT' | 'MANUAL' | 'UNAVAILABLE'>(
+    'ALL',
+  )
+  const [dataCalcSource, setDataCalcSource] = useState('ALL')
+
+  const parameterGroups = useMemo(
+    () => groupDataCalculations(dataAndCalculations, cards),
+    [dataAndCalculations, cards],
+  )
+  const visibleParameterGroups = useMemo(
+    () => filterParameterGroups(parameterGroups, dataCalcFilter, dataCalcSource === 'ALL' ? undefined : dataCalcSource),
+    [parameterGroups, dataCalcFilter, dataCalcSource],
+  )
+  const dataCalcSources = useMemo(() => {
+    const s = new Set(parameterGroups.map((g) => g.source).filter(Boolean))
+    return ['ALL', ...Array.from(s)]
+  }, [parameterGroups])
+  const adjustmentCount = useMemo(
+    () => parameterGroups.reduce((n, g) => n + g.policyAdjustments.length, 0),
+    [parameterGroups],
+  )
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -341,10 +386,10 @@ export function CiPolicyRulesTab({
               <h2 className="text-lg font-semibold text-slate-900">Rules</h2>
               <p className="text-sm text-slate-600">
                 {totals.total} underwriting rules · {totals.ready} ready · {totals.needs} need input
-                {dataAndCalculations.length > 0 ? (
+                {parameterGroups.length > 0 ? (
                   <span className="text-slate-500">
                     {' '}
-                    · {dataAndCalculations.length} in Data &amp; calculations
+                    · {parameterGroups.length} parameters · {adjustmentCount} adjustments
                   </span>
                 ) : null}
                 {otherPolicyContent.length > 0 ? (
@@ -938,52 +983,162 @@ export function CiPolicyRulesTab({
         )
       })}
 
-      {dataAndCalculations.length > 0 ? (
+      {parameterGroups.length > 0 ? (
         <CiSection
           title="Data & calculations"
-          description="Derived parameters, data requirements, and calculation adjustments — not underwriting decision rules."
+          description="Parameters this policy needs — source, calculation, and policy-specific adjustments. Not underwriting decision rules."
         >
-          <ul className="space-y-2">
-            {dataAndCalculations.map((raw) => {
-              const r = asRecord(raw)
-              const id = String(r.id ?? r.systemRuleId ?? Math.random())
-              const source = String(r.evaluatedFrom ?? r.dataSource ?? '').trim()
-              const period = String(r.period ?? '').trim()
-              const typeLabel = String(r.parameterType ?? r.status ?? '').trim()
-              const availability = String(r.dataAvailabilityLabel ?? r.dataAvailability ?? '').trim()
-              const howCalc = String(r.howCalculated ?? r.calculationSummary ?? '').trim()
-              const metaBits = [source, typeLabel, period].filter(Boolean)
-              return (
-                <li key={id} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="font-medium text-slate-900">
-                      {String(r.ruleName ?? r.status ?? 'Item')}
-                    </span>
-                    {availability ? (
-                      <span className="text-xs font-medium text-slate-600">{availability}</span>
-                    ) : (
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${statusChip(String(r.status ?? ''))}`}>
-                        {String(r.status ?? '')}
-                      </span>
-                    )}
+          <div className="mb-3 flex flex-wrap gap-2" data-testid="data-calc-filters">
+            {(
+              [
+                ['ALL', 'All'],
+                ['READY', 'Ready'],
+                ['NEEDS_INPUT', 'Needs input'],
+                ['MANUAL', 'Manual'],
+                ['UNAVAILABLE', 'Unavailable'],
+              ] as const
+            ).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                  dataCalcFilter === id ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-700'
+                }`}
+                onClick={() => setDataCalcFilter(id)}
+              >
+                {label}
+              </button>
+            ))}
+            <select
+              className="rounded border border-slate-300 px-2 py-1 text-xs"
+              value={dataCalcSource}
+              onChange={(e) => setDataCalcSource(e.target.value)}
+              aria-label="Filter by source"
+            >
+              {dataCalcSources.map((s) => (
+                <option key={s} value={s}>
+                  {s === 'ALL' ? 'All sources' : s}
+                </option>
+              ))}
+            </select>
+            <span className="self-center text-xs text-slate-500">
+              {visibleParameterGroups.length} parameters · {adjustmentCount} adjustments
+            </span>
+          </div>
+          <ul className="space-y-3" data-testid="data-calc-parameter-groups">
+            {visibleParameterGroups.map((g) => (
+              <li
+                key={g.parameterId}
+                className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm"
+                data-parameter-id={g.parameterId}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <div className="font-semibold text-slate-900">{g.name}</div>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      {[g.source, g.type === 'DERIVED' ? 'Derived' : g.type === 'RAW' ? 'Raw' : g.type, g.period]
+                        .filter(Boolean)
+                        .join(' · ')}
+                      {' · '}
+                      {itemKindLabel(g.itemKind)}
+                    </p>
                   </div>
-                  {metaBits.length > 0 ? (
-                    <p className="mt-1 text-xs text-slate-500">{metaBits.join(' · ')}</p>
-                  ) : null}
-                  {String(r.businessRule ?? r.sourceClause ?? '').trim() ? (
-                    <p className="mt-1 text-slate-700">{String(r.businessRule ?? r.sourceClause)}</p>
-                  ) : null}
-                  {howCalc ? (
-                    <details className="mt-1">
-                      <summary className="cursor-pointer text-xs font-medium text-sky-800">How calculated</summary>
-                      <p className="mt-1 text-xs text-slate-600">{howCalc}</p>
-                    </details>
-                  ) : String(r.status ?? '') === 'Data requirement' ? (
-                    <p className="mt-1 text-xs text-slate-500">Calculation definition needs confirmation</p>
-                  ) : null}
-                </li>
-              )
-            })}
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-xs font-semibold ${cmStatusChip(g.cmStatus)}`}
+                  >
+                    {cmStatusLabel(g.cmStatus)}
+                  </span>
+                </div>
+                {g.statusReason ? <p className="mt-1 text-xs text-slate-600">{g.statusReason}</p> : null}
+                {g.usedFor ? (
+                  <p className="mt-1 text-xs text-slate-600">Used for: {g.usedFor}</p>
+                ) : null}
+                {g.usedByRules.length > 0 ? (
+                  <p className="mt-1 text-xs text-slate-600">
+                    Used by {g.usedByRules.length} rule{g.usedByRules.length === 1 ? '' : 's'}:{' '}
+                    {g.usedByRules.map((r) => r.name).join(', ')}
+                  </p>
+                ) : g.itemKind !== 'REPORT_ANALYST_INFORMATION' ? (
+                  <p className="mt-1 text-xs text-slate-500">Not linked to an underwriting rule in this policy</p>
+                ) : null}
+
+                {g.howCalculated ? (
+                  <details className="mt-2">
+                    <summary className="cursor-pointer text-xs font-medium text-sky-800">How calculated</summary>
+                    <div className="mt-1 space-y-0.5 text-xs text-slate-600">
+                      {g.howCalculated.calculation ? (
+                        <p>
+                          <span className="font-medium">Base (enterprise): </span>
+                          {String(g.howCalculated.calculation)}
+                        </p>
+                      ) : null}
+                      {g.howCalculated.source ? <p>Source: {String(g.howCalculated.source)}</p> : null}
+                      {g.howCalculated.assessmentPeriod ? (
+                        <p>Window: {String(g.howCalculated.assessmentPeriod)}</p>
+                      ) : null}
+                      {g.howCalculated.missingData ? (
+                        <p>Missing data: {String(g.howCalculated.missingData)}</p>
+                      ) : null}
+                      {g.howCalculated.note ? (
+                        <p className="text-slate-500">{String(g.howCalculated.note)}</p>
+                      ) : null}
+                    </div>
+                  </details>
+                ) : null}
+
+                {g.policyAdjustments.length > 0 ? (
+                  <div className="mt-2 rounded border border-amber-100 bg-amber-50/60 px-2 py-2">
+                    <p className="text-xs font-semibold text-amber-950">Policy-specific adjustments</p>
+                    <p className="text-[11px] text-amber-900/80">
+                      Scoped to this policy — does not change the enterprise Data &amp; Parameters definition.
+                    </p>
+                    <ul className="mt-1 space-y-1.5">
+                      {g.policyAdjustments.map((a) => (
+                        <li key={a.id} className="text-xs text-slate-800">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="font-medium">{a.title}</span>
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${cmStatusChip(a.status)}`}>
+                              {cmStatusLabel(a.status)}
+                            </span>
+                          </div>
+                          {a.reason ? <p className="text-slate-600">{a.reason}</p> : null}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                {g.missingDefinition && Object.keys(g.missingDefinition).length > 0 ? (
+                  <div className="mt-2 rounded border border-sky-100 bg-sky-50 px-2 py-2 text-xs text-sky-950">
+                    <p className="font-semibold">
+                      {String(g.missingDefinition.question ?? 'Definition needed')}
+                    </p>
+                    {g.missingDefinition.hint ? (
+                      <p className="mt-0.5 text-sky-900/80">{String(g.missingDefinition.hint)}</p>
+                    ) : null}
+                    <p className="mt-1 font-medium text-sky-800">
+                      {String(g.missingDefinition.action ?? 'DEFINE') === 'CONFIGURE'
+                        ? 'Needs configuration'
+                        : 'Define'}
+                    </p>
+                  </div>
+                ) : null}
+
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-xs font-medium text-slate-600">
+                    View source / Policy wording ({g.sourceClauses.length})
+                  </summary>
+                  <ul className="mt-1 space-y-1 text-xs text-slate-600">
+                    {g.sourceClauses.map((c, i) => (
+                      <li key={i} className="rounded bg-white px-2 py-1 border border-slate-100">
+                        {c}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-1 text-[11px] text-slate-400">{g.parameterId}</p>
+                </details>
+              </li>
+            ))}
           </ul>
         </CiSection>
       ) : null}

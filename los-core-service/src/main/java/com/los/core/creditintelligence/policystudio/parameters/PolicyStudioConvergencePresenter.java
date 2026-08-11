@@ -293,6 +293,8 @@ public final class PolicyStudioConvergencePresenter {
             how.put("source", normalizeEvalSource(String.valueOf(how.getOrDefault("source", evalFrom))));
             card.put("howCalculated", how);
         }
+        // POLICY-DATA-UX-1 — promote canonical binding for Data & calculations grouping
+        enrichDataCalcCanonicalBinding(card, clause, meta);
         // POLICY-PARAMETER-RESOLVER-1 — independent operands (ADB/EDI, CLEAN, …)
         @SuppressWarnings("unchecked")
         Map<String, Object> visualForOperands = card.get("visualLogic") instanceof Map<?, ?>
@@ -370,6 +372,215 @@ public final class PolicyStudioConvergencePresenter {
         if (path == null) return "Parameter";
         return REGISTRY.findById(path).map(CanonicalParameterDefinition::businessName)
                 .orElse(path.replace("bureau.", "").replace("banking.", "").replace('_', ' '));
+    }
+
+    /**
+     * POLICY-DATA-UX-1 — attach canonicalParameterId / itemKind for parameter-oriented Data & calc UI.
+     * Does not mutate CanonicalParameterRegistry definitions (policy-scoped metadata only on the card).
+     */
+    public static void enrichDataCalcCanonicalBinding(
+            Map<String, Object> card,
+            CiPolicyClause clause,
+            Map<String, Object> meta) {
+        boolean dataReq = Boolean.TRUE.equals(card.get("dataRequirementOnly"))
+                || "Data requirement".equals(String.valueOf(card.get("status")));
+        boolean metricAdj = Boolean.TRUE.equals(card.get("metricAdjustment"))
+                || "Metric adjustment".equals(String.valueOf(card.get("status")));
+        if (!dataReq && !metricAdj) {
+            return;
+        }
+        String clauseText = clause != null && clause.getSourceText() != null
+                ? clause.getSourceText()
+                : String.valueOf(card.getOrDefault("sourceClause",
+                card.getOrDefault("businessRule", "")));
+        String paramId = firstNonBlank(
+                stringOrNull(meta.get("affectedMetric")),
+                stringOrNull(card.get("parameterId")),
+                stringOrNull(meta.get("parameterId")),
+                card.get("canonicalParameter") instanceof Map<?, ?> cp
+                        ? stringOrNull(((Map<?, ?>) cp).get("id")) : null,
+                resolveDataCalcParameterId(clauseText, metricAdj));
+        if (paramId != null) {
+            card.put("parameterId", paramId);
+            card.put("canonicalParameterId", paramId);
+            REGISTRY.findById(paramId).ifPresent(p -> {
+                card.put("canonicalParameter", p.toBusinessView());
+                if (card.get("howCalculated") == null && p.calculationSummary() != null) {
+                    Map<String, Object> how = new LinkedHashMap<>();
+                    how.put("source", p.evaluatedFrom());
+                    how.put("metric", p.businessName());
+                    how.put("calculation", p.calculationSummary());
+                    how.put("assessmentPeriod", p.period());
+                    how.put("policyScoped", false);
+                    how.put("note", "Enterprise/base definition from Data & Parameters — policy adjustments listed separately");
+                    card.put("howCalculated", how);
+                }
+                if (card.get("parameterType") == null) {
+                    card.put("parameterType", p.type());
+                }
+                if (card.get("period") == null || "—".equals(String.valueOf(card.get("period")))
+                        || String.valueOf(card.get("period")).isBlank()) {
+                    if (p.period() != null) {
+                        card.put("period", friendlyRegistryPeriod(p.period()));
+                    }
+                }
+            });
+        }
+        if (metricAdj) {
+            card.put("itemKind", "CALCULATION_ADJUSTMENT");
+            if (meta.get("affectedMetric") != null) {
+                card.put("affectedParameterId", String.valueOf(meta.get("affectedMetric")));
+            } else if (paramId != null) {
+                card.put("affectedParameterId", paramId);
+            }
+        } else if (isReportOnlyClause(clauseText)) {
+            card.put("itemKind", "REPORT_ANALYST_INFORMATION");
+        } else if (paramId != null && REGISTRY.findById(paramId).map(p ->
+                CanonicalParameterDefinition.DERIVED.equals(p.type())).orElse(false)) {
+            card.put("itemKind", "DERIVED_PARAMETER");
+        } else if (paramId != null && REGISTRY.findById(paramId).map(p ->
+                CanonicalParameterDefinition.RAW.equals(p.type())).orElse(false)) {
+            card.put("itemKind", "RAW_DATA_REQUIRED");
+        } else {
+            card.put("itemKind", "RAW_DATA_REQUIRED");
+        }
+        // Prefer clause wording over generic "Data requirement" / "Metric adjustment"
+        String generic = String.valueOf(card.getOrDefault("ruleName", ""));
+        if (generic.isBlank() || "Data requirement".equalsIgnoreCase(generic)
+                || "Metric adjustment".equalsIgnoreCase(generic)
+                || "Non-underwriting".equalsIgnoreCase(generic)) {
+            String title = shortClauseTitle(clauseText);
+            if (title != null) {
+                card.put("ruleName", title);
+            }
+        }
+        card.put("missingDefinition", missingDefinitionHint(clauseText, paramId, metricAdj));
+    }
+
+    private static String resolveDataCalcParameterId(String clauseText, boolean metricAdj) {
+        if (clauseText == null || clauseText.isBlank()) return null;
+        String l = clauseText.toLowerCase(Locale.ROOT);
+        if (metricAdj || l.contains("average daily balance") || l.contains("removed from average daily")) {
+            if (l.contains("average daily balance") || l.contains("removed from average daily")) {
+                return "banking.avg_daily_balance_3m";
+            }
+        }
+        if (l.contains("average monthly settlement") || l.contains("settlement count")) {
+            return "banking.settlement.count_monthly_avg_3m";
+        }
+        if (l.contains("average daily qr") || l.contains("daily qr settlement")
+                || l.contains("average daily settlement")) {
+            return "banking.settlement.avg_daily_3m";
+        }
+        if (l.contains("average monthly transaction")) {
+            return "banking.transaction_count.average_monthly_3m";
+        }
+        if (l.contains("inward cheque") || l.contains("ecs") || l.contains("enach")) {
+            return "banking.inward_return.ratio_3m";
+        }
+        if (l.contains("emi bounce")) {
+            return "banking.emi_bounce_count_3m"; // may be unresolved in registry — frontend handles
+        }
+        if (l.contains("large credit")) {
+            return "banking.large_credit_transactions";
+        }
+        if (l.contains("intercompany") || l.contains("merchant group")) {
+            return "banking.intercompany_transactions";
+        }
+        if (l.contains("online gaming") && !l.contains("removed from")) {
+            return "bank.transaction.classification";
+        }
+        if (l.contains("loans disbursed") && !l.contains("removed from")) {
+            return "bank.transaction.classification";
+        }
+        // Prefer registry alias resolve for known phrases
+        return REGISTRY.resolve(clauseText.length() > 80 ? clauseText.substring(0, 80) : clauseText)
+                .map(CanonicalParameterDefinition::id)
+                .orElse(null);
+    }
+
+    private static boolean isReportOnlyClause(String clauseText) {
+        if (clauseText == null) return false;
+        String l = clauseText.toLowerCase(Locale.ROOT);
+        return l.contains("party wise") || l.contains("party-wise")
+                || l.contains("shown separately")
+                || l.contains("with the name of the bank")
+                || l.contains("name and amount");
+    }
+
+    private static Map<String, Object> missingDefinitionHint(String clauseText, String paramId, boolean metricAdj) {
+        if (clauseText == null) return null;
+        String l = clauseText.toLowerCase(Locale.ROOT);
+        Map<String, Object> m = new LinkedHashMap<>();
+        if (l.contains("large credit")) {
+            m.put("field", "largeThreshold");
+            m.put("question", "What qualifies as a \"Large\" credit?");
+            m.put("hint", "Define an amount threshold (₹). Relative thresholds only if your institution confirms them.");
+            m.put("action", "DEFINE");
+            return m;
+        }
+        if (l.contains("intercompany") || l.contains("merchant group")) {
+            m.put("field", "merchantGroupDefinition");
+            m.put("question", "How should \"Intercompany / Within Merchant group\" relationships be identified?");
+            m.put("hint", "Institution-specific relationship / group definition is required.");
+            m.put("action", "DEFINE");
+            return m;
+        }
+        if (l.contains("emi bounce")) {
+            m.put("field", "emiBounceDerivation");
+            m.put("question", "EMI bounce derivation needs configuration");
+            m.put("hint", "Bank classifier has EMI and bounce/return flags separately; a combined EMI-bounce metric is not production-bound.");
+            m.put("action", "CONFIGURE");
+            return m;
+        }
+        if (metricAdj && (l.contains("10 times") || l.contains("bulk"))) {
+            m.put("field", "bulkDepositMultiple");
+            m.put("question", "Bulk deposit exclusion uses policy multiple (10× average deposits)");
+            m.put("hint", "Confirm average-deposit baseline window and whether 10× is fixed for this policy.");
+            m.put("action", "CONFIRM");
+            return m;
+        }
+        if (paramId == null) {
+            m.put("field", "parameterMapping");
+            m.put("question", "Which canonical parameter does this clause map to?");
+            m.put("action", "RESOLVE");
+            return m;
+        }
+        return null;
+    }
+
+    private static String shortClauseTitle(String clauseText) {
+        if (clauseText == null || clauseText.isBlank()) return null;
+        String t = clauseText.trim().replaceAll("\\s+", " ");
+        if (t.startsWith("- ")) t = t.substring(2);
+        if (t.length() > 90) t = t.substring(0, 87) + "…";
+        if (t.endsWith(".")) t = t.substring(0, t.length() - 1);
+        return t;
+    }
+
+    private static String friendlyRegistryPeriod(String period) {
+        if (period == null) return null;
+        return switch (period) {
+            case "TRAILING_3M" -> "Last 3 months";
+            case "TRAILING_6M" -> "Last 6 months";
+            case "TRAILING_12M" -> "Last 12 months";
+            case "PIT" -> "Point in time";
+            default -> period.replace('_', ' ');
+        };
+    }
+
+    private static String firstNonBlank(String... values) {
+        if (values == null) return null;
+        for (String v : values) {
+            if (v != null && !v.isBlank() && !"null".equalsIgnoreCase(v)) return v;
+        }
+        return null;
+    }
+
+    private static String stringOrNull(Object o) {
+        if (o == null) return null;
+        String s = String.valueOf(o).trim();
+        return s.isEmpty() || "null".equalsIgnoreCase(s) ? null : s;
     }
 
     public static Map<String, Object> groupCards(List<Map<String, Object>> cards) {
