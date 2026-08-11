@@ -25,6 +25,19 @@ public class V113__GacatCatalogueSeedImport extends BaseJavaMigration {
     @Override
     public void migrate(Context context) throws Exception {
         Connection conn = context.getConnection();
+        // Widen text metadata columns before import (V112 used conservative lengths)
+        try (var st = conn.createStatement()) {
+            st.execute("ALTER TABLE ci_gacat_canonical_parameter_version "
+                    + "ALTER COLUMN missing_data_treatment TYPE TEXT");
+            st.execute("ALTER TABLE ci_gacat_canonical_parameter_version "
+                    + "ALTER COLUMN implementation_binding TYPE TEXT");
+            st.execute("ALTER TABLE ci_gacat_canonical_parameter_version "
+                    + "ALTER COLUMN period_definition TYPE TEXT");
+            st.execute("ALTER TABLE ci_gacat_canonical_parameter "
+                    + "ALTER COLUMN availability TYPE VARCHAR(128)");
+            st.execute("ALTER TABLE ci_gacat_canonical_parameter "
+                    + "ALTER COLUMN unit TYPE VARCHAR(128)");
+        }
         try (PreparedStatement count = conn.prepareStatement(
                 "SELECT COUNT(*) FROM ci_gacat_canonical_parameter")) {
             try (ResultSet rs = count.executeQuery()) {
