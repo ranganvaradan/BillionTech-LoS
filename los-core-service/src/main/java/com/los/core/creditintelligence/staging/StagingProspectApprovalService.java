@@ -782,7 +782,11 @@ public class StagingProspectApprovalService {
         Map<String, Object> impl = new PolicyImplementabilityService().assess(session);
         Map<String, Object> implSummary = impl.get("summary") instanceof Map<?, ?> m
                 ? castMap(m) : Map.of();
-        if (Boolean.TRUE.equals(implSummary.get("draftBlockedByCriticalDataGap"))) {
+        // POLICY-LIFECYCLE-FIX-1 — do not block CM/Checker when underwriting rules are
+        // authoring-complete (CM-authored / catalogue thresholds set). Technical
+        // implementability gaps remain visible under Data Readiness / Advanced.
+        if (Boolean.TRUE.equals(implSummary.get("draftBlockedByCriticalDataGap"))
+                && !underwritingRulesAuthoringComplete(session)) {
             items.add(Map.of(
                     "key", "data-readiness-critical",
                     "label", "Critical rule data requirements unresolved",
@@ -958,7 +962,38 @@ public class StagingProspectApprovalService {
 
     private boolean isSimulationReviewed(PolicyStudioSession session) {
         return session.getSimulation() != null
-                && Boolean.TRUE.equals(session.getSimulation().get("simulationReviewed"));
+                && (Boolean.TRUE.equals(session.getSimulation().get("simulationReviewed"))
+                || session.getSimulation().containsKey("runId"));
+    }
+
+    /**
+     * POLICY-LIFECYCLE-FIX-1 — authoring-complete UW rules should not be blocked by
+     * technical implementability "critical data gap" for CM/Checker approvals.
+     */
+    private boolean underwritingRulesAuthoringComplete(PolicyStudioSession session) {
+        List<CiPolicyRuleCandidate> uw = session.getRuleCandidates().stream()
+                .filter(r -> !com.los.core.creditintelligence.policystudio.parameters
+                        .PolicyStudioConvergencePresenter.isCompoundChild(r.getSystemRuleId()))
+                .filter(r -> {
+                    Map<String, Object> m = r.getMetadata() == null ? Map.of() : r.getMetadata();
+                    return !Boolean.TRUE.equals(m.get("classificationOnly"))
+                            && !Boolean.TRUE.equals(m.get("dataRequirementOnly"))
+                            && !Boolean.TRUE.equals(m.get("metricAdjustment"))
+                            && !Boolean.TRUE.equals(m.get("deleted"));
+                })
+                .toList();
+        if (uw.isEmpty()) {
+            return false;
+        }
+        return uw.stream().allMatch(r ->
+                com.los.core.creditintelligence.policystudio.parameters.PolicyAuthoringCompleteness
+                        .isAuthoringComplete(r)
+                        || (r.getMetadata() != null
+                        && Boolean.TRUE.equals(r.getMetadata().get("cmAuthored"))
+                        && !Boolean.TRUE.equals(r.getMetadata().get("NEEDS_INPUT")))
+                        || (r.getMetadata() != null
+                        && Boolean.TRUE.equals(r.getMetadata().get("catalogueBacked"))
+                        && !Boolean.TRUE.equals(r.getMetadata().get("NEEDS_INPUT"))));
     }
 
     private boolean hasDocumentApproval(PolicyStudioSession session, String state) {

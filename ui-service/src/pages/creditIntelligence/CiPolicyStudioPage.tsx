@@ -991,9 +991,14 @@ export function CiPolicyStudioPage() {
             setBusy={setBusy}
             onError={setError}
             session={session}
+            onNavigateTab={(nextTab) => selectWorkflowTab(nextTab as TabId)}
             onSessionRefresh={(next) => {
               if (next && typeof next === 'object' && 'policyHeader' in next) {
                 setSession(next)
+                const nextId = String(asRecord(next.policyHeader).documentId ?? '')
+                if (nextId && nextId !== documentId) {
+                  setTab('lifecycle')
+                }
               } else {
                 void getPolicyStudioSession(documentId).then(setSession).catch(() => undefined)
               }

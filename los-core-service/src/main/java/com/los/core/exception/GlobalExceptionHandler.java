@@ -1,11 +1,13 @@
 package com.los.core.exception;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.server.ResponseStatusException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -65,6 +67,27 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<Map<String, Object>> handleIllegalArgument(IllegalArgumentException ex) {
         return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
+    }
+
+    /**
+     * POLICY-LIFECYCLE-FIX-1 — preserve business CONFLICT/BAD_REQUEST reasons from Studio
+     * lifecycle/approvals (was swallowed as generic 500 "unexpected error").
+     */
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<Map<String, Object>> handleResponseStatus(ResponseStatusException ex) {
+        HttpStatusCode code = ex.getStatusCode();
+        HttpStatus status = HttpStatus.resolve(code.value());
+        if (status == null) {
+            status = HttpStatus.INTERNAL_SERVER_ERROR;
+        }
+        String message = ex.getReason() == null || ex.getReason().isBlank()
+                ? status.getReasonPhrase() : ex.getReason();
+        if (status.is5xxServerError()) {
+            log.error("ResponseStatusException {}", status.value(), ex);
+        } else {
+            log.info("ResponseStatusException {} — {}", status.value(), message);
+        }
+        return buildResponse(status, message);
     }
 
     @ExceptionHandler(Exception.class)

@@ -75,13 +75,24 @@ public class PolicyLifecycleService {
         out.put("scopeOptions", PolicyScopeSupport.scopeOptions());
         out.put("mappingReliability", PolicyScopeSupport.mappingReliability());
         out.put("overlapPreview", overlapPreview(session, life));
-        out.put("implementationStatus", implementationStatus(session, life));
-        out.put("readyToSchedule", Boolean.TRUE.equals(life.get("readyToSchedule")));
-        out.put("readyToScheduleBlockers", life.getOrDefault("readyToScheduleBlockers", List.of()));
+        Map<String, Object> impl = implementationStatus(session, life);
+        out.put("implementationStatus", impl);
+        List<String> approveBlockers = scheduleReadinessBlockers(session, life);
+        List<String> submitBlockers = submitReadinessBlockers(session, life);
+        boolean readyToSchedule = Boolean.TRUE.equals(life.get("readyToSchedule"))
+                || (PolicyBusinessLifecycleStatus.APPROVED.equals(str(life, "businessStatus", ""))
+                && approveBlockers.isEmpty());
+        out.put("readyToSchedule", readyToSchedule);
+        out.put("readyToScheduleBlockers", approveBlockers);
+        out.put("submitBlockers", submitBlockers);
+        out.put("approveBlockers", approveBlockers);
         out.put("businessStatus", life.get("businessStatus"));
         out.put("statusMapping", PolicyBusinessLifecycleStatus.statusMapping());
-        out.put("actions", availableActions(session, life));
+        List<String> actions = availableActions(session, life);
+        out.put("actions", actions);
         out.put("history", historyFor(session));
+        Map<String, Object> cmView = creditManagerLifecycleView(session, life, impl, submitBlockers, approveBlockers, actions);
+        out.putAll(cmView);
         out.put("authoritySeparation", Map.of(
                 "policyBusinessStatus", life.get("businessStatus"),
                 "creditIntelligenceProductionAuthority", "DISABLED",
@@ -132,6 +143,11 @@ public class PolicyLifecycleService {
                     "Cannot submit an immutable policy for review. Create a new version.");
         }
         mergeApplicability(life, body);
+        List<String> blockers = submitReadinessBlockers(session, life);
+        if (!blockers.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Cannot submit for review. Resolve: " + String.join("; ", blockers));
+        }
         life.put("businessStatus", PolicyBusinessLifecycleStatus.IN_REVIEW);
         life.put("submittedAt", Instant.now().toString());
         life.put("submittedBy", str(body, "reviewer", "credit_manager"));
@@ -686,17 +702,11 @@ public class PolicyLifecycleService {
     private Map<String, Object> implementationStatus(PolicyStudioSession session, Map<String, Object> life) {
         Map<String, Object> impl = implementabilityService.assess(session);
         Map<String, Object> summary = impl.get("summary") instanceof Map<?, ?> m ? castMap(m) : Map.of();
-        boolean understanding = !session.getInterpretations().isEmpty();
+        boolean understanding = policyUnderstandingReady(session);
         boolean dataReady = !Boolean.TRUE.equals(summary.get("draftBlockedByCriticalDataGap"));
-        long approvedTests = session.getTestCases().stream()
-                .filter(t -> ReviewState.CREDIT_MANAGER_APPROVED.name().equals(t.getReviewStatus())
-                        || ReviewState.CHECKER_APPROVED.name().equals(t.getReviewStatus())
-                        || "APPROVED".equalsIgnoreCase(t.getReviewStatus()))
-                .count();
-        boolean tests = !session.getTestCases().isEmpty() && approvedTests > 0;
-        boolean simulation = session.getSimulation() != null
-                && (Boolean.TRUE.equals(session.getSimulation().get("simulationReviewed"))
-                || session.getSimulation().containsKey("runId"));
+        boolean tests = testsReady(session);
+        // POLICY-LIFECYCLE-FIX-1 — Policy Test stamps both; CM sees one "Test" concept
+        boolean simulation = simulationReady(session) || tests;
         boolean cm = hasDocumentApproval(session, ReviewState.CREDIT_MANAGER_APPROVED.name());
         boolean checker = hasCheckerApproval(session);
         Map<String, Object> out = new LinkedHashMap<>();
@@ -704,12 +714,40 @@ public class PolicyLifecycleService {
         out.put("dataReadiness", dataReady);
         out.put("tests", tests);
         out.put("simulation", simulation);
+        out.put("policyTest", tests && simulation);
         out.put("creditManager", cm);
         out.put("checker", checker);
         out.put("allGatesPassed", understanding && dataReady && tests && simulation && cm && checker);
         out.put("dataReadinessPercent", summary.get("implementationReadinessPercent"));
         out.put("criticalDataGap", summary.get("draftBlockedByCriticalDataGap"));
         return out;
+    }
+
+    private boolean policyUnderstandingReady(PolicyStudioSession session) {
+        if (session.getInterpretations() != null && !session.getInterpretations().isEmpty()) {
+            return true;
+        }
+        // CM-authored / catalogue rules are the understanding for scratch/manual policies
+        return session.getRuleCandidates().stream().anyMatch(r -> {
+            Map<String, Object> m = r.getMetadata() == null ? Map.of() : r.getMetadata();
+            return Boolean.TRUE.equals(m.get("cmAuthored"))
+                    || Boolean.TRUE.equals(m.get("catalogueBacked"));
+        });
+    }
+
+    private boolean testsReady(PolicyStudioSession session) {
+        long approvedTests = session.getTestCases().stream()
+                .filter(t -> ReviewState.CREDIT_MANAGER_APPROVED.name().equals(t.getReviewStatus())
+                        || ReviewState.CHECKER_APPROVED.name().equals(t.getReviewStatus())
+                        || "APPROVED".equalsIgnoreCase(t.getReviewStatus()))
+                .count();
+        return !session.getTestCases().isEmpty() && approvedTests > 0;
+    }
+
+    private boolean simulationReady(PolicyStudioSession session) {
+        return session.getSimulation() != null
+                && (Boolean.TRUE.equals(session.getSimulation().get("simulationReviewed"))
+                || session.getSimulation().containsKey("runId"));
     }
 
     private List<String> availableActions(PolicyStudioSession session, Map<String, Object> life) {
@@ -744,41 +782,63 @@ public class PolicyLifecycleService {
         return actions;
     }
 
+    private List<String> submitReadinessBlockers(PolicyStudioSession session, Map<String, Object> life) {
+        List<String> blockers = new ArrayList<>();
+        Map<String, Object> app = castMap(life.get("applicability"));
+        Object products = app.get("products");
+        if (!(products instanceof List<?> list) || list.isEmpty()) {
+            blockers.add("Scope missing product");
+        }
+        long uw = underwritingRuleCount(session);
+        if (uw == 0) {
+            blockers.add("Add at least one underwriting rule");
+        }
+        long needs = rulesNeedingInput(session);
+        if (needs > 0) {
+            blockers.add(needs + " rule" + (needs == 1 ? "" : "s") + " need confirmation");
+        }
+        long unresolvedParams = unresolvedAuthoringParameters(session);
+        if (unresolvedParams > 0) {
+            blockers.add(unresolvedParams + " required parameter"
+                    + (unresolvedParams == 1 ? "" : "s") + " unresolved");
+        }
+        return blockers;
+    }
+
     private List<String> scheduleReadinessBlockers(PolicyStudioSession session, Map<String, Object> life) {
         List<String> blockers = new ArrayList<>();
-        if (session.getInterpretations().isEmpty()) {
-            blockers.add("AI Understanding not reviewed");
+        if (!policyUnderstandingReady(session)) {
+            blockers.add("Policy content not confirmed — review Rules");
         }
         long openMat = session.getAmbiguities().stream()
                 .filter(a -> "OPEN".equals(a.getResolutionStatus()) && "MATERIAL".equals(a.getSeverity()))
                 .filter(a -> !ambiguityOnlyAffectsExcludedRules(session, a))
                 .count();
         if (openMat > 0) {
-            blockers.add("Blocking ambiguities unresolved (" + openMat + ")");
+            blockers.add("Blocking items unresolved (" + openMat + ")");
         }
-        if (session.getRuleCandidates().isEmpty()) {
-            blockers.add("Business rules not reviewed");
+        if (underwritingRuleCount(session) == 0) {
+            blockers.add("No underwriting rules confirmed");
         }
         Map<String, Object> impl = implementabilityService.assess(session);
         Map<String, Object> summary = impl.get("summary") instanceof Map<?, ?> m ? castMap(m) : Map.of();
-        if (Boolean.TRUE.equals(summary.get("draftBlockedByCriticalDataGap"))) {
-            blockers.add("Data Readiness — critical rule data gap (DATA_SOURCE/DEFINITION/METRIC/ENGINEERING/MAPPING/NOT_IMPLEMENTABLE)");
+        // Prefer CM authoring completeness over technical implementability matrix for Approve.
+        // Implementability "critical data gap" often fires on scratch/CM-authored rules that are
+        // already authoring-complete — that previously looked like a silent Approve no-op.
+        long authoringGaps = unresolvedAuthoringParameters(session) + rulesNeedingInput(session);
+        if (authoringGaps > 0) {
+            blockers.add("Critical data gap — resolve required parameters");
+        } else if (Boolean.TRUE.equals(summary.get("draftBlockedByCriticalDataGap"))
+                && !underwritingRulesAuthoringComplete(session)) {
+            blockers.add("Critical data gap — resolve required parameters");
         }
-        // Explicit governed MANUAL_VERIFICATION is allowed when implementability permits
-        long approvedTests = session.getTestCases().stream()
-                .filter(t -> {
-                    String rs = t.getReviewStatus();
-                    return ReviewState.CREDIT_MANAGER_APPROVED.name().equals(rs)
-                            || ReviewState.CHECKER_APPROVED.name().equals(rs)
-                            || "APPROVED".equalsIgnoreCase(rs);
-                }).count();
-        if (session.getTestCases().isEmpty() || approvedTests == 0) {
-            blockers.add("Tests not passed/approved");
-        }
-        if (session.getSimulation() == null
-                || !(Boolean.TRUE.equals(session.getSimulation().get("simulationReviewed"))
-                || session.getSimulation().containsKey("runId"))) {
-            blockers.add("Simulation not reviewed");
+        if (!testsReady(session) && !simulationReady(session)) {
+            blockers.add("Test not completed — run Policy Test");
+        } else if (!testsReady(session)) {
+            blockers.add("Test not completed — run Policy Test");
+        } else if (!simulationReady(session)) {
+            // Should be rare once Policy Test stamps both; keep as soft alias
+            blockers.add("Test not completed — run Policy Test");
         }
         if (!hasDocumentApproval(session, ReviewState.CREDIT_MANAGER_APPROVED.name())) {
             blockers.add("Credit Manager approval required");
@@ -789,10 +849,299 @@ public class PolicyLifecycleService {
         Map<String, Object> app = castMap(life.get("applicability"));
         Object products = app.get("products");
         if (!(products instanceof List<?> list) || list.isEmpty()) {
-            blockers.add("Applicable product(s) must be defined");
+            blockers.add("Scope missing product");
         }
         return blockers;
     }
+
+    private long underwritingRuleCount(PolicyStudioSession session) {
+        return session.getRuleCandidates().stream()
+                .filter(r -> !com.los.core.creditintelligence.policystudio.parameters.PolicyStudioConvergencePresenter
+                        .isCompoundChild(r.getSystemRuleId()))
+                .filter(r -> {
+                    Map<String, Object> m = r.getMetadata() == null ? Map.of() : r.getMetadata();
+                    return !Boolean.TRUE.equals(m.get("classificationOnly"))
+                            && !Boolean.TRUE.equals(m.get("dataRequirementOnly"))
+                            && !Boolean.TRUE.equals(m.get("metricAdjustment"))
+                            && !Boolean.TRUE.equals(m.get("deleted"));
+                })
+                .count();
+    }
+
+    private long rulesNeedingInput(PolicyStudioSession session) {
+        return session.getRuleCandidates().stream()
+                .filter(r -> {
+                    Map<String, Object> m = r.getMetadata() == null ? Map.of() : r.getMetadata();
+                    if (Boolean.TRUE.equals(m.get("classificationOnly"))) return false;
+                    if (Boolean.TRUE.equals(m.get("cmAuthored")) && !Boolean.TRUE.equals(m.get("NEEDS_INPUT"))) {
+                        return false;
+                    }
+                    return Boolean.TRUE.equals(m.get("NEEDS_INPUT"))
+                            || "IGNORED".equalsIgnoreCase(String.valueOf(m.get("disposition")));
+                })
+                .count();
+    }
+
+    private boolean underwritingRulesAuthoringComplete(PolicyStudioSession session) {
+        List<CiPolicyRuleCandidate> uw = session.getRuleCandidates().stream()
+                .filter(r -> !com.los.core.creditintelligence.policystudio.parameters.PolicyStudioConvergencePresenter
+                        .isCompoundChild(r.getSystemRuleId()))
+                .filter(r -> {
+                    Map<String, Object> m = r.getMetadata() == null ? Map.of() : r.getMetadata();
+                    return !Boolean.TRUE.equals(m.get("classificationOnly"))
+                            && !Boolean.TRUE.equals(m.get("dataRequirementOnly"))
+                            && !Boolean.TRUE.equals(m.get("metricAdjustment"))
+                            && !Boolean.TRUE.equals(m.get("deleted"));
+                })
+                .toList();
+        if (uw.isEmpty()) {
+            return false;
+        }
+        return uw.stream().allMatch(r ->
+                com.los.core.creditintelligence.policystudio.parameters.PolicyAuthoringCompleteness
+                        .isAuthoringComplete(r)
+                        || (r.getMetadata() != null
+                        && Boolean.TRUE.equals(r.getMetadata().get("cmAuthored"))
+                        && !Boolean.TRUE.equals(r.getMetadata().get("NEEDS_INPUT"))));
+    }
+
+    private long unresolvedAuthoringParameters(PolicyStudioSession session) {
+        long n = 0;
+        for (CiPolicyRuleCandidate r : session.getRuleCandidates()) {
+            Map<String, Object> m = r.getMetadata() == null ? Map.of() : r.getMetadata();
+            Object res = m.get("parameterResolutions");
+            if (res instanceof Map<?, ?> map) {
+                for (Object v : map.values()) {
+                    if (v instanceof Map<?, ?> rm
+                            && "UNRESOLVED".equalsIgnoreCase(String.valueOf(rm.get("status")))) {
+                        n++;
+                    }
+                }
+            }
+            Object clean = m.get(com.los.core.creditintelligence.policystudio.parameters
+                    .CleanHistoryDefinitionSupport.META_KEY);
+            if (clean instanceof Map<?, ?> c
+                    && "UNRESOLVED".equalsIgnoreCase(String.valueOf(c.get("status")))) {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    /**
+     * CM-facing progress / primary action / readiness (presentation over existing lifecycle).
+     */
+    private Map<String, Object> creditManagerLifecycleView(
+            PolicyStudioSession session,
+            Map<String, Object> life,
+            Map<String, Object> impl,
+            List<String> submitBlockers,
+            List<String> approveBlockers,
+            List<String> actions) {
+        String status = str(life, "businessStatus", PolicyBusinessLifecycleStatus.DRAFT);
+        boolean cm = Boolean.TRUE.equals(impl.get("creditManager"));
+        boolean checker = Boolean.TRUE.equals(impl.get("checker"));
+        boolean policyTest = Boolean.TRUE.equals(impl.get("policyTest"))
+                || (Boolean.TRUE.equals(impl.get("tests")) && Boolean.TRUE.equals(impl.get("simulation")));
+        long uw = underwritingRuleCount(session);
+        long needs = rulesNeedingInput(session);
+        long readyRules = Math.max(0, uw - needs);
+
+        List<Map<String, Object>> readinessItems = new ArrayList<>();
+        readinessItems.add(readyItem("Scope complete",
+                castMap(life.get("applicability")).get("products") instanceof List<?> p && !p.isEmpty(),
+                "scope", "Scope missing product"));
+        readinessItems.add(readyItem(
+                readyRules + " underwriting rule" + (readyRules == 1 ? "" : "s") + " confirmed",
+                uw > 0 && needs == 0,
+                "rules",
+                needs > 0 ? needs + " rule(s) need confirmation" : "Add underwriting rules"));
+        readinessItems.add(readyItem("Required parameters resolved",
+                unresolvedAuthoringParameters(session) == 0,
+                "rules",
+                "Resolve required parameters"));
+        readinessItems.add(readyItem("Test completed", policyTest, "tests", "Run Policy Test"));
+
+        List<Map<String, Object>> blockerDetails = new ArrayList<>();
+        String stUpper = status == null ? "DRAFT" : status.toUpperCase(Locale.ROOT).replace('_', ' ');
+        List<String> relevant = stUpper.contains("REVIEW") || stUpper.equals("IN REVIEW")
+                ? approveBlockers : (stUpper.equals("DRAFT") ? submitBlockers : approveBlockers);
+        for (String b : relevant) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("message", b);
+            row.put("tab", tabForBlocker(b));
+            blockerDetails.add(row);
+        }
+
+        Map<String, Object> primary = primaryAction(status, actions, cm, checker, submitBlockers, approveBlockers);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("progressSteps", List.of("DRAFT", "IN REVIEW", "APPROVED", "SCHEDULED", "ACTIVE"));
+        out.put("progressCurrent", normalizeProgressStatus(status));
+        out.put("readinessItems", readinessItems);
+        out.put("readyForNextStep", Boolean.TRUE.equals(primary.get("enabled")));
+        out.put("blockerDetails", blockerDetails);
+        out.put("approvals", Map.of(
+                "creditManager", Map.of(
+                        "label", "Credit Manager",
+                        "status", cm ? "Approved" : "Pending",
+                        "approved", cm),
+                "checker", Map.of(
+                        "label", "Checker",
+                        "status", checker ? "Approved" : "Pending",
+                        "approved", checker)));
+        out.put("nextActorMessage", nextActorMessage(status, cm, checker, submitBlockers, approveBlockers));
+        out.put("primaryAction", primary);
+        out.put("secondaryActions", secondaryActions(status, actions));
+        out.put("shadowBoundary", Map.of(
+                "businessActiveReachable", true,
+                "productionAuthority", "DISABLED",
+                "allowCanonicalAuthority", false,
+                "message", "Scheduled/Active here is business lifecycle only — production underwriting stays disabled."));
+        return out;
+    }
+
+    private static Map<String, Object> readyItem(String label, boolean ok, String tab, String whenMissing) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("label", label);
+        m.put("ok", ok);
+        m.put("tab", tab);
+        m.put("whenMissing", whenMissing);
+        return m;
+    }
+
+    private static String tabForBlocker(String b) {
+        String l = b == null ? "" : b.toLowerCase(Locale.ROOT);
+        if (l.contains("scope") || l.contains("product")) return "scope";
+        if (l.contains("test") || l.contains("simulation")) return "tests";
+        if (l.contains("credit manager") || l.contains("checker") || l.contains("approval")) {
+            return "approvals";
+        }
+        return "rules";
+    }
+
+    private static String normalizeProgressStatus(String status) {
+        if (status == null) return "DRAFT";
+        String u = status.toUpperCase(Locale.ROOT).replace('_', ' ').trim();
+        if (u.equals("IN REVIEW") || u.equals("IN_REVIEW")) return "IN REVIEW";
+        return u;
+    }
+
+    private Map<String, Object> primaryAction(
+            String status,
+            List<String> actions,
+            boolean cm,
+            boolean checker,
+            List<String> submitBlockers,
+            List<String> approveBlockers) {
+        String st = normalizeProgressStatus(status);
+        Map<String, Object> a = new LinkedHashMap<>();
+        switch (st) {
+            case "DRAFT" -> {
+                a.put("code", "SUBMIT_FOR_REVIEW");
+                a.put("label", "Submit for Review");
+                a.put("enabled", submitBlockers.isEmpty() && actions.contains("SUBMIT_FOR_REVIEW"));
+                a.put("disabledReason", submitBlockers.isEmpty() ? null
+                        : "Cannot submit for review. Resolve: " + String.join("; ", submitBlockers));
+            }
+            case "IN REVIEW" -> {
+                if (!cm) {
+                    a.put("code", "GO_APPROVALS_CM");
+                    a.put("label", "Complete Credit Manager approval");
+                    a.put("enabled", true);
+                    a.put("tab", "approvals");
+                    a.put("disabledReason", null);
+                } else if (!checker) {
+                    a.put("code", "GO_APPROVALS_CHECKER");
+                    a.put("label", "Go to Approvals (Checker)");
+                    a.put("enabled", true);
+                    a.put("tab", "approvals");
+                    a.put("disabledReason", null);
+                    a.put("hint", "Awaiting Checker approval — Approve Policy unlocks after Checker acts.");
+                } else {
+                    boolean nonApprovalLeft = approveBlockers.stream().anyMatch(b -> {
+                        String l = b.toLowerCase(Locale.ROOT);
+                        return !l.contains("credit manager") && !l.contains("checker");
+                    });
+                    a.put("code", "APPROVE_POLICY");
+                    a.put("label", "Approve Policy");
+                    a.put("enabled", actions.contains("APPROVE_POLICY") && !nonApprovalLeft);
+                    a.put("disabledReason", nonApprovalLeft
+                            ? "Cannot approve yet. Resolve: " + String.join("; ", approveBlockers) : null);
+                    a.put("confirm", true);
+                }
+            }
+            case "APPROVED" -> {
+                a.put("code", "SCHEDULE_POLICY");
+                a.put("label", "Schedule Policy");
+                a.put("enabled", actions.contains("SCHEDULE_POLICY"));
+                a.put("disabledReason", actions.contains("SCHEDULE_POLICY") ? null
+                        : "Scheduling is only available for APPROVED policies.");
+            }
+            case "SCHEDULED" -> {
+                a.put("code", "SCHEDULE_POLICY");
+                a.put("label", "Update schedule / activate when effective");
+                a.put("enabled", actions.contains("SCHEDULE_POLICY"));
+                a.put("hint", "Set business date ≥ effective from to reach Active (business status only).");
+            }
+            case "ACTIVE" -> {
+                a.put("code", "CREATE_NEW_VERSION");
+                a.put("label", "Create New Version");
+                a.put("enabled", actions.contains("CREATE_NEW_VERSION"));
+            }
+            case "RETIRED", "SUPERSEDED" -> {
+                a.put("code", "NONE");
+                a.put("label", "No further action");
+                a.put("enabled", false);
+                a.put("disabledReason", "This policy version is read-only.");
+            }
+            default -> {
+                a.put("code", "SUBMIT_FOR_REVIEW");
+                a.put("label", "Submit for Review");
+                a.put("enabled", false);
+            }
+        }
+        return a;
+    }
+
+    private List<Map<String, Object>> secondaryActions(String status, List<String> actions) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        String st = normalizeProgressStatus(status);
+        if (actions.contains("CREATE_NEW_VERSION")
+                && List.of("APPROVED", "SCHEDULED").contains(st)) {
+            // ACTIVE: Create New Version is already the primary action — do not duplicate.
+            out.add(Map.of("code", "CREATE_NEW_VERSION", "label", "Create New Version", "more", false));
+        }
+        if (actions.contains("RETIRE_POLICY")) {
+            out.add(Map.of("code", "RETIRE_POLICY", "label", "Retire Policy", "more", true));
+        }
+        return out;
+    }
+
+    private String nextActorMessage(
+            String status, boolean cm, boolean checker,
+            List<String> submitBlockers, List<String> approveBlockers) {
+        String st = normalizeProgressStatus(status);
+        if ("DRAFT".equals(st)) {
+            return submitBlockers.isEmpty()
+                    ? "Next step: Submit for Review"
+                    : "Not ready for review — resolve items below";
+        }
+        if ("IN REVIEW".equals(st)) {
+            if (!cm) return "Next step: Credit Manager approval (Approvals)";
+            if (!checker) return "Next step: Awaiting Checker approval";
+            return approveBlockers.stream().anyMatch(b -> {
+                String l = b.toLowerCase(Locale.ROOT);
+                return !l.contains("credit manager") && !l.contains("checker");
+            }) ? "Next step: Resolve remaining items, then Approve Policy"
+                    : "Next step: Approve Policy";
+        }
+        if ("APPROVED".equals(st)) return "Next step: Schedule Policy";
+        if ("SCHEDULED".equals(st)) return "Scheduled — becomes Active on the effective date (business status)";
+        if ("ACTIVE".equals(st)) return "Next step: Create New Version when changing this policy";
+        if ("RETIRED".equals(st)) return "Retired — read-only";
+        return "Review policy status";
+    }
+
 
     private PolicyApplicabilityRecord toRecord(PolicyStudioSession session, Map<String, Object> life, String status) {
         Map<String, Object> app = castMap(life.get("applicability"));

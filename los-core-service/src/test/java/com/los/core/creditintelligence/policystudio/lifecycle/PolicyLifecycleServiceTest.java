@@ -210,4 +210,50 @@ class PolicyLifecycleServiceTest {
         assertThat(settings).doesNotContainKey("contentHash");
         assertThat(view.get("allowCanonicalAuthority")).isEqualTo(false);
     }
+
+    @Test
+    void submitForReview_blockedWithoutUnderwritingRules() {
+        session.getRuleCandidates().clear();
+        lifecycle.saveDraft(session, Map.of(
+                "products", List.of("DIGILEAP"),
+                "effectiveFrom", "2026-09-01"));
+        assertThatThrownBy(() -> lifecycle.submitForReview(session, Map.of()))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("underwriting rule");
+    }
+
+    @Test
+    void settingsView_cmPrimaryAction_submitWhenDraftReady() {
+        lifecycle.saveDraft(session, Map.of(
+                "products", List.of("DIGILEAP"),
+                "effectiveFrom", "2026-09-01"));
+        Map<String, Object> view = lifecycle.settingsView(session);
+        assertThat(view.get("progressCurrent")).isEqualTo("DRAFT");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> primary = (Map<String, Object>) view.get("primaryAction");
+        assertThat(primary.get("code")).isEqualTo("SUBMIT_FOR_REVIEW");
+        assertThat(primary.get("enabled")).isEqualTo(true);
+        assertThat(view.get("readinessItems")).asList().isNotEmpty();
+        assertThat(view.get("approvals")).isInstanceOf(Map.class);
+    }
+
+    @Test
+    void settingsView_approved_primaryIsSchedule() {
+        Map<String, Object> life = new LinkedHashMap<>();
+        life.put("policyVersion", "v1");
+        life.put("businessStatus", PolicyBusinessLifecycleStatus.APPROVED);
+        life.put("contentImmutable", true);
+        life.put("applicability", new LinkedHashMap<>(Map.of(
+                "products", List.of("DIGILEAP"),
+                "effectiveFrom", "2026-04-01")));
+        session.getDocument().setMetadata(new LinkedHashMap<>(Map.of(PolicyLifecycleService.META_KEY, life)));
+
+        Map<String, Object> view = lifecycle.settingsView(session);
+        assertThat(view.get("progressCurrent")).isEqualTo("APPROVED");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> primary = (Map<String, Object>) view.get("primaryAction");
+        assertThat(primary.get("code")).isEqualTo("SCHEDULE_POLICY");
+        assertThat(primary.get("enabled")).isEqualTo(true);
+        assertThat(view.get("shadowBoundary")).isInstanceOf(Map.class);
+    }
 }
