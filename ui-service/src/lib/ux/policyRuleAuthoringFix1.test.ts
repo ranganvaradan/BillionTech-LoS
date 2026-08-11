@@ -34,5 +34,14 @@ describe('POLICY-RULE-AUTHORING-FIX-1', () => {
     expect(page).toContain('otherPolicyContent')
     expect(page).toContain('onSession={applyAuthoringSession}')
     expect(page).toContain('setBusy={setBusy}')
+    expect(page).toContain('resolveOtherPolicyContent')
+    expect(page).toContain('resolveDataAndCalculations')
+  })
+
+  it('Rules tab does not offer Replace for already-classified data/calc items', () => {
+    const rules = read('pages/creditIntelligence/CiPolicyRulesTab.tsx')
+    expect(rules).toContain('dataRequirementOnly')
+    expect(rules).toContain('metricAdjustment')
+    expect(rules).toContain('Already-classified data/calc items must never offer Replace')
   })
 })

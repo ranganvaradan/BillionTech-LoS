@@ -9,6 +9,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -217,6 +218,46 @@ class PolicyRuleAuthoringFix1Test {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> data = (List<Map<String, Object>>) grouped.get("dataAndCalculations");
         assertThat(data).hasSize(1);
+    }
+
+    /** POLICY-DATA-CALC-CONVERGENCE-1 — ONE item → ONE primary group (no data/calc in Other). */
+    @Test
+    void groupCardsExcludesDataAndMetricFromOtherEvenWhenClassificationOnly() {
+        Map<String, Object> adb = new LinkedHashMap<>();
+        adb.put("id", "adb-1");
+        adb.put("status", "Data requirement");
+        adb.put("dataRequirementOnly", true);
+        adb.put("classificationOnly", true);
+        adb.put("parameterId", "banking.average_daily_balance");
+        adb.put("technicalExpression", Map.of("op", "CLASSIFICATION"));
+        Map<String, Object> adj = new LinkedHashMap<>();
+        adj.put("id", "adj-1");
+        adj.put("status", "Metric adjustment");
+        adj.put("metricAdjustment", true);
+        adj.put("classificationOnly", true);
+        adj.put("technicalExpression", Map.of("op", "CLASSIFICATION"));
+        Map<String, Object> uw = Map.of("id", "uw-1", "status", "Ready", "cmAuthored", true);
+        Map<String, Object> narrative = new LinkedHashMap<>();
+        narrative.put("id", "nar-1");
+        narrative.put("status", "Needs clarification");
+        narrative.put("classificationOnly", true);
+        narrative.put("businessGroup", "Narrative / Excluded");
+        narrative.put("technicalExpression", Map.of("op", "CLASSIFICATION"));
+
+        Map<String, Object> grouped = PolicyStudioConvergencePresenter.groupCards(
+                List.of(adb, adj, uw, narrative));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> data = (List<Map<String, Object>>) grouped.get("dataAndCalculations");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> other = (List<Map<String, Object>>) grouped.get("otherPolicyContent");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> underwriting = (List<Map<String, Object>>) grouped.get("underwritingRules");
+
+        assertThat(data).extracting(c -> c.get("id")).containsExactlyInAnyOrder("adb-1", "adj-1");
+        assertThat(other).extracting(c -> c.get("id")).containsExactly("nar-1");
+        assertThat(underwriting).extracting(c -> c.get("id")).containsExactly("uw-1");
+        assertThat(grouped.get("underwritingRuleCount")).isEqualTo(1);
+        assertThat(grouped.get("otherPolicyContentCount")).isEqualTo(1);
     }
 
     @Test

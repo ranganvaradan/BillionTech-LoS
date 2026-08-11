@@ -29,6 +29,11 @@ import { CiPolicyAmbiguitiesTab } from '@/pages/creditIntelligence/CiPolicyAmbig
 import { CiPolicyApprovalsTab } from '@/pages/creditIntelligence/CiPolicyApprovalsTab'
 import { CiPolicyKycTab } from '@/pages/creditIntelligence/CiPolicyKycTab'
 import { CiPolicyRulesTab } from '@/pages/creditIntelligence/CiPolicyRulesTab'
+import {
+  resolveDataAndCalculations,
+  resolveOtherPolicyContent,
+  resolveUnderwritingRules,
+} from '@/pages/creditIntelligence/policyRuleDisplayGroups'
 import { CiPolicySimulationTab } from '@/pages/creditIntelligence/CiPolicySimulationTab'
 import { CiPolicyDataReadinessTab } from '@/pages/creditIntelligence/CiPolicyDataReadinessTab'
 import { CiPolicyLifecycleTab } from '@/pages/creditIntelligence/CiPolicyLifecycleTab'
@@ -353,38 +358,18 @@ export function CiPolicyStudioPage() {
   const readinessBanner = asRecord(session?.readinessBanner)
   const ambiguityCards = asList(session?.ambiguityCards)
   const allRuleCards = asList(session?.ruleCards)
-  const underwritingFromSession = asList(session?.underwritingRules)
-  const ruleCards = underwritingFromSession.length > 0 ? underwritingFromSession : allRuleCards.filter((c) => {
-    const r = asRecord(c)
-    const s = String(r.status ?? '')
-    const group = String(r.businessGroup ?? '')
-    return (
-      s !== 'Data requirement' &&
-      s !== 'Metric adjustment' &&
-      s !== 'Non-underwriting' &&
-      group !== 'Other policy content' &&
-      group !== 'Narrative / Excluded' &&
-      !r.compoundChild &&
-      !r.classificationOnly
-    )
-  })
-  const dataAndCalculations = (() => {
-    const fromSession = asList(session?.dataAndCalculations)
-    if (fromSession.length > 0) return fromSession
-    return allRuleCards.filter((c) => {
-      const s = String(asRecord(c).status ?? '')
-      return s === 'Data requirement' || s === 'Metric adjustment' || s === 'Non-underwriting'
-    })
-  })()
-  const otherPolicyContent = (() => {
-    const fromSession = asList(session?.otherPolicyContent)
-    if (fromSession.length > 0) return fromSession
-    return allRuleCards.filter((c) => {
-      const r = asRecord(c)
-      const group = String(r.businessGroup ?? '')
-      return group === 'Other policy content' || group === 'Narrative / Excluded' || Boolean(r.classificationOnly)
-    })
-  })()
+  // POLICY-DATA-CALC-CONVERGENCE-1: session arrays (including empty []) are authoritative.
+  // Empty otherPolicyContent must NOT fall back to classificationOnly rebuild — that duplicated
+  // Data & calculations stubs into Other with "Replace with underwriting rule".
+  const ruleCards = resolveUnderwritingRules(session as Record<string, unknown> | null | undefined, allRuleCards)
+  const dataAndCalculations = resolveDataAndCalculations(
+    session as Record<string, unknown> | null | undefined,
+    allRuleCards,
+  )
+  const otherPolicyContent = resolveOtherPolicyContent(
+    session as Record<string, unknown> | null | undefined,
+    allRuleCards,
+  )
   const ambiguityCategories = asList(session?.ambiguityCategories)
   const testsCount = Number(asRecord(session?.executable).testCaseCount ?? counts.tests ?? 0)
   const uwStats = underwritingRuleStats(ruleCards)

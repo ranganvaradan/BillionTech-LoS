@@ -941,27 +941,45 @@ export function CiPolicyRulesTab({
       {dataAndCalculations.length > 0 ? (
         <CiSection
           title="Data & calculations"
-          description="Report fields and metric adjustments — not underwriting decision rules. No Accept required."
+          description="Derived parameters, data requirements, and calculation adjustments — not underwriting decision rules."
         >
           <ul className="space-y-2">
             {dataAndCalculations.map((raw) => {
               const r = asRecord(raw)
               const id = String(r.id ?? r.systemRuleId ?? Math.random())
+              const source = String(r.evaluatedFrom ?? r.dataSource ?? '').trim()
+              const period = String(r.period ?? '').trim()
+              const typeLabel = String(r.parameterType ?? r.status ?? '').trim()
+              const availability = String(r.dataAvailabilityLabel ?? r.dataAvailability ?? '').trim()
+              const howCalc = String(r.howCalculated ?? r.calculationSummary ?? '').trim()
+              const metaBits = [source, typeLabel, period].filter(Boolean)
               return (
                 <li key={id} className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="font-medium text-slate-900">
                       {String(r.ruleName ?? r.status ?? 'Item')}
                     </span>
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${statusChip(String(r.status ?? ''))}`}>
-                      {String(r.status ?? '')}
-                    </span>
+                    {availability ? (
+                      <span className="text-xs font-medium text-slate-600">{availability}</span>
+                    ) : (
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${statusChip(String(r.status ?? ''))}`}>
+                        {String(r.status ?? '')}
+                      </span>
+                    )}
                   </div>
-                  <p className="mt-1 text-slate-700">{String(r.businessRule ?? r.sourceClause ?? '—')}</p>
-                  {r.evaluatedFrom || r.dataSource ? (
-                    <p className="mt-1 text-xs text-slate-500">
-                      Evaluated from: {String(r.evaluatedFrom ?? r.dataSource)}
-                    </p>
+                  {metaBits.length > 0 ? (
+                    <p className="mt-1 text-xs text-slate-500">{metaBits.join(' · ')}</p>
+                  ) : null}
+                  {String(r.businessRule ?? r.sourceClause ?? '').trim() ? (
+                    <p className="mt-1 text-slate-700">{String(r.businessRule ?? r.sourceClause)}</p>
+                  ) : null}
+                  {howCalc ? (
+                    <details className="mt-1">
+                      <summary className="cursor-pointer text-xs font-medium text-sky-800">How calculated</summary>
+                      <p className="mt-1 text-xs text-slate-600">{howCalc}</p>
+                    </details>
+                  ) : String(r.status ?? '') === 'Data requirement' ? (
+                    <p className="mt-1 text-xs text-slate-500">Calculation definition needs confirmation</p>
                   ) : null}
                 </li>
               )
@@ -990,33 +1008,40 @@ export function CiPolicyRulesTab({
                     </span>
                   </div>
                   <p className="mt-1 text-slate-700">{String(r.businessRule ?? r.sourceClause ?? '—')}</p>
-                  <div className="mt-2">
-                    <button
-                      type="button"
-                      disabled={busy}
-                      className="bt-btn bt-btn-secondary bt-btn-sm"
-                      onClick={() => setEditOpen((p) => ({ ...p, [id]: !p[id] }))}
-                    >
-                      Replace with underwriting rule
-                    </button>
-                  </div>
-                  {editOpen[id] && documentId && setBusy && onError && onSession ? (
-                    <div className="mt-3">
-                      <CiRuleAuthoringPanel
-                        documentId={documentId}
-                        busy={busy}
-                        setBusy={setBusy}
-                        onError={onError}
-                        replaceRuleId={id}
-                        initialText={String(r.businessRule ?? r.sourceClause ?? '')}
-                        onSession={(data) => {
-                          onSession(data)
-                          setEditOpen((p) => ({ ...p, [id]: false }))
-                        }}
-                        onClose={() => setEditOpen((p) => ({ ...p, [id]: false }))}
-                      />
-                    </div>
-                  ) : null}
+                  {/* Already-classified data/calc items must never offer Replace with underwriting rule */}
+                  {r.dataRequirementOnly ||
+                  r.metricAdjustment ||
+                  ['Data requirement', 'Metric adjustment', 'Non-underwriting'].includes(String(r.status ?? '')) ? null : (
+                    <>
+                      <div className="mt-2">
+                        <button
+                          type="button"
+                          disabled={busy}
+                          className="bt-btn bt-btn-secondary bt-btn-sm"
+                          onClick={() => setEditOpen((p) => ({ ...p, [id]: !p[id] }))}
+                        >
+                          Replace with underwriting rule
+                        </button>
+                      </div>
+                      {editOpen[id] && documentId && setBusy && onError && onSession ? (
+                        <div className="mt-3">
+                          <CiRuleAuthoringPanel
+                            documentId={documentId}
+                            busy={busy}
+                            setBusy={setBusy}
+                            onError={onError}
+                            replaceRuleId={id}
+                            initialText={String(r.businessRule ?? r.sourceClause ?? '')}
+                            onSession={(data) => {
+                              onSession(data)
+                              setEditOpen((p) => ({ ...p, [id]: false }))
+                            }}
+                            onClose={() => setEditOpen((p) => ({ ...p, [id]: false }))}
+                          />
+                        </div>
+                      ) : null}
+                    </>
+                  )}
                 </li>
               )
             })}
