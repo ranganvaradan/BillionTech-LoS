@@ -71,8 +71,8 @@ public class UnderwritingScorecard {
     @Builder.Default
     private boolean active = false;
 
-    /** DRAFT | ACTIVE | RETIRED — SCORECARD-SAFETY-FOUNDATION-1 */
-    @Column(nullable = false, length = 20)
+    /** DRAFT | IN_REVIEW | APPROVED | ACTIVE | RETIRED — SCORECARD-GOVERNANCE-1 */
+    @Column(nullable = false, length = 32)
     @Builder.Default
     private String status = "DRAFT";
 
@@ -94,6 +94,15 @@ public class UnderwritingScorecard {
     @Builder.Default
     private Map<String, Object> safetyJson = Map.of();
 
+    /**
+     * Maker/checker/activation evidence — SCORECARD-GOVERNANCE-1.
+     * Not cloned into new versions (except empty requireMakerChecker shell).
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "governance_json", columnDefinition = "jsonb", nullable = false)
+    @Builder.Default
+    private Map<String, Object> governanceJson = Map.of();
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false, nullable = false)
     private Instant createdAt;
@@ -102,6 +111,7 @@ public class UnderwritingScorecard {
     @Column(name = "updated_at")
     private Instant updatedAt;
 
+    /** Runtime-eligible ACTIVE only (not APPROVED/IN_REVIEW). */
     public boolean isExecutionActive() {
         return active || "ACTIVE".equalsIgnoreCase(status);
     }

@@ -30,6 +30,10 @@ public class UnderwritingScorecardResponse {
     private Instant activatedAt;
     /** Factor missing-data policies / validation; weight is metadata-only. */
     private Map<String, Object> safetyJson;
+    /** Maker/checker/activation evidence — SCORECARD-GOVERNANCE-1. */
+    private Map<String, Object> governanceJson;
+    /** UI primary next action hint. */
+    private Map<String, Object> primaryAction;
     private Instant createdAt;
     private Instant updatedAt;
 }

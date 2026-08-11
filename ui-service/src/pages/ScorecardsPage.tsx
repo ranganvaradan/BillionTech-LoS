@@ -1,10 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
+  activateScorecard,
+  approveScorecard,
+  confirmScorecardMissingDataPolicies,
   createScorecard,
   createScorecardNewVersion,
   deleteScorecard,
+  getScorecardReviewPackage,
   listScorecards,
   previewScorecard,
+  recordScorecardPreview,
+  returnScorecardForChanges,
+  submitScorecardForReview,
   suggestScorecardFactorsFromPolicy,
   updateScorecard,
   type HardRuleRow,
@@ -103,6 +110,8 @@ export function ScorecardsPage() {
   const [previewBusy, setPreviewBusy] = useState(false)
   const [policySuggestRaw, setPolicySuggestRaw] = useState('bureau.score\nobligation.ratio\napplication.business_vintage_months')
   const [policySuggestions, setPolicySuggestions] = useState<Array<Record<string, unknown>>>([])
+  const [reviewPackage, setReviewPackage] = useState<Record<string, unknown> | null>(null)
+  const [govRemarks, setGovRemarks] = useState('')
 
   const load = useCallback(async () => {
     setLoadError(null)
@@ -245,6 +254,8 @@ export function ScorecardsPage() {
       setHards([])
     }
     setActionError(null)
+    setReviewPackage(null)
+    setGovRemarks('')
   }
 
   function startNew() {
@@ -324,7 +335,7 @@ export function ScorecardsPage() {
         bandSemantics: 'EXCLUSIVE_RANGES',
         denominatorSemantics: 'SUM_OF_FACTOR_MAX_WHERE_FACTOR_MAX_IS_MAX_BAND_POINTS',
       },
-      active,
+      active: false,
     }
   }
 
@@ -396,9 +407,24 @@ export function ScorecardsPage() {
       } catch {
         throw new Error('Preview inputs must be valid JSON object of parameter → value')
       }
-      const body = selected?.id
-        ? { scorecardId: selected.id, inputs }
-        : {
+      if (selected?.id && !isCreating) {
+        const updated = await recordScorecardPreview(selected.id, { inputs })
+        setSelected(updated)
+        setPreviewResult({
+          earnedPoints: (updated.governanceJson as { lastPreview?: Record<string, unknown> } | undefined)?.lastPreview
+            ?.earnedPoints,
+          maxPoints: (updated.governanceJson as { lastPreview?: Record<string, unknown> } | undefined)?.lastPreview
+            ?.maxPoints,
+          normalizedPercent: (updated.governanceJson as { lastPreview?: Record<string, unknown> } | undefined)
+            ?.lastPreview?.normalizedPercent,
+          policyDecision: (updated.governanceJson as { lastPreview?: Record<string, unknown> } | undefined)?.lastPreview
+            ?.policyDecision,
+          recorded: true,
+          applicationMutated: false,
+        })
+      } else {
+        setPreviewResult(
+          await previewScorecard({
             borrowerType,
             loanProduct,
             scorecardJson: toRequest().scorecardJson,
@@ -406,12 +432,98 @@ export function ScorecardsPage() {
             hardRulesJson: toRequest().hardRulesJson,
             safetyJson: toRequest().safetyJson,
             inputs,
-          }
-      setPreviewResult(await previewScorecard(body))
+          }),
+        )
+      }
     } catch (e) {
       setActionError(e instanceof ApiError ? e.message : e instanceof Error ? e.message : 'Preview failed')
     } finally {
       setPreviewBusy(false)
+    }
+  }
+
+  async function refreshSelected(id: string) {
+    const all = await listScorecards()
+    setRows(all)
+    const found = all.find((r) => r.id === id)
+    if (found) {
+      setSelected(found)
+      apply(found)
+    }
+  }
+
+  async function onSubmitReview() {
+    if (!selected) return
+    setSaving(true)
+    setActionError(null)
+    try {
+      await confirmScorecardMissingDataPolicies(selected.id).catch(() => undefined)
+      const updated = await submitScorecardForReview(selected.id, govRemarks || undefined)
+      setSelected(updated)
+      await refreshSelected(updated.id)
+    } catch (e) {
+      setActionError(e instanceof ApiError ? e.message : e instanceof Error ? e.message : 'Submit failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function onApprove() {
+    if (!selected) return
+    setSaving(true)
+    setActionError(null)
+    try {
+      const updated = await approveScorecard(selected.id, govRemarks || undefined)
+      setSelected(updated)
+      await refreshSelected(updated.id)
+    } catch (e) {
+      setActionError(e instanceof ApiError ? e.message : e instanceof Error ? e.message : 'Approve failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function onReturn() {
+    if (!selected) return
+    if (!govRemarks.trim()) {
+      setActionError('Return remarks are required')
+      return
+    }
+    setSaving(true)
+    setActionError(null)
+    try {
+      const updated = await returnScorecardForChanges(selected.id, govRemarks.trim())
+      setSelected(updated)
+      await refreshSelected(updated.id)
+    } catch (e) {
+      setActionError(e instanceof ApiError ? e.message : e instanceof Error ? e.message : 'Return failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function onActivate() {
+    if (!selected) return
+    setSaving(true)
+    setActionError(null)
+    try {
+      const updated = await activateScorecard(selected.id)
+      setSelected(updated)
+      await refreshSelected(updated.id)
+    } catch (e) {
+      setActionError(e instanceof ApiError ? e.message : e instanceof Error ? e.message : 'Activate failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function onLoadReviewPackage() {
+    if (!selected) return
+    setActionError(null)
+    try {
+      setReviewPackage(await getScorecardReviewPackage(selected.id))
+    } catch (e) {
+      setActionError(e instanceof ApiError ? e.message : e instanceof Error ? e.message : 'Review package failed')
     }
   }
 
@@ -459,7 +571,24 @@ export function ScorecardsPage() {
   }
 
   const showForm = selected !== null || isCreating
-  const isActiveImmutable = Boolean(selected?.active && !isCreating)
+  const status = (selected?.status ?? (isCreating ? 'DRAFT' : 'DRAFT')).toUpperCase()
+  const isActiveImmutable = Boolean(
+    !isCreating && (selected?.active || status === 'ACTIVE'),
+  )
+  const isGovernanceFrozen = Boolean(
+    !isCreating && (status === 'IN_REVIEW' || status === 'APPROVED'),
+  )
+  const canEditDraft = Boolean(isCreating || status === 'DRAFT')
+  const primaryAction = selected?.primaryAction?.action
+
+  function statusBadge(st: string, isActiveFlag: boolean) {
+    const s = st.toUpperCase()
+    if (isActiveFlag || s === 'ACTIVE') return <span className="bt-badge bt-badge-green">ACTIVE</span>
+    if (s === 'IN_REVIEW') return <span className="bt-badge bt-badge-amber">IN REVIEW</span>
+    if (s === 'APPROVED') return <span className="bt-badge bt-badge-blue">APPROVED</span>
+    if (s === 'RETIRED') return <span className="bt-badge bt-badge-gray">RETIRED</span>
+    return <span className="bt-badge bt-badge-gray">DRAFT</span>
+  }
 
   return (
     <div>
@@ -501,13 +630,7 @@ export function ScorecardsPage() {
                 avatar={r.name}
                 title={r.name}
                 subtitle={`Priority ${r.priority} · v${r.version}`}
-                meta={
-                  r.active ? (
-                    <span className="bt-badge bt-badge-green">Active</span>
-                  ) : (
-                    <span className="bt-badge bt-badge-gray">Inactive</span>
-                  )
-                }
+                meta={statusBadge(r.status ?? (r.active ? 'ACTIVE' : 'DRAFT'), r.active)}
                 tags={
                   <>
                     <span className="bt-tag">{BORROWER_TYPE_LABELS[r.borrowerType as BorrowerType] ?? r.borrowerType}</span>
@@ -524,20 +647,43 @@ export function ScorecardsPage() {
                 title={isCreating ? 'New scorecard' : name}
                 description="Configure parameters, hard rules, and decision thresholds for this segment."
                 badge={
-                  !isCreating && selected ? (
-                    selected.active ? (
-                      <span className="bt-badge bt-badge-green">Active</span>
-                    ) : (
-                      <span className="bt-badge bt-badge-gray">Inactive</span>
-                    )
-                  ) : undefined
+                  !isCreating && selected
+                    ? statusBadge(selected.status ?? 'DRAFT', selected.active)
+                    : isCreating
+                      ? statusBadge('DRAFT', false)
+                      : undefined
                 }
                 footer={
                   <DetailActions>
                     <button type="button" className="bt-btn bt-btn-ghost" onClick={() => setMapOpen(true)}>
                       View mapping
                     </button>
-                    {isActiveImmutable ? (
+                    {isCreating || (canEditDraft && !isActiveImmutable) ? (
+                      <button type="button" onClick={() => void onSave()} disabled={saving} className="bt-btn bt-btn-secondary">
+                        {saving ? 'Saving…' : isCreating ? 'Create draft' : 'Save'}
+                      </button>
+                    ) : null}
+                    {!isCreating && selected && primaryAction === 'SUBMIT_FOR_REVIEW' ? (
+                      <button type="button" onClick={() => void onSubmitReview()} disabled={saving} className="bt-btn bt-btn-primary">
+                        {saving ? 'Submitting…' : 'Submit for Review'}
+                      </button>
+                    ) : null}
+                    {!isCreating && selected && primaryAction === 'CHECKER_DECIDE' ? (
+                      <>
+                        <button type="button" onClick={() => void onApprove()} disabled={saving} className="bt-btn bt-btn-primary">
+                          {saving ? 'Approving…' : 'Approve'}
+                        </button>
+                        <button type="button" onClick={() => void onReturn()} disabled={saving} className="bt-btn bt-btn-secondary">
+                          Return for changes
+                        </button>
+                      </>
+                    ) : null}
+                    {!isCreating && selected && primaryAction === 'ACTIVATE' ? (
+                      <button type="button" onClick={() => void onActivate()} disabled={saving} className="bt-btn bt-btn-primary">
+                        {saving ? 'Activating…' : 'Activate'}
+                      </button>
+                    ) : null}
+                    {!isCreating && selected && primaryAction === 'CREATE_NEW_VERSION' ? (
                       <button
                         type="button"
                         onClick={() => void onCreateNewVersion()}
@@ -546,12 +692,8 @@ export function ScorecardsPage() {
                       >
                         {saving ? 'Creating…' : 'Create new version'}
                       </button>
-                    ) : (
-                      <button type="button" onClick={() => void onSave()} disabled={saving} className="bt-btn bt-btn-primary">
-                        {saving ? 'Saving…' : isCreating ? 'Create scorecard' : 'Save changes'}
-                      </button>
-                    )}
-                    {selected && !isCreating && !isActiveImmutable ? (
+                    ) : null}
+                    {selected && !isCreating && canEditDraft ? (
                       <button type="button" onClick={() => void onDelete()} className="bt-btn bt-btn-secondary text-rose-700">
                         Delete
                       </button>
@@ -567,8 +709,15 @@ export function ScorecardsPage() {
                 {actionError ? <BtAlert tone="error">{actionError}</BtAlert> : null}
                 {isActiveImmutable ? (
                   <BtAlert tone="warning">
-                    ACTIVE scorecard is immutable for bands, points, thresholds, and hard rules. Use Create new version
-                    to edit a DRAFT v{(selected?.version ?? 1) + 1}; the live version stays unchanged.
+                    ACTIVE scorecard is immutable. Use Create new version for DRAFT v{(selected?.version ?? 1) + 1};
+                    live scoring stays on this version until the next version is activated.
+                  </BtAlert>
+                ) : null}
+                {isGovernanceFrozen ? (
+                  <BtAlert tone="warning">
+                    {status === 'IN_REVIEW'
+                      ? 'In review — content frozen for checker. Approve or Return for changes.'
+                      : 'Approved — content frozen. Activate to go live, or Return for changes.'}
                   </BtAlert>
                 ) : null}
 
@@ -626,12 +775,68 @@ export function ScorecardsPage() {
                         <input className="bt-input flex-1" placeholder="City" value={geoCity} onChange={(e) => setGeoCity(e.target.value)} />
                       </div>
                     </FormField>
-                    <label className="bt-checkbox-row sm:col-span-2">
-                      <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} />
-                      Active — eligible for matching applications
-                    </label>
+                    <FormField label="Lifecycle status" className="sm:col-span-2">
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        {statusBadge(status, Boolean(selected?.active))}
+                        <span className="text-xs text-slate-500">
+                          DRAFT → Submit → Checker → Approve → Activate. Runtime uses ACTIVE only.
+                        </span>
+                      </div>
+                    </FormField>
                   </div>
                 </DetailSection>
+
+                {!isCreating && selected ? (
+                  <DetailSection title="Governance" description="Maker-checker evidence and one primary next action.">
+                    <textarea
+                      className="bt-input text-sm"
+                      rows={2}
+                      placeholder="Remarks (required when returning for changes)"
+                      value={govRemarks}
+                      onChange={(e) => setGovRemarks(e.target.value)}
+                    />
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button type="button" className="bt-btn bt-btn-secondary bt-btn-sm" onClick={() => void onLoadReviewPackage()}>
+                        Load checker review package
+                      </button>
+                    </div>
+                    {selected.governanceJson ? (
+                      <pre className="mt-2 max-h-40 overflow-auto rounded border border-slate-200 bg-white p-2 text-[11px] text-slate-700">
+                        {JSON.stringify(
+                          {
+                            submittedBy: selected.governanceJson.submittedBy,
+                            submittedAt: selected.governanceJson.submittedAt,
+                            checkerDecision: selected.governanceJson.checkerDecision,
+                            approvedBy: selected.governanceJson.approvedBy,
+                            approvedAt: selected.governanceJson.approvedAt,
+                            remarks: selected.governanceJson.remarks,
+                            lastPreview: selected.governanceJson.lastPreview,
+                            activatedBy: selected.governanceJson.activatedBy,
+                          },
+                          null,
+                          2,
+                        )}
+                      </pre>
+                    ) : null}
+                    {reviewPackage ? (
+                      <div className="mt-3 space-y-2 text-sm">
+                        <div className="font-semibold text-slate-800">Review summary</div>
+                        <pre className="max-h-64 overflow-auto rounded border border-slate-200 bg-slate-50 p-2 text-[11px]">
+                          {JSON.stringify(
+                            {
+                              executionReadiness: reviewPackage.executionReadiness,
+                              diffVsPrevious: reviewPackage.diffVsPrevious,
+                              factors: reviewPackage.factors,
+                              thresholds: reviewPackage.thresholds,
+                            },
+                            null,
+                            2,
+                          )}
+                        </pre>
+                      </div>
+                    ) : null}
+                  </DetailSection>
+                ) : null}
 
                 <DetailSection title="Decision thresholds" description="Normalized score as % of maximum points">
                   <div className="flex flex-wrap gap-4">

@@ -24,9 +24,9 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class UnderwritingScorecardAdminService {
 
-    public static final String STATUS_DRAFT = "DRAFT";
-    public static final String STATUS_ACTIVE = "ACTIVE";
-    public static final String STATUS_RETIRED = "RETIRED";
+    public static final String STATUS_DRAFT = ScorecardGovernanceStatuses.DRAFT;
+    public static final String STATUS_ACTIVE = ScorecardGovernanceStatuses.ACTIVE;
+    public static final String STATUS_RETIRED = ScorecardGovernanceStatuses.RETIRED;
 
     private final UnderwritingScorecardRepository repository;
     private final AdminConfigAuditSupport adminConfigAuditSupport;
@@ -37,27 +37,22 @@ public class UnderwritingScorecardAdminService {
 
     @Transactional
     public UnderwritingScorecardResponse create(UnderwritingScorecardRequest r) {
+        if (r.isActive()) {
+            throw new BusinessRuleException(
+                    "Scorecards cannot be created as ACTIVE. Save as DRAFT, Test, Submit, Approve, then Activate.",
+                    "SCORECARD_GOVERNANCE_REQUIRED",
+                    "USE_GOVERNANCE_LIFECYCLE",
+                    null);
+        }
         UnderwritingScorecard e = new UnderwritingScorecard();
         apply(e, r);
-        e.setLineageId(null); // assigned after first save if needed
+        e.setLineageId(null);
         e.setParentScorecardId(null);
         e.setSafetyJson(e.getSafetyJson() == null ? Map.of() : e.getSafetyJson());
-        if (r.isActive()) {
-            ScorecardSafetyValidator.ValidationResult activation =
-                    ScorecardSafetyValidator.validateForActivation(e);
-            if (!activation.ok()) {
-                throw new BusinessRuleException(
-                        "Scorecard cannot become ACTIVE: " + String.join("; ", activation.problems()),
-                        "SCORECARD_ACTIVATION_BLOCKED",
-                        "CONFIRM_MISSING_DATA_POLICIES",
-                        Map.of("problems", activation.problems()));
-            }
-            activate(e);
-        } else {
-            e.setActive(false);
-            e.setStatus(STATUS_DRAFT);
-            e.setActivatedAt(null);
-        }
+        e.setGovernanceJson(ScorecardGovernanceService.emptyGovernanceForClone());
+        e.setActive(false);
+        e.setStatus(STATUS_DRAFT);
+        e.setActivatedAt(null);
         validateBandsOrThrow(e);
         e.setUpdatedAt(Instant.now());
         UnderwritingScorecard saved = repository.save(e);
@@ -76,6 +71,16 @@ public class UnderwritingScorecardAdminService {
                 .orElseThrow(() -> new ResourceNotFoundException("Scorecard not found: " + id));
         UnderwritingScorecardResponse before = toResponse(e);
 
+        String status = e.getStatus() == null ? STATUS_DRAFT : e.getStatus();
+        if (ScorecardGovernanceStatuses.IN_REVIEW.equalsIgnoreCase(status)
+                || ScorecardGovernanceStatuses.APPROVED.equalsIgnoreCase(status)) {
+            throw new BusinessRuleException(
+                    status + " scorecard content is frozen. Return for changes (if needed) or Activate.",
+                    "SCORECARD_GOVERNANCE_FROZEN",
+                    "RETURN_OR_ACTIVATE",
+                    Map.of("status", status));
+        }
+
         boolean wasActive = e.isExecutionActive();
         if (wasActive && executionAffectingChange(e, r)) {
             throw new BusinessRuleException(
@@ -88,30 +93,31 @@ public class UnderwritingScorecardAdminService {
         if (!wasActive) {
             apply(e, r);
             validateBandsOrThrow(e);
+            // Editing DRAFT invalidates prior preview fingerprint match (re-test required)
+            Map<String, Object> gov = new LinkedHashMap<>(
+                    e.getGovernanceJson() == null ? Map.of() : e.getGovernanceJson());
+            if (gov.get("lastPreview") != null) {
+                gov.put("previewInvalidatedByEdit", true);
+            }
+            e.setGovernanceJson(gov);
         } else {
-            // non-execution metadata only (name trim already same if blocked above)
             if (r.getName() != null && !r.getName().isBlank()) {
                 e.setName(r.getName().trim());
             }
         }
 
         if (r.isActive() && !e.isActive()) {
-            ScorecardSafetyValidator.ValidationResult activation =
-                    ScorecardSafetyValidator.validateForActivation(e);
-            if (!activation.ok()) {
-                throw new BusinessRuleException(
-                        "Scorecard cannot become ACTIVE: " + String.join("; ", activation.problems()),
-                        "SCORECARD_ACTIVATION_BLOCKED",
-                        "CONFIRM_MISSING_DATA_POLICIES",
-                        Map.of(
-                                "problems", activation.problems(),
-                                "missingPoliciesExplicit", activation.missingPoliciesExplicit(),
-                                "missingPoliciesConfirmed", activation.missingPoliciesConfirmed()));
-            }
-            activate(e);
-            validateBandsOrThrow(e);
+            throw new BusinessRuleException(
+                    "Activation requires APPROVED governance state. Use Activate after checker approval.",
+                    "SCORECARD_GOVERNANCE_REQUIRED",
+                    "SUBMIT_APPROVE_ACTIVATE",
+                    Map.of("status", e.getStatus()));
         } else if (!r.isActive() && e.isActive()) {
-            retire(e);
+            throw new BusinessRuleException(
+                    "Cannot deactivate ACTIVE via update. Activate a superseding version to retire this one.",
+                    "SCORECARD_RETIRE_VIA_SUPERSESSION",
+                    "CREATE_NEW_VERSION_AND_ACTIVATE",
+                    null);
         }
 
         e.setUpdatedAt(Instant.now());
@@ -151,6 +157,7 @@ public class UnderwritingScorecardAdminService {
                 .hardRulesJson(copyMap(source.getHardRulesJson()))
                 // Inherit recommended missing-data classifications; confirmation required before activate
                 .safetyJson(ScorecardSafetyValidator.inheritedSafetyForNewVersion(source))
+                .governanceJson(ScorecardGovernanceService.emptyGovernanceForClone())
                 .active(false)
                 .status(STATUS_DRAFT)
                 .lineageId(lineage)
@@ -182,20 +189,6 @@ public class UnderwritingScorecardAdminService {
         UnderwritingScorecardResponse before = toResponse(e);
         repository.delete(e);
         adminConfigAuditSupport.captureDelete("UNDERWRITING_SCORECARD", id.toString(), before, "Underwriting scorecard deleted");
-    }
-
-    private void activate(UnderwritingScorecard e) {
-        e.setActive(true);
-        e.setStatus(STATUS_ACTIVE);
-        e.setActivatedAt(Instant.now());
-        if (e.getLineageId() == null && e.getId() != null) {
-            e.setLineageId(e.getId());
-        }
-    }
-
-    private void retire(UnderwritingScorecard e) {
-        e.setActive(false);
-        e.setStatus(STATUS_RETIRED);
     }
 
     private void apply(UnderwritingScorecard e, UnderwritingScorecardRequest r) {
@@ -331,7 +324,31 @@ public class UnderwritingScorecardAdminService {
         return m == null ? Map.of() : new LinkedHashMap<>(m);
     }
 
+    /** Public for governance service response mapping. */
+    public UnderwritingScorecardResponse toResponsePublic(UnderwritingScorecard e) {
+        return toResponse(e);
+    }
+
     private UnderwritingScorecardResponse toResponse(UnderwritingScorecard e) {
+        Map<String, Object> primary = new LinkedHashMap<>();
+        String st = e.getStatus() == null ? STATUS_DRAFT : e.getStatus();
+        primary.put("status", st);
+        if (ScorecardGovernanceStatuses.DRAFT.equalsIgnoreCase(st)) {
+            primary.put("action", "SUBMIT_FOR_REVIEW");
+            primary.put("label", "Submit for Review");
+        } else if (ScorecardGovernanceStatuses.IN_REVIEW.equalsIgnoreCase(st)) {
+            primary.put("action", "CHECKER_DECIDE");
+            primary.put("label", "Approve / Return");
+        } else if (ScorecardGovernanceStatuses.APPROVED.equalsIgnoreCase(st)) {
+            primary.put("action", "ACTIVATE");
+            primary.put("label", "Activate");
+        } else if (e.isActive() || ScorecardGovernanceStatuses.ACTIVE.equalsIgnoreCase(st)) {
+            primary.put("action", "CREATE_NEW_VERSION");
+            primary.put("label", "Create New Version");
+        } else {
+            primary.put("action", "NONE");
+            primary.put("label", st);
+        }
         return UnderwritingScorecardResponse.builder()
                 .id(e.getId())
                 .name(e.getName())
@@ -351,6 +368,8 @@ public class UnderwritingScorecardAdminService {
                 .parentScorecardId(e.getParentScorecardId())
                 .activatedAt(e.getActivatedAt())
                 .safetyJson(e.getSafetyJson())
+                .governanceJson(e.getGovernanceJson())
+                .primaryAction(primary)
                 .createdAt(e.getCreatedAt())
                 .updatedAt(e.getUpdatedAt())
                 .build();

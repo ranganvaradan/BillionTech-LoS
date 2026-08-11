@@ -6,5 +6,6 @@ export function xHeadersForUser(u: SessionUser | null): Record<string, string> {
   return {
     'X-User-Id': u.userId,
     'X-User-Role': u.role,
+    ...(u.name ? { 'X-User-Name': u.name } : {}),
   }
 }

@@ -87,6 +87,8 @@ export interface UnderwritingScorecardResponse {
   parentScorecardId?: string | null
   activatedAt?: string | null
   safetyJson?: Record<string, unknown>
+  governanceJson?: Record<string, unknown>
+  primaryAction?: { action?: string; label?: string; status?: string }
   createdAt: string | null
   updatedAt: string | null
 }
@@ -177,6 +179,65 @@ export async function confirmScorecardMissingDataPolicies(
 ): Promise<UnderwritingScorecardResponse> {
   const { data } = await http.post<UnderwritingScorecardResponse>(
     `/underwriting/scorecards/${id}/confirm-missing-data-policies`,
+  )
+  return data
+}
+
+/** SCORECARD-GOVERNANCE-1 */
+export async function submitScorecardForReview(
+  id: string,
+  remarks?: string,
+): Promise<UnderwritingScorecardResponse> {
+  const { data } = await http.post<UnderwritingScorecardResponse>(
+    `/underwriting/scorecards/${id}/submit-review`,
+    { remarks },
+  )
+  return data
+}
+
+export async function approveScorecard(
+  id: string,
+  remarks?: string,
+): Promise<UnderwritingScorecardResponse> {
+  const { data } = await http.post<UnderwritingScorecardResponse>(
+    `/underwriting/scorecards/${id}/approve`,
+    { remarks },
+  )
+  return data
+}
+
+export async function returnScorecardForChanges(
+  id: string,
+  remarks: string,
+): Promise<UnderwritingScorecardResponse> {
+  const { data } = await http.post<UnderwritingScorecardResponse>(
+    `/underwriting/scorecards/${id}/return`,
+    { remarks },
+  )
+  return data
+}
+
+export async function activateScorecard(id: string): Promise<UnderwritingScorecardResponse> {
+  const { data } = await http.post<UnderwritingScorecardResponse>(
+    `/underwriting/scorecards/${id}/activate`,
+  )
+  return data
+}
+
+export async function recordScorecardPreview(
+  id: string,
+  body: Record<string, unknown>,
+): Promise<UnderwritingScorecardResponse> {
+  const { data } = await http.post<UnderwritingScorecardResponse>(
+    `/underwriting/scorecards/${id}/record-preview`,
+    body,
+  )
+  return data
+}
+
+export async function getScorecardReviewPackage(id: string): Promise<Record<string, unknown>> {
+  const { data } = await http.get<Record<string, unknown>>(
+    `/underwriting/scorecards/${id}/review-package`,
   )
   return data
 }
