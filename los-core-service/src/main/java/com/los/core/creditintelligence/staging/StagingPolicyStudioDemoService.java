@@ -3,7 +3,10 @@ package com.los.core.creditintelligence.staging;
 import com.los.core.creditintelligence.config.CreditIntelligenceProperties;
 import com.los.core.creditintelligence.policystudio.catalogue.CatalogueCapabilityDraftService;
 import com.los.core.creditintelligence.policystudio.catalogue.CreditCapabilityCatalogueService;
+import com.los.core.creditintelligence.policystudio.catalogue.IngestionMatchClassification;
 import com.los.core.creditintelligence.policystudio.parameters.CmRuleAuthoringService;
+import com.los.core.creditintelligence.policystudio.parameters.PolicyExecutionReadiness;
+import com.los.core.exception.BusinessRuleException;
 import com.los.core.creditintelligence.policystudio.domain.AmbiguityResolutionAction;
 import com.los.core.creditintelligence.policystudio.domain.CiPolicyClause;
 import com.los.core.creditintelligence.policystudio.domain.CiPolicyDocument;
@@ -314,15 +317,19 @@ public class StagingPolicyStudioDemoService {
                     .filter(r -> r.getSystemRuleId() == null
                             || !r.getSystemRuleId().toUpperCase(Locale.ROOT).contains("OVERDUE_CHILD"))
                     .count();
-            long needs = session.getRuleCandidates() == null ? 0 : session.getRuleCandidates().stream()
-                    .filter(r -> {
-                        Map<String, Object> rm = r.getMetadata() == null ? Map.of() : r.getMetadata();
-                        return Boolean.TRUE.equals(rm.get("NEEDS_INPUT"))
-                                || rm.get("blockedReason") != null;
-                    })
-                    .count();
+            // POLICY-STUDIO-UX-CLOSURE-1 — Needs Input = genuine unresolved executable/config work only
+            long needs = PolicyExecutionReadiness.countNeedsBusinessInput(session);
             row.put("underwritingRuleCount", uw);
             row.put("needsInputCount", needs);
+            List<String> landingActions = List.of("OPEN", "COPY");
+            try {
+                if (lifecycleService != null) {
+                    landingActions = requireLifecycle().landingActions(session);
+                }
+            } catch (Exception ignored) {
+                // keep Open/Copy
+            }
+            row.put("availableActions", landingActions);
             row.put("kind", meta.getOrDefault("kind", Boolean.TRUE.equals(meta.get("demo")) ? "demo" : "session"));
             row.put("demo", Boolean.TRUE.equals(meta.get("demo")));
             row.put("copiedFromLabel", meta.get("copiedFromLabel"));
@@ -499,10 +506,24 @@ public class StagingPolicyStudioDemoService {
                             : "Rejected during Credit Head review";
                 }
             }
-            case "IGNORE", "IGNORE_FOR_NOW" -> {
+            case "IGNORE", "IGNORE_FOR_NOW", "IGNORE_FOR_AUTOMATION" -> {
                 reviewState = ReviewState.REJECTED.name();
                 if (reason == null) {
-                    reason = "Ignored for now — retained for draft, excluded from activation";
+                    reason = "IGNORE_FOR_AUTOMATION".equals(action)
+                            ? "Ignored for automation — retained as policy evidence, excluded from Needs Input"
+                            : "Ignored for now — retained for draft, excluded from activation";
+                }
+            }
+            case "KEEP_AS_POLICY_REQUIREMENT" -> {
+                reviewState = ReviewState.CREDIT_MANAGER_APPROVED.name();
+                if (reason == null) {
+                    reason = "Kept as policy requirement — not an executable underwriting parameter";
+                }
+            }
+            case "RECLASSIFY" -> {
+                reviewState = ReviewState.CREDIT_MANAGER_APPROVED.name();
+                if (reason == null) {
+                    reason = "Business classification updated on policy draft";
                 }
             }
             case "MANUAL_INPUT", "MANUAL_VERIFICATION" -> {
@@ -562,15 +583,74 @@ public class StagingPolicyStudioDemoService {
                     ? new LinkedHashMap<>()
                     : new LinkedHashMap<>(rule.getMetadata());
             switch (action) {
-                case "IGNORE", "IGNORE_FOR_NOW" -> {
-                    meta.put("disposition", "IGNORED");
+                case "IGNORE", "IGNORE_FOR_NOW", "IGNORE_FOR_AUTOMATION" -> {
+                    if ("IGNORE_FOR_AUTOMATION".equals(action)) {
+                        assertNonExecutableDispositionAllowed(rule, action);
+                    }
+                    String prevDisp = String.valueOf(meta.getOrDefault("disposition", ""));
+                    meta.put("previousDisposition", prevDisp);
+                    meta.put("disposition", "IGNORE_FOR_AUTOMATION".equals(action)
+                            ? "IGNORE_FOR_AUTOMATION" : "IGNORED");
+                    meta.put("businessDisposition", "IGNORE_FOR_AUTOMATION".equals(action)
+                            ? "IGNORE_FOR_AUTOMATION" : "IGNORED");
                     meta.put("excludedFromActivation", true);
                     meta.put("deleted", false);
+                    meta.put("NEEDS_INPUT", false);
+                    meta.put("blockedReason", null);
+                    if (reason != null) {
+                        meta.put("dispositionReason", reason);
+                    }
+                    meta.put("dispositionChangedAt", Instant.now().toString());
+                    meta.put("dispositionChangedBy", str(body, "reviewer", "credit_manager"));
+                }
+                case "KEEP_AS_POLICY_REQUIREMENT" -> {
+                    assertNonExecutableDispositionAllowed(rule, action);
+                    String prevKeep = String.valueOf(meta.getOrDefault("disposition", ""));
+                    meta.put("previousDisposition", prevKeep);
+                    meta.put("disposition", "KEEP_AS_POLICY_REQUIREMENT");
+                    meta.put("businessDisposition", "KEEP_AS_POLICY_REQUIREMENT");
+                    meta.put("excludedFromActivation", true);
+                    meta.put("deleted", false);
+                    meta.put("NEEDS_INPUT", false);
+                    meta.put("blockedReason", null);
+                    if (reason != null) {
+                        meta.put("dispositionReason", reason);
+                    }
+                    meta.put("dispositionChangedAt", Instant.now().toString());
+                    meta.put("dispositionChangedBy", str(body, "reviewer", "credit_manager"));
+                }
+                case "RECLASSIFY" -> {
+                    String cls = str(body, "classification", null);
+                    if (cls == null || cls.isBlank()) {
+                        throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                                "classification is required for RECLASSIFY");
+                    }
+                    try {
+                        IngestionMatchClassification.valueOf(cls.trim().toUpperCase(Locale.ROOT));
+                    } catch (IllegalArgumentException ex) {
+                        throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                                "Unsupported classification: " + cls);
+                    }
+                    String prevCls = String.valueOf(meta.getOrDefault("classification", ""));
+                    meta.put("previousClassification", prevCls);
+                    meta.put("classification", cls.trim().toUpperCase(Locale.ROOT));
+                    meta.put("reclassifiedAt", Instant.now().toString());
+                    meta.put("reclassifiedBy", str(body, "reviewer", "credit_manager"));
+                    IngestionMatchClassification parsed = IngestionMatchClassification.valueOf(
+                            cls.trim().toUpperCase(Locale.ROOT));
+                    meta.put("dataRequirementOnly", parsed == IngestionMatchClassification.DATA_REQUIREMENT
+                            || parsed == IngestionMatchClassification.REPORT_FIELD
+                            || parsed == IngestionMatchClassification.DOCUMENT_REQUIREMENT);
+                    meta.put("metricAdjustment", parsed == IngestionMatchClassification.METRIC_ADJUSTMENT);
+                    meta.put("classificationOnly", parsed == IngestionMatchClassification.NARRATIVE
+                            || parsed == IngestionMatchClassification.AMBIGUOUS);
                 }
                 case "DELETE", "EXCLUDE" -> {
+                    // Soft-delete session artefact only — never physical purge of protected history
                     meta.put("disposition", "DELETED");
                     meta.put("excludedFromActivation", true);
                     meta.put("deleted", true);
+                    meta.put("NEEDS_INPUT", false);
                 }
                 case "MANUAL_INPUT", "MANUAL_VERIFICATION" -> {
                     meta.put("disposition", "MANUAL_INPUT");
@@ -1137,6 +1217,57 @@ public class StagingPolicyStudioDemoService {
         view.put("lifecycle", result);
         view.put("message", result.get("message"));
         return view;
+    }
+
+    /**
+     * POLICY-STUDIO-UX-CLOSURE-1 — hard-delete never-activated DRAFT by documentId.
+     */
+    public Map<String, Object> deleteDraftPolicy(UUID documentId, Map<String, Object> body, String tenantHeader) {
+        PolicyStudioSession session = requireSession(documentId, tenantHeader);
+        Map<String, Object> result = requireLifecycle().deleteDraftPolicy(session, body == null ? Map.of() : body);
+        sessionMeta.remove(documentId);
+        Map<String, Object> out = new LinkedHashMap<>(result);
+        out.put("existingPolicies", listExistingPolicies());
+        out.put("allowCanonicalAuthority", false);
+        return out;
+    }
+
+    /**
+     * IGNORE_FOR_AUTOMATION / KEEP_AS_POLICY_REQUIREMENT must not silently clear blockers on
+     * genuine executable underwriting dependencies. Documentary / narrative / non-UW taxonomy may proceed.
+     */
+    private static void assertNonExecutableDispositionAllowed(CiPolicyRuleCandidate rule, String action) {
+        if (rule == null) {
+            return;
+        }
+        Map<String, Object> meta = rule.getMetadata() == null ? Map.of() : rule.getMetadata();
+        if (Boolean.TRUE.equals(meta.get("dataRequirementOnly"))
+                || Boolean.TRUE.equals(meta.get("metricAdjustment"))
+                || Boolean.TRUE.equals(meta.get("classificationOnly"))) {
+            return;
+        }
+        String cls = String.valueOf(meta.getOrDefault("classification", ""));
+        try {
+            IngestionMatchClassification parsed = IngestionMatchClassification.valueOf(cls);
+            if (!parsed.underwritingExecutable()) {
+                return;
+            }
+        } catch (Exception ignored) {
+            // unknown classification — fall through to readiness check
+        }
+        if (PolicyExecutionReadiness.isIncludedExecutableRule(rule)
+                && !PolicyExecutionReadiness.isExecutionReady(rule)) {
+            throw new BusinessRuleException(
+                    "This item is a required executable dependency and cannot be set to " + action
+                            + " to bypass readiness. Resolve / Configure it, or reclassify if it is "
+                            + "documentary / narrative content.",
+                    "POLICY_DISPOSITION_NOT_ALLOWED",
+                    "Use RESOLVE / CONFIGURE for executable dependencies, or RECLASSIFY if mis-typed",
+                    Map.of(
+                            "ruleId", rule.getId() == null ? "" : rule.getId().toString(),
+                            "uiAction", action,
+                            "executionBlockers", PolicyExecutionReadiness.executionBlockersForRule(rule)));
+        }
     }
 
     /**

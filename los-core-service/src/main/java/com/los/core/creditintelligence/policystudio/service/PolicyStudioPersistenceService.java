@@ -106,6 +106,20 @@ public class PolicyStudioPersistenceService {
         sessionIdToDocumentId.clear();
     }
 
+    /**
+     * POLICY-STUDIO-UX-CLOSURE-1 — hard-remove a draft session by document id.
+     * Does not cascade to unrelated versions or shared source documents.
+     */
+    public boolean deleteSession(UUID documentId) {
+        if (documentId == null) {
+            return false;
+        }
+        PolicyStudioSession removed = storeByDocumentId.remove(documentId);
+        cacheByDocumentId.remove(documentId);
+        sessionIdToDocumentId.entrySet().removeIf(e -> documentId.equals(e.getValue()));
+        return removed != null;
+    }
+
     /** POLICY-CREATION-1 — list in-memory sessions for Credit Policies landing. */
     public List<PolicyStudioSession> listAllSessions() {
         return new ArrayList<>(storeByDocumentId.values());

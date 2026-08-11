@@ -705,6 +705,7 @@ final class ProspectDay2ViewBuilder {
                 ? groupOverride
                 : businessGroup(decisionDomain, dataUsed, r.getSystemRuleId()));
         card.put("disposition", meta.get("disposition"));
+        card.put("businessDisposition", meta.getOrDefault("businessDisposition", meta.get("disposition")));
         card.put("excludedFromActivation", Boolean.TRUE.equals(meta.get("excludedFromActivation"))
                 || Boolean.TRUE.equals(meta.get("deleted")));
         card.put("manualInputLabel", meta.get("manualInputLabel"));
@@ -855,11 +856,16 @@ final class ProspectDay2ViewBuilder {
                     || "DELETED".equalsIgnoreCase(String.valueOf(meta.getOrDefault("disposition", "")))) {
                 return "Deleted";
             }
-            if ("IGNORED".equalsIgnoreCase(String.valueOf(meta.getOrDefault("disposition", "")))) {
+            String disposition = String.valueOf(meta.getOrDefault("disposition", ""));
+            if ("IGNORED".equalsIgnoreCase(disposition)
+                    || "IGNORE_FOR_AUTOMATION".equalsIgnoreCase(disposition)) {
                 return "Ignored";
             }
+            if ("KEEP_AS_POLICY_REQUIREMENT".equalsIgnoreCase(disposition)) {
+                return "Policy requirement";
+            }
             // excludedFromActivation must NOT map to Ignored
-            if ("MANUAL_INPUT".equalsIgnoreCase(String.valueOf(meta.getOrDefault("disposition", "")))
+            if ("MANUAL_INPUT".equalsIgnoreCase(disposition)
                     || "MANUAL".equalsIgnoreCase(String.valueOf(meta.getOrDefault("verificationMode", "")))
                     || "MANUAL_VERIFICATION".equalsIgnoreCase(
                     String.valueOf(meta.getOrDefault("dataGapDisposition", "")))) {

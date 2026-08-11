@@ -9,6 +9,8 @@ export type CmParamStatus =
   | 'MANUAL_INPUT'
   | 'NOT_CURRENTLY_AVAILABLE'
   | 'NEEDS_CONFIGURATION'
+  | 'POLICY_REQUIREMENT'
+  | 'IGNORED_FOR_AUTOMATION'
 
 export type DataCalcItemKind =
   | 'RAW_DATA_REQUIRED'
@@ -188,6 +190,13 @@ function firstResolution(members: Record<string, unknown>[]): Record<string, unk
   return {}
 }
 
+function memberBusinessDisposition(m: Record<string, unknown>): string {
+  const meta = asRecord(m.metadata)
+  return String(
+    m.businessDisposition ?? m.disposition ?? meta.businessDisposition ?? meta.disposition ?? '',
+  ).toUpperCase()
+}
+
 function groupCmStatus(parameterId: string, members: Record<string, unknown>[], adjustments: PolicyAdjustment[]): {
   status: CmParamStatus
   reason?: string
@@ -199,6 +208,37 @@ function groupCmStatus(parameterId: string, members: Record<string, unknown>[], 
   const texts = members.map(clauseText).join(' ').toLowerCase()
   const missing = members.map((m) => asRecord(m.missingDefinition)).find((m) => Object.keys(m).length > 0)
   const resolution = firstResolution(members)
+
+  // POLICY-STUDIO-UX-CLOSURE-1 — dispositions remove items from Needs Input without deleting evidence
+  const allDisposed =
+    members.length > 0 &&
+    members.every((m) => {
+      const d = memberBusinessDisposition(m)
+      return (
+        d === 'KEEP_AS_POLICY_REQUIREMENT' ||
+        d === 'IGNORE_FOR_AUTOMATION' ||
+        d === 'IGNORED' ||
+        d === 'DELETED' ||
+        Boolean(m.excludedFromActivation && (d === 'KEEP_AS_POLICY_REQUIREMENT' || d === 'IGNORE_FOR_AUTOMATION'))
+      )
+    })
+  if (allDisposed) {
+    const d0 = memberBusinessDisposition(members[0])
+    if (d0 === 'KEEP_AS_POLICY_REQUIREMENT') {
+      return {
+        status: 'POLICY_REQUIREMENT',
+        reason: 'Kept as policy requirement — not an unresolved executable parameter',
+        howDefined: 'Policy requirement (non-executable)',
+        displayStatus: 'POLICY REQUIREMENT',
+      }
+    }
+    return {
+      status: 'IGNORED_FOR_AUTOMATION',
+      reason: 'Ignored for automation — source wording retained',
+      howDefined: 'Ignored for automation',
+      displayStatus: 'IGNORED FOR AUTOMATION',
+    }
+  }
 
   if (Object.keys(resolution).length > 0) {
     const st = String(resolution.cmStatus ?? 'NEEDS_CONFIGURATION') as CmParamStatus
@@ -481,6 +521,10 @@ export function cmStatusLabel(s: CmParamStatus): string {
       return 'Not currently available'
     case 'NEEDS_CONFIGURATION':
       return 'Needs configuration'
+    case 'POLICY_REQUIREMENT':
+      return 'Policy requirement'
+    case 'IGNORED_FOR_AUTOMATION':
+      return 'Ignored for automation'
     default:
       return s
   }

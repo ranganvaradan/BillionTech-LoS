@@ -54,10 +54,33 @@ public final class PolicyExecutionReadiness {
         if (Boolean.TRUE.equals(m.get("deleted"))) return false;
         if (Boolean.TRUE.equals(m.get("excludedFromActivation"))) return false;
         String disposition = String.valueOf(m.getOrDefault("disposition", ""));
-        if ("IGNORED".equalsIgnoreCase(disposition) || "DELETED".equalsIgnoreCase(disposition)) {
+        if ("IGNORED".equalsIgnoreCase(disposition)
+                || "DELETED".equalsIgnoreCase(disposition)
+                || "KEEP_AS_POLICY_REQUIREMENT".equalsIgnoreCase(disposition)
+                || "IGNORE_FOR_AUTOMATION".equalsIgnoreCase(disposition)) {
             return false;
         }
         return true;
+    }
+
+    /**
+     * POLICY-STUDIO-UX-CLOSURE-1 — count items that genuinely need business/configuration action.
+     * Excludes Ignore / Keep-as-requirement / deleted / non-executable excluded items.
+     */
+    public static long countNeedsBusinessInput(PolicyStudioSession session) {
+        if (session == null || session.getRuleCandidates() == null) {
+            return 0L;
+        }
+        long n = 0L;
+        for (CiPolicyRuleCandidate r : session.getRuleCandidates()) {
+            if (!isIncludedExecutableRule(r)) {
+                continue;
+            }
+            if (!isExecutionReady(r)) {
+                n++;
+            }
+        }
+        return n;
     }
 
     /** Authoring complete AND all required runtime operands resolved for execution. */

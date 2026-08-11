@@ -290,6 +290,9 @@ export type ReviewRuleBody = {
     | 'EDIT'
     | 'IGNORE'
     | 'IGNORE_FOR_NOW'
+    | 'IGNORE_FOR_AUTOMATION'
+    | 'KEEP_AS_POLICY_REQUIREMENT'
+    | 'RECLASSIFY'
     | 'DELETE'
     | 'EXCLUDE'
     | 'MANUAL_INPUT'
@@ -697,6 +700,18 @@ export async function retireLifecyclePolicy(
 ): Promise<StagingPolicyStudio> {
   const { data } = await http.post<StagingPolicyStudio>(
     `${BASE}/policy-studio/documents/${encodeURIComponent(documentId)}/lifecycle/retire`,
+    body,
+  )
+  return data
+}
+
+/** POLICY-STUDIO-UX-CLOSURE-1 — hard-delete never-activated DRAFT (backend-authorised). */
+export async function deleteDraftLifecyclePolicy(
+  documentId: string,
+  body: Record<string, unknown> = {},
+): Promise<Record<string, unknown>> {
+  const { data } = await http.post<Record<string, unknown>>(
+    `${BASE}/policy-studio/documents/${encodeURIComponent(documentId)}/lifecycle/delete-draft`,
     body,
   )
   return data

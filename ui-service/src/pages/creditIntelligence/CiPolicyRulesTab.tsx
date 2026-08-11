@@ -64,6 +64,8 @@ function statusChip(status: string): string {
       return 'bg-slate-100 text-slate-700'
     case 'Ignored':
       return 'bg-slate-200 text-slate-700'
+    case 'Policy requirement':
+      return 'bg-slate-100 text-slate-800'
     case 'Deleted':
       return 'bg-slate-100 text-slate-500 line-through'
     case 'Blocked':
@@ -823,6 +825,32 @@ export function CiPolicyRulesTab({
                             <div className="absolute z-10 mt-1 flex min-w-[10rem] flex-col gap-1 rounded border border-slate-200 bg-white p-2 shadow-md">
                           <button
                             type="button"
+                            disabled={busy || status === 'Ignored' || status === 'Policy requirement'}
+                            className="rounded px-2 py-1 text-left text-sm hover:bg-slate-50 disabled:opacity-50"
+                            onClick={() =>
+                              void onReview(id, {
+                                uiAction: 'KEEP_AS_POLICY_REQUIREMENT',
+                                reason: 'Kept as policy requirement — not an executable parameter',
+                              })
+                            }
+                          >
+                            Keep as policy requirement
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busy || status === 'Ignored'}
+                            className="rounded px-2 py-1 text-left text-sm hover:bg-slate-50 disabled:opacity-50"
+                            onClick={() =>
+                              void onReview(id, {
+                                uiAction: 'IGNORE_FOR_AUTOMATION',
+                                reason: 'Ignored for automation — source wording retained',
+                              })
+                            }
+                          >
+                            Ignore for automation
+                          </button>
+                          <button
+                            type="button"
                             disabled={busy || status === 'Ignored'}
                             className="rounded px-2 py-1 text-left text-sm hover:bg-slate-50 disabled:opacity-50"
                             onClick={() =>
@@ -834,10 +862,39 @@ export function CiPolicyRulesTab({
                           >
                             Ignore for now
                           </button>
+                          <details className="rounded px-2 py-1">
+                            <summary className="cursor-pointer text-sm text-slate-700">Reclassify…</summary>
+                            <div className="mt-1 flex flex-col gap-1">
+                              {(
+                                [
+                                  ['DOCUMENT_REQUIREMENT', 'Document requirement'],
+                                  ['NARRATIVE', 'Narrative / informational'],
+                                  ['DATA_REQUIREMENT', 'Data requirement'],
+                                  ['NEW_AUTOMATABLE_RULE', 'Underwriting rule'],
+                                ] as const
+                              ).map(([code, label]) => (
+                                <button
+                                  key={code}
+                                  type="button"
+                                  disabled={busy}
+                                  className="rounded px-2 py-1 text-left text-xs hover:bg-slate-50 disabled:opacity-50"
+                                  onClick={() =>
+                                    void onReview(id, {
+                                      uiAction: 'RECLASSIFY',
+                                      classification: code,
+                                      reason: `Reclassified as ${label}`,
+                                    })
+                                  }
+                                >
+                                  {label}
+                                </button>
+                              ))}
+                            </div>
+                          </details>
                           <button
                             type="button"
                             disabled={busy || Boolean(r.platformGuardrail)}
-                            className="rounded px-2 py-1 text-left text-sm hover:bg-slate-50 disabled:opacity-50"
+                            className="rounded px-2 py-1 text-left text-sm text-rose-700 hover:bg-rose-50 disabled:opacity-50"
                             onClick={() => {
                               setUndoStack((s) => [...s, { id, prev: r }])
                               void onReview(id, {
@@ -846,7 +903,7 @@ export function CiPolicyRulesTab({
                               })
                             }}
                           >
-                            Delete
+                            Delete extracted item
                           </button>
                           <button
                             type="button"
@@ -1178,6 +1235,36 @@ export function CiPolicyRulesTab({
                           : g.resolveAction === 'RESOLVE'
                             ? 'Resolve parameter'
                             : 'Define'}
+                      </button>
+                      <button
+                        type="button"
+                        className="bt-btn bt-btn-secondary bt-btn-sm"
+                        disabled={busy || !g.resolveRuleId}
+                        data-testid={`data-calc-keep-${g.parameterId}`}
+                        onClick={() => {
+                          if (!g.resolveRuleId) return
+                          void onReview(g.resolveRuleId, {
+                            uiAction: 'KEEP_AS_POLICY_REQUIREMENT',
+                            reason: 'Kept as policy requirement — not an executable parameter',
+                          })
+                        }}
+                      >
+                        Keep as policy requirement
+                      </button>
+                      <button
+                        type="button"
+                        className="bt-btn bt-btn-secondary bt-btn-sm"
+                        disabled={busy || !g.resolveRuleId}
+                        data-testid={`data-calc-ignore-${g.parameterId}`}
+                        onClick={() => {
+                          if (!g.resolveRuleId) return
+                          void onReview(g.resolveRuleId, {
+                            uiAction: 'IGNORE_FOR_AUTOMATION',
+                            reason: 'Ignored for automation — source wording retained',
+                          })
+                        }}
+                      >
+                        Ignore for automation
                       </button>
                       {g.policyAdjustments.some((a) => a.status === 'NEEDS_CONFIGURATION') ? (
                         <button

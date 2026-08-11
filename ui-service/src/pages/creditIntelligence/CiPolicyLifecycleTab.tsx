@@ -56,6 +56,7 @@ export function CiPolicyLifecycleTab({
   const [reason, setReason] = useState('')
   const [confirmApprove, setConfirmApprove] = useState(false)
   const [confirmRetire, setConfirmRetire] = useState(false)
+  const [retireReason, setRetireReason] = useState('')
   const [moreOpen, setMoreOpen] = useState(false)
 
   const reload = async () => {
@@ -634,21 +635,48 @@ export function CiPolicyLifecycleTab({
           <div className="w-full max-w-md rounded-xl bg-white p-4 shadow-lg">
             <h3 className="text-lg font-semibold text-slate-900">Retire this policy version?</h3>
             <p className="mt-2 text-sm text-slate-700">
-              This is a high-impact lifecycle action. The version becomes RETIRED.
+              This is a high-impact lifecycle action. The version becomes RETIRED and remains readable.
+              Production underwriting authority is unchanged.
             </p>
+            <label className="mt-3 block text-sm">
+              <span className="text-slate-600">Retirement reason / remarks</span>
+              <textarea
+                className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
+                rows={3}
+                value={retireReason}
+                onChange={(e) => setRetireReason(e.target.value)}
+                data-testid="lifecycle-retire-reason"
+                placeholder="Why is this version being retired?"
+              />
+            </label>
             <div className="mt-4 flex flex-wrap justify-end gap-2">
               <button
                 type="button"
                 className="bt-btn bt-btn-secondary bt-btn-sm"
-                onClick={() => setConfirmRetire(false)}
+                onClick={() => {
+                  setConfirmRetire(false)
+                  setRetireReason('')
+                }}
               >
                 Cancel
               </button>
               <button
                 type="button"
                 className="bt-btn bt-btn-primary bt-btn-sm"
-                disabled={busy}
-                onClick={() => void run(() => retireLifecyclePolicy(documentId, {}), 'Policy retired.')}
+                disabled={busy || !retireReason.trim()}
+                onClick={() =>
+                  void run(
+                    () =>
+                      retireLifecyclePolicy(documentId, {
+                        retirementReason: retireReason.trim(),
+                        reason: retireReason.trim(),
+                      }),
+                    'Policy retired.',
+                  ).then(() => {
+                    setConfirmRetire(false)
+                    setRetireReason('')
+                  })
+                }
               >
                 Retire
               </button>

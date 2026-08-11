@@ -25,6 +25,8 @@ export function CiCreditPoliciesLanding({
   onCopy,
   onOpen,
   onOpenDemo,
+  onDeleteDraft,
+  onRetire,
 }: {
   landing: Record<string, unknown> | null
   loading: boolean
@@ -36,6 +38,8 @@ export function CiCreditPoliciesLanding({
   onCopy: (documentId: string, policyName?: string) => void
   onOpen: (documentId: string) => void
   onOpenDemo: (kind: Kind) => void
+  onDeleteDraft?: (documentId: string, policyName: string, policyVersion: string) => void
+  onRetire?: (documentId: string, policyName: string, policyVersion: string, reason: string) => void
 }) {
   const [createOpen, setCreateOpen] = useState(false)
   const [createPath, setCreatePath] = useState<'menu' | 'scratch' | 'upload' | 'copy'>('menu')
@@ -46,6 +50,18 @@ export function CiCreditPoliciesLanding({
   const [examplesOpen, setExamplesOpen] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+  const [moreOpenId, setMoreOpenId] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<{
+    documentId: string
+    policyName: string
+    policyVersion: string
+  } | null>(null)
+  const [confirmRetire, setConfirmRetire] = useState<{
+    documentId: string
+    policyName: string
+    policyVersion: string
+  } | null>(null)
+  const [retireReason, setRetireReason] = useState('')
 
   const policies = asList(landing?.existingPolicies)
 
@@ -154,10 +170,22 @@ export function CiCreditPoliciesLanding({
                 {policies.map((raw, i) => {
                   const row = asRecord(raw)
                   const docId = String(row.documentId ?? '')
+                  const status = String(row.status ?? 'DRAFT').toUpperCase()
+                  const actions = asList(row.availableActions).map((a) => String(a).toUpperCase())
+                  const canDelete = actions.includes('DELETE') || status === 'DRAFT' || status === 'IN REVIEW'
+                  const canRetire =
+                    actions.includes('RETIRE') ||
+                    status === 'ACTIVE' ||
+                    status === 'SCHEDULED' ||
+                    status === 'APPROVED'
+                  const showDelete = canDelete && !canRetire && status !== 'ACTIVE' && status !== 'RETIRED' && status !== 'SUPERSEDED'
+                  const showRetire = canRetire && status !== 'DRAFT' && status !== 'IN REVIEW'
+                  const policyName = String(row.policyName ?? 'Policy')
+                  const policyVersion = String(row.policyVersion ?? 'v1')
                   return (
-                    <tr key={docId || i} className="border-t border-slate-100">
+                    <tr key={docId || i} className="border-t border-slate-100" data-testid={`policy-row-${docId}`}>
                       <td className="px-4 py-3 font-medium text-slate-900">
-                        {String(row.policyName ?? '—')}
+                        {policyName}
                         {row.demo ? (
                           <span className="ml-2 text-[10px] font-semibold uppercase text-amber-700">Example</span>
                         ) : null}
@@ -167,12 +195,14 @@ export function CiCreditPoliciesLanding({
                       </td>
                       <td className="px-4 py-3">{String(row.status ?? 'DRAFT')}</td>
                       <td className="px-4 py-3 text-slate-700">{scopeLabel(row)}</td>
-                      <td className="px-4 py-3">{String(row.policyVersion ?? '—')}</td>
+                      <td className="px-4 py-3">{policyVersion}</td>
                       <td className="px-4 py-3">{row.underwritingRuleCount != null ? String(row.underwritingRuleCount) : '—'}</td>
-                      <td className="px-4 py-3">{row.needsInputCount != null ? String(row.needsInputCount) : '—'}</td>
+                      <td className="px-4 py-3" data-testid={`needs-input-${docId}`}>
+                        {row.needsInputCount != null ? String(row.needsInputCount) : '—'}
+                      </td>
                       <td className="px-4 py-3">{row.effectiveFrom ? String(row.effectiveFrom) : '—'}</td>
                       <td className="px-4 py-3">
-                        <div className="flex flex-wrap gap-2">
+                        <div className="relative flex flex-wrap items-center gap-2">
                           <button
                             type="button"
                             className="bt-btn bt-btn-primary bt-btn-sm"
@@ -189,11 +219,55 @@ export function CiCreditPoliciesLanding({
                               setCreateOpen(true)
                               setCreatePath('copy')
                               setCopySourceId(docId)
-                              setCopyName(`${String(row.policyName ?? 'Policy')} (Copy)`)
+                              setCopyName(`${policyName} (Copy)`)
                             }}
                           >
                             Copy
                           </button>
+                          {(showDelete || showRetire) && (onDeleteDraft || onRetire) ? (
+                            <div className="relative">
+                              <button
+                                type="button"
+                                className="bt-btn bt-btn-secondary bt-btn-sm"
+                                disabled={busy || !docId}
+                                data-testid={`policy-more-${docId}`}
+                                onClick={() => setMoreOpenId((id) => (id === docId ? null : docId))}
+                              >
+                                More ▾
+                              </button>
+                              {moreOpenId === docId ? (
+                                <div className="absolute right-0 z-20 mt-1 min-w-[10rem] rounded border border-slate-200 bg-white p-1 shadow-md">
+                                  {showRetire && onRetire ? (
+                                    <button
+                                      type="button"
+                                      className="block w-full rounded px-3 py-2 text-left text-sm text-slate-800 hover:bg-slate-50"
+                                      data-testid={`policy-retire-${docId}`}
+                                      onClick={() => {
+                                        setMoreOpenId(null)
+                                        setRetireReason('')
+                                        setConfirmRetire({ documentId: docId, policyName, policyVersion })
+                                      }}
+                                    >
+                                      Retire…
+                                    </button>
+                                  ) : null}
+                                  {showDelete && onDeleteDraft ? (
+                                    <button
+                                      type="button"
+                                      className="block w-full rounded px-3 py-2 text-left text-sm text-rose-700 hover:bg-rose-50"
+                                      data-testid={`policy-delete-${docId}`}
+                                      onClick={() => {
+                                        setMoreOpenId(null)
+                                        setConfirmDelete({ documentId: docId, policyName, policyVersion })
+                                      }}
+                                    >
+                                      Delete…
+                                    </button>
+                                  ) : null}
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : null}
                         </div>
                       </td>
                     </tr>
@@ -397,6 +471,105 @@ export function CiCreditPoliciesLanding({
                 </button>
               </div>
             ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {confirmDelete ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-4 shadow-lg" data-testid="confirm-delete-draft">
+            <h3 className="text-lg font-semibold text-rose-800">Delete draft permanently?</h3>
+            <p className="mt-2 text-sm text-slate-700">
+              <span className="font-medium">{confirmDelete.policyName}</span>
+              {' · '}
+              version <span className="font-medium">{confirmDelete.policyVersion}</span>
+            </p>
+            <p className="mt-2 text-sm text-slate-600">
+              This permanently deletes this draft only. It cannot be undone. Unrelated versions, Live Rule Sets,
+              Scorecards, and Product Configuration are not affected.
+            </p>
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                className="bt-btn bt-btn-secondary bt-btn-sm"
+                onClick={() => setConfirmDelete(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="bt-btn bt-btn-sm bg-rose-700 text-white hover:bg-rose-800"
+                disabled={busy}
+                data-testid="confirm-delete-draft-submit"
+                onClick={() => {
+                  onDeleteDraft?.(
+                    confirmDelete.documentId,
+                    confirmDelete.policyName,
+                    confirmDelete.policyVersion,
+                  )
+                  setConfirmDelete(null)
+                }}
+              >
+                Delete permanently
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {confirmRetire ? (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-4 shadow-lg" data-testid="confirm-retire-policy">
+            <h3 className="text-lg font-semibold text-slate-900">Retire this policy version?</h3>
+            <p className="mt-2 text-sm text-slate-700">
+              <span className="font-medium">{confirmRetire.policyName}</span>
+              {' · '}
+              version <span className="font-medium">{confirmRetire.policyVersion}</span>
+            </p>
+            <p className="mt-2 text-sm text-slate-600">
+              The version becomes RETIRED and remains readable. Production underwriting authority is unchanged.
+            </p>
+            <label className="mt-3 block text-sm">
+              <span className="text-slate-600">Retirement reason / remarks</span>
+              <textarea
+                className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
+                rows={3}
+                value={retireReason}
+                onChange={(e) => setRetireReason(e.target.value)}
+                data-testid="retire-reason"
+                placeholder="Why is this version being retired?"
+              />
+            </label>
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <button
+                type="button"
+                className="bt-btn bt-btn-secondary bt-btn-sm"
+                onClick={() => {
+                  setConfirmRetire(null)
+                  setRetireReason('')
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="bt-btn bt-btn-primary bt-btn-sm"
+                disabled={busy || !retireReason.trim()}
+                data-testid="confirm-retire-submit"
+                onClick={() => {
+                  onRetire?.(
+                    confirmRetire.documentId,
+                    confirmRetire.policyName,
+                    confirmRetire.policyVersion,
+                    retireReason.trim(),
+                  )
+                  setConfirmRetire(null)
+                  setRetireReason('')
+                }}
+              >
+                Retire
+              </button>
+            </div>
           </div>
         </div>
       ) : null}

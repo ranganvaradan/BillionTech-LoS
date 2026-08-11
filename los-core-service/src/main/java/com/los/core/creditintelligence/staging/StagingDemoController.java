@@ -888,11 +888,30 @@ public class StagingDemoController {
             @PathVariable UUID documentId,
             @RequestBody(required = false) Map<String, Object> body,
             @RequestHeader(value = "X-Internal-Token", required = false) String token,
-            @RequestHeader(value = "X-Tenant-Id", required = false) String tenantHeader) {
+            @RequestHeader(value = "X-Tenant-Id", required = false) String tenantHeader,
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
+            @RequestHeader(value = "X-User-Role", required = false) String userRole,
+            @RequestHeader(value = "X-User-Name", required = false) String userName) {
         assertInternalToken(token);
         assertStagingDemoEnabled();
         return policyStudioDemoService.retireLifecyclePolicy(
-                documentId, body == null ? Map.of() : body, tenantHeader);
+                documentId, mergeActor(body, userId, userRole, userName), tenantHeader);
+    }
+
+    /** POLICY-STUDIO-UX-CLOSURE-1 — hard-delete never-activated DRAFT (backend-authorised). */
+    @PostMapping("/policy-studio/documents/{documentId}/lifecycle/delete-draft")
+    public Map<String, Object> lifecycleDeleteDraft(
+            @PathVariable UUID documentId,
+            @RequestBody(required = false) Map<String, Object> body,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token,
+            @RequestHeader(value = "X-Tenant-Id", required = false) String tenantHeader,
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
+            @RequestHeader(value = "X-User-Role", required = false) String userRole,
+            @RequestHeader(value = "X-User-Name", required = false) String userName) {
+        assertInternalToken(token);
+        assertStagingDemoEnabled();
+        return policyStudioDemoService.deleteDraftPolicy(
+                documentId, mergeActor(body, userId, userRole, userName), tenantHeader);
     }
 
     @PostMapping("/policy-studio/documents/{documentId}/lifecycle/stamp-active-for-versioning")
@@ -1175,6 +1194,24 @@ public class StagingDemoController {
         assertInternalToken(token);
         assertStagingDemoEnabled();
         return decisionPolicyRealCorpusValidationService.dashboard();
+    }
+
+    /** Stamp JWT/header actor into lifecycle body — do not trust client-only role hiding. */
+    private static Map<String, Object> mergeActor(
+            Map<String, Object> body, String userId, String userRole, String userName) {
+        Map<String, Object> out = new LinkedHashMap<>(body == null ? Map.of() : body);
+        if (userRole != null && !userRole.isBlank()) {
+            out.putIfAbsent("reviewerRole", userRole.trim());
+            out.putIfAbsent("actorRole", userRole.trim());
+            out.putIfAbsent("role", userRole.trim());
+        }
+        String actor = (userName != null && !userName.isBlank()) ? userName.trim()
+                : (userId != null && !userId.isBlank() ? userId.trim() : null);
+        if (actor != null) {
+            out.putIfAbsent("reviewer", actor);
+            out.putIfAbsent("actor", actor);
+        }
+        return out;
     }
 
     private void assertStagingDemoEnabled() {

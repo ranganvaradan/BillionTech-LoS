@@ -3,11 +3,13 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import {
   copyPolicyStudioDocument,
   createPolicyFromScratch,
+  deleteDraftLifecyclePolicy,
   getPolicyStudioLanding,
   getPolicyStudioSession,
   getStagingPolicyStudio,
   resetDemoPolicy,
   resolvePolicyAmbiguity,
+  retireLifecyclePolicy,
   reviewPolicyRule,
   saveLifecycleDraft,
   uploadPolicyStudioFile,
@@ -265,6 +267,36 @@ export function CiPolicyStudioPage() {
     }
   }
 
+  const deleteDraft = async (documentId: string) => {
+    setBusy(true)
+    setError(null)
+    try {
+      await deleteDraftLifecyclePolicy(documentId, {
+        reason: 'Draft deleted from Existing Policies',
+      })
+      setDemoMsg('Draft policy deleted.')
+      void loadLanding()
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Could not delete draft policy')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const retirePolicy = async (documentId: string, reason: string) => {
+    setBusy(true)
+    setError(null)
+    try {
+      await retireLifecyclePolicy(documentId, { retirementReason: reason, reason })
+      setDemoMsg('Policy version retired.')
+      void loadLanding()
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Could not retire policy')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const openExisting = async (documentId: string) => {
     setBusy(true)
     setError(null)
@@ -425,6 +457,8 @@ export function CiPolicyStudioPage() {
         onCopy={(id, n) => void copyPolicy(id, n)}
         onOpen={(id) => void openExisting(id)}
         onOpenDemo={(kind) => void openDemo(kind)}
+        onDeleteDraft={(id) => void deleteDraft(id)}
+        onRetire={(id, _n, _v, reason) => void retirePolicy(id, reason)}
       />
     )
   }

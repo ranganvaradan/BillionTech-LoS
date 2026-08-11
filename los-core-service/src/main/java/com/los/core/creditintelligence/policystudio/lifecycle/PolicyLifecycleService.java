@@ -9,6 +9,8 @@ import com.los.core.creditintelligence.policystudio.model.PolicyStudioSession;
 import com.los.core.creditintelligence.policystudio.service.PolicyDocumentService;
 import com.los.core.creditintelligence.policystudio.service.PolicyImplementabilityService;
 import com.los.core.creditintelligence.policystudio.service.PolicyStudioOrchestrator;
+import com.los.core.exception.BusinessRuleException;
+import com.los.core.exception.ForbiddenException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -23,6 +25,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -37,6 +40,13 @@ public class PolicyLifecycleService {
 
     public static final String META_KEY = "policyLifecycle";
     public static final String LINEAGE_KEY = "policyLineage";
+
+    /** Destructive draft delete — administrator / policy-admin roles. */
+    public static final Set<String> DELETE_ROLES = Set.of(
+            "ADMINISTRATOR", "ADMIN", "PLATFORM_ADMIN", "CREDIT_MANAGER");
+    /** Retire — governance roles. */
+    public static final Set<String> RETIRE_ROLES = Set.of(
+            "ADMINISTRATOR", "ADMIN", "PLATFORM_ADMIN", "CREDIT_MANAGER", "POLICY_CHECKER", "RISK_MANAGER");
 
     private final PolicyApplicabilityResolver resolver;
     private final PolicyStudioOrchestrator orchestrator;
@@ -314,9 +324,33 @@ public class PolicyLifecycleService {
 
     public Map<String, Object> retirePolicy(PolicyStudioSession session, Map<String, Object> body) {
         Map<String, Object> life = ensureLifecycle(session);
+        String status = PolicyBusinessLifecycleStatus.fromStored(
+                str(life, "businessStatus", PolicyBusinessLifecycleStatus.DRAFT));
+        if (!(PolicyBusinessLifecycleStatus.ACTIVE.equals(status)
+                || PolicyBusinessLifecycleStatus.SCHEDULED.equals(status)
+                || PolicyBusinessLifecycleStatus.APPROVED.equals(status))) {
+            throw new BusinessRuleException(
+                    "Only APPROVED / SCHEDULED / ACTIVE policies can be retired.",
+                    "POLICY_RETIRE_NOT_ALLOWED",
+                    "Use Open / Copy for this status",
+                    Map.of("businessStatus", status, "documentId", session.documentId().toString()));
+        }
+        requireRole(body, RETIRE_ROLES, "Policy governance role required to retire");
+        String reason = firstNonBlank(str(body, "retirementReason", null),
+                str(body, "reason", null), str(body, "remarks", null));
+        if (reason == null || reason.isBlank()) {
+            throw new BusinessRuleException(
+                    "Retirement reason / remarks are required.",
+                    "POLICY_RETIRE_REASON_REQUIRED",
+                    "Provide retirementReason",
+                    Map.of("documentId", session.documentId().toString()));
+        }
+        // Shadow/governance: do not invent false Live Rule Set / Scorecard runtime dependencies.
+        String actor = firstNonBlank(str(body, "reviewer", null), str(body, "actor", null), "credit_manager");
         life.put("businessStatus", PolicyBusinessLifecycleStatus.RETIRED);
         life.put("retiredAt", Instant.now().toString());
-        life.put("retiredBy", str(body, "reviewer", "credit_manager"));
+        life.put("retiredBy", actor);
+        life.put("retirementReason", reason.trim());
         if (body.get("effectiveUntil") != null) {
             Map<String, Object> app = castMap(life.get("applicability"));
             app.put("effectiveUntil", String.valueOf(body.get("effectiveUntil")));
@@ -324,11 +358,171 @@ public class PolicyLifecycleService {
         }
         catalogue.getOrDefault(session.getDocument().getTenantId(), new ConcurrentHashMap<>())
                 .remove(session.documentId());
+        if (catalogueService != null && life.get("durableApplicabilityId") != null) {
+            try {
+                UUID appId = UUID.fromString(String.valueOf(life.get("durableApplicabilityId")));
+                catalogueService.retire(appId, Map.of(
+                        "actor", actor,
+                        "reason", reason.trim(),
+                        "effectiveUntil", body.getOrDefault("effectiveUntil", "")));
+            } catch (Exception e) {
+                log.warn("durable catalogue retire skipped documentId={} reason={}",
+                        session.documentId(), e.getMessage());
+            }
+        }
         persistLifecycle(session, life);
         appendHistory(session, life, PolicyBusinessLifecycleStatus.RETIRED);
+        if (orchestrator != null) {
+            orchestrator.persistence().saveSessionSnapshot(session);
+        }
         Map<String, Object> out = settingsView(session);
-        out.put("message", "Policy RETIRED. Historical evaluations retain their pinned version.");
+        out.put("message", "Policy RETIRED. Historical evaluations retain their pinned version. "
+                + "Production underwriting authority unchanged (allowCanonicalAuthority=false).");
+        out.put("retirementReason", reason.trim());
+        out.put("retiredBy", actor);
+        out.put("allowCanonicalAuthority", false);
         return out;
+    }
+
+    /**
+     * POLICY-STUDIO-UX-CLOSURE-1 — hard-delete a never-activated DRAFT with no protected dependency.
+     * Identity is by documentId/version — never by display name.
+     */
+    public Map<String, Object> deleteDraftPolicy(PolicyStudioSession session, Map<String, Object> body) {
+        requireRole(body, DELETE_ROLES, "Administrator / policy-admin role required to delete drafts");
+        Map<String, Object> life = ensureLifecycle(session);
+        String status = PolicyBusinessLifecycleStatus.fromStored(
+                str(life, "businessStatus", PolicyBusinessLifecycleStatus.DRAFT));
+        String deny = deleteDenialReason(session, life, status);
+        if (deny != null) {
+            throw new BusinessRuleException(
+                    deny,
+                    "POLICY_DELETE_NOT_ALLOWED",
+                    "Use Retire for ACTIVE policies, or Open/Copy for historical versions",
+                    Map.of(
+                            "documentId", session.documentId().toString(),
+                            "policyName", session.getDocument() == null ? "" : String.valueOf(session.getDocument().getName()),
+                            "policyVersion", str(life, "policyVersion", "v1"),
+                            "businessStatus", status));
+        }
+        UUID docId = session.documentId();
+        String policyName = session.getDocument() == null ? "" : String.valueOf(session.getDocument().getName());
+        String version = str(life, "policyVersion", "v1");
+        String actor = firstNonBlank(str(body, "reviewer", null), str(body, "actor", null), "administrator");
+        // Audit evidence before removal (lineage history retains the event without the session body)
+        life.put("deletedAt", Instant.now().toString());
+        life.put("deletedBy", actor);
+        life.put("deleteReason", firstNonBlank(str(body, "reason", null), "Draft deleted by administrator"));
+        appendHistory(session, life, "DRAFT_DELETED");
+        catalogue.getOrDefault(session.getDocument().getTenantId(), new ConcurrentHashMap<>())
+                .remove(docId);
+        approvedContentFingerprints.remove(docId);
+        evaluationPins.entrySet().removeIf(e -> {
+            Object pinDoc = e.getValue() == null ? null : e.getValue().get("documentId");
+            return docId.toString().equals(String.valueOf(pinDoc));
+        });
+        if (orchestrator == null || !orchestrator.persistence().deleteSession(docId)) {
+            throw new BusinessRuleException(
+                    "Draft session could not be removed from persistence.",
+                    "POLICY_DELETE_NOT_ALLOWED",
+                    "Retry or contact platform admin",
+                    Map.of("documentId", docId.toString()));
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        stampSafety(out);
+        out.put("deleted", true);
+        out.put("documentId", docId.toString());
+        out.put("policyName", policyName);
+        out.put("policyVersion", version);
+        out.put("message", "Draft policy permanently deleted. Unrelated versions and Live Rule Sets / "
+                + "Scorecards / Product Config were not modified.");
+        out.put("auditEvent", "DRAFT_DELETED");
+        out.put("deletedBy", actor);
+        out.put("allowCanonicalAuthority", false);
+        return out;
+    }
+
+    /** Landing-row actions for Existing Policies (Open/Copy always; Delete/Retire context-valid). */
+    public List<String> landingActions(PolicyStudioSession session) {
+        Map<String, Object> life = ensureLifecycle(session);
+        String status = PolicyBusinessLifecycleStatus.fromStored(
+                str(life, "businessStatus", PolicyBusinessLifecycleStatus.DRAFT));
+        List<String> actions = new ArrayList<>();
+        actions.add("OPEN");
+        actions.add("COPY");
+        if ((PolicyBusinessLifecycleStatus.DRAFT.equals(status)
+                || PolicyBusinessLifecycleStatus.IN_REVIEW.equals(status))
+                && deleteDenialReason(session, life, status) == null) {
+            actions.add("DELETE");
+        }
+        if (PolicyBusinessLifecycleStatus.ACTIVE.equals(status)
+                || PolicyBusinessLifecycleStatus.SCHEDULED.equals(status)
+                || PolicyBusinessLifecycleStatus.APPROVED.equals(status)) {
+            actions.add("RETIRE");
+        }
+        return actions;
+    }
+
+    private String deleteDenialReason(PolicyStudioSession session, Map<String, Object> life, String status) {
+        if (!(PolicyBusinessLifecycleStatus.DRAFT.equals(status)
+                || PolicyBusinessLifecycleStatus.IN_REVIEW.equals(status))) {
+            return "Hard delete is only allowed for never-activated DRAFT policies. Status=" + status;
+        }
+        if (Boolean.TRUE.equals(life.get("contentImmutable"))) {
+            return "Policy content is immutable (historically protected). Hard delete is not allowed.";
+        }
+        if (life.get("approvedAt") != null || life.get("scheduledAt") != null
+                || life.get("retiredAt") != null) {
+            return "Policy has protected lifecycle history (approved/scheduled/retired). Hard delete is not allowed.";
+        }
+        if (life.get("durableApplicabilityId") != null) {
+            return "Policy is registered in the durable governance catalogue. Hard delete is not allowed.";
+        }
+        String lineage = str(life, "lineageId", session.documentId().toString());
+        UUID key;
+        try {
+            key = UUID.fromString(lineage);
+        } catch (Exception e) {
+            key = session.documentId();
+        }
+        List<Map<String, Object>> hist = historyByLineage.getOrDefault(key, List.of());
+        for (Map<String, Object> row : hist) {
+            String ev = String.valueOf(row.getOrDefault("event", ""));
+            String st = String.valueOf(row.getOrDefault("businessStatus", ""));
+            if (ev.contains("ACTIVE") || PolicyBusinessLifecycleStatus.ACTIVE.equals(st)
+                    || PolicyBusinessLifecycleStatus.SUPERSEDED.equals(st)
+                    || PolicyBusinessLifecycleStatus.RETIRED.equals(st)
+                    || "APPROVED".equals(ev) || PolicyBusinessLifecycleStatus.APPROVED.equals(st)) {
+                return "Policy has historical ACTIVE/APPROVED lifecycle evidence. Hard delete is not allowed.";
+            }
+        }
+        for (Map<String, Object> pin : evaluationPins.values()) {
+            if (pin != null && session.documentId().toString().equals(String.valueOf(pin.get("documentId")))) {
+                return "Policy is referenced by historical evaluation pins. Hard delete is not allowed.";
+            }
+        }
+        return null;
+    }
+
+    private static void requireRole(Map<String, Object> body, Set<String> allowed, String message) {
+        String role = firstNonBlank(
+                body == null ? null : str(body, "reviewerRole", null),
+                body == null ? null : str(body, "actorRole", null),
+                body == null ? null : str(body, "role", null));
+        if (role == null || role.isBlank()) {
+            throw new ForbiddenException("Authentication required — " + message);
+        }
+        if (!allowed.contains(role.trim().toUpperCase(Locale.ROOT))) {
+            throw new ForbiddenException(message);
+        }
+    }
+
+    private static String firstNonBlank(String... values) {
+        if (values == null) return null;
+        for (String v : values) {
+            if (v != null && !v.isBlank()) return v;
+        }
+        return null;
     }
 
     /**
@@ -871,6 +1065,11 @@ public class PolicyLifecycleService {
                 || PolicyBusinessLifecycleStatus.APPROVED.equals(st)) {
             actions.add("RETIRE_POLICY");
             actions.add("CREATE_NEW_VERSION");
+        }
+        if ((PolicyBusinessLifecycleStatus.DRAFT.equals(st)
+                || PolicyBusinessLifecycleStatus.IN_REVIEW.equals(st))
+                && deleteDenialReason(session, life, st) == null) {
+            actions.add("DELETE_DRAFT");
         }
         // Never expose activate canonical authority
         return actions;

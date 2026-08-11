@@ -24,8 +24,23 @@ public final class PolicyRulePresentationSemantics {
             return "Deleted";
         }
         // P0: Ignored = explicit Credit Manager action only
-        if ("IGNORED".equalsIgnoreCase(String.valueOf(meta.getOrDefault("disposition", "")))) {
+        String disposition = String.valueOf(meta.getOrDefault("disposition", ""));
+        if ("IGNORED".equalsIgnoreCase(disposition)
+                || "IGNORE_FOR_AUTOMATION".equalsIgnoreCase(disposition)) {
             return "Ignored";
+        }
+        // POLICY-STUDIO-UX-CLOSURE-1 — documentary / narrative kept as policy content (not unresolved param)
+        if ("KEEP_AS_POLICY_REQUIREMENT".equalsIgnoreCase(disposition)) {
+            return "Policy requirement";
+        }
+        // Explicit CM Manual Input wins over ingestion classification (e.g. DATA_REQUIREMENT)
+        if ("MANUAL_INPUT".equalsIgnoreCase(disposition)
+                || "MANUAL".equalsIgnoreCase(String.valueOf(meta.getOrDefault("verificationMode", "")))
+                || "MANUAL_VERIFICATION".equalsIgnoreCase(
+                String.valueOf(meta.getOrDefault("dataGapDisposition", "")))
+                || IngestionMatchClassification.MANUAL_INPUT.name().equals(
+                String.valueOf(meta.getOrDefault("classification", "")))) {
+            return "Manual Input";
         }
 
         String classification = String.valueOf(meta.getOrDefault("classification", ""));
@@ -37,11 +52,6 @@ public final class PolicyRulePresentationSemantics {
         }
         if (isNonUnderwriting(classification)) {
             return "Non-underwriting";
-        }
-        if ("MANUAL_INPUT".equalsIgnoreCase(String.valueOf(meta.getOrDefault("disposition", "")))
-                || "MANUAL".equalsIgnoreCase(String.valueOf(meta.getOrDefault("verificationMode", "")))
-                || IngestionMatchClassification.MANUAL_INPUT.name().equals(classification)) {
-            return "Manual Input";
         }
         if (IngestionMatchClassification.MANUAL_REVIEW.name().equals(classification)) {
             return "Manual Review";
@@ -186,7 +196,7 @@ public final class PolicyRulePresentationSemantics {
         }
         if (Set.of("Unavailable", "Needs configuration", "Manual Input", "Conflict",
                 "Possible duplicate", "Data requirement", "Metric adjustment",
-                "Non-underwriting", "Ignored", "Deleted").contains(status)) {
+                "Non-underwriting", "Ignored", "Deleted", "Policy requirement").contains(status)) {
             return false;
         }
         return true;
