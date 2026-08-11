@@ -685,7 +685,9 @@ public class PolicyStudioTestExperienceService {
         String sys = rule.getSystemRuleId() == null ? "" : rule.getSystemRuleId().toUpperCase(Locale.ROOT);
         if (sys.contains("OVERDUE_EXCEPTION_PARENT")) {
             face.put("ruleName", "Overdue Exception Eligibility");
-        } else if (sys.contains("ADB") && sys.contains("EDI")) {
+        } else if (com.los.core.creditintelligence.policystudio.parameters.SystemRuleIdTokens.hasAdbToken(sys)
+                && com.los.core.creditintelligence.policystudio.parameters.SystemRuleIdTokens
+                .hasProposedEdiToken(sys)) {
             face.put("ruleName", "Banking Capacity (ADB ≥ EDI)");
         } else if (sys.contains("SETTLEMENT_COUNT") || (sys.contains("SETTLEMENT") && sys.contains("GTE_20"))) {
             face.put("ruleName", "Average monthly settlements");
@@ -1160,7 +1162,9 @@ public class PolicyStudioTestExperienceService {
             return false;
         }
         return id.contains("ADB") || id.contains("TXN") || id.contains("SETTLEMENT")
-                || id.contains("EDI") || id.contains("GTE");
+                || com.los.core.creditintelligence.policystudio.parameters.SystemRuleIdTokens
+                .hasProposedEdiToken(id)
+                || id.contains("GTE");
     }
 
     private static boolean ruleAppliesToProduct(CiPolicyRuleCandidate rule, String product) {

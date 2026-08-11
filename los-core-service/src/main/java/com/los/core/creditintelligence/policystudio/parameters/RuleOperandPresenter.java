@@ -2,13 +2,16 @@ package com.los.core.creditintelligence.policystudio.parameters;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * POLICY-PARAMETER-RESOLVER-1 — independently resolved operands for CM rule cards.
- * Presentation only; technical DSL remains underneath.
+ * POLICY-SIMPLE-FLOW-INTEGRITY-1 — operands = expression-required params only
+ * (no session-wide / substring-"EDI" leakage).
  */
 public final class RuleOperandPresenter {
 
@@ -23,6 +26,10 @@ public final class RuleOperandPresenter {
     /**
      * Build operand faces for a rule card. EDI/ADB and CLEAN compound are primary walkthroughs;
      * mechanism is generic for future unresolved terms.
+     * <p>
+     * Invariant: a rule receives only operands its executable expression (or explicit compound
+     * dependency) requires. Bare {@code String.contains("EDI")} must never be used — it matches
+     * {@code MONTHLY_CREDITS}.
      */
     public static List<Map<String, Object>> buildOperands(
             String systemRuleId,
@@ -31,19 +38,17 @@ public final class RuleOperandPresenter {
             Map<String, Object> visualLogic) {
 
         List<Map<String, Object>> operands = new ArrayList<>();
-        String sys = systemRuleId == null ? "" : systemRuleId.toUpperCase(Locale.ROOT);
         Map<String, Object> resolutions = ParameterResolutionSupport.resolutionsOf(meta);
 
-        boolean ediRule = sys.contains("EDI")
-                || (dataUsed != null && dataUsed.stream().anyMatch(p ->
-                p != null && p.toLowerCase(Locale.ROOT).contains("proposed_edi")));
-        boolean adbRule = sys.contains("ADB")
-                || (dataUsed != null && dataUsed.stream().anyMatch(p ->
-                p != null && p.toLowerCase(Locale.ROOT).contains("avg_daily_balance")));
+        boolean ediFromExpression = referencesPath(dataUsed, "proposed_edi");
+        boolean adbFromExpression = referencesPath(dataUsed, "avg_daily_balance");
+        boolean ediRule = ediFromExpression || SystemRuleIdTokens.hasProposedEdiToken(systemRuleId);
+        boolean adbRule = adbFromExpression || SystemRuleIdTokens.hasAdbToken(systemRuleId);
+        String sys = SystemRuleIdTokens.upper(systemRuleId);
 
-        if (ediRule && (adbRule || sys.contains("SETTLEMENT") || sys.contains("BANK"))) {
-            // Left: ADB or settlements (resolved from registry); Right: Proposed EDI (unresolved until CM)
-            if (adbRule || sys.contains("ADB")) {
+        // Capacity-style cards: ADB/settlements vs Proposed EDI — only with a real EDI token/path
+        if (ediRule && (adbRule || sys.contains("SETTLEMENT"))) {
+            if (adbRule) {
                 operands.add(resolvedOrRegistry(
                         "average_daily_balance",
                         "Average Daily Balance",
@@ -61,17 +66,22 @@ public final class RuleOperandPresenter {
                     "Proposed EDI",
                     resolutions,
                     "application.proposed_edi"));
+        } else if (ediRule && ediFromExpression && !adbRule && !sys.contains("SETTLEMENT")) {
+            // Expression references Proposed EDI without ADB/settlement left — surface EDI only
+            operands.add(unresolvedOrMapped(
+                    "proposed_edi",
+                    "Proposed EDI",
+                    resolutions,
+                    "application.proposed_edi"));
         }
 
         boolean overdueParent = sys.contains("OVERDUE_EXCEPTION_PARENT") || sys.contains("NO_OVERDUE_EXCEPT");
         if (overdueParent || (visualLogic != null && "EXCEPTION_ALL".equals(String.valueOf(visualLogic.get("kind"))))) {
-            // CLEAN child operand — same resolver; do not invent DPD=0
             Map<String, Object> cleanOp = unresolvedOrMapped(
                     "clean_history",
                     "Clean credit history",
                     resolutions,
                     "bureau.credit_after_overdue.clean_history_months");
-            // Legacy cleanHistoryDefinition bridge
             if (!ParameterResolutionSupport.isResolved(cleanOp)
                     && meta != null && meta.get(CleanHistoryDefinitionSupport.META_KEY) instanceof Map<?, ?> legacy) {
                 @SuppressWarnings("unchecked")
@@ -84,7 +94,86 @@ public final class RuleOperandPresenter {
             operands.add(cleanOp);
         }
 
+        // Expression / metadata canonical parameters (skip constants; skip unrelated session params)
+        Set<String> seenKeys = new LinkedHashSet<>();
+        Set<String> seenParams = new LinkedHashSet<>();
+        for (Map<String, Object> op : operands) {
+            if (op.get("operandKey") != null) seenKeys.add(String.valueOf(op.get("operandKey")));
+            if (op.get("parameterId") != null) seenParams.add(String.valueOf(op.get("parameterId")));
+            if (op.get("suggestedParameterId") != null) {
+                seenParams.add(String.valueOf(op.get("suggestedParameterId")));
+            }
+        }
+        for (String path : expressionRequiredPaths(dataUsed, meta)) {
+            String lower = path.toLowerCase(Locale.ROOT);
+            if (lower.contains("proposed_edi") && !ediRule) {
+                continue; // never attach EDI from contaminated hints
+            }
+            if (seenParams.contains(path)) continue;
+            REGISTRY.findById(path).ifPresent(def -> {
+                String key = operandKeyFor(path);
+                if (seenKeys.contains(key)) return;
+                seenKeys.add(key);
+                seenParams.add(path);
+                Map<String, Object> stored = cast(resolutions.get(key));
+                if (ParameterResolutionSupport.isResolved(stored)) {
+                    operands.add(faceFromResolution(key, def.businessName(), stored));
+                } else {
+                    operands.add(faceFromDefinition(key, def.businessName(), def, true));
+                }
+            });
+        }
+
         return operands;
+    }
+
+    /** Canonical metric paths a rule expression actually needs (no invented session params). */
+    public static List<String> expressionRequiredPaths(List<String> dataUsed, Map<String, Object> meta) {
+        LinkedHashSet<String> paths = new LinkedHashSet<>();
+        if (meta != null && meta.get("parameterId") != null) {
+            String pid = String.valueOf(meta.get("parameterId")).trim();
+            if (looksLikeCanonicalPath(pid)) paths.add(pid);
+        }
+        if (meta != null && meta.get("rightParameterId") != null) {
+            String pid = String.valueOf(meta.get("rightParameterId")).trim();
+            if (looksLikeCanonicalPath(pid)) paths.add(pid);
+        }
+        if (dataUsed != null) {
+            for (String p : dataUsed) {
+                if (p != null && looksLikeCanonicalPath(p.trim())) {
+                    paths.add(p.trim());
+                }
+            }
+        }
+        return new ArrayList<>(paths);
+    }
+
+    private static boolean looksLikeCanonicalPath(String p) {
+        if (p == null || p.isBlank()) return false;
+        if (!p.contains(".")) return false;
+        String lower = p.toLowerCase(Locale.ROOT);
+        return lower.startsWith("banking.")
+                || lower.startsWith("bureau.")
+                || lower.startsWith("application.")
+                || lower.startsWith("gst.")
+                || lower.startsWith("kyc.")
+                || lower.startsWith("obligation.");
+    }
+
+    private static boolean referencesPath(List<String> dataUsed, String needle) {
+        if (dataUsed == null || needle == null) return false;
+        String n = needle.toLowerCase(Locale.ROOT);
+        return dataUsed.stream().anyMatch(p -> p != null && p.toLowerCase(Locale.ROOT).contains(n));
+    }
+
+    private static String operandKeyFor(String path) {
+        if (path == null) return "parameter";
+        if (path.contains("proposed_edi")) return "proposed_edi";
+        if (path.contains("avg_daily_balance")) return "average_daily_balance";
+        if (path.contains("monthly_credits")) return "monthly_credits";
+        if (path.contains("clean_history")) return "clean_history";
+        int dot = path.lastIndexOf('.');
+        return dot >= 0 ? path.substring(dot + 1) : path;
     }
 
     private static Map<String, Object> resolvedOrRegistry(
@@ -114,7 +203,6 @@ public final class RuleOperandPresenter {
             face.put("resolveAction", false);
             return face;
         }
-        // Important: do NOT auto-map EDI/CLEAN to registry entries — CM must resolve
         Map<String, Object> face = unresolvedFace(key, label);
         REGISTRY.findById(registryHintId).ifPresent(hint ->
                 face.put("suggestedParameterId", hint.id()));

@@ -166,8 +166,8 @@ export function CiPolicyLifecycleTab({
       onNavigateTab?.('approvals')
       setFeedback(
         code === 'GO_APPROVALS_CHECKER'
-          ? 'Switch to Approvals — Checker must approve next.'
-          : 'Switch to Approvals — Credit Manager approval is required.',
+          ? 'Open Maker-checker (Policy details) for Checker approval, then return here to Approve Policy.'
+          : 'Open Maker-checker (Policy details) for Credit Manager approval, then return here.',
       )
       return
     }
@@ -342,7 +342,7 @@ export function CiPolicyLifecycleTab({
           className="mt-2 text-sm font-semibold text-sky-800 underline"
           onClick={() => onNavigateTab?.('approvals')}
         >
-          Open Approvals
+          Open Maker-checker
         </button>
       </section>
 

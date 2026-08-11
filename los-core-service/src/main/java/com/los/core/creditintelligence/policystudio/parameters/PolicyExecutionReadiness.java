@@ -173,14 +173,17 @@ public final class PolicyExecutionReadiness {
             }
         }
         String sys = r.getSystemRuleId() == null ? "" : r.getSystemRuleId().toUpperCase(Locale.ROOT);
-        if (sys.contains("ADB") || sys.contains("EDI")) {
+        // Token-safe — never use sys.contains("EDI") (matches MONTHLY_CREDITS)
+        if (SystemRuleIdTokens.hasAdbToken(r.getSystemRuleId())) {
             hints.add("banking.avg_daily_balance_3m");
+        }
+        if (SystemRuleIdTokens.hasProposedEdiToken(r.getSystemRuleId())) {
             hints.add("application.proposed_edi");
         }
         if (sys.contains("OVERDUE") || sys.contains("CLEAN")) {
             hints.add("bureau.credit_after_overdue.clean_history_months");
         }
-        // Expression metric paths
+        // Expression metric paths (authoritative for operand association)
         collectMetricPaths(r.getExpression(), hints);
         return hints;
     }
@@ -393,10 +396,14 @@ public final class PolicyExecutionReadiness {
                 }
             }
         }
-        if (phrase.contains("edi")) {
+        if (phrase.contains("edi") || phrase.contains("proposed edi")) {
             for (CiPolicyRuleCandidate r : session.getRuleCandidates()) {
-                String sys = r.getSystemRuleId() == null ? "" : r.getSystemRuleId().toUpperCase(Locale.ROOT);
-                if (sys.contains("EDI") || sys.contains("ADB")) return r;
+                if (SystemRuleIdTokens.hasProposedEdiToken(r.getSystemRuleId())
+                        || SystemRuleIdTokens.hasAdbToken(r.getSystemRuleId())
+                        || String.valueOf(r.getExpression()).toLowerCase(Locale.ROOT)
+                        .contains("proposed_edi")) {
+                    return r;
+                }
             }
         }
         return null;

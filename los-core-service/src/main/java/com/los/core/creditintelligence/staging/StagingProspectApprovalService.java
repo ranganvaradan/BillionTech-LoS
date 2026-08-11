@@ -11,6 +11,7 @@ import com.los.core.creditintelligence.policystudio.domain.DraftPackageStatus;
 import com.los.core.creditintelligence.policystudio.domain.ReviewState;
 import com.los.core.creditintelligence.policystudio.dsl.PolicyDslInterpreterV1;
 import com.los.core.creditintelligence.policystudio.model.PolicyStudioSession;
+import com.los.core.creditintelligence.policystudio.parameters.PolicyExecutionReadiness;
 import com.los.core.creditintelligence.policystudio.service.DraftPolicyPackageBuilder;
 import com.los.core.creditintelligence.policystudio.service.PolicyImplementabilityService;
 import com.los.core.creditintelligence.policystudio.service.PolicyReviewService;
@@ -614,8 +615,13 @@ public class StagingProspectApprovalService {
         out.put("makerCheckerEnabled", properties.getPolicyStudio() != null
                 && properties.getPolicyStudio().isRequireMakerChecker());
         out.put("lifecycleNote",
-                "After Checker approval: Approve Policy → Schedule Policy. "
+                "Primary business lifecycle is on Versions: Draft → In Review → Approved → Scheduled/Active. "
+                        + "Maker-checker here feeds that lifecycle. "
+                        + "Build draft package is Advanced/development only — not a second lifecycle authority. "
                         + "Business ACTIVE ≠ production authority (allowCanonicalAuthority=false).");
+        out.put("primaryLifecycleAuthority", "VERSIONS_BUSINESS_LIFECYCLE");
+        out.put("draftPackageRole", "ADVANCED_DEVELOPMENT_ONLY");
+        out.put("businessStatus", lifecycleBusinessStatus(session));
         out.put("activateCanonicalAuthorityExposed", false);
         return out;
     }
@@ -631,19 +637,19 @@ public class StagingProspectApprovalService {
                         || ReviewState.CHECKER_APPROVED.name().equals(r.getReviewStatus())).count();
         boolean rulesReviewed = !session.getRuleCandidates().isEmpty()
                 && rulesApproved >= Math.max(1, session.getRuleCandidates().size() / 2);
-        Map<String, Object> implAssess = new PolicyImplementabilityService().assess(session);
-        Map<String, Object> implSum = implAssess.get("summary") instanceof Map<?, ?> im
-                ? castMap(im) : Map.of();
-        boolean dataReady = !Boolean.TRUE.equals(implSum.get("draftBlockedByCriticalDataGap"))
-                && asInt(implSum.get("implementationReadinessPercent")) >= 40;
+        // POLICY-SIMPLE-FLOW-INTEGRITY-1 — same canonical blockers as Versions lifecycle
+        Map<String, Object> execStats = PolicyExecutionReadiness.executionReadinessStats(session);
+        boolean dataReady = asInt(execStats.get("executionBlockerCount")) == 0
+                && asInt(execStats.get("dataReadinessPercent")) >= 40;
         long testsApproved = session.getTestCases().stream().filter(this::isApproved).count();
         boolean testsReviewed = !session.getTestCases().isEmpty()
                 && testsApproved >= Math.max(1, session.getTestCases().size() / 2);
-        boolean simDone = session.getSimulation() != null && !session.getSimulation().isEmpty()
+        boolean simDone = isPolicyTestSatisfied(session)
+                || (session.getSimulation() != null && !session.getSimulation().isEmpty()
                 && (session.getSimulation().containsKey("pass")
                 || session.getSimulation().containsKey("runId")
-                || Boolean.TRUE.equals(session.getSimulation().get("simulationReviewed")));
-        boolean simReviewed = isSimulationReviewed(session);
+                || Boolean.TRUE.equals(session.getSimulation().get("simulationReviewed"))));
+        boolean simReviewed = isSimulationReviewed(session) || isPolicyTestSatisfied(session);
         boolean cm = hasDocumentApproval(session, ReviewState.CREDIT_MANAGER_APPROVED.name());
         boolean checker = hasDocumentApproval(session, ReviewState.CHECKER_APPROVED.name())
                 && !(session.getDraftPackage() != null
@@ -714,21 +720,36 @@ public class StagingProspectApprovalService {
                 session.getTestCases().isEmpty() ? "RED"
                         : (approvedTests == 0 ? "RED"
                         : (approvedTests < session.getTestCases().size() ? "AMBER" : "GREEN"))));
-        list.add(check("simulation", simReviewed ? "Simulation run completed & reviewed"
-                        : "Simulation not reviewed",
-                simReviewed ? "GREEN" : "RED"));
+        boolean policyTestDone = isPolicyTestSatisfied(session);
+        int appsSimulated = asInt(session.getSimulation() == null
+                ? 0 : session.getSimulation().get("applicationsTested"));
+        String simLabel;
+        if (policyTestDone && appsSimulated <= 0) {
+            simLabel = "Policy Test completed (quick test) — application batch simulation not run";
+        } else if (simReviewed) {
+            simLabel = "Application simulation reviewed (" + appsSimulated + " apps)";
+        } else {
+            simLabel = "Simulation not reviewed";
+        }
+        list.add(check("simulation", simLabel,
+                policyTestDone || simReviewed ? "GREEN" : "RED"));
         list.add(check("conflicts", blockingConflicts + " blocking item"
                         + (blockingConflicts == 1 ? "" : "s"),
                 blockingConflicts == 0 ? "GREEN" : "RED"));
-        Map<String, Object> impl = new PolicyImplementabilityService().assess(session);
-        Map<String, Object> implSummary = impl.get("summary") instanceof Map<?, ?> m
-                ? castMap(m) : Map.of();
-        int implPct = asInt(implSummary.get("implementationReadinessPercent"));
-        boolean criticalGap = Boolean.TRUE.equals(implSummary.get("draftBlockedByCriticalDataGap"));
+        Map<String, Object> execStats = PolicyExecutionReadiness.executionReadinessStats(session);
+        int execPct = asInt(execStats.get("dataReadinessPercent"));
+        int blockerCount = asInt(execStats.get("executionBlockerCount"));
+        // Zero-blocker invariant: never show critical data gap when executionBlockers empty
+        boolean criticalGap = blockerCount > 0;
         list.add(check("dataReadiness",
-                "Data readiness " + implPct + "%"
-                        + (criticalGap ? " — critical rule data gap" : ""),
-                criticalGap ? "RED" : (implPct >= 70 ? "GREEN" : "AMBER")));
+                "Data readiness " + execPct + "%"
+                        + (criticalGap ? " — " + blockerCount + " execution blocker"
+                        + (blockerCount == 1 ? "" : "s") : " — no execution blockers"),
+                criticalGap ? "RED" : (execPct >= 70 ? "GREEN" : "AMBER")));
+        list.add(check("blockingItemsAlign",
+                blockerCount + " canonical execution blocker"
+                        + (blockerCount == 1 ? "" : "s"),
+                blockerCount == 0 ? "GREEN" : "RED"));
         return list;
     }
 
@@ -764,9 +785,9 @@ public class StagingProspectApprovalService {
                         "key", "conflict-" + c.getOrDefault("id", c.hashCode()),
                         "label", String.valueOf(c.getOrDefault("message", "Blocking conflict")),
                         "detail", "Blocking conflict")));
-        if (!isSimulationReviewed(session)) {
-            items.add(Map.of("key", "sim", "label", "Simulation not reviewed",
-                    "detail", "Mark Simulation Reviewed after a 10-app run"));
+        if (!isSimulationReviewed(session) && !isPolicyTestSatisfied(session)) {
+            items.add(Map.of("key", "sim", "label", "Policy Test / simulation not completed",
+                    "detail", "Run Policy Test on the Test tab, or complete application simulation review"));
         }
         long approvedTests = session.getTestCases().stream().filter(this::isApproved).count();
         if (!session.getTestCases().isEmpty() && approvedTests == 0) {
@@ -779,18 +800,12 @@ public class StagingProspectApprovalService {
                     "label", "Prior checker approval invalidated by material edit",
                     "detail", "Re-review required"));
         }
-        Map<String, Object> impl = new PolicyImplementabilityService().assess(session);
-        Map<String, Object> implSummary = impl.get("summary") instanceof Map<?, ?> m
-                ? castMap(m) : Map.of();
-        // POLICY-LIFECYCLE-FIX-1 — do not block CM/Checker when underwriting rules are
-        // authoring-complete (CM-authored / catalogue thresholds set). Technical
-        // implementability gaps remain visible under Data Readiness / Advanced.
-        if (Boolean.TRUE.equals(implSummary.get("draftBlockedByCriticalDataGap"))
-                && !underwritingRulesAuthoringComplete(session)) {
+        // POLICY-SIMPLE-FLOW-INTEGRITY-1 — only canonical execution blockers (no legacy implementability)
+        for (Map<String, Object> b : PolicyExecutionReadiness.sessionExecutionBlockers(session)) {
             items.add(Map.of(
-                    "key", "data-readiness-critical",
-                    "label", "Critical rule data requirements unresolved",
-                    "detail", "Resolve Data Readiness gaps for knockout / hard eligibility rules before draft build"));
+                    "key", String.valueOf(b.getOrDefault("blockerKey", "exec-" + b.hashCode())),
+                    "label", String.valueOf(b.getOrDefault("reason", "Execution blocker")),
+                    "detail", String.valueOf(b.getOrDefault("action", "Resolve on Rules"))));
         }
         for (String r : draftBuilder.rejectionReasons(session)) {
             if (items.stream().noneMatch(i -> String.valueOf(i.get("label")).contains(r))) {
@@ -847,21 +862,54 @@ public class StagingProspectApprovalService {
         m.put("policyName", session.getDocument().getName());
         m.put("versionLabel", "Draft v" + pkg.getPackageVersion());
         m.put("packageVersion", pkg.getPackageVersion());
-        m.put("rules", session.getRuleCandidates().size());
-        long products = session.getClauses().stream()
-                .map(c -> c.getProductScope()).filter(p -> p != null && !p.isBlank()).distinct().count();
+        m.put("rules", session.getRuleCandidates().stream()
+                .filter(PolicyExecutionReadiness::isIncludedExecutableRule).count());
+        // Prefer Scope/applicability products — clause productScope is often empty for CM-authored rules
+        long products = 0;
+        if (session.getDocument() != null && session.getDocument().getProductScope() != null
+                && !session.getDocument().getProductScope().isBlank()) {
+            products = session.getDocument().getProductScope().split("[,;|]").length;
+        } else {
+            Map<String, Object> docMeta = session.getDocument() == null || session.getDocument().getMetadata() == null
+                    ? Map.of() : session.getDocument().getMetadata();
+            Object life = docMeta.get("lifecycle");
+            if (life instanceof Map<?, ?> lm) {
+                Object app = lm.get("applicability");
+                if (app instanceof Map<?, ?> am && am.get("products") instanceof List<?> pl) {
+                    products = pl.size();
+                }
+            }
+        }
         m.put("products", products);
+        m.put("productsNote", products == 0
+                ? "No products on Scope — Schedule/Activate will require Scope products"
+                : "From Scope / applicability");
         long openMat = session.getAmbiguities().stream()
                 .filter(a -> "OPEN".equals(a.getResolutionStatus()) && "MATERIAL".equals(a.getSeverity())).count();
         m.put("blockingAmbiguities", openMat);
         long approvedTests = session.getTestCases().stream().filter(this::isApproved).count();
         m.put("testsApproved", approvedTests);
         m.put("testsTotal", session.getTestCases().size());
-        m.put("applicationsSimulated", session.getSimulation() == null
-                ? 0 : session.getSimulation().getOrDefault("applicationsTested", 0));
+        int appsSimulated = asInt(session.getSimulation() == null
+                ? 0 : session.getSimulation().get("applicationsTested"));
+        m.put("applicationsSimulated", appsSimulated);
+        m.put("policyTestCompleted", isPolicyTestSatisfied(session));
+        m.put("simulationSemantics", appsSimulated > 0
+                ? "Application batch simulation count"
+                : (isPolicyTestSatisfied(session)
+                ? "Policy Test (quick) completed — not the same as applications simulated"
+                : "Neither Policy Test nor application simulation completed"));
         m.put("creditManagerApproved", hasDocumentApproval(session, ReviewState.CREDIT_MANAGER_APPROVED.name()));
         m.put("checkerApproved", hasDocumentApproval(session, ReviewState.CHECKER_APPROVED.name()));
-        m.put("status", "DRAFT POLICY READY");
+        Map<String, Object> life = Map.of();
+        if (session.getDocument() != null && session.getDocument().getMetadata() != null
+                && session.getDocument().getMetadata().get("lifecycle") instanceof Map<?, ?> lm) {
+            life = castMap(lm);
+        }
+        m.put("businessStatus", life.getOrDefault("businessStatus", "DRAFT"));
+        m.put("status", "DRAFT_PACKAGE_ONLY");
+        m.put("statusNote", "Package snapshot status — business lifecycle is on Versions ("
+                + life.getOrDefault("businessStatus", "DRAFT") + ")");
         m.put("packageStatus", DraftPackageStatus.DRAFT_ONLY.name());
         m.put("production", "NOT ACTIVE");
         m.put("productionActive", false);
@@ -869,6 +917,7 @@ public class StagingProspectApprovalService {
         m.put("dslVersion", pkg.getDslVersion());
         m.put("dependencyGraphHash", pkg.getDependencyGraphHash());
         m.put("banner", DRAFT_BANNER);
+        m.put("allowCanonicalAuthority", false);
         return m;
     }
 
@@ -964,6 +1013,36 @@ public class StagingProspectApprovalService {
         return session.getSimulation() != null
                 && (Boolean.TRUE.equals(session.getSimulation().get("simulationReviewed"))
                 || session.getSimulation().containsKey("runId"));
+    }
+
+    /** Quick Policy Test on the Test tab — distinct from multi-app simulation count. */
+    private boolean isPolicyTestSatisfied(PolicyStudioSession session) {
+        if (session == null) return false;
+        if (session.getDocument() != null && session.getDocument().getMetadata() != null) {
+            Map<String, Object> meta = session.getDocument().getMetadata();
+            if (Boolean.TRUE.equals(meta.get("policyTestCompleted"))
+                    || meta.get("lastPolicyTestAt") != null
+                    || meta.get("lastTestRun") != null) {
+                return true;
+            }
+            Object life = meta.get("lifecycle");
+            if (life instanceof Map<?, ?> lm && Boolean.TRUE.equals(lm.get("policyTestCompleted"))) {
+                return true;
+            }
+        }
+        long approvedTests = session.getTestCases().stream().filter(this::isApproved).count();
+        return approvedTests > 0;
+    }
+
+    private static String lifecycleBusinessStatus(PolicyStudioSession session) {
+        if (session == null || session.getDocument() == null || session.getDocument().getMetadata() == null) {
+            return "DRAFT";
+        }
+        Object life = session.getDocument().getMetadata().get("lifecycle");
+        if (life instanceof Map<?, ?> lm && lm.get("businessStatus") != null) {
+            return String.valueOf(lm.get("businessStatus"));
+        }
+        return "DRAFT";
     }
 
     /**

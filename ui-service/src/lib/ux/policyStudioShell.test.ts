@@ -108,7 +108,7 @@ describe('POLICY-UX-SHELL-1', () => {
         'Ambiguous Terms',
         'Data Readiness',
         'Generated Tests',
-        'Approvals',
+        'Maker-checker',
       ]),
     )
     // None of these are primary workflow tabs

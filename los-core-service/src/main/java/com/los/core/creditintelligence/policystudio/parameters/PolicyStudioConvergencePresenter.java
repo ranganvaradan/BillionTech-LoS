@@ -55,7 +55,9 @@ public final class PolicyStudioConvergencePresenter {
         }
         if (joined.contains("gst.") || sys.contains("GST")) return "GST";
         if (joined.contains("kyc.") || sys.contains("KYC")) return "KYC";
-        if (joined.contains("application.") || sys.contains("EDI") || sys.contains("LOAN_AMOUNT")) {
+        if (joined.contains("application.")
+                || SystemRuleIdTokens.hasProposedEdiToken(systemRuleId)
+                || sys.contains("LOAN_AMOUNT")) {
             return "Application";
         }
         if (meta != null && Boolean.TRUE.equals(meta.get("manualInput"))) {

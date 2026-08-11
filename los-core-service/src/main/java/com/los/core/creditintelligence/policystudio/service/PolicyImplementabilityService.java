@@ -474,7 +474,9 @@ public class PolicyImplementabilityService {
         String sys = rule.getSystemRuleId() == null ? "" : rule.getSystemRuleId().toUpperCase(Locale.ROOT);
         String p = path.toLowerCase(Locale.ROOT);
         if (openPhrases.stream().anyMatch(x -> x.contains("edi"))
-                && (p.contains("proposed_edi") || sys.contains("EDI"))) {
+                && (p.contains("proposed_edi")
+                || com.los.core.creditintelligence.policystudio.parameters.SystemRuleIdTokens
+                .hasProposedEdiToken(rule.getSystemRuleId()))) {
             return true;
         }
         if (openPhrases.stream().anyMatch(x -> x.contains("clean"))
@@ -555,7 +557,9 @@ public class PolicyImplementabilityService {
 
     private String calculationHint(String path, CiPolicyRuleCandidate rule) {
         String sys = rule.getSystemRuleId() == null ? "" : rule.getSystemRuleId();
-        if (sys.contains("ADB") && sys.contains("EDI")) {
+        if (com.los.core.creditintelligence.policystudio.parameters.SystemRuleIdTokens.hasAdbToken(sys)
+                && com.los.core.creditintelligence.policystudio.parameters.SystemRuleIdTokens
+                .hasProposedEdiToken(sys)) {
             return "ADB / EDI (capacity ratio)";
         }
         if (sys.contains("INWARD") && sys.contains("100")) {
@@ -641,7 +645,9 @@ public class PolicyImplementabilityService {
         String sys = rule.getSystemRuleId() == null ? "" : rule.getSystemRuleId().toUpperCase(Locale.ROOT);
         return sys.contains("SCORE") || sys.contains("DPD") || sys.contains("WRITEOFF")
                 || sys.contains("DBT") || sys.contains("LEGAL") || sys.contains("INWARD")
-                || sys.contains("ADB") || sys.contains("EDI");
+                || com.los.core.creditintelligence.policystudio.parameters.SystemRuleIdTokens.hasAdbToken(sys)
+                || com.los.core.creditintelligence.policystudio.parameters.SystemRuleIdTokens
+                .hasProposedEdiToken(sys);
     }
 
     private String criticalClass(CiPolicyRuleCandidate rule) {

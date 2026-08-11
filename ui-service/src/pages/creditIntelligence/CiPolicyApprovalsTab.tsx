@@ -56,6 +56,7 @@ export function CiPolicyApprovalsTab({
   const [confirmCm, setConfirmCm] = useState(false)
   const [diff, setDiff] = useState<Record<string, unknown> | null>(null)
   const [loading, setLoading] = useState(true)
+  const [showAdvancedPackage, setShowAdvancedPackage] = useState(false)
 
   const reload = async () => {
     setLoading(true)
@@ -106,9 +107,29 @@ export function CiPolicyApprovalsTab({
   const nonBlocking = asList(ctx.nonBlockingItems)
   const summary = asRecord(ctx.draftSummary)
   const actors = asList(ctx.demoActors)
+  const businessStatus = String(
+    (ctx as ApprovalsContext & { businessStatus?: string }).businessStatus
+      ?? summary.businessStatus
+      ?? 'DRAFT',
+  )
 
   return (
     <div className="space-y-4">
+      <div className="rounded-lg border border-sky-300 bg-sky-50 px-4 py-3 text-sm text-sky-950">
+        <div className="font-semibold">Primary lifecycle: Versions</div>
+        <p className="mt-1">
+          Business status: <strong>{businessStatus}</strong>. After Credit Manager and Checker approvals here,
+          return to <strong>Versions</strong> for Approve → Schedule / Active. Build draft package is not a
+          second lifecycle.
+        </p>
+        <p className="mt-1 text-xs text-sky-800">
+          {String(
+            (ctx as ApprovalsContext & { lifecycleNote?: string }).lifecycleNote ??
+              'allowCanonicalAuthority=false — never production underwriting authority.',
+          )}
+        </p>
+      </div>
+
       <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-950">
         {String(ctx.draftBanner ?? 'Draft only — not active in production lending')}
       </div>
@@ -124,29 +145,15 @@ export function CiPolicyApprovalsTab({
         <p>
           {blocking.length > 0
             ? `Resolve ${blocking.length} remaining issue${blocking.length === 1 ? '' : 's'} before Credit Manager approval.`
-            : ctx.canBuildDraft
-              ? 'Ready to build the draft policy package after approvals.'
-              : 'Complete Credit Manager and Checker approvals, then build the draft package.'}
+            : ctx.creditManagerApproved && ctx.checkerApproved
+              ? 'Maker-checker complete. Go to Versions to Approve Policy, then Schedule / Activate.'
+              : ctx.creditManagerApproved
+                ? 'Credit Manager done — Checker must approve next, then return to Versions.'
+                : 'Complete Credit Manager approval, then Checker. Primary next step stays on Versions after that.'}
         </p>
       </CiExecutiveSummary>
 
-      <CiSection title="Approval progress" description="Live approval stages for this draft policy.">
-        <ol className="flex flex-wrap gap-2">
-          {stages.map((raw) => {
-            const s = asRecord(raw)
-            return (
-              <li
-                key={String(s.key)}
-                className={`rounded-full px-3 py-1 text-xs font-semibold ${stageClass(String(s.state ?? ''))}`}
-              >
-                {String(s.label ?? s.key)}
-              </li>
-            )
-          })}
-        </ol>
-      </CiSection>
-
-      <CiSection title="Policy readiness">
+      <CiSection title="Canonical readiness" description="Same execution blockers as Versions — no parallel critical-gap authority.">
         <ul className="space-y-1 text-sm">
           {checklist.map((raw) => {
             const c = asRecord(raw)
@@ -279,155 +286,199 @@ export function CiPolicyApprovalsTab({
           <p className="mt-2 text-sm font-semibold text-emerald-800">Checker ✓</p>
         ) : null}
         <p className="mt-2 text-xs text-slate-500">
-          Does not activate production. Never publishes underwriting authority.
+          Does not activate production. Never publishes underwriting authority. Next: Versions → Approve Policy.
         </p>
       </CiSection>
 
-      <CiSection title="Draft policy package">
-        <button
-          type="button"
-          className="bt-btn bt-btn-primary"
-          disabled={busy || !ctx.canBuildDraft}
-          onClick={() =>
-            void run(() =>
-              buildDraftPolicy(documentId, {
-                createdBy: demoActor || 'credit_manager',
-              }),
-            )
-          }
-        >
-          Build draft policy
-        </button>
-        {!ctx.canBuildDraft ? (
-          <ul className="mt-2 list-disc pl-5 text-sm text-rose-800">
-            {asList(ctx.draftBuildBlockers).map((b, i) => (
-              <li key={i}>{String(b)}</li>
-            ))}
-          </ul>
-        ) : null}
+      <details
+        className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3"
+        open={showAdvancedPackage}
+        onToggle={(e) => setShowAdvancedPackage((e.target as HTMLDetailsElement).open)}
+      >
+        <summary className="cursor-pointer text-sm font-semibold text-slate-800">
+          Advanced / development — draft package & legacy progress
+        </summary>
+        <p className="mt-2 text-xs text-slate-600">
+          Technical package snapshot for exports/diff. Not the business lifecycle authority. Prefer Versions for
+          DRAFT → IN REVIEW → APPROVED → SCHEDULED / ACTIVE.
+        </p>
 
-        {summary.policyName ? (
-          <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm">
-            <div className="text-xs font-semibold uppercase text-emerald-900">Draft Policy Summary</div>
-            <dl className="mt-2 grid gap-1 sm:grid-cols-2">
-              <div>
-                <dt className="text-slate-500">Policy</dt>
-                <dd className="font-semibold">{String(summary.policyName)}</dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">Version</dt>
-                <dd className="font-semibold">{String(summary.versionLabel)}</dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">Rules</dt>
-                <dd>{String(summary.rules)}</dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">Products</dt>
-                <dd>{String(summary.products)}</dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">Ambiguities</dt>
-                <dd>{String(summary.blockingAmbiguities)} blocking</dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">Tests</dt>
-                <dd>
-                  {String(summary.testsApproved)} / {String(summary.testsTotal)} approved
-                </dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">Applications simulated</dt>
-                <dd>{String(summary.applicationsSimulated ?? '—')}</dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">Approval</dt>
-                <dd>
-                  Credit Manager {summary.creditManagerApproved ? '✓' : '—'} · Checker{' '}
-                  {summary.checkerApproved ? '✓' : '—'}
-                </dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">Status</dt>
-                <dd className="font-semibold">{businessOutcomeLabel(summary.status)}</dd>
-              </div>
-              <div>
-                <dt className="text-slate-500">Production</dt>
-                <dd className="font-semibold text-rose-800">{String(summary.production)}</dd>
-              </div>
-            </dl>
-          </div>
-        ) : null}
+        <CiSection title="Legacy approval progress (non-authoritative)">
+          <ol className="flex flex-wrap gap-2">
+            {stages.map((raw) => {
+              const s = asRecord(raw)
+              return (
+                <li
+                  key={String(s.key)}
+                  className={`rounded-full px-3 py-1 text-xs font-semibold ${stageClass(String(s.state ?? ''))}`}
+                >
+                  {String(s.label ?? s.key)}
+                </li>
+              )
+            })}
+          </ol>
+        </CiSection>
 
-        <div className="mt-3 flex flex-wrap gap-2">
-          <a
-            className="bt-btn bt-btn-secondary bt-btn-sm"
-            href={`/api/v1/internal/credit-intelligence/staging-demo/policy-studio/documents/${encodeURIComponent(documentId)}/export/summary.html`}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Export summary
-          </a>
-          <a
-            className="bt-btn bt-btn-secondary bt-btn-sm"
-            href={`/api/v1/internal/credit-intelligence/staging-demo/policy-studio/documents/${encodeURIComponent(documentId)}/export/rules.csv`}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Export rules
-          </a>
+        <CiSection title="Draft policy package">
           <button
             type="button"
-            className="bt-btn bt-btn-secondary bt-btn-sm"
-            disabled={busy}
+            className="bt-btn bt-btn-secondary"
+            disabled={busy || !ctx.canBuildDraft}
             onClick={() =>
-              void (async () => {
-                setBusy(true)
-                try {
-                  setDiff(await compareDraftVersions(documentId))
-                } catch (e) {
-                  onError(e instanceof ApiError ? e.message : 'Diff unavailable')
-                } finally {
-                  setBusy(false)
-                }
-              })()
+              void run(() =>
+                buildDraftPolicy(documentId, {
+                  createdBy: demoActor || 'credit_manager',
+                }),
+              )
             }
           >
-            Compare draft versions
+            Build draft policy (advanced)
           </button>
-          {!prospectDemoMode ? (
+          {!ctx.canBuildDraft ? (
+            <ul className="mt-2 list-disc pl-5 text-sm text-rose-800">
+              {asList(ctx.draftBuildBlockers).map((b, i) => (
+                <li key={i}>{String(b)}</li>
+              ))}
+            </ul>
+          ) : null}
+
+          {summary.policyName ? (
+            <div className="mt-4 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm">
+              <div className="text-xs font-semibold uppercase text-slate-700">Draft package summary</div>
+              <dl className="mt-2 grid gap-1 sm:grid-cols-2">
+                <div>
+                  <dt className="text-slate-500">Policy</dt>
+                  <dd className="font-semibold">{String(summary.policyName)}</dd>
+                </div>
+                <div>
+                  <dt className="text-slate-500">Business status</dt>
+                  <dd className="font-semibold">{String(summary.businessStatus ?? businessStatus)}</dd>
+                </div>
+                <div>
+                  <dt className="text-slate-500">Package label</dt>
+                  <dd className="font-semibold">{String(summary.versionLabel)}</dd>
+                </div>
+                <div>
+                  <dt className="text-slate-500">Rules</dt>
+                  <dd>{String(summary.rules)}</dd>
+                </div>
+                <div>
+                  <dt className="text-slate-500">Products</dt>
+                  <dd>
+                    {String(summary.products)}
+                    {summary.productsNote ? (
+                      <span className="ml-1 text-xs text-slate-500">({String(summary.productsNote)})</span>
+                    ) : null}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-slate-500">Ambiguities</dt>
+                  <dd>{String(summary.blockingAmbiguities)} blocking</dd>
+                </div>
+                <div>
+                  <dt className="text-slate-500">Tests</dt>
+                  <dd>
+                    {String(summary.testsApproved)} / {String(summary.testsTotal)} approved
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-slate-500">Applications simulated</dt>
+                  <dd>
+                    {String(summary.applicationsSimulated ?? '—')}
+                    {summary.simulationSemantics ? (
+                      <div className="text-xs font-normal text-slate-500">{String(summary.simulationSemantics)}</div>
+                    ) : null}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-slate-500">Approval</dt>
+                  <dd>
+                    Credit Manager {summary.creditManagerApproved ? '✓' : '—'} · Checker{' '}
+                    {summary.checkerApproved ? '✓' : '—'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-slate-500">Package status</dt>
+                  <dd className="font-semibold">{businessOutcomeLabel(String(summary.status ?? ''))}</dd>
+                </div>
+                <div>
+                  <dt className="text-slate-500">Production</dt>
+                  <dd className="font-semibold text-rose-800">{String(summary.production)}</dd>
+                </div>
+              </dl>
+            </div>
+          ) : null}
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <a
+              className="bt-btn bt-btn-secondary bt-btn-sm"
+              href={`/api/v1/internal/credit-intelligence/staging-demo/policy-studio/documents/${encodeURIComponent(documentId)}/export/summary.html`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Export summary
+            </a>
+            <a
+              className="bt-btn bt-btn-secondary bt-btn-sm"
+              href={`/api/v1/internal/credit-intelligence/staging-demo/policy-studio/documents/${encodeURIComponent(documentId)}/export/rules.csv`}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Export rules
+            </a>
             <button
               type="button"
               className="bt-btn bt-btn-secondary bt-btn-sm"
-              disabled={busy || !summary.policyName}
-              onClick={() => void run(() => invalidateApprovalDemo(documentId, { reviewer: demoActor }))}
+              disabled={busy}
+              onClick={() =>
+                void (async () => {
+                  setBusy(true)
+                  try {
+                    setDiff(await compareDraftVersions(documentId))
+                  } catch (e) {
+                    onError(e instanceof ApiError ? e.message : 'Diff unavailable')
+                  } finally {
+                    setBusy(false)
+                  }
+                })()
+              }
             >
-              Demo: material edit invalidation
+              Compare draft versions
             </button>
-          ) : null}
-        </div>
-
-        {diff ? (
-          <div className="mt-3 rounded border border-slate-200 bg-white px-3 py-2 text-sm">
-            <div className="font-semibold">{String(diff.label ?? 'Version comparison')}</div>
-            {!diff.available ? (
-              <p className="mt-1 text-slate-600">{String(diff.message ?? '')}</p>
-            ) : (
-              <ul className="mt-2 list-disc pl-5">
-                {asList(diff.businessDiff).map((raw, i) => {
-                  const d = asRecord(raw)
-                  return (
-                    <li key={i}>
-                      <strong>{String(d.type)}</strong>
-                      {d.detail && d.detail !== '—' ? ` — ${String(d.detail)}` : ''}
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
+            {!prospectDemoMode ? (
+              <button
+                type="button"
+                className="bt-btn bt-btn-secondary bt-btn-sm"
+                disabled={busy || !summary.policyName}
+                onClick={() => void run(() => invalidateApprovalDemo(documentId, { reviewer: demoActor }))}
+              >
+                Demo: material edit invalidation
+              </button>
+            ) : null}
           </div>
-        ) : null}
-      </CiSection>
+
+          {diff ? (
+            <div className="mt-3 rounded border border-slate-200 bg-white px-3 py-2 text-sm">
+              <div className="font-semibold">{String(diff.label ?? 'Version comparison')}</div>
+              {!diff.available ? (
+                <p className="mt-1 text-slate-600">{String(diff.message ?? '')}</p>
+              ) : (
+                <ul className="mt-2 list-disc pl-5">
+                  {asList(diff.businessDiff).map((raw, i) => {
+                    const d = asRecord(raw)
+                    return (
+                      <li key={i}>
+                        <strong>{String(d.type)}</strong>
+                        {d.detail && d.detail !== '—' ? ` — ${String(d.detail)}` : ''}
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </div>
+          ) : null}
+        </CiSection>
+      </details>
     </div>
   )
 }

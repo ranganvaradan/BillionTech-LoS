@@ -436,7 +436,7 @@ final class GacatCatalogueSeed {
                 null, "AVERAGE_BANK_BALANCE",
                 prodBank(), true, true, true, true, true);
         derived(p, "banking.monthly_credits_3m", "Monthly credits", BS, "INR", "TRAILING_3M",
-                "Sum of credit transactions over trailing months",
+                "Sum of qualifying credit (inflow) transactions on the Bank Statement over the trailing 3 months",
                 List.of("bank.transaction"),
                 "PolicyBankingMetricService",
                 List.of("monthly credits", "credit sum"), null, null,

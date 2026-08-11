@@ -911,7 +911,9 @@ final class ProspectDay2ViewBuilder {
         String sys = r.getSystemRuleId() == null ? "" : r.getSystemRuleId().toUpperCase(Locale.ROOT);
         String joined = String.join(" ", dataUsed).toLowerCase(Locale.ROOT);
         if (openPhrases.stream().anyMatch(p -> p.contains("edi"))
-                && (joined.contains("proposed_edi") || sys.contains("EDI"))) {
+                && (joined.contains("proposed_edi")
+                || com.los.core.creditintelligence.policystudio.parameters.SystemRuleIdTokens
+                .hasProposedEdiToken(r.getSystemRuleId()))) {
             return "EDI has not been defined.";
         }
         if (openPhrases.stream().anyMatch(p -> p.contains("clean"))

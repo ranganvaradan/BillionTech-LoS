@@ -19,7 +19,7 @@ export const POLICY_STUDIO_DETAILS_SECTIONS = [
   { id: 'ambiguities', label: 'Ambiguous Terms', group: 'REVIEW / READINESS' },
   { id: 'data-readiness', label: 'Data Readiness', group: 'REVIEW / READINESS' },
   { id: 'tests', label: 'Generated Tests', group: 'REVIEW / READINESS' },
-  { id: 'approvals', label: 'Approvals', group: 'REVIEW / READINESS' },
+  { id: 'approvals', label: 'Maker-checker', group: 'ADVANCED / DEVELOPMENT' },
 ] as const
 
 export type PolicyStudioDetailsSectionId = (typeof POLICY_STUDIO_DETAILS_SECTIONS)[number]['id']

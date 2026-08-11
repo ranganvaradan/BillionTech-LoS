@@ -771,8 +771,12 @@ public class BusinessMeasureDesignerService {
             for (CiPolicyRuleCandidate rule : session.getRuleCandidates()) {
                 String sys = rule.getSystemRuleId() == null ? "" : rule.getSystemRuleId().toUpperCase(Locale.ROOT);
                 if ((code.contains("settlement") && sys.contains("SETTLEMENT"))
-                        || (code.contains("edi") && sys.contains("EDI"))
-                        || (code.contains("adb") && sys.contains("ADB"))
+                        || (code.contains("edi")
+                        && com.los.core.creditintelligence.policystudio.parameters.SystemRuleIdTokens
+                        .hasProposedEdiToken(sys))
+                        || (code.contains("adb")
+                        && com.los.core.creditintelligence.policystudio.parameters.SystemRuleIdTokens
+                        .hasAdbToken(sys))
                         || (code.contains("overdue") && sys.contains("OVERDUE"))
                         || (code.contains("ntc") && sys.contains("NTC"))
                         || (code.contains("clean") && sys.contains("CLEAN"))) {

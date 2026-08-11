@@ -826,7 +826,9 @@ public class StagingProspectSimulationService {
             return false;
         }
         return id.contains("ADB") || id.contains("TXN") || id.contains("SETTLEMENT")
-                || id.contains("EDI") || id.contains("GTE");
+                || com.los.core.creditintelligence.policystudio.parameters.SystemRuleIdTokens
+                .hasProposedEdiToken(id)
+                || id.contains("GTE");
     }
 
     private static String nullTo(String v, String def) {

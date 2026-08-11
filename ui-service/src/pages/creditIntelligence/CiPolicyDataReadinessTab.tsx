@@ -171,7 +171,7 @@ export function CiPolicyDataReadinessTab({
             </span>
           ) : onGoApprovals ? (
             <button type="button" className="bt-btn bt-btn-primary bt-btn-sm" onClick={onGoApprovals}>
-              Continue to Approvals
+              Continue to Maker-checker
             </button>
           ) : null
         }

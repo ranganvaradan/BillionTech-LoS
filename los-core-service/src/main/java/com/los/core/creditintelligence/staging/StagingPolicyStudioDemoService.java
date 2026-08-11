@@ -799,7 +799,12 @@ public class StagingPolicyStudioDemoService {
         if (session == null || resolution == null || operandKey == null) return;
         for (CiPolicyRuleCandidate r : session.getRuleCandidates()) {
             String sys = r.getSystemRuleId() == null ? "" : r.getSystemRuleId().toUpperCase(Locale.ROOT);
-            boolean match = ("proposed_edi".equals(operandKey) && sys.contains("EDI"))
+            // Token-safe EDI match — sys.contains("EDI") falsely matches MONTHLY_CREDITS
+            boolean match = ("proposed_edi".equals(operandKey)
+                    && (com.los.core.creditintelligence.policystudio.parameters.SystemRuleIdTokens
+                    .hasProposedEdiToken(r.getSystemRuleId())
+                    || String.valueOf(r.getExpression()).toLowerCase(java.util.Locale.ROOT)
+                    .contains("proposed_edi")))
                     || ("clean_history".equals(operandKey)
                     && (sys.contains("OVERDUE_EXCEPTION") || sys.contains("CLEAN")
                     || sys.contains("OVERDUE_CHILD_3") || sys.contains("NO_OVERDUE_EXCEPT")));
