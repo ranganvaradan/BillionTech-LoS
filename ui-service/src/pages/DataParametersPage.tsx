@@ -18,6 +18,62 @@ function asRecord(v: unknown): Record<string, unknown> {
 
 type Tab = 'by-source' | 'by-parameter' | 'gaps'
 
+function statusBits(p: Record<string, unknown>): string {
+  const bits: string[] = []
+  if (p.sourceAvailable) bits.push('Source available')
+  if (p.normalized) bits.push('Normalized')
+  if (p.derivationDefined) bits.push('Derivation defined')
+  if (p.implemented) bits.push('Implemented')
+  if (p.productionReady) bits.push('Production ready')
+  return bits.join(' · ') || String(p.capabilityStatus ?? '')
+}
+
+function ParameterCard({ p }: { p: Record<string, unknown> }) {
+  const lineage = asRecord(p.lineage)
+  const how = String(lineage.howCalculated ?? p.calculationSummary ?? '').trim()
+  const advanced = asRecord(p.advanced)
+  return (
+    <li className="rounded border border-slate-100 px-2 py-1.5">
+      <div className="font-medium text-slate-900">{String(p.businessName)}</div>
+      <div className="text-xs text-slate-500">
+        {String(p.id)} · {String(p.type)}
+        {p.period ? ` · ${String(p.period)}` : ''}
+      </div>
+      <div className="mt-1 text-[11px] text-slate-600">{statusBits(p)}</div>
+      {how ? (
+        <details className="mt-1 text-xs text-slate-600">
+          <summary className="cursor-pointer font-medium text-sky-800">How calculated</summary>
+          <p className="mt-1 whitespace-pre-wrap">{how}</p>
+          {asList(lineage.rawInputs).length > 0 ? (
+            <p className="mt-1 text-slate-500">Raw inputs: {asList(lineage.rawInputs).map(String).join(', ')}</p>
+          ) : null}
+          {lineage.window ? <p className="text-slate-500">Window: {String(lineage.window)}</p> : null}
+          {lineage.filters ? <p className="text-slate-500">Filters: {String(lineage.filters)}</p> : null}
+          {lineage.missingDataTreatment ? (
+            <p className="text-slate-500">Missing data: {String(lineage.missingDataTreatment)}</p>
+          ) : null}
+        </details>
+      ) : null}
+      <details className="mt-1 text-xs text-slate-500">
+        <summary>Advanced</summary>
+        <pre className="mt-1 whitespace-pre-wrap">
+          {JSON.stringify(
+            {
+              providerFieldPath: p.providerFieldPath ?? advanced.providerFieldPath,
+              binding: p.existingImplementationBinding ?? advanced.existingImplementationBinding,
+              schema: advanced.schema,
+              liveRule: advanced.liveRuleParameter,
+              liveScorecard: advanced.liveScorecardParameter,
+            },
+            null,
+            2,
+          )}
+        </pre>
+      </details>
+    </li>
+  )
+}
+
 export function DataParametersPage() {
   const [tab, setTab] = useState<Tab>('by-source')
   const [overview, setOverview] = useState<Record<string, unknown> | null>(null)
@@ -33,8 +89,11 @@ export function DataParametersPage() {
     getDataParametersOverview()
       .then((data) => {
         setOverview(data)
-        const sources = asList(data.sources).map(String)
-        if (sources[0]) setSource(sources[0])
+        const summaries = asList(data.bySourceSummary).map(asRecord)
+        const preferred =
+          summaries.find((s) => String(s.source) === 'Bureau Retail' && Number(s.count ?? 0) > 0) ??
+          summaries.find((s) => Number(s.count ?? 0) > 0)
+        if (preferred?.source) setSource(String(preferred.source))
       })
       .catch((e) => setError(e instanceof ApiError ? e.message : 'Failed to load Data & Parameters'))
       .finally(() => setLoading(false))
@@ -49,6 +108,7 @@ export function DataParametersPage() {
 
   const summaries = useMemo(() => asList(overview?.bySourceSummary).map(asRecord), [overview])
   const gaps = asRecord(overview?.gapsManual)
+  const totals = asRecord(overview?.totals)
 
   const runSearch = async () => {
     if (!q.trim()) return
@@ -71,6 +131,15 @@ export function DataParametersPage() {
         <div className="rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">{error}</div>
       ) : null}
       {loading ? <p className="text-sm text-slate-600">Loading…</p> : null}
+
+      {totals.registryCount != null ? (
+        <p className="text-xs text-slate-500">
+          Registry {String(totals.registryCount)} · Raw {String(totals.rawCount)} · Derived{' '}
+          {String(totals.derivedCount)} · Live {String(totals.productionReadyCount)} · Implemented{' '}
+          {String(totals.implementedCount)}
+          {overview?.inventoryVersion ? ` · ${String(overview.inventoryVersion)}` : ''}
+        </p>
+      ) : null}
 
       <div className="flex flex-wrap gap-2">
         {(
@@ -103,7 +172,8 @@ export function DataParametersPage() {
                 }`}
                 onClick={() => setSource(String(s.source))}
               >
-                {String(s.source)} · {String(s.count ?? 0)}
+                {String(s.source)} · Raw {String(s.rawCount ?? 0)} · Derived {String(s.derivedCount ?? 0)} · Live{' '}
+                {String(s.liveCount ?? 0)}
               </button>
             ))}
           </div>
@@ -117,26 +187,13 @@ export function DataParametersPage() {
                 ] as const
               ).map(([key, label]) => (
                 <div key={key}>
-                  <h3 className="text-sm font-semibold text-slate-900">{label}</h3>
+                  <h3 className="text-sm font-semibold text-slate-900">
+                    {label} ({asList(sourceView[key]).length})
+                  </h3>
                   <ul className="mt-2 space-y-2 text-sm">
-                    {asList(sourceView[key]).map((raw, i) => {
-                      const p = asRecord(raw)
-                      return (
-                        <li key={i} className="rounded border border-slate-100 px-2 py-1.5">
-                          <div className="font-medium text-slate-900">{String(p.businessName)}</div>
-                          <div className="text-xs text-slate-500">{String(p.id)}</div>
-                          {p.calculationSummary ? (
-                            <div className="mt-1 text-xs text-slate-600">{String(p.calculationSummary)}</div>
-                          ) : null}
-                          <details className="mt-1 text-xs text-slate-500">
-                            <summary>Advanced</summary>
-                            <pre className="mt-1 whitespace-pre-wrap">
-                              {JSON.stringify(p.existingImplementationBinding ?? p, null, 2)}
-                            </pre>
-                          </details>
-                        </li>
-                      )
-                    })}
+                    {asList(sourceView[key]).map((raw, i) => (
+                      <ParameterCard key={i} p={asRecord(raw)} />
+                    ))}
                   </ul>
                 </div>
               ))}
@@ -150,7 +207,7 @@ export function DataParametersPage() {
           <div className="flex flex-wrap gap-2">
             <input
               className="min-w-[16rem] flex-1 rounded border border-slate-300 px-3 py-2 text-sm"
-              placeholder="Search bureau score, ADB, GST…"
+              placeholder="Search dpd, cibil, overdue, adb, gst turnover, foir, dscr…"
               value={q}
               onChange={(e) => setQ(e.target.value)}
               onKeyDown={(e) => {
@@ -170,6 +227,7 @@ export function DataParametersPage() {
                   <div className="text-xs text-slate-500">
                     {String(p.evaluatedFrom)} · {String(p.type)} · {String(p.id)}
                   </div>
+                  <div className="mt-1 text-[11px] text-slate-600">{statusBits(p)}</div>
                   {p.calculationSummary ? (
                     <p className="mt-1 text-xs text-slate-600">{String(p.calculationSummary)}</p>
                   ) : null}
@@ -194,6 +252,19 @@ export function DataParametersPage() {
             })}
           </ul>
           <h3 className="mt-4 font-semibold">
+            Defined not implemented ({String(gaps.definedNotImplementedCount ?? 0)})
+          </h3>
+          <ul className="space-y-1">
+            {asList(gaps.definedNotImplemented).map((raw, i) => {
+              const p = asRecord(raw)
+              return (
+                <li key={i}>
+                  {String(p.businessName)} <span className="text-slate-500">({String(p.id)})</span>
+                </li>
+              )
+            })}
+          </ul>
+          <h3 className="mt-4 font-semibold">
             Availability / binding gaps ({String(gaps.availabilityGapCount ?? 0)})
           </h3>
           <ul className="space-y-1">
@@ -201,17 +272,13 @@ export function DataParametersPage() {
               const p = asRecord(raw)
               return (
                 <li key={i}>
-                  {String(p.businessName)} — {String(p.availability ?? '—')}
+                  {String(p.businessName)} <span className="text-slate-500">({String(p.id)})</span>
                 </li>
               )
             })}
           </ul>
         </section>
       ) : null}
-
-      <p className="text-xs text-slate-500">
-        allowCanonicalAuthority=false · production authority unchanged · no duplicate catalogue
-      </p>
     </div>
   )
 }
