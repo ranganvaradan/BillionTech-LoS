@@ -38,6 +38,7 @@ public class StagingDemoController {
     private final StagingPolicyStudioDemoService policyStudioDemoService;
     private final StagingReplayDemoService replayDemoService;
     private final StagingProspectSimulationService prospectSimulationService;
+    private final PolicyStudioTestExperienceService policyStudioTestExperienceService;
     private final StagingProspectApprovalService prospectApprovalService;
     private final PolicyCatalogueFacade policyCatalogueFacade;
     private final CreditCapabilityCatalogueService creditCapabilityCatalogueService;
@@ -513,6 +514,43 @@ public class StagingDemoController {
         assertInternalToken(token);
         assertStagingDemoEnabled();
         return prospectSimulationService.listApplications(dataSource);
+    }
+
+    /** POLICY-UX-2E — Credit Manager Test experience context (modes, required params, apps). */
+    @GetMapping("/policy-studio/documents/{documentId}/test")
+    public Map<String, Object> policyTestContext(
+            @PathVariable UUID documentId,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token,
+            @RequestHeader(value = "X-Tenant-Id", required = false) String tenantHeader) {
+        assertInternalToken(token);
+        assertStagingDemoEnabled();
+        return policyStudioTestExperienceService.testContext(documentId, tenantHeader);
+    }
+
+    /** POLICY-UX-2E — Quick Test against draft rules (simulation-only values). */
+    @PostMapping("/policy-studio/documents/{documentId}/test/quick")
+    public Map<String, Object> policyQuickTest(
+            @PathVariable UUID documentId,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token,
+            @RequestHeader(value = "X-Tenant-Id", required = false) String tenantHeader,
+            @RequestBody(required = false) Map<String, Object> body) {
+        assertInternalToken(token);
+        assertStagingDemoEnabled();
+        return policyStudioTestExperienceService.runQuickTest(
+                documentId, body == null ? Map.of() : body, tenantHeader);
+    }
+
+    /** POLICY-UX-2E — Existing application test (read-only; does not mutate application). */
+    @PostMapping("/policy-studio/documents/{documentId}/test/application")
+    public Map<String, Object> policyApplicationTest(
+            @PathVariable UUID documentId,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token,
+            @RequestHeader(value = "X-Tenant-Id", required = false) String tenantHeader,
+            @RequestBody(required = false) Map<String, Object> body) {
+        assertInternalToken(token);
+        assertStagingDemoEnabled();
+        return policyStudioTestExperienceService.runApplicationTest(
+                documentId, body == null ? Map.of() : body, tenantHeader);
     }
 
     @GetMapping("/policy-studio/documents/{documentId}/simulation")

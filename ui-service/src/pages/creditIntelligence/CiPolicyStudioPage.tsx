@@ -948,6 +948,7 @@ export function CiPolicyStudioPage() {
             setBusy={setBusy}
             onError={setError}
             prospectDemoMode={prospectDemoMode}
+            onResolveParameter={() => selectWorkflowTab('rules')}
           />
         ) : (
           <CiSection title="Simulation">

@@ -380,6 +380,61 @@ export async function getSimulationContext(documentId: string): Promise<Simulati
   return data
 }
 
+/** POLICY-UX-2E — Credit Manager Test experience */
+export type PolicyTestContext = Record<string, unknown> & {
+  title?: string
+  modes?: Array<Record<string, unknown>>
+  requiredParameters?: Array<Record<string, unknown>>
+  readiness?: Record<string, unknown>
+  applications?: Array<Record<string, unknown>>
+  recentTests?: Array<Record<string, unknown>>
+  historicalBatch?: Record<string, unknown>
+}
+
+export type PolicyTestResult = Record<string, unknown> & {
+  simulatedDecision?: string
+  summary?: Record<string, unknown>
+  ruleResults?: Array<Record<string, unknown>>
+  blockers?: unknown[]
+  recentTests?: Array<Record<string, unknown>>
+  currentVsDraft?: Record<string, unknown>
+}
+
+export async function getPolicyTestContext(documentId: string): Promise<PolicyTestContext> {
+  const { data } = await http.get<PolicyTestContext>(
+    `${BASE}/policy-studio/documents/${encodeURIComponent(documentId)}/test`,
+  )
+  return data
+}
+
+export async function runPolicyQuickTest(
+  documentId: string,
+  body: { testValues?: Record<string, unknown>; product?: string } = {},
+): Promise<PolicyTestResult> {
+  const { data } = await http.post<PolicyTestResult>(
+    `${BASE}/policy-studio/documents/${encodeURIComponent(documentId)}/test/quick`,
+    body,
+    { timeout: 120_000 },
+  )
+  return data
+}
+
+export async function runPolicyApplicationTest(
+  documentId: string,
+  body: {
+    applicationCode: string
+    testValues?: Record<string, unknown>
+    reviewer?: string
+  },
+): Promise<PolicyTestResult> {
+  const { data } = await http.post<PolicyTestResult>(
+    `${BASE}/policy-studio/documents/${encodeURIComponent(documentId)}/test/application`,
+    body,
+    { timeout: 180_000 },
+  )
+  return data
+}
+
 export async function listSimulationApplications(
   dataSource = 'VALIDATION_FIXTURES',
 ): Promise<Record<string, unknown>> {
