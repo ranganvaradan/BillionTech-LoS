@@ -106,6 +106,11 @@ public class PolicyStudioPersistenceService {
         sessionIdToDocumentId.clear();
     }
 
+    /** POLICY-CREATION-1 — list in-memory sessions for Credit Policies landing. */
+    public List<PolicyStudioSession> listAllSessions() {
+        return new ArrayList<>(storeByDocumentId.values());
+    }
+
     public Optional<CiPolicyParameter> findParameter(UUID tenantId, String code) {
         for (PolicyStudioSession s : storeByDocumentId.values()) {
             if (s.getDocument() != null && tenantId.equals(s.getDocument().getTenantId())) {

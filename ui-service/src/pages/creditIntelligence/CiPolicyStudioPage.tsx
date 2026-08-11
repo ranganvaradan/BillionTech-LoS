@@ -1,25 +1,22 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   addPlainEnglishPolicyRule,
+  copyPolicyStudioDocument,
+  createPolicyFromScratch,
   getPolicyStudioLanding,
   getPolicyStudioSession,
   getStagingPolicyStudio,
   resetDemoPolicy,
   resolvePolicyAmbiguity,
   reviewPolicyRule,
-  runDemoBlockedPath,
-  runDemoHappyPath,
   saveLifecycleDraft,
   uploadPolicyStudioFile,
   type PolicyStudioLanding,
   type StagingPolicyStudio,
 } from '@/api/creditIntelligence'
 import { ApiError } from '@/api/http'
-import { useAuth } from '@/auth/useAuth'
-import { PageHeader } from '@/components/PageHeader'
-import { PoliciesWorkspaceNav } from '@/components/workspace/PoliciesWorkspaceNav'
-import { CiFixtureBanner } from '@/components/creditIntelligence/CiFixtureBanner'
 import { CiExecutiveSummary, CiSection, CiTechnicalDetails } from '@/components/creditIntelligence/CiSection'
+import { CiCreditPoliciesLanding } from '@/pages/creditIntelligence/CiCreditPoliciesLanding'
 import { POLICY_STUDIO_PRIMARY_TAB_IDS } from '@/lib/applicationWorkbench'
 import { derivePolicyNextStep, progressStageLabels } from '@/lib/creditIntelligence/businessLexicon'
 import {
@@ -30,7 +27,6 @@ import {
   type PolicyStudioDetailsSectionId,
 } from '@/lib/ux/policyStudioShell'
 import { CiPolicyAmbiguitiesTab } from '@/pages/creditIntelligence/CiPolicyAmbiguitiesTab'
-import { CiPolicyAnalystExperience } from '@/pages/creditIntelligence/CiPolicyAnalystExperience'
 import { CiPolicyApprovalsTab } from '@/pages/creditIntelligence/CiPolicyApprovalsTab'
 import { CiPolicyKycTab } from '@/pages/creditIntelligence/CiPolicyKycTab'
 import { CiPolicyRulesTab } from '@/pages/creditIntelligence/CiPolicyRulesTab'
@@ -53,7 +49,7 @@ type TabId =
   | 'approvals'
   | 'lifecycle'
 type Kind = 'banking' | 'bureau' | 'kyc'
-type StudioView = 'landing' | 'analyzing' | 'session'
+type StudioView = 'landing' | 'session'
 
 function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {}
@@ -75,19 +71,13 @@ function chipClass(state: string): string {
 const PRIMARY_TAB_IDS = POLICY_STUDIO_PRIMARY_TAB_IDS as readonly string[]
 
 export function CiPolicyStudioPage() {
-  const { user } = useAuth()
   const [landing, setLanding] = useState<PolicyStudioLanding | null>(null)
   const [view, setView] = useState<StudioView>('landing')
   const [session, setSession] = useState<StagingPolicyStudio | null>(null)
-  const [pendingSession, setPendingSession] = useState<StagingPolicyStudio | null>(null)
-  const [analysisWaiting, setAnalysisWaiting] = useState(false)
-  const [analysisStartedAt, setAnalysisStartedAt] = useState(0)
-  const [analysisFileLabel, setAnalysisFileLabel] = useState<string | null>(null)
   const [tab, setTab] = useState<TabId>('scope')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [dragOver, setDragOver] = useState(false)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [prospectDemoMode, setProspectDemoMode] = useState(() => {
     try {
@@ -105,7 +95,6 @@ export function CiPolicyStudioPage() {
   const [dirty, setDirty] = useState(false)
   const [scopeDirty, setScopeDirty] = useState(false)
   const [rulesDirty, setRulesDirty] = useState(false)
-  const fileRef = useRef<HTMLInputElement>(null)
   const moreRef = useRef<HTMLDivElement>(null)
 
   const selectWorkflowTab = (id: TabId) => {
@@ -169,97 +158,96 @@ export function CiPolicyStudioPage() {
     return () => document.removeEventListener('mousedown', onDoc)
   }, [moreOpen])
 
-  const beginAnalysis = (fileLabel: string) => {
-    setError(null)
-    setPendingSession(null)
-    setAnalysisFileLabel(fileLabel)
-    setAnalysisStartedAt(Date.now())
-    setAnalysisWaiting(true)
-    setView('analyzing')
-    setBusy(true)
-  }
-
-  const finishAnalysis = (data: StagingPolicyStudio) => {
-    setPendingSession(data)
-    setAnalysisWaiting(false)
+  const enterSession = (data: StagingPolicyStudio, defaultTab: TabId = 'scope') => {
+    setSession(data)
     setBusy(false)
-  }
-
-  const failAnalysis = (message: string) => {
-    setAnalysisWaiting(false)
-    setBusy(false)
-    setError(message)
-  }
-
-  const openDemo = async (kind: Kind) => {
-    beginAnalysis(
-      kind === 'kyc'
-        ? 'KYC & Eligibility (validation sample)'
-        : kind === 'banking'
-          ? 'Banking policy (demo)'
-          : 'Bureau policy (demo)',
-    )
-    try {
-      const data = await getStagingPolicyStudio(kind)
-      finishAnalysis(data)
-      if (kind === 'kyc') {
-        setDetailsSection('kyc-eligibility')
-        setDetailsOpen(true)
-        setTab('scope')
-      }
-    } catch (e) {
-      failAnalysis(e instanceof ApiError ? e.message : 'Could not open demo policy')
-    }
-  }
-
-  const processFile = async (file: File | null | undefined) => {
-    if (!file) return
-    beginAnalysis(file.name)
-    try {
-      const data = await uploadPolicyStudioFile(file)
-      finishAnalysis(data)
-    } catch (e) {
-      failAnalysis(
-        e instanceof ApiError
-          ? e.message
-          : 'We could not process this upload. Please try a PDF, Word, or text file.',
-      )
-    } finally {
-      if (fileRef.current) fileRef.current.value = ''
-    }
-  }
-
-  const enterSessionFromAnalysis = () => {
-    if (!pendingSession) return
-    setSession(pendingSession)
-    setPendingSession(null)
-    setTab('scope')
+    setTab(defaultTab)
     setView('session')
     setExpanded({})
     setError(null)
     setDirty(false)
     setScopeDirty(false)
     setRulesDirty(false)
+    setDetailsOpen(false)
+    setSavedLabel(null)
   }
 
-  const cancelAnalysis = () => {
-    setView('landing')
-    setAnalysisWaiting(false)
-    setPendingSession(null)
-    setBusy(false)
+  const openDemo = async (kind: Kind) => {
+    setBusy(true)
     setError(null)
+    try {
+      const data = await getStagingPolicyStudio(kind)
+      enterSession(data, 'scope')
+      if (kind === 'kyc') {
+        setDetailsSection('kyc-eligibility')
+        setDetailsOpen(true)
+      }
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Could not open demo policy')
+    } finally {
+      setBusy(false)
+    }
   }
 
-  const onDrop = (e: DragEvent) => {
-    e.preventDefault()
-    setDragOver(false)
-    const f = e.dataTransfer.files?.[0]
-    void processFile(f)
+  const processFile = async (file: File | null | undefined) => {
+    if (!file) return
+    setBusy(true)
+    setError(null)
+    try {
+      // POLICY-CREATION-1 — upload converges into the same draft workspace (no separate AI tour)
+      const data = await uploadPolicyStudioFile(file)
+      enterSession(data, 'scope')
+      void loadLanding()
+    } catch (e) {
+      setError(
+        e instanceof ApiError
+          ? e.message
+          : 'We could not process this upload. Please try a PDF, Word, or text file.',
+      )
+    } finally {
+      setBusy(false)
+    }
   }
 
-  const onSubmitUpload = (e: FormEvent) => {
-    e.preventDefault()
-    void processFile(fileRef.current?.files?.[0])
+  const createScratch = async (policyName: string, description: string) => {
+    setBusy(true)
+    setError(null)
+    try {
+      const data = await createPolicyFromScratch({ policyName, description })
+      enterSession(data, 'scope')
+      void loadLanding()
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Could not create policy draft')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const copyPolicy = async (documentId: string, policyName?: string) => {
+    setBusy(true)
+    setError(null)
+    try {
+      const data = await copyPolicyStudioDocument(documentId, policyName ? { policyName } : undefined)
+      enterSession(data, 'scope')
+      void loadLanding()
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Could not copy policy')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const openExisting = async (documentId: string) => {
+    setBusy(true)
+    setError(null)
+    try {
+      const data = await getPolicyStudioSession(documentId)
+      enterSession(data, 'scope')
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : 'Could not open policy')
+    } finally {
+      setBusy(false)
+    }
   }
 
   const documentId = String(asRecord(session?.policyHeader).documentId ?? '')
@@ -405,211 +393,25 @@ export function CiPolicyStudioPage() {
     savedLabel,
   })
 
-  const capabilities = useMemo(
-    () => (Array.isArray(landing?.capabilities) ? landing!.capabilities! : []),
-    [landing],
-  )
   const demos = useMemo(
     () => (Array.isArray(landing?.demoPolicies) ? landing!.demoPolicies! : []),
     [landing],
   )
 
-  if (view === 'analyzing') {
-    return (
-      <CiPolicyAnalystExperience
-        userName={user?.name}
-        fileLabel={analysisFileLabel}
-        waiting={analysisWaiting}
-        waitStartedAt={analysisStartedAt}
-        session={pendingSession}
-        error={error}
-        onReviewPolicy={enterSessionFromAnalysis}
-        onCancel={cancelAnalysis}
-      />
-    )
-  }
-
   if (view === 'landing') {
     return (
-      <div>
-        <PageHeader
-          title={String(landing?.title ?? 'Policy Studio')}
-          description={String(
-            landing?.subtitle ??
-              'Upload your credit policy. BillionTech will identify rules, definitions, exceptions and ambiguous terms, then prepare a draft policy for Credit Manager review. Draft / approved / scheduled only — not live LOS production configuration.',
-          )}
-        />
-        <PoliciesWorkspaceNav />
-        <CiFixtureBanner />
-        {loading ? (
-          <p className="text-sm text-slate-600">Preparing Policy Studio…</p>
-        ) : null}
-        {error ? (
-          <p className="mb-4 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800" role="alert">
-            {error}
-          </p>
-        ) : null}
-
-        <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
-          <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="text-lg font-semibold text-slate-900">Upload Credit Policy</h2>
-            <p className="mt-1 text-sm text-slate-600">
-              Supported: {(landing?.supportedFormats as string[] | undefined)?.join(', ') ?? 'PDF, DOCX, TXT'}
-            </p>
-            <p className="mt-2 text-sm text-slate-500">
-              After upload, the AI Policy Analyst will walk through structure, rules, definitions and ambiguities
-              before you enter Policy Studio.
-            </p>
-            <form onSubmit={onSubmitUpload} className="mt-4">
-              <div
-                onDragOver={(e) => {
-                  e.preventDefault()
-                  setDragOver(true)
-                }}
-                onDragLeave={() => setDragOver(false)}
-                onDrop={onDrop}
-                className={`rounded-xl border-2 border-dashed px-6 py-10 text-center transition ${
-                  dragOver ? 'border-sky-500 bg-sky-50' : 'border-slate-300 bg-slate-50'
-                }`}
-              >
-                <p className="text-sm font-medium text-slate-800">Drag & drop your policy file here</p>
-                <p className="mt-1 text-xs text-slate-500">or choose a file from your computer</p>
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
-                  className="mt-4 block w-full text-sm text-slate-600"
-                />
-              </div>
-              <button type="submit" className="bt-btn bt-btn-primary mt-4" disabled={busy}>
-                {busy ? 'Processing…' : 'Upload Policy'}
-              </button>
-            </form>
-
-            <div className="mt-6 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-              <strong>AI understanding requires human review.</strong>
-              <div className="mt-1 font-normal text-amber-900">Nothing is published automatically.</div>
-            </div>
-          </section>
-
-          <aside className="space-y-4">
-            <CiExecutiveSummary title="What should I do next?">
-              <ol className="list-decimal space-y-1 pl-5 text-sm text-slate-700">
-                <li>Upload a credit policy, or open a demo policy</li>
-                <li>Review ambiguous terms and proposed business rules</li>
-                <li>Run simulation, then send for approval</li>
-              </ol>
-            </CiExecutiveSummary>
-            <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">BillionTech will</h3>
-              <ul className="mt-3 space-y-2 text-sm text-slate-800">
-                {capabilities.map((c) => (
-                  <li key={String(c)} className="flex gap-2">
-                    <span className="text-emerald-600" aria-hidden>
-                      ✓
-                    </span>
-                    <span>{String(c)}</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-
-            <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Demo policies</h3>
-              <p className="mt-1 text-xs text-slate-500">Open a sample to explore Policy Understanding.</p>
-              <div className="mt-3 space-y-2">
-                {demos.map((d) => {
-                  const row = asRecord(d)
-                  const kind = String(row.kind ?? '') as Kind
-                  return (
-                    <button
-                      key={kind}
-                      type="button"
-                      disabled={busy || (kind !== 'banking' && kind !== 'bureau' && kind !== 'kyc')}
-                      onClick={() => void openDemo(kind)}
-                      className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-left hover:border-sky-300 hover:bg-sky-50"
-                    >
-                      <div className="font-semibold text-slate-900">{String(row.name ?? kind)}</div>
-                      <div className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-amber-800">
-                        {String(row.label ?? 'DEMO POLICY — CUSTOMER-SUPPLIED SAMPLE')}
-                      </div>
-                      <div className="mt-1 text-xs text-slate-600">{String(row.description ?? '')}</div>
-                    </button>
-                  )
-                })}
-              </div>
-              {!prospectDemoMode ? (
-              <div className="mt-4 space-y-2 border-t border-slate-100 pt-3">
-                <p className="text-xs font-semibold uppercase text-slate-500">Demo walkthrough scripts</p>
-                <button
-                  type="button"
-                  className="bt-btn bt-btn-primary bt-btn-sm w-full"
-                  disabled={busy}
-                  onClick={() =>
-                    void (async () => {
-                      setBusy(true)
-                      setError(null)
-                      setDemoMsg(null)
-                      try {
-                        const data = await runDemoHappyPath()
-                        const doc = String(data.documentId ?? '')
-                        if (doc) {
-                          setSession(await getPolicyStudioSession(doc))
-                          setView('session')
-                          setTab('scope')
-                          setDetailsSection('approvals')
-                          setDetailsOpen(true)
-                        }
-                        setDemoMsg(
-                          `Happy path complete — Draft ${String(asRecord(data.draftSummary).versionLabel ?? 'ready')}. ${String(data.demoResolutionBanner ?? '')}`,
-                        )
-                      } catch (e) {
-                        setError(e instanceof ApiError ? e.message : 'Happy path failed')
-                      } finally {
-                        setBusy(false)
-                      }
-                    })()
-                  }
-                >
-                  Run Banking happy path
-                </button>
-                <button
-                  type="button"
-                  className="bt-btn bt-btn-secondary bt-btn-sm w-full"
-                  disabled={busy}
-                  onClick={() =>
-                    void (async () => {
-                      setBusy(true)
-                      setError(null)
-                      setDemoMsg(null)
-                      try {
-                        const data = await runDemoBlockedPath()
-                        const doc = String(data.documentId ?? '')
-                        if (doc) {
-                          setSession(await getPolicyStudioSession(doc))
-                          setView('session')
-                          setTab('scope')
-                          setDetailsSection('approvals')
-                          setDetailsOpen(true)
-                        }
-                        setDemoMsg(String(data.message ?? 'Blocked path — draft cannot be built.'))
-                      } catch (e) {
-                        setError(e instanceof ApiError ? e.message : 'Blocked path failed')
-                      } finally {
-                        setBusy(false)
-                      }
-                    })()
-                  }
-                >
-                  Run blocked-path demo
-                </button>
-                {demoMsg ? <p className="text-xs text-slate-600">{demoMsg}</p> : null}
-              </div>
-              ) : null}
-            </section>
-          </aside>
-        </div>
-      </div>
+      <CiCreditPoliciesLanding
+        landing={landing as Record<string, unknown> | null}
+        loading={loading}
+        busy={busy}
+        error={error}
+        demos={demos}
+        onCreateScratch={(n, d) => void createScratch(n, d)}
+        onUploadFile={(f) => void processFile(f)}
+        onCopy={(id, n) => void copyPolicy(id, n)}
+        onOpen={(id) => void openExisting(id)}
+        onOpenDemo={(kind) => void openDemo(kind)}
+      />
     )
   }
 
@@ -627,6 +429,7 @@ export function CiPolicyStudioPage() {
               setDemoMsg(null)
               setSavedLabel(null)
               setDetailsOpen(false)
+              void loadLanding()
             }}
           >
             ← Policies
@@ -640,6 +443,9 @@ export function CiPolicyStudioPage() {
               <span className="ml-2 text-xs font-medium text-amber-800">· Demo sample</span>
             ) : null}
           </p>
+          {asRecord(session).copiedFromLabel ? (
+            <p className="mt-0.5 text-xs text-slate-500">{String(asRecord(session).copiedFromLabel)}</p>
+          ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button

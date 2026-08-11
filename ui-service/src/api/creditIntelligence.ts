@@ -90,6 +90,27 @@ export async function getPolicyStudioLanding(): Promise<PolicyStudioLanding> {
   return data
 }
 
+/** POLICY-CREATION-1 — Start from scratch draft (no upload). */
+export async function createPolicyFromScratch(body: {
+  policyName: string
+  description?: string
+}): Promise<StagingPolicyStudio> {
+  const { data } = await http.post<StagingPolicyStudio>(`${BASE}/policy-studio/create`, body)
+  return data
+}
+
+/** POLICY-CREATION-1 — Copy existing policy into a new draft. */
+export async function copyPolicyStudioDocument(
+  documentId: string,
+  body?: { policyName?: string },
+): Promise<StagingPolicyStudio> {
+  const { data } = await http.post<StagingPolicyStudio>(
+    `${BASE}/policy-studio/documents/${encodeURIComponent(documentId)}/copy`,
+    body ?? {},
+  )
+  return data
+}
+
 /** POLICY-UX-2A — universal credit capability catalogue (read model). */
 export type CreditCapabilityCatalogue = Record<string, unknown> & {
   title?: string

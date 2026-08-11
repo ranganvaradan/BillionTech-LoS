@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import {
   approveLifecyclePolicy,
   createLifecycleVersion,
@@ -119,6 +120,40 @@ export function CiPolicyLifecycleTab({
   const blockers = asList(settings?.readyToScheduleBlockers)
   const authority = asRecord(settings?.authoritySeparation)
 
+  const approvedSummary = (() => {
+    const rules = asList(asRecord(session).underwritingRules)
+    const counts = asRecord(asRecord(session).counts)
+    const ruleCount =
+      rules.length ||
+      Number(counts.rulesTotal ?? counts.rules ?? 0) ||
+      0
+    let autoDerived = 0
+    let manual = 0
+    for (const row of rules) {
+      const r = asRecord(row)
+      const binding = String(r.bindingState ?? r.evaluatedFrom ?? r.resolutionState ?? '')
+      const ops = asList(r.operands)
+      if (ops.length) {
+        for (const op of ops) {
+          const o = asRecord(op)
+          const st = String(o.resolutionState ?? o.status ?? o.evaluatedFrom ?? '').toUpperCase()
+          if (st.includes('MANUAL')) manual += 1
+          else if (st.includes('DERIVED') || st.includes('RAW') || st.includes('AUTOMATIC')) autoDerived += 1
+        }
+      } else if (/manual/i.test(binding)) {
+        manual += 1
+      } else if (/derived|raw|automatic|ready/i.test(binding)) {
+        autoDerived += 1
+      }
+    }
+    const ingest = asRecord(asRecord(session).ingestionBinding)
+    if (!autoDerived && !manual) {
+      autoDerived = Number(ingest.automatic ?? ingest.derived ?? 0) || 0
+      manual = Number(ingest.manualInputs ?? ingest.manual ?? 0) || 0
+    }
+    return { ruleCount, autoDerived, manual }
+  })()
+
   return (
     <div className="space-y-4">
       <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-950">
@@ -134,9 +169,8 @@ export function CiPolicyLifecycleTab({
       </div>
 
       <CiExecutiveSummary title="Versions & activation">
-        <p>
-          Scope (which applications) is edited on the <strong>Scope</strong> tab. This tab handles
-          version status, schedule, and shadow checks. Normal processing resolves to exactly one policy.
+        <p className="text-sm text-slate-700">
+          Draft → Ready for review → Approved → Active/Scheduled — using existing governance controls.
         </p>
         {asRecord(settings?.scopeSummary).appliesTo ? (
           <p className="mt-2 text-sm text-slate-800">
@@ -145,6 +179,53 @@ export function CiPolicyLifecycleTab({
           </p>
         ) : null}
       </CiExecutiveSummary>
+
+      {['APPROVED', 'SCHEDULED', 'ACTIVE'].includes(status.toUpperCase()) ? (
+        <section
+          className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-4"
+          data-testid="policy-approved-summary"
+        >
+          <h3 className="text-base font-semibold text-emerald-950">Policy approved</h3>
+          <dl className="mt-2 grid gap-1 text-sm text-emerald-950 sm:grid-cols-2">
+            <div>
+              <dt className="text-xs text-emerald-800">Scope</dt>
+              <dd>{String(asRecord(settings?.scopeSummary).appliesTo ?? '—')}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-emerald-800">Version</dt>
+              <dd>{String(hdr.policyVersion ?? '—')}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-emerald-800">Underwriting rules</dt>
+              <dd>{String(approvedSummary.ruleCount)}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-emerald-800">Automatic/derived parameters</dt>
+              <dd>{String(approvedSummary.autoDerived)}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-emerald-800">Manual parameters</dt>
+              <dd>{String(approvedSummary.manual)}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-emerald-800">Status</dt>
+              <dd>{status}</dd>
+            </div>
+          </dl>
+          <p className="mt-2 text-xs text-emerald-900">
+            Next business step: define scoring factors separately — not every policy rule becomes a
+            scorecard factor. Bands, weights and cut-offs require Credit Manager confirmation.
+          </p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link to="/underwriting-scorecards" className="bt-btn bt-btn-primary bt-btn-sm" data-testid="create-scorecard-handoff">
+              Create Scorecard
+            </Link>
+            <Link to="/underwriting-scorecards" className="bt-btn bt-btn-secondary bt-btn-sm">
+              Open Scorecard
+            </Link>
+          </div>
+        </section>
+      ) : null}
 
       <CiSection title="Policy definition" description="Business metadata — no technical IDs.">
         <dl className="grid gap-3 sm:grid-cols-2 text-sm">

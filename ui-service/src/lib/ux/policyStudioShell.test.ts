@@ -136,8 +136,12 @@ describe('POLICY-UX-SHELL-1', () => {
       join(__dirname, '../../pages/creditIntelligence/CiPolicyStudioPage.tsx'),
       'utf8',
     )
+    const landing = readFileSync(
+      join(__dirname, '../../pages/creditIntelligence/CiCreditPoliciesLanding.tsx'),
+      'utf8',
+    )
     // Landing keeps PoliciesWorkspaceNav; session shell must not place it beside primary tabs.
-    expect(page).toContain('<PoliciesWorkspaceNav />')
+    expect(landing).toContain('<PoliciesWorkspaceNav />')
     expect(page).toContain('data-testid="policy-studio-session-shell"')
     const sessionIdx = page.indexOf('data-testid="policy-studio-session-shell"')
     const afterSession = page.slice(sessionIdx)
@@ -151,3 +155,4 @@ describe('POLICY-UX-SHELL-1', () => {
     expect(afterSession).not.toContain('use <strong>Save Draft</strong> anytime')
   })
 })
+

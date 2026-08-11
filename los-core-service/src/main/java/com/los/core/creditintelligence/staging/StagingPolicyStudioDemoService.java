@@ -32,6 +32,7 @@ import java.io.InputStream;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -95,23 +96,18 @@ public class StagingPolicyStudioDemoService {
     public Map<String, Object> landing() {
         Map<String, Object> out = new LinkedHashMap<>();
         StagingDemoWorkspaceService.stampSafety(out);
-        out.put("title", "AI Policy Studio");
+        // POLICY-CREATION-1 — Credit Manager workspace, not upload/AI demo first
+        out.put("title", "Credit Policies");
         out.put("subtitle",
-                "Upload your Decision Policy. BillionTech will identify KYC & Eligibility requirements, credit rules, "
-                        + "definitions, exceptions and ambiguities, then convert them into an executable draft for review.");
+                "Create and manage underwriting policies for your lending products and customer segments.");
         out.put("supportedFormats", List.of("PDF", "DOCX", "TXT"));
         out.put("maxUploadBytes", PolicyTextExtractionService.MAX_BYTES);
-        out.put("capabilities", List.of(
-                "Read and structure the document",
-                "Identify KYC & Eligibility requirements",
-                "Identify credit underwriting rules",
-                "Map rules to available data and verification facts",
-                "Flag ambiguous terms for review",
-                "Generate executable rule candidates",
-                "Generate boundary and missing-data tests"));
-        out.put("humanReviewBanner",
-                "AI-generated interpretations require human review. Nothing is published automatically.");
+        out.put("primaryAction", "CREATE_POLICY");
+        out.put("createPaths", List.of("START_FROM_SCRATCH", "UPLOAD_EXISTING", "COPY_EXISTING"));
+        out.put("journey", List.of(
+                "Create Policy", "Scope", "Rules", "Resolve parameters", "Test", "Versions", "Approved", "Scorecard"));
         out.put("allowCanonicalAuthority", false);
+        out.put("existingPolicies", listExistingPolicies());
         out.put("demoPolicies", List.of(
                 Map.of(
                         "kind", "kyc",
@@ -128,7 +124,189 @@ public class StagingPolicyStudioDemoService {
                         "name", "Bureau BRE",
                         "label", DEMO_BANNER,
                         "description", "Sample bureau policy used for product demonstration.")));
+        out.put("examplesNote", "Examples & templates are for staging/development only.");
         return out;
+    }
+
+    /**
+     * POLICY-CREATION-1 — Start from scratch: empty draft session (no document upload required).
+     * Reuses processUpload with minimal stub text (document service requires non-blank source).
+     */
+    public Map<String, Object> createFromScratch(Map<String, Object> body, String uploadedBy, String tenantHeader) {
+        String name = body == null || body.get("policyName") == null
+                ? "" : String.valueOf(body.get("policyName")).trim();
+        if (name.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Policy name is required");
+        }
+        String description = body == null || body.get("description") == null
+                ? "" : String.valueOf(body.get("description")).trim();
+        UUID tenantId = resolveTenant(tenantHeader);
+        String text = "# " + name + "\n\n"
+                + (description.isBlank() ? "" : description + "\n\n")
+                + "Draft policy created from scratch in Policy Studio.\n"
+                + "Define Scope, then add underwriting rules. Save Draft anytime.\n";
+        PolicyStudioSession session = orchestrator.processUpload(
+                tenantId,
+                name,
+                "TXT",
+                text,
+                uploadedBy == null || uploadedBy.isBlank() ? "credit_manager" : uploadedBy,
+                name.replaceAll("[^a-zA-Z0-9._-]+", "_") + ".txt");
+        if (lifecycleService != null) {
+            requireLifecycle().saveDraft(session, Map.of(
+                    "reasonForChange", "Created from scratch",
+                    "policyName", name));
+        }
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("kind", "scratch");
+        meta.put("demo", false);
+        meta.put("canResetDemo", false);
+        meta.put("createdFromScratch", true);
+        meta.put("fileName", name + ".txt");
+        meta.put("description", description);
+        if (session.getDocument() != null && session.getDocument().getId() != null) {
+            sessionMeta.put(session.getDocument().getId(), meta);
+        }
+        Map<String, Object> view = toProspectView(session, meta);
+        view.put("message", "Draft created. Continue with Scope, then Rules.");
+        view.put("enterWorkspace", true);
+        view.put("defaultTab", "scope");
+        return view;
+    }
+
+    /**
+     * POLICY-CREATION-1 — Copy existing policy into a NEW draft without mutating the source.
+     * Reuses clone-via-processUpload pattern (same as lifecycle new-version) but allows any source status.
+     */
+    public Map<String, Object> copyPolicy(UUID sourceDocumentId, Map<String, Object> body, String tenantHeader) {
+        PolicyStudioSession source = requireSession(sourceDocumentId, tenantHeader);
+        CiPolicyDocument doc = source.getDocument();
+        if (doc == null || doc.getSourceText() == null || doc.getSourceText().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Source policy text is unavailable to copy.");
+        }
+        String sourceName = doc.getName() == null ? "Policy" : doc.getName();
+        String newName = body != null && body.get("policyName") != null
+                && !String.valueOf(body.get("policyName")).isBlank()
+                ? String.valueOf(body.get("policyName")).trim()
+                : sourceName + " (Copy)";
+        Map<String, Object> srcLife = lifecycleService == null
+                ? Map.of() : requireLifecycle().settingsView(source);
+        String sourceVersion = String.valueOf(srcLife.getOrDefault("policyVersion",
+                "v" + (doc.getDocumentVersion() == null ? 1 : doc.getDocumentVersion())));
+        String cloneText = doc.getSourceText() + "\n\n<!-- COPIED_FROM documentId="
+                + sourceDocumentId + " name=" + sourceName + " version=" + sourceVersion + " -->\n";
+        PolicyStudioSession created = orchestrator.processUpload(
+                doc.getTenantId(),
+                newName,
+                doc.getDocumentType() == null ? "TXT" : doc.getDocumentType(),
+                cloneText,
+                body != null && body.get("createdBy") != null
+                        ? String.valueOf(body.get("createdBy")) : "credit_manager",
+                doc.getOriginalFileReference());
+        if (created.getDocument() != null) {
+            created.getDocument().setProductScope(doc.getProductScope());
+        }
+        // Preserve CM dispositions / parameter resolutions where systemRuleId matches
+        copyRuleDraftMetadata(source, created);
+        if (lifecycleService != null) {
+            requireLifecycle().saveDraft(created, Map.of(
+                    "reasonForChange", "Copied from " + sourceName + " · " + sourceVersion,
+                    "policyName", newName));
+        }
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("kind", "copy");
+        meta.put("demo", false);
+        meta.put("canResetDemo", false);
+        meta.put("copiedFrom", sourceDocumentId.toString());
+        meta.put("copiedFromName", sourceName);
+        meta.put("copiedFromVersion", sourceVersion);
+        meta.put("copiedFromLabel", "Copied from: " + sourceName + " · Version " + sourceVersion);
+        if (created.getDocument() != null && created.getDocument().getId() != null) {
+            sessionMeta.put(created.getDocument().getId(), meta);
+            orchestrator.persistence().saveSessionSnapshot(created);
+        }
+        Map<String, Object> view = toProspectView(created, meta);
+        view.put("message", "New draft created. Source policy was not changed.");
+        view.put("enterWorkspace", true);
+        view.put("defaultTab", "scope");
+        view.put("copiedFromLabel", meta.get("copiedFromLabel"));
+        return view;
+    }
+
+    private void copyRuleDraftMetadata(PolicyStudioSession source, PolicyStudioSession target) {
+        if (source == null || target == null) return;
+        Map<String, CiPolicyRuleCandidate> bySys = new LinkedHashMap<>();
+        for (CiPolicyRuleCandidate r : source.getRuleCandidates()) {
+            if (r.getSystemRuleId() != null && !r.getSystemRuleId().isBlank()) {
+                bySys.put(r.getSystemRuleId().toUpperCase(Locale.ROOT), r);
+            }
+        }
+        for (CiPolicyRuleCandidate t : target.getRuleCandidates()) {
+            if (t.getSystemRuleId() == null) continue;
+            CiPolicyRuleCandidate s = bySys.get(t.getSystemRuleId().toUpperCase(Locale.ROOT));
+            if (s == null || s.getMetadata() == null || s.getMetadata().isEmpty()) continue;
+            Map<String, Object> meta = t.getMetadata() == null
+                    ? new LinkedHashMap<>() : new LinkedHashMap<>(t.getMetadata());
+            meta.putAll(s.getMetadata());
+            t.setMetadata(meta);
+            if (s.getReviewStatus() != null) t.setReviewStatus(s.getReviewStatus());
+        }
+    }
+
+    /** Existing policies for landing — session store (+ rule counts from session). */
+    public List<Map<String, Object>> listExistingPolicies() {
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (PolicyStudioSession session : orchestrator.persistence().listAllSessions()) {
+            if (session.getDocument() == null || session.getDocument().getId() == null) continue;
+            UUID docId = session.getDocument().getId();
+            Map<String, Object> meta = sessionMeta.getOrDefault(docId, Map.of());
+            // Skip pure demo fixtures unless they were saved as working drafts
+            if (Boolean.TRUE.equals(meta.get("demo")) && !"scratch".equals(meta.get("kind"))
+                    && !"copy".equals(meta.get("kind")) && !"upload".equals(meta.get("kind"))) {
+                // still show demos that are open sessions — Credit Manager may want them; mark as example
+            }
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("documentId", docId.toString());
+            row.put("policyName", session.getDocument().getName());
+            Map<String, Object> life = Map.of();
+            try {
+                if (lifecycleService != null) {
+                    life = requireLifecycle().settingsView(session);
+                }
+            } catch (Exception ignored) {
+                life = Map.of();
+            }
+            row.put("status", life.getOrDefault("businessStatus",
+                    session.getDocument().getStatus() == null ? "DRAFT" : session.getDocument().getStatus()));
+            row.put("policyVersion", life.getOrDefault("policyVersion",
+                    "v" + (session.getDocument().getDocumentVersion() == null
+                            ? 1 : session.getDocument().getDocumentVersion())));
+            Map<String, Object> app = life.get("applicability") instanceof Map<?, ?> m
+                    ? castMap(m) : Map.of();
+            row.put("products", app.getOrDefault("products", List.of()));
+            row.put("scopeSummary", life.get("scopeSummary"));
+            row.put("effectiveFrom", app.get("effectiveFrom"));
+            long uw = session.getRuleCandidates() == null ? 0 : session.getRuleCandidates().stream()
+                    .filter(r -> r.getSystemRuleId() == null
+                            || !r.getSystemRuleId().toUpperCase(Locale.ROOT).contains("OVERDUE_CHILD"))
+                    .count();
+            long needs = session.getRuleCandidates() == null ? 0 : session.getRuleCandidates().stream()
+                    .filter(r -> {
+                        Map<String, Object> rm = r.getMetadata() == null ? Map.of() : r.getMetadata();
+                        return Boolean.TRUE.equals(rm.get("NEEDS_INPUT"))
+                                || rm.get("blockedReason") != null;
+                    })
+                    .count();
+            row.put("underwritingRuleCount", uw);
+            row.put("needsInputCount", needs);
+            row.put("kind", meta.getOrDefault("kind", Boolean.TRUE.equals(meta.get("demo")) ? "demo" : "session"));
+            row.put("demo", Boolean.TRUE.equals(meta.get("demo")));
+            row.put("copiedFromLabel", meta.get("copiedFromLabel"));
+            rows.add(row);
+        }
+        rows.sort((a, b) -> String.valueOf(b.get("policyName")).compareToIgnoreCase(String.valueOf(a.get("policyName"))));
+        return rows;
     }
 
     public Map<String, Object> build(String kind) {
@@ -183,7 +361,13 @@ public class StagingPolicyStudioDemoService {
         meta.put("sourceTextLength", extracted.text().length());
         meta.put("sourceTextPreview",
                 extracted.text().length() > 2000 ? extracted.text().substring(0, 2000) + "…" : extracted.text());
-        return toProspectView(session, meta);
+        if (session.getDocument() != null && session.getDocument().getId() != null) {
+            sessionMeta.put(session.getDocument().getId(), meta);
+        }
+        Map<String, Object> view = toProspectView(session, meta);
+        view.put("enterWorkspace", true);
+        view.put("defaultTab", "scope");
+        return view;
     }
 
     public Map<String, Object> sessionView(UUID documentId, String tenantHeader) {
@@ -885,6 +1069,12 @@ public class StagingPolicyStudioDemoService {
         }
         out.put("columns", List.of("SOURCE", "INTERPRETATION", "EXECUTABLE"));
         out.put("canResetDemo", Boolean.TRUE.equals(meta.get("demo")));
+        if (meta.get("copiedFromLabel") != null) {
+            out.put("copiedFromLabel", meta.get("copiedFromLabel"));
+        }
+        if (Boolean.TRUE.equals(meta.get("createdFromScratch"))) {
+            out.put("createdFromScratch", true);
+        }
         out.put("portfolioIntelligencePlaceholder", Map.of(
                 "path", "Portfolio Intelligence → Policy Impact Lab",
                 "enabled", false));
@@ -934,6 +1124,16 @@ public class StagingPolicyStudioDemoService {
             }
         }
         return properties.getDefaultTenantId();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> castMap(Map<?, ?> m) {
+        if (m == null) return Map.of();
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> e : m.entrySet()) {
+            if (e.getKey() != null) out.put(String.valueOf(e.getKey()), e.getValue());
+        }
+        return out;
     }
 
     private static String str(Map<String, Object> body, String key, String defaultValue) {

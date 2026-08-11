@@ -103,7 +103,70 @@ public class StagingDemoController {
             @RequestHeader(value = "X-Internal-Token", required = false) String token) {
         assertInternalToken(token);
         assertStagingDemoEnabled();
-        return policyStudioDemoService.landing();
+        Map<String, Object> landing = policyStudioDemoService.landing();
+        // Merge durable catalogue rows (scheduled/approved) that may not be in-memory sessions
+        try {
+            Map<String, Object> cat = policyCatalogueFacade.list();
+            @SuppressWarnings("unchecked")
+            java.util.List<Map<String, Object>> catalogue =
+                    cat.get("policies") instanceof java.util.List<?> l
+                            ? (java.util.List<Map<String, Object>>) l : java.util.List.of();
+            @SuppressWarnings("unchecked")
+            java.util.List<Map<String, Object>> existing =
+                    landing.get("existingPolicies") instanceof java.util.List<?> l
+                            ? new java.util.ArrayList<>((java.util.List<Map<String, Object>>) l)
+                            : new java.util.ArrayList<>();
+            java.util.Set<String> seen = new java.util.HashSet<>();
+            for (Map<String, Object> row : existing) {
+                if (row.get("documentId") != null) seen.add(String.valueOf(row.get("documentId")));
+            }
+            for (Map<String, Object> c : catalogue) {
+                String docId = c.get("documentId") == null ? null : String.valueOf(c.get("documentId"));
+                if (docId != null && !docId.isBlank() && seen.contains(docId)) continue;
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("documentId", docId);
+                row.put("applicabilityId", c.get("applicabilityId"));
+                row.put("policyName", c.get("policyName"));
+                row.put("status", c.get("status"));
+                row.put("policyVersion", c.get("policyVersion"));
+                row.put("products", c.get("products"));
+                row.put("effectiveFrom", c.get("effectiveFrom"));
+                row.put("kind", "catalogue");
+                row.put("underwritingRuleCount", c.get("underwritingRuleCount"));
+                row.put("needsInputCount", c.get("needsInputCount"));
+                existing.add(row);
+                if (docId != null) seen.add(docId);
+            }
+            landing.put("existingPolicies", existing);
+            landing.put("existingPolicyCount", existing.size());
+        } catch (Exception e) {
+            log.warn("policy landing catalogue merge skipped reason={}", e.getClass().getSimpleName());
+        }
+        return landing;
+    }
+
+    /** POLICY-CREATION-1 — Start from scratch draft. */
+    @PostMapping("/policy-studio/create")
+    public Map<String, Object> createPolicyFromScratch(
+            @RequestBody Map<String, Object> body,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token,
+            @RequestHeader(value = "X-Tenant-Id", required = false) String tenantHeader,
+            @RequestHeader(value = "X-User-Id", required = false) String userId) {
+        assertInternalToken(token);
+        assertStagingDemoEnabled();
+        return policyStudioDemoService.createFromScratch(body == null ? Map.of() : body, userId, tenantHeader);
+    }
+
+    /** POLICY-CREATION-1 — Copy existing policy into a new draft (source unchanged). */
+    @PostMapping("/policy-studio/documents/{documentId}/copy")
+    public Map<String, Object> copyPolicy(
+            @PathVariable UUID documentId,
+            @RequestBody(required = false) Map<String, Object> body,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token,
+            @RequestHeader(value = "X-Tenant-Id", required = false) String tenantHeader) {
+        assertInternalToken(token);
+        assertStagingDemoEnabled();
+        return policyStudioDemoService.copyPolicy(documentId, body == null ? Map.of() : body, tenantHeader);
     }
 
     /**
