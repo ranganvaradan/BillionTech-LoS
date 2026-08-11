@@ -163,7 +163,7 @@ public class PolicyApplicabilityResolver {
             return false;
         }
         // POLICY-UX-2B — also consider mapped dims so distinct borrower/amount scopes do not false-conflict
-        if (!scalarDimOverlaps(a.borrowerType(), b.borrowerType())) {
+        if (!BorrowerTypeScope.overlaps(a.borrowerTypes(), a.borrowerType(), b.borrowerTypes(), b.borrowerType())) {
             return false;
         }
         if (!scalarDimOverlaps(a.customerSegment(), b.customerSegment())) {

@@ -1,6 +1,7 @@
 package com.los.core.controller;
 
 import com.los.core.creditintelligence.policystudio.service.PolicyStudioOrchestrator;
+import com.los.core.service.readiness.CustomerGoLiveReadinessValidator;
 import com.los.core.service.readiness.DataParametersAdminService;
 import com.los.core.service.readiness.PolicyRequiredParameterExtractor;
 import com.los.core.service.readiness.ProductConfigurationComposeService;
@@ -34,6 +35,7 @@ public class LiveReadinessController {
     private final DataParametersAdminService dataParametersAdminService;
     private final ProductConfigurationComposeService composeService;
     private final PolicyRequiredParameterExtractor parameterExtractor;
+    private final CustomerGoLiveReadinessValidator customerGoLiveReadinessValidator;
 
     @Autowired(required = false)
     private PolicyStudioOrchestrator policyStudioOrchestrator;
@@ -94,5 +96,11 @@ public class LiveReadinessController {
         }
         var session = policyStudioOrchestrator.requireSession(documentId);
         return ResponseEntity.ok(parameterExtractor.fromStudioSession(session));
+    }
+
+    @PostMapping("/customer-go-live")
+    @Operation(summary = "SAFE TO GO LIVE? YES/NO for tenant/product (read-model; no auto-deploy)")
+    public ResponseEntity<Map<String, Object>> customerGoLive(@RequestBody(required = false) Map<String, Object> body) {
+        return ResponseEntity.ok(customerGoLiveReadinessValidator.assess(body == null ? Map.of() : body));
     }
 }

@@ -6,6 +6,7 @@ import com.los.core.creditintelligence.policystudio.parameters.PolicyStudioConve
 import com.los.core.model.entity.UnderwritingRuleSet;
 import com.los.core.model.entity.UnderwritingScorecard;
 import com.los.core.model.entity.WorkflowConfig;
+import com.los.core.service.underwriting.ScorecardGovernanceStatuses;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -74,9 +75,22 @@ public class ProductReadinessValidator {
             refs.put("scorecardId", scorecard.getId() == null ? null : scorecard.getId().toString());
             refs.put("scorecardName", scorecard.getName());
             refs.put("scorecardPriority", scorecard.getPriority());
+            refs.put("scorecardVersion", scorecard.getVersion());
+            refs.put("scorecardStatus", scorecard.getStatus());
+            refs.put("scorecardSourceOfTruth", "Runtime Scorecard");
+        }
+        if (workflow != null) {
+            refs.put("workflowSourceOfTruth", "Runtime Workflow");
+        }
+        if (liveRuleSet != null) {
+            refs.put("liveRuleSetSourceOfTruth", "Runtime Rule Set");
         }
         refs.put("policyDocumentId", policyDocumentId);
         refs.put("policyVersion", policyVersionLabel);
+        if (policyDocumentId != null) {
+            refs.put("policyStudioSourceOfTruth", "Policy Studio Policy — Governance only / Shadow");
+            refs.put("policyStudioNotProductionAuthority", true);
+        }
         out.put("references", refs);
 
         boolean scopeOk = scopeCompatible(borrowerType, loanProduct, workflow, liveRuleSet, scorecard);
@@ -118,7 +132,10 @@ public class ProductReadinessValidator {
         out.put("manualReviewPathExists", true); // completeManualUnderwritingDecision
         out.put("rejectPathExists", true);
         out.put("approveCamPathExists", true);
-        out.put("scorecardCompatible", scorecardCompatible(borrowerType, loanProduct, scorecard));
+        boolean scorecardOk = scorecardCompatible(borrowerType, loanProduct, scorecard);
+        boolean scorecardRuntimeActive = scorecardRuntimeActive(scorecard);
+        out.put("scorecardCompatible", scorecardOk);
+        out.put("scorecardRuntimeActive", scorecardRuntimeActive);
         out.put("versionReferencesResolvable",
                 (workflow == null || workflow.getId() != null)
                         && (liveRuleSet == null || liveRuleSet.getId() != null)
@@ -127,48 +144,59 @@ public class ProductReadinessValidator {
         if (!scopeOk) {
             gaps.add(scopeGap(borrowerType, loanProduct, workflow, liveRuleSet, scorecard));
         }
-        if (!Boolean.TRUE.equals(out.get("scorecardCompatible"))) {
+        if (!scorecardOk) {
             gaps.add(scorecard == null
                     ? "No Scorecard selected — hard-rule-only products may still underwrite"
                     : "Scorecard scope mismatch: scorecard="
                     + scorecard.getBorrowerType() + "/" + scorecard.getLoanProduct()
                     + " vs product=" + borrowerType + "/" + loanProduct);
         }
+        if (scorecard != null && !scorecardRuntimeActive) {
+            gaps.add("SCORECARD_NOT_RUNTIME_ACTIVE: status="
+                    + (scorecard.getStatus() == null ? "null" : scorecard.getStatus())
+                    + " — only ACTIVE scorecard versions satisfy production Product Configuration");
+        }
 
+        String manualPath = String.valueOf(out.get("manualParamsCapturePath"));
         boolean ready = Boolean.TRUE.equals(out.get("scopeCompatible"))
                 && Boolean.TRUE.equals(out.get("workflowSuppliesRequiredAutomaticData"))
-                && !"NO".equals(out.get("manualParamsCapturePath"))
-                && Boolean.TRUE.equals(out.get("scorecardCompatible"))
+                && !"NO".equals(manualPath)
+                && !"NEEDS CONFIGURATION".equals(manualPath)
+                && scorecardOk
+                && scorecardRuntimeActive
                 && Boolean.TRUE.equals(out.get("versionReferencesResolvable"))
                 && workflow != null
-                && (liveRuleSet != null || (studioRequired != null
-                && !((List<?>) studioRequired.getOrDefault("requiredParameterIds", List.of())).isEmpty()));
+                && liveRuleSet != null;
 
-        // Without any policy/rule source, not ready
-        if (liveRuleSet == null && (studioRequired == null
-                || ((List<?>) studioRequired.getOrDefault("requiredParameterIds", List.of())).isEmpty())) {
+        // Without Live Rule Set, not runtime-ready (Studio is governance only)
+        if (liveRuleSet == null) {
             ready = false;
-            gaps.add("No Live Rule Set or Studio policy requirements selected");
+            gaps.add("No Live Rule Set selected — Policy Studio is governance/shadow only");
         }
         if (workflow == null) {
             ready = false;
             gaps.add("No Workflow selected");
         }
+        if ("NEEDS CONFIGURATION".equals(manualPath)) {
+            ready = false;
+            gaps.add("Manual parameter(s) lack a proven runtime capture path");
+        }
 
         out.put("ready", ready);
         out.put("status", ready ? "READY" : "NOT READY");
         out.put("gaps", gaps.stream().filter(Objects::nonNull).distinct().toList());
-        out.put("checks", Map.of(
-                "scopeCompatible", yn(scopeOk),
-                "workflowSuppliesRequiredAutomaticData", yn(Boolean.TRUE.equals(out.get("workflowSuppliesRequiredAutomaticData"))),
-                "manualParamsHaveCapturePath", String.valueOf(out.get("manualParamsCapturePath")),
-                "policyEvaluationPositionSafe", "YES",
-                "manualReviewPathExists", "YES",
-                "rejectPathExists", "YES",
-                "approveCamPathExists", "YES",
-                "scorecardCompatible", yn(Boolean.TRUE.equals(out.get("scorecardCompatible"))),
-                "versionReferencesResolvable", yn(Boolean.TRUE.equals(out.get("versionReferencesResolvable")))
-        ));
+        Map<String, Object> checks = new LinkedHashMap<>();
+        checks.put("scopeCompatible", yn(scopeOk));
+        checks.put("workflowSuppliesRequiredAutomaticData", yn(Boolean.TRUE.equals(out.get("workflowSuppliesRequiredAutomaticData"))));
+        checks.put("manualParamsHaveCapturePath", manualPath);
+        checks.put("policyEvaluationPositionSafe", "YES");
+        checks.put("manualReviewPathExists", "YES");
+        checks.put("rejectPathExists", "YES");
+        checks.put("approveCamPathExists", "YES");
+        checks.put("scorecardCompatible", yn(scorecardOk));
+        checks.put("scorecardRuntimeActive", yn(scorecardRuntimeActive));
+        checks.put("versionReferencesResolvable", yn(Boolean.TRUE.equals(out.get("versionReferencesResolvable"))));
+        out.put("checks", checks);
         return out;
     }
 
@@ -211,8 +239,12 @@ public class ProductReadinessValidator {
 
         if (CanonicalParameterDefinition.MANUAL.equalsIgnoreCase(def.type())) {
             row.put("classification", MANUAL);
+            row.put("readiness", "MANUAL");
+            row.put("actor", "Credit Analyst / Relationship Manager");
+            row.put("captureStage", "Application / CAM underwriting review");
+            row.put("workflowPoint", "Pre-decision manual underwriting / CAM capture");
             row.put("gap", null);
-            row.put("note", "Manual input — ensure application/CAM capture exists");
+            row.put("note", "Manual input — Application/CAM path exists for known manual merges");
             return row;
         }
         if (provided.contains(parameterId)) {
@@ -229,7 +261,9 @@ public class ProductReadinessValidator {
         // Banking params: not supplied by typical KYC workflow
         if (parameterId.startsWith("banking.") || parameterId.startsWith("bank.")) {
             row.put("classification", UNAVAILABLE);
-            row.put("gap", def.businessName() + " cannot be populated — selected workflow has no bank-statement/AA analysis step");
+            row.put("readiness", "UNAVAILABLE");
+            row.put("gap", def.businessName()
+                    + " cannot be populated before underwriting — selected workflow has no Bank Statement Analysis / AA acquisition step");
             return row;
         }
         if (parameterId.startsWith("gst.")) {
@@ -252,8 +286,11 @@ public class ProductReadinessValidator {
 
     private static String manualCapture(int manualCount, List<Map<String, Object>> classified) {
         if (manualCount == 0) return "YES";
-        // Application / CreditControl supports many manual merges — PARTIAL until explicit step exists
-        return "PARTIAL";
+        // Known MANUAL params have Application/CAM capture; unknown MANUAL without registry → already UNRESOLVED
+        boolean anyUnknown = classified.stream().anyMatch(r ->
+                MANUAL.equals(String.valueOf(r.get("classification")))
+                        && r.get("actor") == null);
+        return anyUnknown ? "NEEDS CONFIGURATION" : "YES";
     }
 
     private boolean scopeCompatible(
@@ -281,6 +318,12 @@ public class ProductReadinessValidator {
         return eq(borrowerType, sc.getBorrowerType())
                 && productMatches(loanProduct, sc.getLoanProduct())
                 && sc.isActive();
+    }
+
+    private static boolean scorecardRuntimeActive(UnderwritingScorecard sc) {
+        if (sc == null) return false;
+        String status = sc.getStatus() == null ? ScorecardGovernanceStatuses.ACTIVE : sc.getStatus();
+        return sc.isActive() && ScorecardGovernanceStatuses.ACTIVE.equalsIgnoreCase(status);
     }
 
     private static String scopeGap(

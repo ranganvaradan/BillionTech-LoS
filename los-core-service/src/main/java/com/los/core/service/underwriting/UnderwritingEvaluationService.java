@@ -23,6 +23,8 @@ public class UnderwritingEvaluationService {
 
     private final UnderwritingEvaluationRepository repository;
     private final UnderwritingScorecardRepository scorecardRepository;
+    private final DecisionConfigurationSnapshotBuilder snapshotBuilder;
+    private final HistoricalDecisionExplanationService historicalDecisionExplanationService;
 
     @Transactional
     public UnderwritingEvaluation record(
@@ -103,6 +105,11 @@ public class UnderwritingEvaluationService {
             src.put("scorecardEvidence", evidence);
             src.put("scorecardVersion", scorecardVersion);
         }
+        Map<String, Object> decisionSnapshot = snapshotBuilder.build(
+                application, multi, ctx, scorecardId, scorecardVersion,
+                parameterResults, evidence, evaluatedBy);
+        src.put("decisionConfigurationSnapshot", decisionSnapshot);
+        src.put("snapshotImmutable", true);
         UnderwritingEvaluation e = UnderwritingEvaluation.builder()
                 .applicationId(applicationId)
                 .evaluatedAt(Instant.now())
@@ -115,6 +122,7 @@ public class UnderwritingEvaluationService {
                 .scorecardVersion(scorecardVersion)
                 .scorecardEvidenceJson(evidence)
                 .parameterResultsJson(parameterResults != null ? parameterResults : List.of())
+                .decisionSnapshotJson(decisionSnapshot)
                 .evaluatedBy(evaluatedBy)
                 .build();
         return repository.save(e);
@@ -173,7 +181,22 @@ public class UnderwritingEvaluationService {
         m.put("scorecardVersion", e.getScorecardVersion());
         m.put("scorecardEvidence", e.getScorecardEvidenceJson());
         m.put("parameterResults", e.getParameterResultsJson());
-        if (e.getScorecardId() != null) {
+        m.put("decisionSnapshot", e.getDecisionSnapshotJson());
+        // Historical explanation must not re-resolve today's active scorecard/rules/GACAT.
+        Map<String, Object> historical = historicalDecisionExplanationService.explainFromSnapshot(e);
+        m.put("historicalExplanation", historical);
+        m.put("requiresCurrentConfig", historical.get("requiresCurrentConfig"));
+        if (e.getDecisionSnapshotJson() != null) {
+            Object sc = e.getDecisionSnapshotJson().get("scorecard");
+            if (sc instanceof Map<?, ?> scm && scm.get("scorecardVersion") != null && e.getScorecardVersion() == null) {
+                m.put("scorecardVersion", scm.get("scorecardVersion"));
+            }
+            // Optional display-only enrichment — never overrides snapshot math/decision
+            if (e.getScorecardId() != null) {
+                scorecardRepository.findById(e.getScorecardId()).ifPresent(card ->
+                        m.put("scorecardNameDisplayOnly", card.getName()));
+            }
+        } else if (e.getScorecardId() != null) {
             scorecardRepository.findById(e.getScorecardId()).ifPresent(sc -> {
                 m.put("scorecardName", sc.getName());
                 if (e.getScorecardVersion() == null) {
@@ -189,5 +212,11 @@ public class UnderwritingEvaluationService {
             });
         }
         return m;
+    }
+
+    /** Structural immutability: no service API mutates a finalized evaluation snapshot in place. */
+    public void rejectSnapshotMutation(UUID evaluationId) {
+        throw new UnsupportedOperationException(
+                "DECISION_SNAPSHOT_IMMUTABLE: finalized underwriting evaluations cannot be mutated; re-underwrite creates a new evaluation");
     }
 }

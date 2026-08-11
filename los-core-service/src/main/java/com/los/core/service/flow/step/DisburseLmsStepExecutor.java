@@ -98,10 +98,13 @@ public class DisburseLmsStepExecutor implements IStepExecutor {
             partnerCode = extractString(app.getBusinessInfo(), "partnerCode", "partner_code", "partnerId");
         }
 
-        String encoreProductCode = lmsProgramResolver.resolveEncoreProductCode(app, loanProduct);
+        var mapping = lmsApplicationConfigResolver.requireEncoreProductMapping(app);
+        String encoreProductCode = mapping.lmsProductCode();
         String tenureUnit = lmsApplicationConfigResolver.resolveTenureUnit(app);
-        log.info("[LMS-DISBURSE] Encore product code {} tenureUnit {} for DISBURSE step (app={}, loanProduct={})",
-                encoreProductCode, tenureUnit, app.getApplicationNumber(), loanProduct);
+        log.info("[LMS-DISBURSE] Encore product code {} tenureUnit {} for DISBURSE step "
+                        + "(app={}, loanProduct={}, borrowerType={}, workflowId={}, workflowVersion={}, mappingSource={})",
+                encoreProductCode, tenureUnit, app.getApplicationNumber(), loanProduct,
+                mapping.borrowerType(), mapping.workflowId(), mapping.workflowVersion(), mapping.mappingSource());
         Optional<WorkflowLmsProductMapping> fullMapping = workflowLmsProductResolver.resolveFullMapping(
                 partnerCode, app.getBorrowerType(), loanProduct);
 

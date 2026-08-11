@@ -906,6 +906,7 @@ export function CiPolicyStudioPage() {
           cards={ruleCards}
           dataAndCalculations={dataAndCalculations}
           otherPolicyContent={otherPolicyContent}
+          policyDataResolutions={asRecord(asRecord(session).policyDataResolutions)}
           busy={busy}
           setBusy={setBusy}
           onError={setError}

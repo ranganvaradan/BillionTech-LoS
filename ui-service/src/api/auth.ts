@@ -8,6 +8,8 @@ export interface LoginResponseBody {
   role: string
   institution: string
   passwordResetRequired?: boolean
+  accessToken?: string
+  tokenType?: string
 }
 
 function toSessionUser(data: LoginResponseBody): SessionUser {
@@ -18,6 +20,8 @@ function toSessionUser(data: LoginResponseBody): SessionUser {
     role: data.role,
     institution: data.institution,
     passwordResetRequired: Boolean(data.passwordResetRequired),
+    accessToken: data.accessToken,
+    tokenType: data.tokenType,
   }
 }
 

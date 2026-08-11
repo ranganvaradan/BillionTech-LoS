@@ -1106,6 +1106,13 @@ public class LoanApplicationFlowService {
                     log.info("[DEBUG-ca1703] LMS account created successfully: lmsRef={} for app={}",
                             lmsReferenceId, app.getApplicationNumber());
                 }
+            } catch (BusinessRuleException lmsEx) {
+                // LMS-PRODUCT-MAPPING-P0: fail closed — do not open account; surface typed reason to API.
+                if ("LMS_PRODUCT_MAPPING_MISSING".equals(lmsEx.getReason())) {
+                    throw lmsEx;
+                }
+                log.error("[LMS-SANCTION] LMS business rule failed for {} — sanction is preserved: {}",
+                        app.getApplicationNumber(), lmsEx.getMessage(), lmsEx);
             } catch (Exception lmsEx) {
                 log.error("[LMS-SANCTION] LMS integration failed for {} — sanction is preserved: {}",
                         app.getApplicationNumber(), lmsEx.getMessage(), lmsEx);

@@ -195,7 +195,7 @@ class PolicyLifecycleServiceTest {
         lifecycle.registerForTests(tenantId, new PolicyApplicabilityRecord(
                 otherId, "DigiLeap Policy", "v3", "BANKING_POLICY",
                 PolicyBusinessLifecycleStatus.ACTIVE, List.of("DIGILEAP"),
-                null, null, null, null, null, null, null,
+                null, null, null, List.of(), null, null, null, null,
                 LocalDate.of(2026, 9, 1), null,
                 null, null, "cm", "ck", "au", false, Map.of()));
 

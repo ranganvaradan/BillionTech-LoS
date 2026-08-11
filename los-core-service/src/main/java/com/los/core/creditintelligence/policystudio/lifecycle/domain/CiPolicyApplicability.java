@@ -72,6 +72,12 @@ public class CiPolicyApplicability {
     @Column(name = "borrower_type", length = 80)
     private String borrowerType;
 
+    /** Empty = ALL borrower types. Prefer over legacy {@link #borrowerType}. */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "borrower_types", columnDefinition = "jsonb", nullable = false)
+    @Builder.Default
+    private List<String> borrowerTypes = new ArrayList<>();
+
     @Column(name = "secured_unsecured", length = 40)
     private String securedUnsecured;
 

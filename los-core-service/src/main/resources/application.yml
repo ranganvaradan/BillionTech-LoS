@@ -53,6 +53,17 @@ los:
     local-dev-permit-all: false
     # Fail-closed role gate for /api/v1/admin/** (X-User-Role). Disable only for local IDE convenience.
     admin-api-require-role: ${LOS_ADMIN_API_REQUIRE_ROLE:true}
+    # Staging/local may keep true for automation; production MUST be false (JWT only).
+    allow-header-impersonation: ${LOS_ALLOW_HEADER_IMPERSONATION:true}
+    jwt:
+      required: ${LOS_JWT_REQUIRED:false}
+      hmac-secret: ${LOS_JWT_HMAC_SECRET:los-dev-hmac-secret-change-me-32chars-min}
+      ttl-seconds: ${LOS_JWT_TTL_SECONDS:28800}
+    # LOS core is single-tenant-per-deployment (no tenant_id on loan/doc/UW tables).
+    # Production must use SINGLE_TENANT_DEPLOYMENT; staging may use OFF for interim tooling.
+    tenancy:
+      mode: ${LOS_TENANCY_MODE:OFF}
+      deployment-tenant-id: ${LOS_DEPLOYMENT_TENANT_ID:00000000-0000-0000-0000-000000000001}
   underwriting:
     # When false, do not invent bank/GST/ITR/SCF scorecard placeholders (live-safe). Staging may enable temporarily.
     provider-gap-defaults-enabled: ${LOS_PROVIDER_GAP_DEFAULTS_ENABLED:false}

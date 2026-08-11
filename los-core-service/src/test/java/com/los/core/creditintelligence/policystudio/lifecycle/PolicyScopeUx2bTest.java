@@ -227,7 +227,7 @@ class PolicyScopeUx2bTest {
                 "CREDIT_POLICY",
                 PolicyBusinessLifecycleStatus.ACTIVE,
                 products,
-                null, null, borrower, null, null,
+                null, null, borrower, null, null, null,
                 min, max,
                 LocalDate.of(2026, 9, 1), null,
                 null, null, "cm", "checker", "author",

@@ -13,8 +13,10 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
 
+import com.los.core.exception.BusinessRuleException;
+import com.los.lms.service.LmsApplicationConfigResolver;
+
 import static com.los.encore.client.api.EncoreTemporaryOverrides.DEFAULT_ENCORE_LOCATION_CODE;
-import static com.los.encore.client.api.EncoreTemporaryOverrides.DEFAULT_ENCORE_PRODUCT_CODE;
 import static com.los.encore.client.api.EncoreTemporaryOverrides.buildEncoreCustomerId;
 
 /**
@@ -78,9 +80,7 @@ public class BlCoreEncoreLmsAdapter {
         acc.put("penalInterestRate", penalRate.toPlainString());
         acc.put("preclosureFeeRate", "0");
 
-        String productCode = p.productCode() != null && !p.productCode().isBlank()
-                ? p.productCode()
-                : DEFAULT_ENCORE_PRODUCT_CODE;
+        String productCode = requireProductCode(p.productCode());
         acc.put("productCode", productCode);
         acc.put("productType", properties.getLoanProductType());
 
@@ -170,8 +170,7 @@ public class BlCoreEncoreLmsAdapter {
         body.put("accountId", accountId != null ? accountId : "");
         body.put("amountMagnitude", amount != null ? amount.toPlainString() : "0");
         body.put("openedOnDate", openedOn != null ? openedOn.format(DATE_FORMAT) : LocalDate.now().format(DATE_FORMAT));
-        String pc = productCode != null && !productCode.isBlank() ? productCode : DEFAULT_ENCORE_PRODUCT_CODE;
-        body.put("productCode", pc);
+        body.put("productCode", requireProductCode(productCode));
         body.put("tenureMagnitude", String.valueOf(tenureMagnitude));
         body.put("tenureUnit", tenureUnit != null ? tenureUnit : "Month");
         String branch = properties.getAdminBranch();
@@ -183,6 +182,17 @@ public class BlCoreEncoreLmsAdapter {
         body.put("customer1CountryCode", DEFAULT_ENCORE_LOCATION_CODE);
         body.put("customer1StateCode", DEFAULT_ENCORE_LOCATION_CODE);
         return body.toString();
+    }
+
+    private static String requireProductCode(String productCode) {
+        if (productCode != null && !productCode.isBlank()) {
+            return productCode.trim();
+        }
+        throw new BusinessRuleException(
+                "No LMS product mapping is configured for this application.",
+                LmsApplicationConfigResolver.REASON_LMS_PRODUCT_MAPPING_MISSING,
+                "OPEN_LOAN_ACCOUNT",
+                Map.of("field", "productCode"));
     }
 
     private static void putIfPresent(ObjectNode node, String field, String value) {

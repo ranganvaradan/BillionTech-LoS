@@ -1,5 +1,6 @@
 package com.los.lms.service;
 
+import com.los.core.exception.BusinessRuleException;
 import com.los.core.model.enums.BorrowerType;
 import com.los.lms.config.LmsWorkflowMappingProperties;
 import com.los.lms.entity.WorkflowLmsProductMapping;
@@ -8,19 +9,14 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Optional;
 
-import static com.los.encore.client.api.EncoreTemporaryOverrides.DEFAULT_ENCORE_PRODUCT_CODE;
-
 /**
- * Resolves Encore LMS {@code productCode} for a loan application segment.
- * <p>
- * Lookup priority (bl-core parity):
- * <ol>
- *   <li>{@code (partner_code, loan_product)} — partner-specific Encore product code</li>
- *   <li>{@code (borrower_type, loan_product)} — generic fallback</li>
- *   <li>Caller-supplied {@code fallbackCode}</li>
- * </ol>
+ * Optional table-driven Encore LMS mapping ({@code workflow_lms_product_mapping}).
+ * Live openLoanAccount product code authority is {@link LmsApplicationConfigResolver}
+ * (application → workflow). This resolver must never hardcode a product code.
  */
 @Slf4j
 @Service
@@ -32,27 +28,38 @@ public class WorkflowLmsProductResolver {
 
     /**
      * @param borrowerType   application borrower type enum
-     * @param loanProduct    canonical loan product code (aligned with workflow_configs.loan_product after V32)
-     * @param fallbackCode   used when mapping is disabled, no row exists, or loan product is blank
-     * @return Encore product code to send on {@code openLoanAccount} only
+     * @param loanProduct    canonical loan product code
+     * @param fallbackCode   used when mapping is disabled or no row exists (must be non-blank when required)
+     * @return Encore product code — never a hardcoded default
      */
     public String resolveEncoreProductCode(BorrowerType borrowerType, String loanProduct, String fallbackCode) {
         return resolveEncoreProductCode(null, borrowerType, loanProduct, fallbackCode);
     }
 
-    /**
-     * Partner-aware overload. When {@code partnerCode} is non-blank, tries
-     * {@code (partner_code, loan_product)} first before falling back.
-     */
     public String resolveEncoreProductCode(String partnerCode, BorrowerType borrowerType,
                                            String loanProduct, String fallbackCode) {
-        // TEMP FIX:
-        // Using hardcoded Encore product code until final product mapping is completed.
-        // TODO: Restore dynamic mapping after Encore product master is finalized.
-        log.info("[LMS-SANCTION] Using temporary Encore product code {} (bypassed dynamic mapping - " +
-                        "partnerCode={}, borrowerType={}, loanProduct={}, fallbackCode={})",
-                DEFAULT_ENCORE_PRODUCT_CODE, partnerCode, borrowerType, loanProduct, fallbackCode);
-        return DEFAULT_ENCORE_PRODUCT_CODE;
+        if (mappingProperties.isEnabled()) {
+            Optional<WorkflowLmsProductMapping> mapped = resolveFullMapping(partnerCode, borrowerType, loanProduct);
+            if (mapped.isPresent() && hasText(mapped.get().getEncoreProductCode())) {
+                String code = mapped.get().getEncoreProductCode().trim();
+                log.info("[LMS-PRODUCT-MAPPING] Table mapping productCode={} partner={} borrowerType={} loanProduct={}",
+                        code, partnerCode, borrowerType, loanProduct);
+                return code;
+            }
+        }
+        if (hasText(fallbackCode)) {
+            return fallbackCode.trim();
+        }
+        Map<String, Object> ctx = new LinkedHashMap<>();
+        ctx.put("partnerCode", partnerCode);
+        ctx.put("borrowerType", borrowerType == null ? null : borrowerType.name());
+        ctx.put("loanProduct", loanProduct);
+        ctx.put("mappingEnabled", mappingProperties.isEnabled());
+        throw new BusinessRuleException(
+                "No LMS product mapping is configured for this application.",
+                LmsApplicationConfigResolver.REASON_LMS_PRODUCT_MAPPING_MISSING,
+                "OPEN_LOAN_ACCOUNT",
+                ctx);
     }
 
     /**
@@ -72,6 +79,13 @@ public class WorkflowLmsProductResolver {
                 return byPartner;
             }
         }
+        if (borrowerType == null) {
+            return Optional.empty();
+        }
         return mappingRepository.findByBorrowerTypeAndLoanProduct(borrowerType.name(), lp);
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 }

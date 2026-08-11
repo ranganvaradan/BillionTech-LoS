@@ -8,9 +8,13 @@ import java.util.regex.Pattern;
  */
 public final class EncoreTemporaryOverrides {
 
-    // TEMP FIX:
-    // Using hardcoded Encore product code until final product mapping is completed.
-    // TODO: Restore dynamic mapping after Encore product master is finalized.
+    /**
+     * Historical staging seed / fixture constant only.
+     * <p>
+     * LMS-PRODUCT-MAPPING-P0: must NOT be used as a runtime openLoanAccount fallback.
+     * Live product codes come from workflow/application/program configuration.
+     */
+    @Deprecated(since = "LMS-PRODUCT-MAPPING-P0", forRemoval = false)
     public static final String DEFAULT_ENCORE_PRODUCT_CODE = "IPPOPAYM01";
 
     // TEMP FIX:

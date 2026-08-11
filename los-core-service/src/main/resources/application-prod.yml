@@ -3,6 +3,14 @@ los:
     local-dev-permit-all: false
     admin-api-require-role: true
     enforce-production-hardening: true
+    allow-header-impersonation: false
+    jwt:
+      required: true
+      hmac-secret: ${LOS_JWT_HMAC_SECRET:}
+      ttl-seconds: ${LOS_JWT_TTL_SECONDS:28800}
+    tenancy:
+      mode: SINGLE_TENANT_DEPLOYMENT
+      deployment-tenant-id: ${LOS_DEPLOYMENT_TENANT_ID:00000000-0000-0000-0000-000000000001}
   underwriting:
     provider-gap-defaults-enabled: false
     scorecard:
@@ -23,6 +31,10 @@ credit-intelligence:
   internal-token-required: true
   # Token value MUST come from env CREDIT_INTELLIGENCE_INTERNAL_TOKEN (never commit secrets)
   internal-token: ${CREDIT_INTELLIGENCE_INTERNAL_TOKEN:}
+  tenant:
+    require-explicit: false
+    dev-mode: false
+  default-tenant-id: ${LOS_DEPLOYMENT_TENANT_ID:00000000-0000-0000-0000-000000000001}
   cutover:
     enabled: false
     dual-run-enabled: false

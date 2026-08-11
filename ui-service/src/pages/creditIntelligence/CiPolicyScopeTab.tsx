@@ -61,7 +61,8 @@ export function CiPolicyScopeTab({
   const [settings, setSettings] = useState<Record<string, unknown> | null>(null)
   const [productMode, setProductMode] = useState<'ALL' | 'INCLUDE'>('ALL')
   const [selectedProducts, setSelectedProducts] = useState<string[]>([])
-  const [borrowerType, setBorrowerType] = useState('')
+  const [borrowerMode, setBorrowerMode] = useState<'ALL' | 'INCLUDE'>('ALL')
+  const [selectedBorrowerTypes, setSelectedBorrowerTypes] = useState<string[]>([])
   const [customerSegment, setCustomerSegment] = useState('')
   const [minAmount, setMinAmount] = useState('')
   const [maxAmount, setMaxAmount] = useState('')
@@ -88,7 +89,17 @@ export function CiPolicyScopeTab({
       setProductMode('INCLUDE')
       setSelectedProducts(products)
     }
-    setBorrowerType(app.borrowerType ? String(app.borrowerType) : '')
+    const bts = asList(app.borrowerTypes).map(String).filter(Boolean)
+    if (bts.length === 0 && app.borrowerType) {
+      setBorrowerMode('INCLUDE')
+      setSelectedBorrowerTypes([String(app.borrowerType)])
+    } else if (bts.length === 0) {
+      setBorrowerMode('ALL')
+      setSelectedBorrowerTypes([])
+    } else {
+      setBorrowerMode('INCLUDE')
+      setSelectedBorrowerTypes(bts)
+    }
     setCustomerSegment(app.customerSegment ? String(app.customerSegment) : '')
     setMinAmount(app.minLoanAmount != null && String(app.minLoanAmount) !== ''
       ? formatInrInput(String(app.minLoanAmount)) : '')
@@ -136,7 +147,10 @@ export function CiPolicyScopeTab({
 
   const body = () => ({
     products: productMode === 'ALL' ? [] : selectedProducts,
-    borrowerType: borrowerType || null,
+    borrowerTypes: borrowerMode === 'ALL' ? [] : selectedBorrowerTypes,
+    borrowerType: borrowerMode === 'INCLUDE' && selectedBorrowerTypes.length === 1
+      ? selectedBorrowerTypes[0]
+      : null,
     customerSegment: customerSegment || null,
     minLoanAmount: parseAmount(minAmount),
     maxLoanAmount: parseAmount(maxAmount),
@@ -182,15 +196,19 @@ export function CiPolicyScopeTab({
     if (customerSegment) {
       parts.push(customerSegment === 'ANCHOR' ? 'Anchor applications' : 'Borrower applications')
     }
-    parts.push(borrowerType
-      ? (borrowerOpts.find((b) => b.value === borrowerType)?.label ?? borrowerType)
-      : 'All borrower types')
+    if (borrowerMode === 'ALL' || selectedBorrowerTypes.length === 0) {
+      parts.push('All borrower types')
+    } else {
+      parts.push(selectedBorrowerTypes
+        .map((b) => borrowerOpts.find((o) => o.value === b)?.label ?? b)
+        .join(' + '))
+    }
     if (!minAmount && !maxAmount) parts.push('Any amount')
     else if (!minAmount) parts.push(`Up to ₹${maxAmount}`)
     else if (!maxAmount) parts.push(`Above ₹${minAmount}`)
     else parts.push(`₹${minAmount} – ₹${maxAmount}`)
     return parts.join(' · ')
-  }, [summary.appliesTo, productMode, selectedProducts, customerSegment, borrowerType, borrowerOpts, minAmount, maxAmount])
+  }, [summary.appliesTo, productMode, selectedProducts, customerSegment, borrowerMode, selectedBorrowerTypes, borrowerOpts, minAmount, maxAmount])
 
   if (loading && !settings) {
     return <p className="text-sm text-slate-600">Loading policy scope…</p>
@@ -200,6 +218,14 @@ export function CiPolicyScopeTab({
     markDirty()
     setProductMode('INCLUDE')
     setSelectedProducts((prev) =>
+      prev.includes(code) ? prev.filter((p) => p !== code) : [...prev, code],
+    )
+  }
+
+  const toggleBorrower = (code: string) => {
+    markDirty()
+    setBorrowerMode('INCLUDE')
+    setSelectedBorrowerTypes((prev) =>
       prev.includes(code) ? prev.filter((p) => p !== code) : [...prev, code],
     )
   }
@@ -294,46 +320,74 @@ export function CiPolicyScopeTab({
             ) : null}
           </fieldset>
 
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="text-sm">
-              <span className="text-slate-600">Customer / borrower type</span>
-              <select
-                className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
-                value={borrowerType}
-                disabled={busy}
-                onChange={(e) => {
-                  markDirty()
-                  setBorrowerType(e.target.value)
-                }}
-              >
-                <option value="">All</option>
+          <fieldset>
+            <legend className="text-sm font-medium text-slate-800">Borrower type</legend>
+            <div className="mt-2 flex flex-wrap gap-3 text-sm">
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="borrowerMode"
+                  checked={borrowerMode === 'ALL'}
+                  disabled={busy}
+                  onChange={() => {
+                    markDirty()
+                    setBorrowerMode('ALL')
+                    setSelectedBorrowerTypes([])
+                  }}
+                />
+                All borrower types
+              </label>
+              <label className="inline-flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="borrowerMode"
+                  checked={borrowerMode === 'INCLUDE'}
+                  disabled={busy}
+                  onChange={() => {
+                    markDirty()
+                    setBorrowerMode('INCLUDE')
+                  }}
+                />
+                Selected borrower type(s)
+              </label>
+            </div>
+            {borrowerMode === 'INCLUDE' ? (
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 {borrowerOpts.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
+                  <label key={o.value} className="inline-flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={selectedBorrowerTypes.includes(o.value)}
+                      disabled={busy}
+                      onChange={() => toggleBorrower(o.value)}
+                    />
+                    {o.label}
+                  </label>
                 ))}
-              </select>
-            </label>
+              </div>
+            ) : null}
+          </fieldset>
 
-            <label className="text-sm">
-              <span className="text-slate-600">Application relationship</span>
-              <select
-                className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
-                value={customerSegment}
-                disabled={busy}
-                onChange={(e) => {
-                  markDirty()
-                  setCustomerSegment(e.target.value)
-                }}
-              >
-                <option value="">All</option>
-                {segmentOpts.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
-              <span className="mt-1 block text-xs text-slate-500">
-                Anchor / Borrower intake role — not MSME/Corporate commercial segment.
-              </span>
-            </label>
-          </div>
+          <label className="block text-sm">
+            <span className="text-slate-600">Application relationship</span>
+            <select
+              className="mt-1 w-full max-w-md rounded border border-slate-300 px-3 py-2"
+              value={customerSegment}
+              disabled={busy}
+              onChange={(e) => {
+                markDirty()
+                setCustomerSegment(e.target.value)
+              }}
+            >
+              <option value="">All</option>
+              {segmentOpts.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+            <span className="mt-1 block text-xs text-slate-500">
+              Anchor / Borrower intake role — not MSME/Corporate commercial segment.
+            </span>
+          </label>
 
           <fieldset>
             <legend className="text-sm font-medium text-slate-800">Requested amount</legend>

@@ -38,7 +38,15 @@ final class ProspectDay2ViewBuilder {
         out.put("underwritingRuleCount", groups.getOrDefault("underwritingRuleCount", 0));
         out.put("otherPolicyContent", groups.getOrDefault("otherPolicyContent", List.of()));
         out.put("otherPolicyContentCount", groups.getOrDefault("otherPolicyContentCount", 0));
-        out.put("dataAndCalculations", groups.get("dataAndCalculations"));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> dataCalcCards = groups.get("dataAndCalculations") instanceof List<?>
+                ? (List<Map<String, Object>>) groups.get("dataAndCalculations") : List.of();
+        Map<String, Object> dataResolutions = com.los.core.creditintelligence.policystudio.parameters
+                .PolicyDataResolutionSupport.fromDocument(session);
+        com.los.core.creditintelligence.policystudio.parameters
+                .PolicyDataResolutionSupport.applyToDataCalcCards(dataCalcCards, dataResolutions);
+        out.put("dataAndCalculations", dataCalcCards);
+        out.put("policyDataResolutions", dataResolutions);
         out.put("compoundChildrenAdvanced", groups.get("compoundChildrenAdvanced"));
         out.put("ruleGroups", groups);
         out.put("readinessBanner", banner);

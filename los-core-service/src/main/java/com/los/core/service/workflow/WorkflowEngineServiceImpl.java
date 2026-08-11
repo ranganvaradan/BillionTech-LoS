@@ -335,7 +335,8 @@ public class WorkflowEngineServiceImpl implements IWorkflowEngineService {
         if (request.getLmsProductCode() != null && !request.getLmsProductCode().isBlank()) {
             return request.getLmsProductCode().trim();
         }
-        return "IPPOPAYM01";
+        // LMS-PRODUCT-MAPPING-P0: no silent IPPOPAYM01 default — blank stays unmapped (fail-closed at open).
+        return null;
     }
 
     private static String resolveWorkflowLmsTenureUnit(WorkflowConfigRequest request) {

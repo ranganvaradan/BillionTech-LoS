@@ -618,6 +618,7 @@ public class PolicyLifecycleService {
         app.put("facilityType", null);
         app.put("customerSegment", null);
         app.put("borrowerType", null);
+        app.put("borrowerTypes", List.of()); // empty = ALL
         app.put("securedUnsecured", null);
         app.put("programScheme", null);
         app.put("minLoanAmount", null);
@@ -671,7 +672,7 @@ public class PolicyLifecycleService {
         if (nested instanceof Map<?, ?> n) {
             app.putAll(castMap(n));
         }
-        for (String k : List.of("products", "facilityType", "customerSegment", "borrowerType",
+        for (String k : List.of("products", "facilityType", "customerSegment", "borrowerType", "borrowerTypes",
                 "securedUnsecured", "programScheme", "minLoanAmount", "maxLoanAmount",
                 "effectiveFrom", "effectiveUntil", "productCode")) {
             if (body.containsKey(k)) {
@@ -761,6 +762,12 @@ public class PolicyLifecycleService {
         h.put("customerSegment", app.get("customerSegment"));
         h.put("facilityType", app.get("facilityType"));
         h.put("borrowerType", app.get("borrowerType"));
+        h.put("borrowerTypes", app.get("borrowerTypes"));
+        h.put("borrowerTypeSummary", BorrowerTypeScope.summaryLabel(
+                BorrowerTypeScope.normalize(
+                        app.get("borrowerTypes") instanceof List<?> list
+                                ? list.stream().map(String::valueOf).toList() : List.of(),
+                        app.get("borrowerType") == null ? null : String.valueOf(app.get("borrowerType")))));
         h.put("securedUnsecured", app.get("securedUnsecured"));
         h.put("programScheme", app.get("programScheme"));
         h.put("minLoanAmount", app.get("minLoanAmount"));
@@ -1254,7 +1261,7 @@ public class PolicyLifecycleService {
         PolicyApplicabilityRecord superseded = new PolicyApplicabilityRecord(
                 prior.policyVersionId(), prior.policyName(), prior.policyVersion(), prior.policyType(),
                 PolicyBusinessLifecycleStatus.SUPERSEDED, prior.products(), prior.facilityType(),
-                prior.customerSegment(), prior.borrowerType(), prior.securedUnsecured(),
+                prior.customerSegment(), prior.borrowerType(), prior.borrowerTypes(), prior.securedUnsecured(),
                 prior.programScheme(), prior.minLoanAmount(), prior.maxLoanAmount(),
                 prior.effectiveFrom(), prior.effectiveUntil() != null ? prior.effectiveUntil()
                         : LocalDate.now().minusDays(1),

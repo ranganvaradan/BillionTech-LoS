@@ -25,6 +25,15 @@ los:
     local-dev-permit-all: true  # staging review only — isolated staging; never production
     # Still require admin role for /api/v1/admin/** even when other APIs are open
     admin-api-require-role: true
+    # Staging keeps header tests for E2E scripts; Bearer JWT also issued/accepted when present
+    allow-header-impersonation: true
+    jwt:
+      required: false
+      hmac-secret: ${LOS_JWT_HMAC_SECRET:los-staging-hmac-secret-change-me-32c}
+    # Staging remains OFF so interim tooling can supply headers; prod dry-run uses SINGLE_TENANT_DEPLOYMENT
+    tenancy:
+      mode: ${LOS_TENANCY_MODE:OFF}
+      deployment-tenant-id: ${LOS_DEPLOYMENT_TENANT_ID:00000000-0000-0000-0000-000000000001}
   underwriting:
     # Staging retains gap defaults for existing demos; production must keep false
     provider-gap-defaults-enabled: true

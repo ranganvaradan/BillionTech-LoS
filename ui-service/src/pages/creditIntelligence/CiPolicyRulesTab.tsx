@@ -8,6 +8,11 @@ import {
 import { decisionPolicyDomainLabel } from '@/lib/creditIntelligence/businessLexicon'
 import { CiCapabilityCataloguePanel } from '@/pages/creditIntelligence/CiCapabilityCataloguePanel'
 import { CiParameterResolverPanel } from '@/pages/creditIntelligence/CiParameterResolverPanel'
+import {
+  CiDataCalcResolutionPanel,
+  resolveKindForGroup,
+  type DataCalcResolveKind,
+} from '@/pages/creditIntelligence/CiDataCalcResolutionPanel'
 import { CiRuleAuthoringPanel } from '@/pages/creditIntelligence/CiRuleAuthoringPanel'
 import {
   cmStatusLabel,
@@ -223,6 +228,7 @@ export function CiPolicyRulesTab({
   cards,
   dataAndCalculations = [],
   otherPolicyContent = [],
+  policyDataResolutions = {},
   busy,
   setBusy,
   onError,
@@ -240,6 +246,7 @@ export function CiPolicyRulesTab({
   cards: unknown[]
   dataAndCalculations?: unknown[]
   otherPolicyContent?: unknown[]
+  policyDataResolutions?: Record<string, unknown>
   busy: boolean
   setBusy?: (v: boolean) => void
   onError?: (msg: string | null) => void
@@ -276,14 +283,20 @@ export function CiPolicyRulesTab({
     ruleId: string
     operand: Record<string, unknown>
   } | null>(null)
-  const [dataCalcFilter, setDataCalcFilter] = useState<'ALL' | 'READY' | 'NEEDS_INPUT' | 'MANUAL' | 'UNAVAILABLE'>(
-    'ALL',
-  )
+  const [dataCalcResolver, setDataCalcResolver] = useState<{
+    ruleId: string
+    parameterId: string
+    title: string
+    kind: DataCalcResolveKind
+  } | null>(null)
+  const [dataCalcFilter, setDataCalcFilter] = useState<
+    'ALL' | 'READY' | 'NEEDS_INPUT' | 'NEEDS_CONFIGURATION' | 'MANUAL' | 'UNAVAILABLE'
+  >('ALL')
   const [dataCalcSource, setDataCalcSource] = useState('ALL')
 
   const parameterGroups = useMemo(
-    () => groupDataCalculations(dataAndCalculations, cards),
-    [dataAndCalculations, cards],
+    () => groupDataCalculations(dataAndCalculations, cards, policyDataResolutions),
+    [dataAndCalculations, cards, policyDataResolutions],
   )
   const visibleParameterGroups = useMemo(
     () => filterParameterGroups(parameterGroups, dataCalcFilter, dataCalcSource === 'ALL' ? undefined : dataCalcSource),
@@ -994,6 +1007,7 @@ export function CiPolicyRulesTab({
                 ['ALL', 'All'],
                 ['READY', 'Ready'],
                 ['NEEDS_INPUT', 'Needs input'],
+                ['NEEDS_CONFIGURATION', 'Needs configuration'],
                 ['MANUAL', 'Manual'],
                 ['UNAVAILABLE', 'Unavailable'],
               ] as const
@@ -1108,19 +1122,84 @@ export function CiPolicyRulesTab({
                   </div>
                 ) : null}
 
-                {g.missingDefinition && Object.keys(g.missingDefinition).length > 0 ? (
-                  <div className="mt-2 rounded border border-sky-100 bg-sky-50 px-2 py-2 text-xs text-sky-950">
-                    <p className="font-semibold">
-                      {String(g.missingDefinition.question ?? 'Definition needed')}
-                    </p>
-                    {g.missingDefinition.hint ? (
-                      <p className="mt-0.5 text-sky-900/80">{String(g.missingDefinition.hint)}</p>
+                {g.howDefined ? (
+                  <div className="mt-2 rounded border border-emerald-100 bg-emerald-50/70 px-2 py-2 text-xs text-emerald-950">
+                    <p className="font-semibold">How defined</p>
+                    <p className="mt-0.5">{g.howDefined}</p>
+                    {g.displayStatus ? (
+                      <p className="mt-1 font-medium">{g.displayStatus}</p>
                     ) : null}
-                    <p className="mt-1 font-medium text-sky-800">
-                      {String(g.missingDefinition.action ?? 'DEFINE') === 'CONFIGURE'
-                        ? 'Needs configuration'
-                        : 'Define'}
-                    </p>
+                    {g.executionImpact ? (
+                      <p className="mt-0.5 text-[11px] text-emerald-900/80">
+                        Activation impact: {g.executionImpact === 'NON_BLOCKING' ? 'Non-blocking' : 'Blocking when required by UW rules'}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {(g.cmStatus === 'NEEDS_YOUR_INPUT' || g.cmStatus === 'NEEDS_CONFIGURATION'
+                  || (g.missingDefinition && Object.keys(g.missingDefinition).length > 0)) ? (
+                  <div className="mt-2 rounded border border-sky-100 bg-sky-50 px-2 py-2 text-xs text-sky-950">
+                    {!g.howDefined && g.missingDefinition ? (
+                      <>
+                        <p className="font-semibold">
+                          {String(g.missingDefinition.question ?? 'Definition needed')}
+                        </p>
+                        {g.missingDefinition.hint ? (
+                          <p className="mt-0.5 text-sky-900/80">{String(g.missingDefinition.hint)}</p>
+                        ) : null}
+                      </>
+                    ) : null}
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        className="bt-btn bt-btn-primary bt-btn-sm"
+                        disabled={busy || !g.resolveRuleId}
+                        data-testid={`data-calc-resolve-${g.parameterId}`}
+                        onClick={() => {
+                          if (!g.resolveRuleId) return
+                          const isAdj = g.policyAdjustments.some((a) =>
+                            a.sourceClause.toLowerCase().includes('bulk')
+                            || a.sourceClause.toLowerCase().includes('10'))
+                          setDataCalcResolver({
+                            ruleId: g.resolveRuleId,
+                            parameterId: g.parameterId,
+                            title: g.name,
+                            kind: resolveKindForGroup(
+                              g.parameterId,
+                              String(asRecord(g.missingDefinition).action ?? g.resolveAction ?? ''),
+                              isAdj && g.parameterId === 'banking.avg_daily_balance_3m',
+                            ),
+                          })
+                        }}
+                      >
+                        {g.resolveAction === 'CONFIGURE'
+                          ? 'Configure calculation'
+                          : g.resolveAction === 'RESOLVE'
+                            ? 'Resolve parameter'
+                            : 'Define'}
+                      </button>
+                      {g.policyAdjustments.some((a) => a.status === 'NEEDS_CONFIGURATION') ? (
+                        <button
+                          type="button"
+                          className="bt-btn bt-btn-secondary bt-btn-sm"
+                          disabled={busy || !g.resolveRuleId}
+                          onClick={() => {
+                            const adj = g.policyAdjustments.find((a) => a.status === 'NEEDS_CONFIGURATION')
+                            const rid = String(asRecord(adj?.raw).id ?? g.resolveRuleId ?? '')
+                            if (!rid) return
+                            setDataCalcResolver({
+                              ruleId: rid,
+                              parameterId: g.parameterId,
+                              title: adj?.title ?? 'Policy adjustment',
+                              kind: 'ADJUSTMENT',
+                            })
+                          }}
+                        >
+                          Configure adjustment
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
                 ) : null}
 
@@ -1209,6 +1288,16 @@ export function CiPolicyRulesTab({
         onClose={() => setResolver(null)}
         operand={resolver?.operand ?? {}}
         ruleId={resolver?.ruleId ?? ''}
+        busy={busy}
+        onResolve={onReview}
+      />
+      <CiDataCalcResolutionPanel
+        open={Boolean(dataCalcResolver)}
+        onClose={() => setDataCalcResolver(null)}
+        kind={dataCalcResolver?.kind ?? 'THRESHOLD'}
+        parameterId={dataCalcResolver?.parameterId ?? ''}
+        title={dataCalcResolver?.title ?? ''}
+        ruleId={dataCalcResolver?.ruleId ?? ''}
         busy={busy}
         onResolve={onReview}
       />

@@ -6,7 +6,8 @@ export const LMS_TENURE_UNIT_OPTIONS = [
   { value: 'Week', label: 'Week' },
 ] as const
 
-export const DEFAULT_LMS_PRODUCT_CODE = 'IPPOPAYM01'
+/** Intentionally empty — never prefill a fixed Encore code in production UI (LOS-PRODUCTION-HARDENING-1). */
+export const DEFAULT_LMS_PRODUCT_CODE = ''
 export const DEFAULT_LMS_TENURE_UNIT = 'Month'
 
 export function lmsTenureUnitLabel(value: string | null | undefined): string {

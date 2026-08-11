@@ -1,4 +1,4 @@
-/** Demo session after POST /api/v1/auth/login (not JWT). */
+/** Session after POST /api/v1/auth/login (Bearer JWT when backend issues one). */
 export interface SessionUser {
   userId: string
   name: string
@@ -7,6 +7,9 @@ export interface SessionUser {
   institution: string
   /** True when the account uses a temporary password and must set a new one before continuing. */
   passwordResetRequired?: boolean
+  /** HS256 access token from los-core (production identity). */
+  accessToken?: string
+  tokenType?: string
 }
 
 const STORAGE_KEY = 'los_demo_session_v1'
@@ -28,7 +31,9 @@ export function loadSessionUser(): SessionUser | null {
     ) {
       return null
     }
-    return o as unknown as SessionUser
+    const user = o as unknown as SessionUser
+    if (o.accessToken != null && typeof o.accessToken !== 'string') return null
+    return user
   } catch {
     return null
   }

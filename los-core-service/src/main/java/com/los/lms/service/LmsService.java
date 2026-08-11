@@ -888,10 +888,13 @@ public class LmsService {
         int tenure = app.getTenureMonths() != null ? app.getTenureMonths() : 0;
         String loanProduct = app.getLoanProduct() != null ? app.getLoanProduct() : "";
 
-        String encoreProductCode = lmsProgramResolver.resolveEncoreProductCode(app, loanProduct);
+        var mapping = lmsApplicationConfigResolver.requireEncoreProductMapping(app);
+        String encoreProductCode = mapping.lmsProductCode();
         String tenureUnit = lmsApplicationConfigResolver.resolveTenureUnit(app);
-        log.info("[LMS-SANCTION] Encore product code {} tenureUnit {} for {} (loanProduct={})",
-                encoreProductCode, tenureUnit, app.getApplicationNumber(), loanProduct);
+        log.info("[LMS-SANCTION] Encore product code {} tenureUnit {} for {} (loanProduct={} borrowerType={} "
+                        + "workflowId={} workflowVersion={} mappingSource={})",
+                encoreProductCode, tenureUnit, app.getApplicationNumber(), loanProduct,
+                mapping.borrowerType(), mapping.workflowId(), mapping.workflowVersion(), mapping.mappingSource());
 
         Optional<com.los.lms.entity.WorkflowLmsProductMapping> fullMapping =
                 workflowLmsProductResolver.resolveFullMapping(null, app.getBorrowerType(), loanProduct);
@@ -1174,10 +1177,17 @@ public class LmsService {
             return;
         }
         String loanP = app.getLoanProduct() != null ? app.getLoanProduct() : "";
-        String product = lmsApplicationConfigResolver.resolveEncoreProductCode(app);
+        Optional<LmsProductMappingResolution> mapping =
+                lmsApplicationConfigResolver.resolveEncoreProductMapping(app);
+        if (mapping.isEmpty()) {
+            log.warn("[LMS-SANCTION] KFS pre-open summary skipped — LMS product mapping missing for {} ({})",
+                    app.getApplicationNumber(), loanP);
+            return;
+        }
+        String product = mapping.get().lmsProductCode();
         String tenureUnit = lmsApplicationConfigResolver.resolveTenureUnit(app);
-        log.info("[LMS-SANCTION] KFS pre-open summary productCode={} tenureUnit={} for app={}",
-                product, tenureUnit, app.getApplicationNumber());
+        log.info("[LMS-SANCTION] KFS pre-open summary productCode={} tenureUnit={} mappingSource={} for app={}",
+                product, tenureUnit, mapping.get().mappingSource(), app.getApplicationNumber());
         String body = blCoreEncoreLmsAdapter.buildPreOpenSummaryRequestBody(
                 app.getApplicationNumber(),
                 amt,

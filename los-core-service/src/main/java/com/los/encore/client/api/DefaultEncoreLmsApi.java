@@ -115,10 +115,11 @@ public class DefaultEncoreLmsApi implements EncoreLmsApi {
         loanAccount.put("operationalStatus", "active");
         loanAccount.put("penalInterestRate", "0");
         loanAccount.put("preclosureFeeRate", "0");
-        String productCode = request.productCode() != null && !request.productCode().isBlank()
-                ? request.productCode()
-                : EncoreTemporaryOverrides.DEFAULT_ENCORE_PRODUCT_CODE;
-        loanAccount.put("productCode", productCode);
+        if (request.productCode() == null || request.productCode().isBlank()) {
+            throw new IllegalArgumentException(
+                    "LMS_PRODUCT_MAPPING_MISSING: No LMS product mapping is configured for this application.");
+        }
+        loanAccount.put("productCode", request.productCode().trim());
         loanAccount.put("productType", properties.getLoanProductType());
         loanAccount.put("tenureMagnitude", String.valueOf(request.tenureMonths()));
         loanAccount.put("tenureUnit", "Month");

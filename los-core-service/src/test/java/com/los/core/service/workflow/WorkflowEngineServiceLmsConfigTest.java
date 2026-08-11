@@ -1,5 +1,6 @@
 package com.los.core.service.workflow;
 
+import com.los.core.audit.AdminConfigAuditSupport;
 import com.los.core.model.dto.request.WorkflowConfigRequest;
 import com.los.core.model.enums.BorrowerType;
 import com.los.core.repository.WorkflowConfigRepository;
@@ -22,26 +23,33 @@ class WorkflowEngineServiceLmsConfigTest {
 
     @Mock
     private WorkflowConfigRepository workflowRepository;
+    @Mock
+    private AdminConfigAuditSupport adminConfigAuditSupport;
 
     @InjectMocks
     private WorkflowEngineServiceImpl workflowEngineService;
 
     @Test
-    void createWorkflow_persistsLmsDefaultsWhenOmitted() {
+    void createWorkflow_leavesLmsProductCodeNullWhenOmitted_failClosedAtOpen() {
         WorkflowConfigRequest request = new WorkflowConfigRequest();
         request.setName("Personal loan");
         request.setBorrowerType(BorrowerType.INDIVIDUAL);
         request.setLoanProduct("PERSONAL_LOAN");
         request.setSteps(List.of());
 
-        when(workflowRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(workflowRepository.save(any())).thenAnswer(inv -> {
+            com.los.core.model.entity.WorkflowConfig c = inv.getArgument(0);
+            c.setId(java.util.UUID.randomUUID());
+            return c;
+        });
 
         workflowEngineService.createWorkflow(request);
 
         ArgumentCaptor<com.los.core.model.entity.WorkflowConfig> captor =
                 ArgumentCaptor.forClass(com.los.core.model.entity.WorkflowConfig.class);
         verify(workflowRepository).save(captor.capture());
-        assertEquals("IPPOPAYM01", captor.getValue().getLmsProductCode());
+        // LMS-PRODUCT-MAPPING-P0: no silent IPPOPAYM01 seed on create
+        assertEquals(null, captor.getValue().getLmsProductCode());
         assertEquals("Month", captor.getValue().getLmsTenureUnit());
     }
 
@@ -55,7 +63,11 @@ class WorkflowEngineServiceLmsConfigTest {
         request.setLmsTenureUnit("Week");
         request.setSteps(List.of());
 
-        when(workflowRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(workflowRepository.save(any())).thenAnswer(inv -> {
+            com.los.core.model.entity.WorkflowConfig c = inv.getArgument(0);
+            c.setId(java.util.UUID.randomUUID());
+            return c;
+        });
 
         workflowEngineService.createWorkflow(request);
 

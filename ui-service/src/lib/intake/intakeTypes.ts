@@ -1,5 +1,5 @@
 import { BORROWER_TYPE_ORDER } from '@/catalog/borrowerTypes'
-import { DEFAULT_LMS_PRODUCT_CODE, DEFAULT_LMS_TENURE_UNIT } from '@/catalog/lmsTenureUnits'
+import { DEFAULT_LMS_TENURE_UNIT } from '@/catalog/lmsTenureUnits'
 import type { BorrowerType } from '@/types/createApplication'
 
 export type IntakeMode = 'BORROWER_SELF_SERVICE' | 'SALES_ASSISTED' | 'ADMIN_INTERNAL'
@@ -136,7 +136,7 @@ export function createEmptyIntakeFormState(): IntakeFormState {
     customFieldValues: {},
     requestedAmount: '',
     tenureMonths: '',
-    lmsProductCode: DEFAULT_LMS_PRODUCT_CODE,
+    lmsProductCode: '',
     lmsTenureUnit: DEFAULT_LMS_TENURE_UNIT,
     invoiceOnboardingChoice: '',
     selectedSubProgramId: '',

@@ -107,6 +107,7 @@ class LiveReadinessServicesTest {
                 .borrowerType("COMPANY")
                 .loanProduct("TERM_LOAN")
                 .active(true)
+                .status("ACTIVE")
                 .scorecardJson(Map.of())
                 .hardRulesJson(Map.of())
                 .thresholdsJson(Map.of())
@@ -151,6 +152,7 @@ class LiveReadinessServicesTest {
                 .borrowerType("INDIVIDUAL")
                 .loanProduct("PERSONAL_LOAN")
                 .active(true)
+                .status("ACTIVE")
                 .scorecardJson(Map.of())
                 .hardRulesJson(Map.of())
                 .thresholdsJson(Map.of())
@@ -160,7 +162,45 @@ class LiveReadinessServicesTest {
                 "INDIVIDUAL", "PERSONAL_LOAN", wf, rules, sc, null, null, null);
         assertThat(result.get("workflowSuppliesRequiredAutomaticData")).isEqualTo(true);
         assertThat(result.get("scopeCompatible")).isEqualTo(true);
+        assertThat(result.get("scorecardRuntimeActive")).isEqualTo(true);
         assertThat(result.get("status")).isEqualTo("READY");
+    }
+
+    @Test
+    void readiness_draftScorecard_notRuntimeReady() {
+        WorkflowConfig wf = WorkflowConfig.builder()
+                .id(UUID.randomUUID())
+                .name("Simple")
+                .borrowerType("INDIVIDUAL")
+                .loanProduct("PERSONAL_LOAN")
+                .active(true)
+                .bureauEnabled(true)
+                .steps(List.of(Map.of("step", "PAN_VERIFY")))
+                .build();
+        UnderwritingRuleSet rules = UnderwritingRuleSet.builder()
+                .id(UUID.randomUUID())
+                .name("Bureau only")
+                .borrowerType("INDIVIDUAL")
+                .loanProduct("PERSONAL_LOAN")
+                .active(true)
+                .rulesJson(Map.of("rules", List.of(Map.of("parameter", "BUREAU_SCORE"))))
+                .build();
+        UnderwritingScorecard sc = UnderwritingScorecard.builder()
+                .id(UUID.randomUUID())
+                .name("PL Score Draft")
+                .borrowerType("INDIVIDUAL")
+                .loanProduct("PERSONAL_LOAN")
+                .active(true)
+                .status("DRAFT")
+                .scorecardJson(Map.of())
+                .hardRulesJson(Map.of())
+                .thresholdsJson(Map.of())
+                .build();
+        Map<String, Object> result = validator.validate(
+                "INDIVIDUAL", "PERSONAL_LOAN", wf, rules, sc, null, null, null);
+        assertThat(result.get("status")).isEqualTo("NOT READY");
+        assertThat(result.get("scorecardRuntimeActive")).isEqualTo(false);
+        assertThat(String.valueOf(result.get("gaps"))).contains("SCORECARD_NOT_RUNTIME_ACTIVE");
     }
 
     @Test

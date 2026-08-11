@@ -346,6 +346,7 @@ public class PolicyCatalogueService {
                 a.getFacilityType(),
                 a.getCustomerSegment(),
                 a.getBorrowerType(),
+                a.getBorrowerTypes() == null ? List.of() : a.getBorrowerTypes(),
                 a.getSecuredUnsecured(),
                 a.getProgramScheme(),
                 a.getMinLoanAmount(),
@@ -373,6 +374,9 @@ public class PolicyCatalogueService {
         m.put("facilityType", a.getFacilityType());
         m.put("customerSegment", a.getCustomerSegment());
         m.put("borrowerType", a.getBorrowerType());
+        m.put("borrowerTypes", a.getBorrowerTypes() == null ? List.of() : a.getBorrowerTypes());
+        m.put("borrowerTypeSummary", BorrowerTypeScope.summaryLabel(
+                BorrowerTypeScope.normalize(a.getBorrowerTypes(), a.getBorrowerType())));
         m.put("securedUnsecured", a.getSecuredUnsecured());
         m.put("programScheme", a.getProgramScheme());
         m.put("minLoanAmount", a.getMinLoanAmount());
@@ -439,8 +443,18 @@ public class PolicyCatalogueService {
         if (body.containsKey("customerSegment")) {
             a.setCustomerSegment(blankToNull(str(body, "customerSegment", null)));
         }
-        if (body.containsKey("borrowerType")) {
-            a.setBorrowerType(blankToNull(str(body, "borrowerType", null)));
+        if (body.containsKey("borrowerTypes") || body.containsKey("borrowerType")) {
+            List<String> raw = new ArrayList<>();
+            if (body.get("borrowerTypes") instanceof List<?> list) {
+                for (Object o : list) {
+                    if (o != null && !String.valueOf(o).isBlank()) {
+                        raw.add(String.valueOf(o));
+                    }
+                }
+            }
+            List<String> normalized = BorrowerTypeScope.normalize(raw, str(body, "borrowerType", null));
+            a.setBorrowerTypes(normalized);
+            a.setBorrowerType(BorrowerTypeScope.legacyScalar(normalized));
         }
         if (body.containsKey("securedUnsecured")) {
             a.setSecuredUnsecured(blankToNull(str(body, "securedUnsecured", null)));

@@ -1,6 +1,7 @@
 package com.los.core.creditintelligence.core.tenant;
 
 import com.los.core.creditintelligence.config.CreditIntelligenceProperties;
+import com.los.core.security.SingleTenantDeploymentGuard;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -9,21 +10,24 @@ import java.util.UUID;
 /**
  * Resolves tenant id for Credit Intelligence evaluation.
  * <p>
- * Fails with {@link IllegalStateException} when tenant is unknown/null and either
- * {@code tenant.requireExplicit=true} or ({@code evaluationContext.enabled} and not {@code tenant.devMode}).
- * Default UUID is only used when {@code tenant.devMode=true} (local/tests).
+ * Under {@code SINGLE_TENANT_DEPLOYMENT} fail-closed mode, foreign tenants are rejected and
+ * blank/null resolves to the configured deployment tenant (not caller-supplied).
  */
 @Service
 @RequiredArgsConstructor
 public class TenantResolver {
 
     private final CreditIntelligenceProperties properties;
+    private final SingleTenantDeploymentGuard singleTenantDeploymentGuard;
 
     public UUID resolve(UUID applicationTenantId) {
         return resolveOrDefault(applicationTenantId);
     }
 
     public UUID resolveFromHeader(String headerValue) {
+        if (singleTenantDeploymentGuard.isSingleTenantFailClosed()) {
+            return singleTenantDeploymentGuard.bindOrRejectHeader(headerValue);
+        }
         if (headerValue == null || headerValue.isBlank()) {
             return resolveOrDefault(null);
         }
@@ -41,6 +45,9 @@ public class TenantResolver {
     }
 
     public UUID resolveOrDefault(UUID explicit) {
+        if (singleTenantDeploymentGuard.isSingleTenantFailClosed()) {
+            return singleTenantDeploymentGuard.bindOrReject(explicit);
+        }
         if (explicit != null) {
             return explicit;
         }

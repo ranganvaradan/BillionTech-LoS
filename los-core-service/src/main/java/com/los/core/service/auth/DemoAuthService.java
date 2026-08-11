@@ -11,6 +11,8 @@ import com.los.core.model.dto.auth.RegisterRequest;
 import com.los.core.model.dto.auth.ResetPasswordRequest;
 import com.los.core.model.entity.LosUser;
 import com.los.core.repository.LosUserRepository;
+import com.los.core.security.LosJwtService;
+import com.los.core.security.SingleTenantDeploymentGuard;
 import com.los.core.service.borrower.BorrowerApplicationOwnershipService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -44,6 +46,8 @@ public class DemoAuthService {
     private final LosUserRepository losUserRepository;
     private final PasswordEncoder passwordEncoder;
     private final BorrowerApplicationOwnershipService borrowerApplicationOwnershipService;
+    private final LosJwtService losJwtService;
+    private final SingleTenantDeploymentGuard singleTenantDeploymentGuard;
 
     @Transactional
     public LoginResponse register(RegisterRequest req) {
@@ -77,13 +81,7 @@ public class DemoAuthService {
                 .primaryLosRole(ROLE_BORROWER)
                 .build();
         u = losUserRepository.save(u);
-        return LoginResponse.builder()
-                .userId(u.getId())
-                .name(u.getName())
-                .email(u.getEmail())
-                .role(ROLE_BORROWER)
-                .institution(DEMO_INSTITUTION)
-                .build();
+        return toLoginResponse(u, ROLE_BORROWER);
     }
 
     public LoginResponse login(LoginRequest req) {
@@ -101,6 +99,16 @@ public class DemoAuthService {
         if ("BORROWER".equalsIgnoreCase(role)) {
             borrowerApplicationOwnershipService.reconcileCustomerId(u.getId());
         }
+        return toLoginResponse(u, role);
+    }
+
+    private LoginResponse toLoginResponse(LosUser u, String role) {
+        String token = null;
+        if (losJwtService.isConfigured()) {
+            token = losJwtService.issueAccessToken(
+                    u.getId(), role, u.getEmail(), u.getName(),
+                    singleTenantDeploymentGuard.deploymentTenantId());
+        }
         return LoginResponse.builder()
                 .userId(u.getId())
                 .name(u.getName())
@@ -108,6 +116,8 @@ public class DemoAuthService {
                 .role(role)
                 .institution(DEMO_INSTITUTION)
                 .passwordResetRequired(u.isPasswordResetRequired())
+                .accessToken(token)
+                .tokenType(token == null ? null : "Bearer")
                 .build();
     }
 

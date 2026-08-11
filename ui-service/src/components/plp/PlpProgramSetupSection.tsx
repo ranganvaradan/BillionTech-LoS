@@ -568,7 +568,7 @@ function ProgramSetupForm(props: {
               className="mt-1 bt-input w-full text-sm"
               value={encoreProductCode}
               onChange={(e) => setEncoreProductCode(e.target.value)}
-              placeholder="e.g. IPPOPAYM01"
+              placeholder="Encore LMS product code (configured)"
               disabled={fieldsDisabled}
             />
           </label>

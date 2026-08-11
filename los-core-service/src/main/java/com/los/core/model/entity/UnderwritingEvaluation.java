@@ -71,6 +71,14 @@ public class UnderwritingEvaluation {
     @Column(name = "parameter_results_json", columnDefinition = "jsonb")
     private List<Map<String, Object>> parameterResultsJson;
 
+    /**
+     * LOS-PRODUCTION-HARDENING-1 — full immutable decision/configuration snapshot.
+     * Historical reads must use this blob; do not re-resolve current workflow/rules/scorecard.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "decision_snapshot_json", columnDefinition = "jsonb")
+    private Map<String, Object> decisionSnapshotJson;
+
     @Column(name = "evaluated_by", length = 64)
     private String evaluatedBy;
 

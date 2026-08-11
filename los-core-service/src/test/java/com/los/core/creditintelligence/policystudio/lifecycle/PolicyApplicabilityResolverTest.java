@@ -144,7 +144,7 @@ class PolicyApplicabilityResolverTest {
         PolicyApplicabilityRecord banded = new PolicyApplicabilityRecord(
                 UUID.randomUUID(), "DigiLeap Policy", "v1", "BANKING_POLICY",
                 PolicyBusinessLifecycleStatus.ACTIVE, List.of("DIGILEAP"),
-                null, null, null, null, null,
+                null, null, null, List.of(), null, null,
                 new BigDecimal("100000"), new BigDecimal("500000"),
                 LocalDate.of(2026, 1, 1), null,
                 null, null, "cm", "checker", "author", false, Map.of());
@@ -162,7 +162,7 @@ class PolicyApplicabilityResolverTest {
         PolicyApplicabilityRecord banded = new PolicyApplicabilityRecord(
                 UUID.randomUUID(), "DigiLeap Policy", "v1", "BANKING_POLICY",
                 PolicyBusinessLifecycleStatus.ACTIVE, List.of("DIGILEAP"),
-                null, null, null, null, null,
+                null, null, null, List.of(), null, null,
                 new BigDecimal("100000"), new BigDecimal("500000"),
                 LocalDate.of(2026, 1, 1), null,
                 null, null, "cm", "checker", "author", false, Map.of());
@@ -218,7 +218,7 @@ class PolicyApplicabilityResolverTest {
                 "BANKING_POLICY",
                 status,
                 List.of("DIGILEAP"),
-                null, null, null, null, null,
+                null, null, null, List.of(), null, null,
                 null, null,
                 from, until,
                 null, null,

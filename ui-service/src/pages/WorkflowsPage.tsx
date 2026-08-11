@@ -33,7 +33,6 @@ import { ApiError } from '@/api/http'
 import { BORROWER_TYPE_LABELS, BORROWER_TYPE_ORDER } from '@/catalog/borrowerTypes'
 import { isLoanProductCode, LOAN_PRODUCT_CODES, LOAN_PRODUCT_LABELS, loanProductLabel } from '@/catalog/loanProducts'
 import {
-  DEFAULT_LMS_PRODUCT_CODE,
   DEFAULT_LMS_TENURE_UNIT,
   LMS_TENURE_UNIT_OPTIONS,
   workflowUsesPlpLmsConfig,
@@ -72,7 +71,7 @@ export function WorkflowsPage() {
   const [name, setName] = useState('')
   const [borrowerType, setBorrowerType] = useState<BorrowerType>('INDIVIDUAL')
   const [loanProduct, setLoanProduct] = useState('')
-  const [lmsProductCode, setLmsProductCode] = useState(DEFAULT_LMS_PRODUCT_CODE)
+  const [lmsProductCode, setLmsProductCode] = useState('')
   const [lmsTenureUnit, setLmsTenureUnit] = useState(DEFAULT_LMS_TENURE_UNIT)
   const [intakeSegment, setIntakeSegment] = useState<WorkflowIntakeSegment>('BORROWER')
   const [bureauEnabled, setBureauEnabled] = useState(true)
@@ -175,7 +174,7 @@ export function WorkflowsPage() {
     setName('New workflow')
     setBorrowerType('INDIVIDUAL')
     setLoanProduct('PERSONAL_LOAN')
-    setLmsProductCode(DEFAULT_LMS_PRODUCT_CODE)
+    setLmsProductCode('')
     setLmsTenureUnit(DEFAULT_LMS_TENURE_UNIT)
     setIntakeSegment('BORROWER')
     setBureauEnabled(true)
@@ -204,7 +203,7 @@ export function WorkflowsPage() {
     setName(w.name)
     setBorrowerType((w.borrowerType as BorrowerType) || 'INDIVIDUAL')
     setLoanProduct(w.loanProduct)
-    setLmsProductCode(w.lmsProductCode?.trim() || DEFAULT_LMS_PRODUCT_CODE)
+    setLmsProductCode(w.lmsProductCode?.trim() || '')
     setLmsTenureUnit(w.lmsTenureUnit?.trim() || DEFAULT_LMS_TENURE_UNIT)
     setIntakeSegment(w.intakeSegment === 'ANCHOR' ? 'ANCHOR' : 'BORROWER')
     setBureauEnabled(w.bureauEnabled !== false)
@@ -296,7 +295,7 @@ export function WorkflowsPage() {
       name: name.trim() || 'Unnamed workflow',
       borrowerType,
       loanProduct: loanProduct.trim() || 'PERSONAL_LOAN',
-      lmsProductCode: workflowUsesPlpLmsConfig(loanProduct, intakeSegment) ? undefined : lmsProductCode.trim() || DEFAULT_LMS_PRODUCT_CODE,
+      lmsProductCode: workflowUsesPlpLmsConfig(loanProduct, intakeSegment) ? undefined : (lmsProductCode.trim() || undefined),
       lmsTenureUnit: workflowUsesPlpLmsConfig(loanProduct, intakeSegment) ? undefined : lmsTenureUnit.trim() || DEFAULT_LMS_TENURE_UNIT,
       intakeSegment,
       bureauEnabled,
@@ -580,10 +579,10 @@ export function WorkflowsPage() {
                           className="bt-input w-full"
                           value={lmsProductCode}
                           onChange={(e) => setLmsProductCode(e.target.value)}
-                          placeholder="e.g. IPPOPAYM01"
+                          placeholder="Configured Encore LMS product code"
                         />
                         <p className="mt-0.5 text-xs text-slate-500">
-                          Encore product code sent on loan account creation (default for applications using this workflow).
+                          Required for non-PLP products. Leave blank only if LMS open must fail closed (no UI invent/prefill).
                         </p>
                       </label>
                       <label className="block text-sm text-slate-700">

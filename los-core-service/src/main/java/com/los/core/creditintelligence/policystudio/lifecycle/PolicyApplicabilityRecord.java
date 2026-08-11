@@ -25,6 +25,7 @@ public record PolicyApplicabilityRecord(
         String facilityType,
         String customerSegment,
         String borrowerType,
+        List<String> borrowerTypes,
         String securedUnsecured,
         String programScheme,
         BigDecimal minLoanAmount,
@@ -41,6 +42,7 @@ public record PolicyApplicabilityRecord(
 ) {
     public PolicyApplicabilityRecord {
         products = products == null ? List.of() : List.copyOf(products);
+        borrowerTypes = BorrowerTypeScope.normalize(borrowerTypes, borrowerType);
         metadata = metadata == null ? Map.of() : Map.copyOf(metadata);
     }
 
@@ -54,6 +56,8 @@ public record PolicyApplicabilityRecord(
         m.put("facilityType", facilityType);
         m.put("customerSegment", customerSegment);
         m.put("borrowerType", borrowerType);
+        m.put("borrowerTypes", borrowerTypes);
+        m.put("borrowerTypeSummary", BorrowerTypeScope.summaryLabel(borrowerTypes));
         m.put("securedUnsecured", securedUnsecured);
         m.put("programScheme", programScheme);
         m.put("minLoanAmount", minLoanAmount);
@@ -109,7 +113,7 @@ public record PolicyApplicabilityRecord(
         if (!dimensionMatches(customerSegment, q.customerSegment())) {
             return false;
         }
-        if (!dimensionMatches(borrowerType, q.borrowerType())) {
+        if (!BorrowerTypeScope.matches(borrowerTypes, borrowerType, q.borrowerType())) {
             return false;
         }
         if (!dimensionMatches(securedUnsecured, q.securedUnsecured())) {
@@ -167,6 +171,15 @@ public record PolicyApplicabilityRecord(
         } else if (m.get("productCode") != null) {
             products.add(String.valueOf(m.get("productCode")));
         }
+        List<String> borrowerTypes = new ArrayList<>();
+        Object btList = m.get("borrowerTypes");
+        if (btList instanceof List<?> list) {
+            for (Object o : list) {
+                if (o != null && !String.valueOf(o).isBlank()) {
+                    borrowerTypes.add(String.valueOf(o));
+                }
+            }
+        }
         return new PolicyApplicabilityRecord(
                 m.get("policyVersionId") == null ? UUID.randomUUID()
                         : UUID.fromString(String.valueOf(m.get("policyVersionId"))),
@@ -178,6 +191,7 @@ public record PolicyApplicabilityRecord(
                 blankToNull(str(m, "facilityType", null)),
                 blankToNull(str(m, "customerSegment", null)),
                 blankToNull(str(m, "borrowerType", null)),
+                borrowerTypes,
                 blankToNull(str(m, "securedUnsecured", null)),
                 blankToNull(str(m, "programScheme", null)),
                 decimal(m.get("minLoanAmount")),

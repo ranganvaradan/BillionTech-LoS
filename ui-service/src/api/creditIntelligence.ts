@@ -301,6 +301,11 @@ export type ReviewRuleBody = {
     | 'RESOLVE_PARAMETER_MANUAL'
     | 'RESOLVE_PARAMETER_USE_PROPOSAL'
     | 'RESOLVE_PARAMETER_UNAVAILABLE'
+    | 'RESOLVE_DATA_THRESHOLD'
+    | 'RESOLVE_DATA_CLASSIFICATION'
+    | 'RESOLVE_DATA_CALCULATION'
+    | 'RESOLVE_DATA_ADJUSTMENT'
+    | 'RESOLVE_DATA_MANUAL'
   reviewer?: string
   reviewerRole?: string
   reviewState?: string

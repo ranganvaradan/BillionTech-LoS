@@ -39,6 +39,12 @@ export type ParameterGroup = {
   statusReason?: string
   missingDefinition?: Record<string, unknown>
   howCalculated: Record<string, unknown> | null
+  howDefined?: string
+  displayStatus?: string
+  dataCalcResolution?: Record<string, unknown>
+  resolveRuleId?: string
+  resolveAction?: 'DEFINE' | 'CONFIGURE' | 'RESOLVE' | 'MANUAL'
+  executionImpact?: 'BLOCKING' | 'NON_BLOCKING'
   policyAdjustments: PolicyAdjustment[]
   sourceClauses: string[]
   usedByRules: { id: string; name: string }[]
@@ -148,6 +154,13 @@ function businessNameFor(parameterId: string, members: Record<string, unknown>[]
 function adjustmentStatus(r: Record<string, unknown>): { status: CmParamStatus; reason?: string } {
   const text = clauseText(r).toLowerCase()
   const missing = asRecord(r.missingDefinition)
+  const res = asRecord(r.dataCalcResolution)
+  if (res.cmStatus) {
+    return {
+      status: String(res.cmStatus) as CmParamStatus,
+      reason: String(res.howDefined ?? res.message ?? res.displayStatus ?? ''),
+    }
+  }
   if (text.includes('loan') && text.includes('removed')) {
     return { status: 'READY', reason: 'Loan-disbursement classifier exists in bank transaction taxonomy' }
   }
@@ -167,13 +180,48 @@ function adjustmentStatus(r: Record<string, unknown>): { status: CmParamStatus; 
   return { status: 'NEEDS_CONFIGURATION' }
 }
 
+function firstResolution(members: Record<string, unknown>[]): Record<string, unknown> {
+  for (const m of members) {
+    const r = asRecord(m.dataCalcResolution)
+    if (Object.keys(r).length) return r
+  }
+  return {}
+}
+
 function groupCmStatus(parameterId: string, members: Record<string, unknown>[], adjustments: PolicyAdjustment[]): {
   status: CmParamStatus
   reason?: string
   missingDefinition?: Record<string, unknown>
+  howDefined?: string
+  displayStatus?: string
+  resolution?: Record<string, unknown>
 } {
   const texts = members.map(clauseText).join(' ').toLowerCase()
   const missing = members.map((m) => asRecord(m.missingDefinition)).find((m) => Object.keys(m).length > 0)
+  const resolution = firstResolution(members)
+
+  if (Object.keys(resolution).length > 0) {
+    const st = String(resolution.cmStatus ?? 'NEEDS_CONFIGURATION') as CmParamStatus
+    // EMI bounce must never become READY from a calculation config stamp alone
+    if (parameterId === 'banking.emi_bounce_count_3m' && st === 'READY') {
+      return {
+        status: 'NEEDS_CONFIGURATION',
+        reason: 'Combined EMI-bounce metric is not production-bound',
+        missingDefinition: missing,
+        howDefined: String(resolution.howDefined ?? ''),
+        displayStatus: 'NEEDS CONFIGURATION',
+        resolution,
+      }
+    }
+    return {
+      status: st,
+      reason: String(resolution.message ?? resolution.howDefined ?? resolution.displayStatus ?? ''),
+      missingDefinition: missing,
+      howDefined: String(resolution.howDefined ?? ''),
+      displayStatus: String(resolution.displayStatus ?? ''),
+      resolution,
+    }
+  }
 
   if (parameterId === 'banking.large_credit_transactions' || texts.includes('large credit')) {
     return {
@@ -200,7 +248,11 @@ function groupCmStatus(parameterId: string, members: Record<string, unknown>[], 
     return {
       status: 'NEEDS_CONFIGURATION',
       reason: 'EMI and bounce classifiers exist separately; combined EMI-bounce metric is not production-bound',
-      missingDefinition: missing,
+      missingDefinition: missing && Object.keys(missing).length ? missing : {
+        question: 'EMI bounce derivation needs configuration',
+        hint: 'Combined EMI-bounce metric is not production-bound.',
+        action: 'CONFIGURE',
+      },
     }
   }
   if (adjustments.some((a) => a.status === 'NEEDS_YOUR_INPUT')) {
@@ -268,7 +320,20 @@ function usedByRules(parameterId: string, underwritingRules: unknown[]): { id: s
 export function groupDataCalculations(
   dataAndCalculations: unknown[],
   underwritingRules: unknown[] = [],
+  policyDataResolutions: Record<string, unknown> = {},
 ): ParameterGroup[] {
+  // Merge document-level resolutions onto members when present
+  const enriched = dataAndCalculations.map((raw) => {
+    const r = asRecord(raw)
+    const { parameterId } = resolveParameterKey(r)
+    const fromDoc = asRecord(policyDataResolutions[parameterId]
+      ?? policyDataResolutions['banking.adb_bulk_deposit_adjustment'])
+    if (Object.keys(fromDoc).length && !Object.keys(asRecord(r.dataCalcResolution)).length) {
+      return { ...r, dataCalcResolution: fromDoc }
+    }
+    return r
+  })
+  dataAndCalculations = enriched
   const buckets = new Map<string, Record<string, unknown>[]>()
   for (const raw of dataAndCalculations) {
     const r = asRecord(raw)
@@ -327,6 +392,17 @@ export function groupDataCalculations(
     const clauses = members.map(clauseText).filter(Boolean)
     const kind = itemKindFor(parameterId, members)
     const rules = usedByRules(parameterId, underwritingRules)
+    const resolveMember = primaryMembers[0] ?? members[0] ?? adjustments[0]?.raw
+    const resolveRuleId = String(asRecord(resolveMember).id ?? asRecord(resolveMember).systemRuleId ?? '')
+    const missingAction = String(asRecord(statusInfo.missingDefinition).action ?? '')
+    let resolveAction: ParameterGroup['resolveAction']
+    if (parameterId === 'banking.emi_bounce_count_3m' || missingAction === 'CONFIGURE') resolveAction = 'CONFIGURE'
+    else if (missingAction === 'DEFINE' || parameterId === 'banking.large_credit_transactions'
+      || parameterId === 'banking.intercompany_transactions') resolveAction = 'DEFINE'
+    else if (statusInfo.status === 'NEEDS_YOUR_INPUT' || statusInfo.status === 'NEEDS_CONFIGURATION') {
+      resolveAction = missingAction === 'CONFIRM' ? 'CONFIGURE' : 'DEFINE'
+    }
+    const impact = String(asRecord(statusInfo.resolution).executionImpact ?? '')
     groups.push({
       parameterId,
       name: businessNameFor(parameterId, members),
@@ -338,6 +414,14 @@ export function groupDataCalculations(
       statusReason: statusInfo.reason,
       missingDefinition: statusInfo.missingDefinition,
       howCalculated: howFrom,
+      howDefined: statusInfo.howDefined,
+      displayStatus: statusInfo.displayStatus,
+      dataCalcResolution: statusInfo.resolution,
+      resolveRuleId: resolveRuleId || undefined,
+      resolveAction,
+      executionImpact: impact === 'BLOCKING' || impact === 'NON_BLOCKING'
+        ? impact
+        : (kind === 'REPORT_ANALYST_INFORMATION' || rules.length === 0 ? 'NON_BLOCKING' : undefined),
       policyAdjustments: adjustments,
       sourceClauses: clauses,
       usedByRules: rules,
@@ -361,7 +445,7 @@ export function groupDataCalculations(
 
 export function filterParameterGroups(
   groups: ParameterGroup[],
-  filter: 'ALL' | 'READY' | 'NEEDS_INPUT' | 'MANUAL' | 'UNAVAILABLE',
+  filter: 'ALL' | 'READY' | 'NEEDS_INPUT' | 'NEEDS_CONFIGURATION' | 'MANUAL' | 'UNAVAILABLE',
   sourceFilter?: string,
 ): ParameterGroup[] {
   return groups.filter((g) => {
@@ -372,7 +456,9 @@ export function filterParameterGroups(
       case 'READY':
         return g.cmStatus === 'READY'
       case 'NEEDS_INPUT':
-        return g.cmStatus === 'NEEDS_YOUR_INPUT' || g.cmStatus === 'NEEDS_CONFIGURATION'
+        return g.cmStatus === 'NEEDS_YOUR_INPUT'
+      case 'NEEDS_CONFIGURATION':
+        return g.cmStatus === 'NEEDS_CONFIGURATION'
       case 'MANUAL':
         return g.cmStatus === 'MANUAL_INPUT' || g.type === 'MANUAL'
       case 'UNAVAILABLE':

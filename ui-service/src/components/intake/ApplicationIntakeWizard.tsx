@@ -45,7 +45,6 @@ import { BORROWER_TYPE_LABELS } from '@/catalog/borrowerTypes'
 import { isInvoiceDiscountingProduct } from '@/catalog/loanProducts'
 import { ANCHOR_BORROWER_TYPE } from '@/lib/intake/anchorIntakeConstants'
 import {
-  DEFAULT_LMS_PRODUCT_CODE,
   DEFAULT_LMS_TENURE_UNIT,
   lmsTenureUnitLabel,
   tenureMagnitudeShortUnit,
@@ -383,9 +382,10 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
 
   useEffect(() => {
     if (!selectedWorkflow || isInvoiceDiscountingProduct(form.loanProduct)) return
+    // Derive LMS code from workflow config only — do not invent / hardcode Encore product codes.
     setForm((f) => ({
       ...f,
-      lmsProductCode: selectedWorkflow.lmsProductCode?.trim() || DEFAULT_LMS_PRODUCT_CODE,
+      lmsProductCode: selectedWorkflow.lmsProductCode?.trim() || '',
       lmsTenureUnit: selectedWorkflow.lmsTenureUnit?.trim() || DEFAULT_LMS_TENURE_UNIT,
     }))
   }, [selectedWorkflow?.id, selectedWorkflow?.lmsProductCode, selectedWorkflow?.lmsTenureUnit, form.loanProduct])

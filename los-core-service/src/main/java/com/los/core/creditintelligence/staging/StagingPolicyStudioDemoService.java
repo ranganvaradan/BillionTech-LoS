@@ -534,6 +534,15 @@ public class StagingPolicyStudioDemoService {
                     reason = "Parameter resolution recorded on draft (session only)";
                 }
             }
+            // POLICY-DATA-RESOLUTION-UX-1 — typed Data & Calculations definitions (session/draft only)
+            case "RESOLVE_DATA_THRESHOLD", "RESOLVE_DATA_CLASSIFICATION",
+                 "RESOLVE_DATA_CALCULATION", "RESOLVE_DATA_ADJUSTMENT",
+                 "RESOLVE_DATA_MANUAL" -> {
+                reviewState = ReviewState.CREDIT_MANAGER_APPROVED.name();
+                if (reason == null) {
+                    reason = "Data & Calculations resolution recorded on policy draft (session only)";
+                }
+            }
             default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Unsupported rule review action");
         }
@@ -633,6 +642,11 @@ public class StagingPolicyStudioDemoService {
                 case "RESOLVE_PARAMETER_MAP", "RESOLVE_PARAMETER_MANUAL",
                      "RESOLVE_PARAMETER_USE_PROPOSAL", "RESOLVE_PARAMETER_UNAVAILABLE" -> {
                     applyParameterResolution(session, rule, meta, action, body);
+                }
+                case "RESOLVE_DATA_THRESHOLD", "RESOLVE_DATA_CLASSIFICATION",
+                     "RESOLVE_DATA_CALCULATION", "RESOLVE_DATA_ADJUSTMENT",
+                     "RESOLVE_DATA_MANUAL" -> {
+                    applyDataCalcResolution(session, rule, meta, action, body);
                 }
                 default -> {
                     /* reject path keeps prior metadata */
@@ -822,6 +836,95 @@ public class StagingPolicyStudioDemoService {
             }
             r.setMetadata(m);
         }
+    }
+
+    /**
+     * POLICY-DATA-RESOLUTION-UX-1 — persist typed Data & Calculations definition on policy document.
+     * Does not mutate GACAT. Does not invent executable metrics.
+     */
+    private void applyDataCalcResolution(
+            PolicyStudioSession session,
+            CiPolicyRuleCandidate rule,
+            Map<String, Object> meta,
+            String action,
+            Map<String, Object> body) {
+        String dataItemId = body.get("dataItemId") == null
+                ? String.valueOf(body.getOrDefault("parameterId",
+                body.getOrDefault("targetParameterId", "")))
+                : String.valueOf(body.get("dataItemId"));
+        if (dataItemId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "dataItemId required");
+        }
+        String actor = body.get("actor") == null
+                ? str(body, "reviewer", "credit_manager") : String.valueOf(body.get("actor"));
+        String documentId = session.getDocument() == null || session.getDocument().getId() == null
+                ? null : session.getDocument().getId().toString();
+        Map<String, Object> resolution;
+        try {
+            resolution = switch (action) {
+                case "RESOLVE_DATA_THRESHOLD" -> {
+                    java.math.BigDecimal amt = body.get("amountInr") == null
+                            ? null : new java.math.BigDecimal(String.valueOf(body.get("amountInr"))
+                            .replace(",", "").replace("₹", "").trim());
+                    yield com.los.core.creditintelligence.policystudio.parameters
+                            .PolicyDataResolutionSupport.thresholdDefinition(
+                                    dataItemId, amt,
+                                    body.get("notes") == null ? null : String.valueOf(body.get("notes")),
+                                    actor, documentId);
+                }
+                case "RESOLVE_DATA_CLASSIFICATION" -> com.los.core.creditintelligence.policystudio.parameters
+                        .PolicyDataResolutionSupport.classificationDefinition(
+                                dataItemId,
+                                body.get("identificationMethod") == null ? null
+                                        : String.valueOf(body.get("identificationMethod")),
+                                body.get("notes") == null ? null : String.valueOf(body.get("notes")),
+                                actor, documentId);
+                case "RESOLVE_DATA_CALCULATION" -> com.los.core.creditintelligence.policystudio.parameters
+                        .PolicyDataResolutionSupport.calculationConfiguration(dataItemId, actor, documentId);
+                case "RESOLVE_DATA_ADJUSTMENT" -> {
+                    java.math.BigDecimal mult = body.get("multiple") == null
+                            ? new java.math.BigDecimal("10")
+                            : new java.math.BigDecimal(String.valueOf(body.get("multiple")).trim());
+                    String adjKey = dataItemId.contains("avg_daily") || dataItemId.contains("adb")
+                            ? "banking.adb_bulk_deposit_adjustment" : dataItemId;
+                    yield com.los.core.creditintelligence.policystudio.parameters
+                            .PolicyDataResolutionSupport.policyAdjustment(adjKey, mult, actor, documentId);
+                }
+                case "RESOLVE_DATA_MANUAL" -> com.los.core.creditintelligence.policystudio.parameters
+                        .PolicyDataResolutionSupport.manualInput(
+                                dataItemId,
+                                body.get("manualInputLabel") == null ? null
+                                        : String.valueOf(body.get("manualInputLabel")),
+                                body.get("manualInputType") == null ? null
+                                        : String.valueOf(body.get("manualInputType")),
+                                body.get("requiredActor") == null ? actor
+                                        : String.valueOf(body.get("requiredActor")),
+                                body.get("captureStage") == null ? null
+                                        : String.valueOf(body.get("captureStage")),
+                                documentId);
+                default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported data resolve");
+            };
+        } catch (IllegalArgumentException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, ex.getMessage());
+        }
+        String stampKey = String.valueOf(resolution.getOrDefault("dataItemId", dataItemId));
+        meta.put(com.los.core.creditintelligence.policystudio.parameters
+                .PolicyDataResolutionSupport.RULE_META_KEY, resolution);
+        meta.put("disposition", "EDITED");
+        meta.put("excludedFromActivation", false);
+        boolean execReady = "READY".equals(String.valueOf(resolution.get("executionStatus")))
+                || "INFORMATION_ONLY".equals(String.valueOf(resolution.get("executionStatus")))
+                || "MANUAL_INPUT".equals(String.valueOf(resolution.get("executionStatus")));
+        meta.put("NEEDS_INPUT", !execReady
+                && !"INFORMATION_ONLY".equals(String.valueOf(resolution.get("executionStatus"))));
+        com.los.core.creditintelligence.policystudio.parameters
+                .PolicyDataResolutionSupport.stampOnDocument(session, stampKey, resolution);
+        // Also stamp under canonical parameter id when adjustment key differs
+        if (!stampKey.equals(dataItemId)) {
+            com.los.core.creditintelligence.policystudio.parameters
+                    .PolicyDataResolutionSupport.stampOnDocument(session, dataItemId, resolution);
+        }
+        rule.setMetadata(meta);
     }
 
     private static void stampParameterResolutionOnDocument(

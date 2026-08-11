@@ -33,10 +33,9 @@ public class WorkflowConfig {
     @Column(nullable = false, length = 50)
     private String loanProduct;
 
-    /** Encore LMS product code default for applications using this workflow. */
+    /** Encore LMS product code for applications using this workflow (required before openLoanAccount). */
     @Column(name = "lms_product_code", length = 50)
-    @Builder.Default
-    private String lmsProductCode = "IPPOPAYM01";
+    private String lmsProductCode;
 
     /** Encore tenure unit default (Day, Month, Week, etc.). */
     @Column(name = "lms_tenure_unit", length = 20)

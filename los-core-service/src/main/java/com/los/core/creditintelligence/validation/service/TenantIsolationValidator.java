@@ -2,6 +2,7 @@ package com.los.core.creditintelligence.validation.service;
 
 import com.los.core.creditintelligence.config.CreditIntelligenceProperties;
 import com.los.core.creditintelligence.core.tenant.TenantResolver;
+import com.los.core.security.SingleTenantDeploymentGuard;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
@@ -50,7 +51,8 @@ public class TenantIsolationValidator {
         CreditIntelligenceProperties props = properties != null ? properties : new CreditIntelligenceProperties();
         props.getTenant().setDevMode(false);
         props.getTenant().setRequireExplicit(true);
-        TenantResolver resolver = new TenantResolver(props);
+        TenantResolver resolver = new TenantResolver(
+                props, new SingleTenantDeploymentGuard("OFF", "00000000-0000-0000-0000-000000000001"));
         boolean unknownFails = false;
         try {
             resolver.resolveOrDefault(null);

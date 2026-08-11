@@ -77,8 +77,12 @@ public final class PolicyScopeSupport {
                 ? "All products"
                 : products.stream().map(PolicyScopeSupport::productLabel).reduce((a, b) -> a + ", " + b).orElse("All products");
 
-        String borrower = blankToNull(str(app.get("borrowerType")));
-        String borrowerPart = borrower == null ? "All borrower types" : borrowerTypeLabel(borrower);
+        List<String> borrowerTypes = BorrowerTypeScope.normalize(stringList(app.get("borrowerTypes")),
+                blankToNull(str(app.get("borrowerType"))));
+        String borrowerPart = BorrowerTypeScope.isAll(borrowerTypes)
+                ? "All borrower types"
+                : borrowerTypes.stream().map(PolicyScopeSupport::borrowerTypeLabel)
+                        .reduce((a, b) -> a + " + " + b).orElse("All borrower types");
 
         String segment = blankToNull(str(app.get("customerSegment")));
         String segmentPart = segment == null ? null : relationshipLabel(segment);
@@ -90,11 +94,7 @@ public final class PolicyScopeSupport {
         if (segmentPart != null) {
             parts.add(segmentPart);
         }
-        if (borrower != null) {
-            parts.add(borrowerPart);
-        } else if (!"All products".equals(productPart)) {
-            parts.add("All borrower types");
-        }
+        parts.add(borrowerPart);
         parts.add(amountPart);
 
         String appliesLine = String.join(" · ", parts);
@@ -117,8 +117,11 @@ public final class PolicyScopeSupport {
         cov.put("product", products.isEmpty() || isAllProducts(products)
                 ? "All products"
                 : products.stream().map(PolicyScopeSupport::productLabel).toList());
-        String bt = blankToNull(str(app.get("borrowerType")));
-        cov.put("borrowerType", bt == null ? "All" : borrowerTypeLabel(bt));
+        List<String> bts = BorrowerTypeScope.normalize(stringList(app.get("borrowerTypes")),
+                blankToNull(str(app.get("borrowerType"))));
+        cov.put("borrowerType", BorrowerTypeScope.isAll(bts) ? "All"
+                : bts.stream().map(PolicyScopeSupport::borrowerTypeLabel).toList());
+        cov.put("borrowerTypes", bts);
         String seg = blankToNull(str(app.get("customerSegment")));
         cov.put("applicationRelationship", seg == null ? "All" : relationshipLabel(seg));
         cov.put("amount", amountSummary(decimal(app.get("minLoanAmount")), decimal(app.get("maxLoanAmount"))));
@@ -138,6 +141,12 @@ public final class PolicyScopeSupport {
                 String v = blankToNull(str(app.get(k)));
                 app.put(k, v);
             }
+        }
+        if (app.containsKey("borrowerTypes") || app.containsKey("borrowerType")) {
+            List<String> normalized = BorrowerTypeScope.normalize(stringList(app.get("borrowerTypes")),
+                    blankToNull(str(app.get("borrowerType"))));
+            app.put("borrowerTypes", new ArrayList<>(normalized));
+            app.put("borrowerType", BorrowerTypeScope.legacyScalar(normalized));
         }
         if (app.containsKey("products")) {
             List<String> products = stringList(app.get("products"));

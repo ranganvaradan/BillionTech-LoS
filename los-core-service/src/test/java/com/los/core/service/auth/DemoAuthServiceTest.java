@@ -6,6 +6,8 @@ import com.los.core.model.dto.auth.LoginRequest;
 import com.los.core.model.dto.auth.ResetPasswordRequest;
 import com.los.core.model.entity.LosUser;
 import com.los.core.repository.LosUserRepository;
+import com.los.core.security.LosJwtService;
+import com.los.core.security.SingleTenantDeploymentGuard;
 import com.los.core.service.borrower.BorrowerApplicationOwnershipService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -37,6 +40,9 @@ class DemoAuthServiceTest {
     @Mock
     private BorrowerApplicationOwnershipService borrowerApplicationOwnershipService;
 
+    @Mock
+    private LosJwtService losJwtService;
+
     private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
 
     private DemoAuthService demoAuthService;
@@ -46,7 +52,10 @@ class DemoAuthServiceTest {
     @BeforeEach
     void wireEncoder() {
         userId = UUID.fromString("a1000000-0000-0000-0000-000000000002");
-        demoAuthService = new DemoAuthService(losUserRepository, encoder, borrowerApplicationOwnershipService);
+        lenient().when(losJwtService.isConfigured()).thenReturn(false);
+        demoAuthService = new DemoAuthService(
+                losUserRepository, encoder, borrowerApplicationOwnershipService, losJwtService,
+                new SingleTenantDeploymentGuard("OFF", "00000000-0000-0000-0000-000000000001"));
     }
 
     @Test

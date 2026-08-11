@@ -18,4 +18,9 @@ public class LoginResponse {
     /** True when the user signed in with a temporary password and must set a new one before continuing. */
     @JsonProperty("passwordResetRequired")
     boolean passwordResetRequired;
+    /** HS256 access token for production JWT RBAC (Authorization: Bearer …). */
+    @JsonProperty("accessToken")
+    String accessToken;
+    @JsonProperty("tokenType")
+    String tokenType;
 }

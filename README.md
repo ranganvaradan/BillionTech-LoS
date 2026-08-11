@@ -18,10 +18,12 @@ BillionTech-LoS/
 
 | Service | Checkpoint |
 |---------|------------|
-| los-core-service | `b5e9d81` |
-| ui-service | `1864712` |
+| los-core-service | `7637e26c771d178174239b995cfa76e8973438b9` |
+| ui-service | `091e1642aa0df0af59647c36edf2840627547569` |
 | discovery-service | `b8f60c7` |
 | notification-service | `db04b7b` |
+
+See `LOS_LOCAL_CHECKPOINT_MANIFEST.md` for sync date, previous handoff HEAD, Flyway tip (V118), and gate coverage.
 
 ## Build (same as laptop)
 

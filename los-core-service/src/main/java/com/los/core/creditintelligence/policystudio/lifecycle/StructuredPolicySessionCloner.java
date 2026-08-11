@@ -424,7 +424,16 @@ public final class StructuredPolicySessionCloner {
         out.remove("testApprovals");
         out.remove("simulationApproval");
         out.remove("activationEvidence");
-        // Keep policyParameterMappings and measure/calculation adjustments
+        // Keep policyParameterMappings, policyDataResolutions, and measure/calculation adjustments
+        // POLICY-DATA-RESOLUTION-UX-1 — clone typed Large/Intercompany/EMI/adjustment definitions
+        Object pdr = out.get(com.los.core.creditintelligence.policystudio.parameters
+                .PolicyDataResolutionSupport.DOC_META_KEY);
+        if (pdr instanceof Map<?, ?> raw) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> cast = (Map<String, Object>) raw;
+            out.put(com.los.core.creditintelligence.policystudio.parameters
+                    .PolicyDataResolutionSupport.DOC_META_KEY, copyMap(cast));
+        }
         return out;
     }
 
