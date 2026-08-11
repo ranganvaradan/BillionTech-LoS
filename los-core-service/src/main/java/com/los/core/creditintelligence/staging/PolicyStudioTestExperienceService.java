@@ -6,6 +6,7 @@ import com.los.core.creditintelligence.policystudio.domain.CiPolicyRuleCandidate
 import com.los.core.creditintelligence.policystudio.dsl.PolicyDslInterpreterV1;
 import com.los.core.creditintelligence.policystudio.lineage.PolicyMetricLineage;
 import com.los.core.creditintelligence.policystudio.lineage.PolicyMetricLineageService;
+import com.los.core.creditintelligence.policystudio.lineage.PolicyRulePresentationSemantics;
 import com.los.core.creditintelligence.policystudio.model.PolicyStudioSession;
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterDefinition;
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterRegistry;
@@ -1077,11 +1078,19 @@ public class PolicyStudioTestExperienceService {
 
     private static boolean isDataCalculationOnly(CiPolicyRuleCandidate r) {
         Map<String, Object> meta = r.getMetadata() == null ? Map.of() : r.getMetadata();
-        if (Boolean.TRUE.equals(meta.get("dataCalculation")) || Boolean.TRUE.equals(meta.get("DATA_CALCULATION"))) {
+        if (Boolean.TRUE.equals(meta.get("dataCalculation"))
+                || Boolean.TRUE.equals(meta.get("DATA_CALCULATION"))
+                || Boolean.TRUE.equals(meta.get("dataRequirementOnly"))
+                || Boolean.TRUE.equals(meta.get("metricAdjustment"))
+                || Boolean.TRUE.equals(meta.get("classificationOnly"))) {
+            return true;
+        }
+        String status = PolicyRulePresentationSemantics.ruleStatus(r, null);
+        if (Set.of("Data requirement", "Metric adjustment", "Non-underwriting").contains(status)) {
             return true;
         }
         String sys = r.getSystemRuleId() == null ? "" : r.getSystemRuleId().toUpperCase(Locale.ROOT);
-        return sys.contains("DATA_CALC") || sys.contains("METRIC_ADJUST");
+        return sys.contains("DATA_CALC") || sys.contains("METRIC_ADJUST") || sys.contains("DATA_REQUIREMENT");
     }
 
     private static boolean isUnresolvedStructural(Map<String, Object> expr) {
