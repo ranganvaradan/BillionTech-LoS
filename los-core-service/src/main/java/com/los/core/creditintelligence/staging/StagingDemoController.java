@@ -453,6 +453,29 @@ public class StagingDemoController {
         }
     }
 
+    /** POLICY-RULE-AUTHORING-FIX-1 — source/parameter picker for CM rule authoring. */
+    @GetMapping("/policy-studio/rule-authoring/sources")
+    public Map<String, Object> ruleAuthoringSources(
+            @RequestHeader(value = "X-Internal-Token", required = false) String token,
+            @RequestHeader(value = "X-Tenant-Id", required = false) String tenantHeader) {
+        assertInternalToken(token);
+        assertStagingDemoEnabled();
+        return policyStudioDemoService.authoringSources(tenantHeader);
+    }
+
+    /** POLICY-RULE-AUTHORING-FIX-1 — preview structured or plain-English rule (no persist). */
+    @PostMapping("/policy-studio/documents/{documentId}/rules/preview")
+    public Map<String, Object> previewAuthoredRule(
+            @PathVariable UUID documentId,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token,
+            @RequestHeader(value = "X-Tenant-Id", required = false) String tenantHeader,
+            @RequestBody(required = false) Map<String, Object> body) {
+        assertInternalToken(token);
+        assertStagingDemoEnabled();
+        return policyStudioDemoService.previewAuthoredRule(
+                documentId, body == null ? Map.of() : body, tenantHeader);
+    }
+
     @PostMapping("/policy-studio/documents/{documentId}/rules/add-plain-english")
     public Map<String, Object> addPlainEnglishRule(
             @PathVariable UUID documentId,

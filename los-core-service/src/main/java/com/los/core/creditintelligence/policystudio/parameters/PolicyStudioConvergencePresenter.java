@@ -373,6 +373,7 @@ public final class PolicyStudioConvergencePresenter {
     public static Map<String, Object> groupCards(List<Map<String, Object>> cards) {
         List<Map<String, Object>> underwriting = new ArrayList<>();
         List<Map<String, Object>> dataCalc = new ArrayList<>();
+        List<Map<String, Object>> otherContent = new ArrayList<>();
         List<Map<String, Object>> hiddenChildren = new ArrayList<>();
         for (Map<String, Object> c : cards) {
             String status = String.valueOf(c.get("status"));
@@ -380,10 +381,26 @@ public final class PolicyStudioConvergencePresenter {
                 hiddenChildren.add(c);
                 continue;
             }
+            String cls = String.valueOf(c.getOrDefault("classification",
+                    asRecord(c.get("metadata")).getOrDefault("classification", "")));
+            boolean classificationOnly = Boolean.TRUE.equals(c.get("classificationOnly"))
+                    || "CLASSIFICATION".equalsIgnoreCase(String.valueOf(
+                    asRecord(c.get("technicalExpression")).getOrDefault("op",
+                            asRecord(c.get("expression")).get("op"))));
+            boolean narrativeOrOther = classificationOnly
+                    || Set.of("NARRATIVE", "AMBIGUOUS", "SERVICING_RULE", "PORTFOLIO_CONTROL",
+                    "PRODUCT_CONFIG", "DOCUMENT_REQUIREMENT").contains(cls)
+                    || "Narrative / Excluded".equals(String.valueOf(c.get("businessGroup")))
+                    || "Other policy content".equals(String.valueOf(c.get("businessGroup")));
             if (Set.of("Data requirement", "Metric adjustment", "Non-underwriting").contains(status)
                     || Boolean.TRUE.equals(c.get("dataRequirementOnly"))
                     || Boolean.TRUE.equals(c.get("metricAdjustment"))) {
                 dataCalc.add(c);
+            } else if (narrativeOrOther && !Boolean.TRUE.equals(c.get("cmAuthored"))) {
+                // POLICY-RULE-AUTHORING-FIX-1 — do not count narrative/classification as UW rules
+                Map<String, Object> mutable = new LinkedHashMap<>(c);
+                mutable.put("businessGroup", "Other policy content");
+                otherContent.add(mutable);
             } else {
                 underwriting.add(c);
             }
@@ -391,12 +408,19 @@ public final class PolicyStudioConvergencePresenter {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("underwritingRules", underwriting);
         out.put("dataAndCalculations", dataCalc);
+        out.put("otherPolicyContent", otherContent);
         out.put("compoundChildrenAdvanced", hiddenChildren);
         out.put("underwritingRuleCount", underwriting.size());
+        out.put("otherPolicyContentCount", otherContent.size());
         out.put("dataRequirementCount", dataCalc.stream()
                 .filter(c -> "Data requirement".equals(c.get("status"))).count());
         out.put("metricAdjustmentCount", dataCalc.stream()
                 .filter(c -> "Metric adjustment".equals(c.get("status"))).count());
         return out;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> asRecord(Object o) {
+        return o instanceof Map<?, ?> m ? (Map<String, Object>) m : Map.of();
     }
 }

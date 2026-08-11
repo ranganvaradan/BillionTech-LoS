@@ -35,6 +35,9 @@ final class ProspectDay2ViewBuilder {
         out.put("ruleCards", ruleCards);
         Map<String, Object> groups = PolicyStudioConvergencePresenter.groupCards(ruleCards);
         out.put("underwritingRules", groups.get("underwritingRules"));
+        out.put("underwritingRuleCount", groups.getOrDefault("underwritingRuleCount", 0));
+        out.put("otherPolicyContent", groups.getOrDefault("otherPolicyContent", List.of()));
+        out.put("otherPolicyContentCount", groups.getOrDefault("otherPolicyContentCount", 0));
         out.put("dataAndCalculations", groups.get("dataAndCalculations"));
         out.put("compoundChildrenAdvanced", groups.get("compoundChildrenAdvanced"));
         out.put("ruleGroups", groups);
@@ -85,8 +88,20 @@ final class ProspectDay2ViewBuilder {
         List<Map<String, Object>> uw = out.get("underwritingRules") instanceof List<?>
                 ? (List<Map<String, Object>>) out.get("underwritingRules") : List.of();
         counts.put("underwritingRules", uw.size());
+        long uwReady = uw.stream()
+                .filter(r -> Set.of("Ready", "Accepted", "Edited", "Approved").contains(String.valueOf(r.get("status"))))
+                .count();
+        long uwNeeds = uw.stream()
+                .filter(r -> Set.of("Needs your input", "Needs Review", "Blocked", "Needs clarification",
+                        "Needs configuration", "Unavailable", "Manual Input", "Manual Review")
+                        .contains(String.valueOf(r.get("status"))))
+                .count();
+        counts.put("underwritingReady", uwReady);
+        counts.put("underwritingNeedInput", uwNeeds);
         counts.put("dataAndCalculations",
                 out.get("dataAndCalculations") instanceof List<?> l ? l.size() : dataReq + metricAdj);
+        counts.put("otherPolicyContent",
+                out.get("otherPolicyContent") instanceof List<?> o ? o.size() : 0);
         counts.put("openAmbiguities", openAmb);
         counts.put("missingMetrics", missingMetrics);
         out.put("counts", counts);
@@ -710,6 +725,14 @@ final class ProspectDay2ViewBuilder {
             card.put("sourceLabel", "Extracted from policy");
         }
         card.put("classification", meta.get("classification"));
+        card.put("classificationOnly", meta.get("classificationOnly"));
+        card.put("cmAuthored", meta.get("cmAuthored"));
+        card.put("parameterId", meta.get("parameterId"));
+        card.put("threshold", meta.get("threshold"));
+        card.put("operator", meta.get("operator"));
+        card.put("evaluatedFrom", meta.get("evaluatedFrom"));
+        card.put("metadata", meta);
+        card.put("expression", r.getExpression());
         card.put("matchConfidence", meta.get("matchConfidence"));
         card.put("NEEDS_INPUT", meta.get("NEEDS_INPUT"));
         card.put("PARAMETER_DIFFERS", meta.get("PARAMETER_DIFFERS"));

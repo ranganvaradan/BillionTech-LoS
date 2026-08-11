@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  addPlainEnglishPolicyRule,
   copyPolicyStudioDocument,
   createPolicyFromScratch,
   getPolicyStudioLanding,
@@ -329,26 +328,6 @@ export function CiPolicyStudioPage() {
     }
   }
 
-  const addPlainEnglishRule = async (group: string, text: string) => {
-    if (!documentId) {
-      setError('Missing document id for this session')
-      return
-    }
-    setBusy(true)
-    setError(null)
-    try {
-      const data = await addPlainEnglishPolicyRule(documentId, { text, group })
-      setSession(data)
-      setDirty(true)
-      setRulesDirty(true)
-      setSavedLabel(null)
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Could not add rule')
-    } finally {
-      setBusy(false)
-    }
-  }
-
   const applyCatalogueSession = (data?: unknown) => {
     if (data && typeof data === 'object') {
       setSession(data as typeof session)
@@ -356,6 +335,13 @@ export function CiPolicyStudioPage() {
       setRulesDirty(true)
       setSavedLabel(null)
     }
+  }
+
+  const applyAuthoringSession = (data: Record<string, unknown>) => {
+    setSession(data as typeof session)
+    setDirty(true)
+    setRulesDirty(true)
+    setSavedLabel(null)
   }
 
   const header = asRecord(session?.policyHeader)
@@ -369,8 +355,18 @@ export function CiPolicyStudioPage() {
   const allRuleCards = asList(session?.ruleCards)
   const underwritingFromSession = asList(session?.underwritingRules)
   const ruleCards = underwritingFromSession.length > 0 ? underwritingFromSession : allRuleCards.filter((c) => {
-    const s = String(asRecord(c).status ?? '')
-    return s !== 'Data requirement' && s !== 'Metric adjustment' && s !== 'Non-underwriting' && !asRecord(c).compoundChild
+    const r = asRecord(c)
+    const s = String(r.status ?? '')
+    const group = String(r.businessGroup ?? '')
+    return (
+      s !== 'Data requirement' &&
+      s !== 'Metric adjustment' &&
+      s !== 'Non-underwriting' &&
+      group !== 'Other policy content' &&
+      group !== 'Narrative / Excluded' &&
+      !r.compoundChild &&
+      !r.classificationOnly
+    )
   })
   const dataAndCalculations = (() => {
     const fromSession = asList(session?.dataAndCalculations)
@@ -378,6 +374,15 @@ export function CiPolicyStudioPage() {
     return allRuleCards.filter((c) => {
       const s = String(asRecord(c).status ?? '')
       return s === 'Data requirement' || s === 'Metric adjustment' || s === 'Non-underwriting'
+    })
+  })()
+  const otherPolicyContent = (() => {
+    const fromSession = asList(session?.otherPolicyContent)
+    if (fromSession.length > 0) return fromSession
+    return allRuleCards.filter((c) => {
+      const r = asRecord(c)
+      const group = String(r.businessGroup ?? '')
+      return group === 'Other policy content' || group === 'Narrative / Excluded' || Boolean(r.classificationOnly)
     })
   })()
   const ambiguityCategories = asList(session?.ambiguityCategories)
@@ -898,11 +903,14 @@ export function CiPolicyStudioPage() {
         <CiPolicyRulesTab
           cards={ruleCards}
           dataAndCalculations={dataAndCalculations}
+          otherPolicyContent={otherPolicyContent}
           busy={busy}
+          setBusy={setBusy}
+          onError={setError}
           onReview={reviewRule}
           onViewTests={() => selectWorkflowTab('simulation')}
-          onAddPlainEnglishRule={addPlainEnglishRule}
           onCatalogueChanged={applyCatalogueSession}
+          onSession={applyAuthoringSession}
           documentId={documentId}
           ingestionBinding={asRecord(asRecord(session).ingestionBinding)}
           prospectDemoMode={prospectDemoMode}

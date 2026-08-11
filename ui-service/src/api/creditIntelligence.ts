@@ -335,10 +335,27 @@ export async function reviewPolicyRule(
 
 export async function addPlainEnglishPolicyRule(
   documentId: string,
-  body: { text: string; group?: string },
+  body: Record<string, unknown>,
 ): Promise<StagingPolicyStudio> {
   const { data } = await http.post<StagingPolicyStudio>(
     `${BASE}/policy-studio/documents/${encodeURIComponent(documentId)}/rules/add-plain-english`,
+    body,
+  )
+  return data
+}
+
+/** POLICY-RULE-AUTHORING-FIX-1 */
+export async function getRuleAuthoringSources(): Promise<Record<string, unknown>> {
+  const { data } = await http.get<Record<string, unknown>>(`${BASE}/policy-studio/rule-authoring/sources`)
+  return data
+}
+
+export async function previewPolicyRule(
+  documentId: string,
+  body: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const { data } = await http.post<Record<string, unknown>>(
+    `${BASE}/policy-studio/documents/${encodeURIComponent(documentId)}/rules/preview`,
     body,
   )
   return data

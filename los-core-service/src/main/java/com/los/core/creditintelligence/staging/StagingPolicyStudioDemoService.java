@@ -3,6 +3,7 @@ package com.los.core.creditintelligence.staging;
 import com.los.core.creditintelligence.config.CreditIntelligenceProperties;
 import com.los.core.creditintelligence.policystudio.catalogue.CatalogueCapabilityDraftService;
 import com.los.core.creditintelligence.policystudio.catalogue.CreditCapabilityCatalogueService;
+import com.los.core.creditintelligence.policystudio.parameters.CmRuleAuthoringService;
 import com.los.core.creditintelligence.policystudio.domain.AmbiguityResolutionAction;
 import com.los.core.creditintelligence.policystudio.domain.CiPolicyClause;
 import com.los.core.creditintelligence.policystudio.domain.CiPolicyDocument;
@@ -55,6 +56,7 @@ public class StagingPolicyStudioDemoService {
     private final BusinessMeasureDesignerService measureDesigner;
     private final PolicyLifecycleService lifecycleService;
     private final CatalogueCapabilityDraftService catalogueDraftService;
+    private final CmRuleAuthoringService cmRuleAuthoringService;
 
     /** documentId → meta used to rebuild prospect view after resolve/review */
     private final ConcurrentHashMap<UUID, Map<String, Object>> sessionMeta = new ConcurrentHashMap<>();
@@ -66,7 +68,8 @@ public class StagingPolicyStudioDemoService {
             PolicyTextExtractionService textExtractionService,
             BusinessMeasureDesignerService measureDesigner,
             PolicyLifecycleService lifecycleService,
-            CatalogueCapabilityDraftService catalogueDraftService) {
+            CatalogueCapabilityDraftService catalogueDraftService,
+            CmRuleAuthoringService cmRuleAuthoringService) {
         this.properties = properties;
         this.orchestrator = orchestrator;
         this.textExtractionService = textExtractionService;
@@ -75,6 +78,8 @@ public class StagingPolicyStudioDemoService {
         this.catalogueDraftService = catalogueDraftService != null
                 ? catalogueDraftService
                 : new CatalogueCapabilityDraftService(new CreditCapabilityCatalogueService(properties));
+        this.cmRuleAuthoringService = cmRuleAuthoringService != null
+                ? cmRuleAuthoringService : new CmRuleAuthoringService();
     }
 
     /** Test / legacy convenience — Spring uses the @Autowired constructor. */
@@ -82,7 +87,8 @@ public class StagingPolicyStudioDemoService {
             CreditIntelligenceProperties properties,
             PolicyStudioOrchestrator orchestrator,
             PolicyTextExtractionService textExtractionService) {
-        this(properties, orchestrator, textExtractionService, new BusinessMeasureDesignerService(), null, null);
+        this(properties, orchestrator, textExtractionService, new BusinessMeasureDesignerService(),
+                null, null, new CmRuleAuthoringService());
     }
 
     public StagingPolicyStudioDemoService(
@@ -90,7 +96,7 @@ public class StagingPolicyStudioDemoService {
             PolicyStudioOrchestrator orchestrator,
             PolicyTextExtractionService textExtractionService,
             BusinessMeasureDesignerService measureDesigner) {
-        this(properties, orchestrator, textExtractionService, measureDesigner, null, null);
+        this(properties, orchestrator, textExtractionService, measureDesigner, null, null, new CmRuleAuthoringService());
     }
 
     public Map<String, Object> landing() {
@@ -164,14 +170,32 @@ public class StagingPolicyStudioDemoService {
         meta.put("createdFromScratch", true);
         meta.put("fileName", name + ".txt");
         meta.put("description", description);
+        // Scratch stub text must not become fake underwriting CLASSIFICATION cards
+        purgeStubClassificationRules(session);
         if (session.getDocument() != null && session.getDocument().getId() != null) {
             sessionMeta.put(session.getDocument().getId(), meta);
+            orchestrator.persistence().saveSessionSnapshot(session);
         }
         Map<String, Object> view = toProspectView(session, meta);
         view.put("message", "Draft created. Continue with Scope, then Rules.");
         view.put("enterWorkspace", true);
         view.put("defaultTab", "scope");
         return view;
+    }
+
+    /** Remove non-executable CLASSIFICATION/AMBIGUOUS stubs produced from scratch boilerplate. */
+    private void purgeStubClassificationRules(PolicyStudioSession session) {
+        if (session == null || session.getRuleCandidates() == null) return;
+        session.getRuleCandidates().removeIf(r -> {
+            Map<String, Object> expr = r.getExpression();
+            Map<String, Object> meta = r.getMetadata() == null ? Map.of() : r.getMetadata();
+            if (Boolean.TRUE.equals(meta.get("cmAuthored"))) return false;
+            if (expr != null && "CLASSIFICATION".equalsIgnoreCase(String.valueOf(expr.get("op")))) {
+                return true;
+            }
+            String sys = r.getSystemRuleId() == null ? "" : r.getSystemRuleId().toUpperCase(Locale.ROOT);
+            return sys.startsWith("CLASSIFICATION_");
+        });
     }
 
     /**
@@ -209,6 +233,13 @@ public class StagingPolicyStudioDemoService {
         }
         // Preserve CM dispositions / parameter resolutions where systemRuleId matches
         copyRuleDraftMetadata(source, created);
+        Map<String, Object> srcMeta = sessionMeta.getOrDefault(sourceDocumentId, Map.of());
+        if (Boolean.TRUE.equals(srcMeta.get("createdFromScratch"))
+                || "scratch".equals(srcMeta.get("kind"))) {
+            purgeStubClassificationRules(created);
+        }
+        // POLICY-RULE-AUTHORING-FIX-1 — CM-authored rules live in session, not source text
+        copyCmAuthoredRules(source, created);
         if (lifecycleService != null) {
             requireLifecycle().saveDraft(created, Map.of(
                     "reasonForChange", "Copied from " + sourceName + " · " + sourceVersion,
@@ -222,6 +253,7 @@ public class StagingPolicyStudioDemoService {
         meta.put("copiedFromName", sourceName);
         meta.put("copiedFromVersion", sourceVersion);
         meta.put("copiedFromLabel", "Copied from: " + sourceName + " · Version " + sourceVersion);
+        meta.put("createdFromScratch", srcMeta.get("createdFromScratch"));
         if (created.getDocument() != null && created.getDocument().getId() != null) {
             sessionMeta.put(created.getDocument().getId(), meta);
             orchestrator.persistence().saveSessionSnapshot(created);
@@ -251,6 +283,79 @@ public class StagingPolicyStudioDemoService {
             meta.putAll(s.getMetadata());
             t.setMetadata(meta);
             if (s.getReviewStatus() != null) t.setReviewStatus(s.getReviewStatus());
+        }
+    }
+
+    /**
+     * Deep-copy CM-authored underwriting rules into the copy draft.
+     * Upload/re-extract does not reconstruct these from policy text.
+     */
+    private void copyCmAuthoredRules(PolicyStudioSession source, PolicyStudioSession target) {
+        if (source == null || target == null || source.getRuleCandidates() == null) return;
+        if (target.getDocument() == null || target.getDocument().getId() == null) return;
+        java.util.Set<String> existingSys = new java.util.HashSet<>();
+        for (CiPolicyRuleCandidate t : target.getRuleCandidates()) {
+            if (t.getSystemRuleId() != null) {
+                existingSys.add(t.getSystemRuleId().toUpperCase(Locale.ROOT));
+            }
+        }
+        Map<UUID, CiPolicyClause> sourceClauses = new LinkedHashMap<>();
+        if (source.getClauses() != null) {
+            for (CiPolicyClause c : source.getClauses()) {
+                if (c.getId() != null) sourceClauses.put(c.getId(), c);
+            }
+        }
+        for (CiPolicyRuleCandidate s : source.getRuleCandidates()) {
+            Map<String, Object> sm = s.getMetadata() == null ? Map.of() : s.getMetadata();
+            if (!Boolean.TRUE.equals(sm.get("cmAuthored"))) continue;
+            String sys = s.getSystemRuleId() == null ? "" : s.getSystemRuleId().toUpperCase(Locale.ROOT);
+            if (!sys.isBlank() && existingSys.contains(sys)) continue;
+            UUID newClauseId = UUID.randomUUID();
+            CiPolicyClause srcClause = s.getClauseId() == null ? null : sourceClauses.get(s.getClauseId());
+            String sourceText = srcClause != null && srcClause.getSourceText() != null
+                    ? srcClause.getSourceText()
+                    : String.valueOf(sm.getOrDefault("businessSummary", s.getSystemRuleId()));
+            CiPolicyClause clause = CiPolicyClause.builder()
+                    .id(newClauseId)
+                    .policyDocumentId(target.getDocument().getId())
+                    .section(srcClause != null ? srcClause.getSection() : "Credit Rules")
+                    .sourceText(sourceText)
+                    .normalizedText(sourceText.replaceAll("\\s+", " "))
+                    .clauseType(ClauseType.HARD_RULE.name())
+                    .extractionConfidence(new BigDecimal("0.9500"))
+                    .sortOrder(target.getClauses().size())
+                    .sourceLocation("cm-authoring:copy-from:" + (s.getId() == null ? "unknown" : s.getId()))
+                    .status("EXTRACTED")
+                    .metadata(Map.of("cmAuthored", true, "copiedFromRuleId",
+                            s.getId() == null ? "" : s.getId().toString()))
+                    .effectiveScope(Map.of("products", List.of("ALL")))
+                    .build();
+            Map<String, Object> meta = new LinkedHashMap<>(sm);
+            meta.put("copiedFromRuleId", s.getId() == null ? null : s.getId().toString());
+            Map<String, Object> lineage = s.getLineage() == null
+                    ? new LinkedHashMap<>() : new LinkedHashMap<>(s.getLineage());
+            lineage.put("copiedFromDocumentId", source.getDocument() == null ? null
+                    : String.valueOf(source.getDocument().getId()));
+            lineage.put("copiedFromRuleId", s.getId() == null ? null : s.getId().toString());
+            CiPolicyRuleCandidate clone = CiPolicyRuleCandidate.builder()
+                    .id(UUID.randomUUID())
+                    .clauseId(newClauseId)
+                    .systemRuleId(s.getSystemRuleId())
+                    .ruleVersion("DRAFT")
+                    .ruleType(s.getRuleType() == null ? "HARD" : s.getRuleType())
+                    .scope(s.getScope() == null ? Map.of() : new LinkedHashMap<>(s.getScope()))
+                    .expression(s.getExpression() == null ? Map.of() : new LinkedHashMap<>(s.getExpression()))
+                    .onTrue(s.getOnTrue())
+                    .onFalse(s.getOnFalse())
+                    .onMissing(s.getOnMissing())
+                    .confidence(s.getConfidence())
+                    .reviewStatus(s.getReviewStatus())
+                    .lineage(lineage)
+                    .metadata(meta)
+                    .build();
+            target.getClauses().add(clause);
+            target.getRuleCandidates().add(clone);
+            if (!sys.isBlank()) existingSys.add(sys);
         }
     }
 
@@ -633,6 +738,25 @@ public class StagingPolicyStudioDemoService {
                 catalogueEdit.putIfAbsent("businessCapabilityId", meta.get("businessCapabilityId"));
                 catalogueDraftService.addOrUpdate(session, catalogueEdit);
             }
+            // POLICY-RULE-AUTHORING-FIX-1 — plain-English / structured edit must rewrite the rule
+            if ("EDIT".equals(action) && (body.get("businessRule") != null || body.get("parameterId") != null
+                    || body.get("text") != null)) {
+                Map<String, Object> authorBody = new LinkedHashMap<>(body);
+                authorBody.put("replaceRuleId", ruleId.toString());
+                if (body.get("businessRule") != null && body.get("text") == null) {
+                    authorBody.put("text", body.get("businessRule"));
+                    authorBody.putIfAbsent("mode", "DESCRIBE");
+                }
+                try {
+                    Map<String, Object> confirmed = cmRuleAuthoringService.confirm(session, authorBody);
+                    meta.putAll(rule.getMetadata() == null ? Map.of() : rule.getMetadata());
+                    humanChanges.put("authoring", confirmed.get("message"));
+                    humanChanges.put("preview", confirmed.get("preview"));
+                } catch (ResponseStatusException ex) {
+                    // Surface authoring failure — do not silently mark EDITED on CLASSIFICATION stub
+                    throw ex;
+                }
+            }
         }
 
         var review = orchestrator.reviewService().review(
@@ -827,65 +951,57 @@ public class StagingPolicyStudioDemoService {
     }
 
     /**
-     * Credit Manager "+ Add rule" — reuses existing clause → interpretation → rule factory path.
+     * Credit Manager "+ Add rule" — CM authoring (preview/confirm) over registry + PolicyDsl.
      * Does not introduce a second rule engine.
      */
     public Map<String, Object> addPlainEnglishRule(
             UUID documentId, Map<String, Object> body, String tenantHeader) {
-        String text = str(body, "text", null);
-        if (text == null || text.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Rule text is required");
-        }
-        String group = str(body, "group", "Credit Rules");
         UUID tenantId = resolveTenant(tenantHeader);
         PolicyStudioSession session = orchestrator.requireSession(documentId, tenantId);
-        CiPolicyDocument doc = session.getDocument();
-        if (doc == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Policy document not found");
+        Map<String, Object> payload = body == null ? Map.of() : body;
+        boolean confirm = Boolean.TRUE.equals(payload.get("confirm"))
+                || "CONFIRM".equalsIgnoreCase(str(payload, "action", ""));
+        if (!confirm) {
+            Map<String, Object> preview = cmRuleAuthoringService.preview(payload);
+            Map<String, Object> view = sessionView(documentId, tenantHeader);
+            view.put("preview", preview);
+            view.put("previewOnly", true);
+            view.put("message", preview.get("message"));
+            if (!Boolean.TRUE.equals(preview.get("complete"))) {
+                view.put("authoringStatus", preview.get("needsResolver") != null
+                        && Boolean.TRUE.equals(preview.get("needsResolver"))
+                        ? "NEEDS_RESOLVER" : "INCOMPLETE");
+            } else {
+                view.put("authoringStatus", "READY_TO_CONFIRM");
+            }
+            return view;
         }
-        var kind = new PolicyClauseExtractor().detectKind(
-                doc.getSourceText() == null ? text : doc.getSourceText());
-        CiPolicyClause clause = CiPolicyClause.builder()
-                .id(UUID.randomUUID())
-                .policyDocumentId(doc.getId())
-                .section(group == null || group.isBlank() ? "Credit Rules" : group)
-                .sourceText(text.trim())
-                .normalizedText(text.trim().replaceAll("\\s+", " "))
-                .clauseType(ClauseType.HARD_RULE.name())
-                .extractionConfidence(new BigDecimal("0.9200"))
-                .sortOrder(session.getClauses().size())
-                .sourceLocation("manual:" + session.getClauses().size())
-                .status("EXTRACTED")
-                .metadata(Map.of("plainEnglishAdded", true, "businessGroup", group == null ? "Credit Rules" : group))
-                .effectiveScope(Map.of())
-                .build();
-        List<CiPolicyInterpretation> interps = new DeterministicGoldenInterpretationProvider()
-                .interpret(List.of(clause), new PolicyAuthoringRegistry(), kind);
-        List<CiPolicyRuleCandidate> rules = new RuleCandidateFactory()
-                .create(doc, List.of(clause), interps, kind);
-        for (CiPolicyRuleCandidate r : rules) {
-            Map<String, Object> meta = r.getMetadata() == null
-                    ? new LinkedHashMap<>()
-                    : new LinkedHashMap<>(r.getMetadata());
-            meta.put("disposition", "EXTRACTED");
-            meta.put("plainEnglishAdded", true);
-            meta.putIfAbsent("businessTitle", text.trim());
-            r.setMetadata(meta);
-            r.setReviewStatus(ReviewState.AI_DRAFTED.name());
-        }
-        session.getClauses().add(clause);
-        session.getInterpretations().addAll(interps);
-        session.getRuleCandidates().addAll(rules);
-        orchestrator.reviewService().invalidateCheckerApproval(session, "plain-english-add");
+        Map<String, Object> confirmed = cmRuleAuthoringService.confirm(session, payload);
+        orchestrator.reviewService().invalidateCheckerApproval(session, "cm-rule-authoring-add");
         orchestrator.persistence().saveSessionSnapshot(session);
-
         Map<String, Object> view = sessionView(documentId, tenantHeader);
-        view.put("addedClauseId", clause.getId().toString());
-        view.put("addedRuleCount", rules.size());
-        view.put("message", rules.isEmpty()
-                ? "Clause stored for review — interpretation did not yet produce an executable rule."
-                : "Plain-English rule added — review before Accept.");
+        view.putAll(confirmed);
+        view.put("addedRuleCount", 1);
         return view;
+    }
+
+    public Map<String, Object> authoringSources(String tenantHeader) {
+        Map<String, Object> out = cmRuleAuthoringService.sources();
+        StagingDemoWorkspaceService.stampSafety(out);
+        out.put("allowCanonicalAuthority", false);
+        return out;
+    }
+
+    public Map<String, Object> previewAuthoredRule(
+            UUID documentId, Map<String, Object> body, String tenantHeader) {
+        requireSession(documentId, tenantHeader);
+        Map<String, Object> preview = cmRuleAuthoringService.preview(body == null ? Map.of() : body);
+        Map<String, Object> out = new LinkedHashMap<>();
+        StagingDemoWorkspaceService.stampSafety(out);
+        out.put("preview", preview);
+        out.put("message", preview.get("message"));
+        out.put("allowCanonicalAuthority", false);
+        return out;
     }
 
     /**

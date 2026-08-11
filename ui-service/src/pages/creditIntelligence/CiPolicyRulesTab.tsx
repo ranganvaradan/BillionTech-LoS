@@ -8,6 +8,7 @@ import {
 import { decisionPolicyDomainLabel } from '@/lib/creditIntelligence/businessLexicon'
 import { CiCapabilityCataloguePanel } from '@/pages/creditIntelligence/CiCapabilityCataloguePanel'
 import { CiParameterResolverPanel } from '@/pages/creditIntelligence/CiParameterResolverPanel'
+import { CiRuleAuthoringPanel } from '@/pages/creditIntelligence/CiRuleAuthoringPanel'
 
 function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {}
@@ -63,6 +64,7 @@ const GROUP_ORDER = [
   'Documents',
   'Portfolio Controls',
   'Servicing',
+  'Other policy content',
   'Narrative / Excluded',
   'Credit Rules',
 ] as const
@@ -196,13 +198,16 @@ function matchesStatusFilter(status: string, filter: StatusFilter): boolean {
 export function CiPolicyRulesTab({
   cards,
   dataAndCalculations = [],
+  otherPolicyContent = [],
   busy,
+  setBusy,
+  onError,
   onReview,
   onViewTests,
   onSaveDraft,
   onActivationCheck,
-  onAddPlainEnglishRule,
   onCatalogueChanged,
+  onSession,
   documentId,
   ingestionBinding,
   prospectDemoMode = false,
@@ -210,13 +215,16 @@ export function CiPolicyRulesTab({
 }: {
   cards: unknown[]
   dataAndCalculations?: unknown[]
+  otherPolicyContent?: unknown[]
   busy: boolean
+  setBusy?: (v: boolean) => void
+  onError?: (msg: string | null) => void
   onReview: (ruleId: string, body: Record<string, unknown>) => Promise<void>
   onViewTests?: () => void
   onSaveDraft?: () => void
   onActivationCheck?: () => void
-  onAddPlainEnglishRule?: (group: string, text: string) => Promise<void>
   onCatalogueChanged?: (session?: unknown) => void
+  onSession?: (session: Record<string, unknown>) => void
   documentId?: string | null
   ingestionBinding?: Record<string, unknown> | null
   prospectDemoMode?: boolean
@@ -225,16 +233,14 @@ export function CiPolicyRulesTab({
 }) {
   const [clauseOpen, setClauseOpen] = useState<Record<string, boolean>>({})
   const [editOpen, setEditOpen] = useState<Record<string, boolean>>({})
-  const [editDraft, setEditDraft] = useState<Record<string, string>>({})
   const [manualOpen, setManualOpen] = useState<Record<string, boolean>>({})
   const [manualLabel, setManualLabel] = useState<Record<string, string>>({})
   const [manualType, setManualType] = useState<Record<string, string>>({})
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL')
   const [search, setSearch] = useState('')
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
-  const [addOpen, setAddOpen] = useState<Record<string, boolean>>({})
-  const [addText, setAddText] = useState<Record<string, string>>({})
   const [undoStack, setUndoStack] = useState<{ id: string; prev: Record<string, unknown> }[]>([])
+  const [authoringOpen, setAuthoringOpen] = useState(false)
   const [catalogueOpen, setCatalogueOpen] = useState(false)
   const [catalogueEdit, setCatalogueEdit] = useState<{
     ruleId: string
@@ -340,19 +346,48 @@ export function CiPolicyRulesTab({
                   · {dataAndCalculations.length} in Data &amp; calculations
                 </span>
               ) : null}
+              {otherPolicyContent.length > 0 ? (
+                <span className="text-slate-500">
+                  {' '}
+                  · {otherPolicyContent.length} other policy content
+                </span>
+              ) : null}
             </p>
           </div>
-          <button
-            type="button"
-            className="bt-btn bt-btn-secondary bt-btn-sm"
-            onClick={() => {
-              setCatalogueEdit(null)
-              setCatalogueOpen((v) => !v)
-            }}
-          >
-            {catalogueOpen ? 'Hide catalogue' : '+ Add rule'}
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="bt-btn bt-btn-primary bt-btn-sm"
+              data-testid="add-rule"
+              onClick={() => setAuthoringOpen((v) => !v)}
+            >
+              {authoringOpen ? 'Hide add rule' : '+ Add rule'}
+            </button>
+            <button
+              type="button"
+              className="bt-btn bt-btn-secondary bt-btn-sm"
+              onClick={() => {
+                setCatalogueEdit(null)
+                setCatalogueOpen((v) => !v)
+              }}
+            >
+              {catalogueOpen ? 'Hide catalogue' : 'Browse catalogue'}
+            </button>
+          </div>
         </div>
+        {authoringOpen && documentId && setBusy && onError && onSession ? (
+          <CiRuleAuthoringPanel
+            documentId={documentId}
+            busy={busy}
+            setBusy={setBusy}
+            onError={onError}
+            onSession={(data) => {
+              onSession(data)
+              setAuthoringOpen(false)
+            }}
+            onClose={() => setAuthoringOpen(false)}
+          />
+        ) : null}
       ) : (
         <>
           <CiExecutiveSummary
@@ -708,23 +743,8 @@ export function CiPolicyRulesTab({
                             type="button"
                             disabled={busy || Boolean(r.platformGuardrail)}
                             className="bt-btn bt-btn-secondary bt-btn-sm"
-                            onClick={() => {
-                              if (r.businessCapabilityId) {
-                                setCatalogueEdit({
-                                  ruleId: id,
-                                  businessCapabilityId: String(r.businessCapabilityId),
-                                  parameters: asRecord(r.parameters),
-                                  failureTreatment: String(r.failureTreatment ?? 'REJECT'),
-                                })
-                                setCatalogueOpen(true)
-                                return
-                              }
-                              setEditOpen((p) => ({ ...p, [id]: !p[id] }))
-                              setEditDraft((p) => ({
-                                ...p,
-                                [id]: p[id] ?? String(r.businessRule ?? ''),
-                              }))
-                            }}
+                            data-testid={`edit-rule-${id}`}
+                            onClick={() => setEditOpen((p) => ({ ...p, [id]: !p[id] }))}
                           >
                             Edit
                           </button>
@@ -822,33 +842,21 @@ export function CiPolicyRulesTab({
                         </CiTechnicalDetails>
                       ) : null}
 
-                      {editOpen[id] ? (
-                        <div className="mt-3 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                          <label className="block text-sm">
-                            <span className="text-slate-600">Rule wording</span>
-                            <textarea
-                              className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
-                              rows={3}
-                              value={editDraft[id] ?? ''}
-                              onChange={(e) => setEditDraft((p) => ({ ...p, [id]: e.target.value }))}
-                              disabled={busy}
-                            />
-                          </label>
-                          <button
-                            type="button"
-                            disabled={busy}
-                            className="bt-btn bt-btn-primary bt-btn-sm"
-                            onClick={() =>
-                              void onReview(id, {
-                                uiAction: 'EDIT',
-                                businessRule: editDraft[id],
-                                reason: 'Edited by Credit Manager',
-                                humanChanges: { businessRule: editDraft[id] },
-                              }).then(() => setEditOpen((p) => ({ ...p, [id]: false })))
-                            }
-                          >
-                            Save edit
-                          </button>
+                      {editOpen[id] && documentId && setBusy && onError && onSession ? (
+                        <div className="mt-3">
+                          <CiRuleAuthoringPanel
+                            documentId={documentId}
+                            busy={busy}
+                            setBusy={setBusy}
+                            onError={onError}
+                            replaceRuleId={id}
+                            initialText={String(r.businessRule ?? r.sourceClause ?? '')}
+                            onSession={(data) => {
+                              onSession(data)
+                              setEditOpen((p) => ({ ...p, [id]: false }))
+                            }}
+                            onClose={() => setEditOpen((p) => ({ ...p, [id]: false }))}
+                          />
                         </div>
                       ) : null}
 
@@ -911,43 +919,10 @@ export function CiPolicyRulesTab({
               <button
                 type="button"
                 className="text-sm font-semibold text-sky-800"
-                onClick={() => setAddOpen((p) => ({ ...p, [name]: !p[name] }))}
+                onClick={() => setAuthoringOpen(true)}
               >
                 + Add rule
               </button>
-              {addOpen[name] ? (
-                <div className="mt-2 space-y-2">
-                  <textarea
-                    className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
-                    rows={2}
-                    placeholder='e.g. "Minimum bureau score is 700."'
-                    value={addText[name] ?? ''}
-                    onChange={(e) => setAddText((p) => ({ ...p, [name]: e.target.value }))}
-                    disabled={busy}
-                  />
-                  <button
-                    type="button"
-                    disabled={busy || !(addText[name] ?? '').trim()}
-                    className="bt-btn bt-btn-primary bt-btn-sm"
-                    onClick={() => {
-                      const text = (addText[name] ?? '').trim()
-                      if (!text) return
-                      if (onAddPlainEnglishRule) {
-                        void onAddPlainEnglishRule(name, text).then(() => {
-                          setAddText((p) => ({ ...p, [name]: '' }))
-                          setAddOpen((p) => ({ ...p, [name]: false }))
-                        })
-                      } else {
-                        window.alert(
-                          'Plain-English add uses the existing interpretation path. Paste the rule into Ambiguous Terms / analyst flow, or contact support if Add Rule API is unavailable in this build.',
-                        )
-                      }
-                    }}
-                  >
-                    Interpret & review
-                  </button>
-                </div>
-              ) : null}
             </div>
           </CiSection>
         )
@@ -977,6 +952,60 @@ export function CiPolicyRulesTab({
                     <p className="mt-1 text-xs text-slate-500">
                       Evaluated from: {String(r.evaluatedFrom ?? r.dataSource)}
                     </p>
+                  ) : null}
+                </li>
+              )
+            })}
+          </ul>
+        </CiSection>
+      ) : null}
+
+      {otherPolicyContent.length > 0 ? (
+        <CiSection
+          title="Other policy content"
+          description="Narrative, document/data requirements, servicing, portfolio, or clauses not used for underwriting. Not counted as underwriting rules."
+        >
+          <ul className="space-y-2">
+            {otherPolicyContent.map((raw) => {
+              const r = asRecord(raw)
+              const id = String(r.id ?? r.systemRuleId ?? Math.random())
+              return (
+                <li key={id} className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-medium text-slate-900">
+                      {String(r.ruleName ?? r.status ?? 'Policy content')}
+                    </span>
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${statusChip(String(r.status ?? ''))}`}>
+                      {String(r.status ?? 'Other')}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-slate-700">{String(r.businessRule ?? r.sourceClause ?? '—')}</p>
+                  <div className="mt-2">
+                    <button
+                      type="button"
+                      disabled={busy}
+                      className="bt-btn bt-btn-secondary bt-btn-sm"
+                      onClick={() => setEditOpen((p) => ({ ...p, [id]: !p[id] }))}
+                    >
+                      Replace with underwriting rule
+                    </button>
+                  </div>
+                  {editOpen[id] && documentId && setBusy && onError && onSession ? (
+                    <div className="mt-3">
+                      <CiRuleAuthoringPanel
+                        documentId={documentId}
+                        busy={busy}
+                        setBusy={setBusy}
+                        onError={onError}
+                        replaceRuleId={id}
+                        initialText={String(r.businessRule ?? r.sourceClause ?? '')}
+                        onSession={(data) => {
+                          onSession(data)
+                          setEditOpen((p) => ({ ...p, [id]: false }))
+                        }}
+                        onClose={() => setEditOpen((p) => ({ ...p, [id]: false }))}
+                      />
+                    </div>
                   ) : null}
                 </li>
               )
