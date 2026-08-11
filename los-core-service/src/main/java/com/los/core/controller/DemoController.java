@@ -33,14 +33,19 @@ public class DemoController {
     private final LoanApplicationRepository loanApplicationRepository;
 
     @GetMapping("/status")
-    @Operation(summary = "Report whether demo mode is on and how many applications exist")
+    @Operation(summary = "Report whether demo mode is on (no inventory counts when demo is off)")
     public ResponseEntity<Map<String, Object>> status() {
         boolean enabled = demoModeService.isDemoModeEnabled();
-        long applicationCount = loanApplicationRepository.count();
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("demoEnabled", enabled);
         body.put("profile", demoModeService.getActiveProfilesDisplay());
-        body.put("applicationCount", applicationCount);
+        // LOS-LIVE-CUSTOMER-HARDENING-1: do not leak application inventory when demo is disabled
+        if (enabled) {
+            body.put("applicationCount", loanApplicationRepository.count());
+        } else {
+            body.put("applicationCount", null);
+            body.put("message", DemoModeService.DEMO_MODE_DISABLED_MESSAGE);
+        }
         return ResponseEntity.ok(body);
     }
 

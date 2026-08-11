@@ -14,6 +14,7 @@ import com.los.core.service.loan.InvoiceDiscountingApplicationRules;
 import com.los.core.service.underwriting.ApplicationScorecardParameterResolver;
 import com.los.plp.service.InvoiceDiscountingVintageService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -85,6 +86,13 @@ public class CreditControlService {
     private final KycStepResultRepository kycStepResultRepository;
     private final OcrExtractionService ocrExtractionService;
     private final LimitSizingService limitSizingService;
+
+    /**
+     * When false (production default), banking/GST/ITR/SCF placeholder fills are skipped.
+     * Income/obligation may still be derived from application profile when present.
+     */
+    @Value("${los.underwriting.provider-gap-defaults-enabled:false}")
+    private boolean providerGapDefaultsEnabled;
 
     @SuppressWarnings("unchecked")
     public void mergeManualInputs(LoanApplication app, ManualCreditInputsRequest req) {
@@ -753,29 +761,36 @@ public class CreditControlService {
     /**
      * Fills scorecard parameters that normally depend on bank-statement extraction when no verified value exists.
      * Never overwrites keys already present in the effective scorecard map.
+     * Banking/GST/ITR/SCF invent fills require {@code los.underwriting.provider-gap-defaults-enabled=true}.
      */
-    private static void applyMissingScorecardDefaults(
+    private void applyMissingScorecardDefaults(
             LoanApplication app, Map<String, BigDecimal> sc, BigDecimal income, BigDecimal obligation) {
         boolean applied = false;
+        // Safe derived fills from application facts (not invented provider metrics)
         if (!sc.containsKey("MONTHLY_INCOME") || isZeroOrMissing(sc.get("MONTHLY_INCOME"))) {
             BigDecimal fallback = income;
             if (fallback == null || fallback.compareTo(BigDecimal.ZERO) <= 0) {
                 fallback = incomeFromProfile(app);
             }
-            if (fallback == null || fallback.compareTo(BigDecimal.ZERO) <= 0) {
-                fallback = GAP_DEFAULT_MONTHLY_INCOME;
+            if (fallback != null && fallback.compareTo(BigDecimal.ZERO) > 0) {
+                sc.put("MONTHLY_INCOME", fallback);
+                applied = true;
+            } else if (providerGapDefaultsEnabled) {
+                sc.put("MONTHLY_INCOME", GAP_DEFAULT_MONTHLY_INCOME);
+                applied = true;
             }
-            sc.put("MONTHLY_INCOME", fallback);
-            applied = true;
         }
         if (!sc.containsKey("EMI_OBLIGATION") || isZeroOrMissing(sc.get("EMI_OBLIGATION"))) {
             BigDecimal fallback = obligation;
-            if (fallback == null || fallback.compareTo(BigDecimal.ZERO) < 0) {
-                fallback = GAP_DEFAULT_MONTHLY_OBLIGATION;
+            if (fallback != null && fallback.compareTo(BigDecimal.ZERO) >= 0) {
+                sc.put("EMI_OBLIGATION", fallback);
+                sc.put("MONTHLY_OBLIGATION", fallback);
+                applied = true;
+            } else if (providerGapDefaultsEnabled) {
+                sc.put("EMI_OBLIGATION", GAP_DEFAULT_MONTHLY_OBLIGATION);
+                sc.put("MONTHLY_OBLIGATION", GAP_DEFAULT_MONTHLY_OBLIGATION);
+                applied = true;
             }
-            sc.put("EMI_OBLIGATION", fallback);
-            sc.put("MONTHLY_OBLIGATION", fallback);
-            applied = true;
         } else if (!sc.containsKey("MONTHLY_OBLIGATION") || isZeroOrMissing(sc.get("MONTHLY_OBLIGATION"))) {
             sc.put("MONTHLY_OBLIGATION", sc.get("EMI_OBLIGATION"));
             applied = true;
@@ -787,10 +802,11 @@ public class CreditControlService {
                 sc.put(
                         "DTI_RATIO",
                         obl.divide(inc, 6, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100)));
-            } else {
+                applied = true;
+            } else if (providerGapDefaultsEnabled) {
                 sc.put("DTI_RATIO", GAP_DEFAULT_DTI_RATIO);
+                applied = true;
             }
-            applied = true;
         }
         if (!sc.containsKey("OBLIGATION_RATIO") || isZeroOrMissing(sc.get("OBLIGATION_RATIO"))) {
             BigDecimal inc = sc.get("MONTHLY_INCOME");
@@ -799,10 +815,17 @@ public class CreditControlService {
                 sc.put(
                         "OBLIGATION_RATIO",
                         obl.divide(inc, 6, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100)));
-            } else {
+                applied = true;
+            } else if (providerGapDefaultsEnabled) {
                 sc.put("OBLIGATION_RATIO", GAP_DEFAULT_FOIR_PERCENT);
+                applied = true;
             }
-            applied = true;
+        }
+        if (!providerGapDefaultsEnabled) {
+            if (applied) {
+                sc.put("PROVIDER_GAP_DEFAULT_ACTIVE", BigDecimal.ZERO);
+            }
+            return;
         }
         if (!sc.containsKey("AVERAGE_BANK_BALANCE") || isZeroOrMissing(sc.get("AVERAGE_BANK_BALANCE"))) {
             sc.put("AVERAGE_BANK_BALANCE", GAP_DEFAULT_AVERAGE_BANK_BALANCE);

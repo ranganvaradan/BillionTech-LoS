@@ -51,6 +51,11 @@ los:
   # Production: leave false; replace permitAll in WebSecurityConfig with authenticated() when IAM is ready.
   security:
     local-dev-permit-all: false
+    # Fail-closed role gate for /api/v1/admin/** (X-User-Role). Disable only for local IDE convenience.
+    admin-api-require-role: ${LOS_ADMIN_API_REQUIRE_ROLE:true}
+  underwriting:
+    # When false, do not invent bank/GST/ITR/SCF scorecard placeholders (live-safe). Staging may enable temporarily.
+    provider-gap-defaults-enabled: ${LOS_PROVIDER_GAP_DEFAULTS_ENABLED:false}
   # Set true in local profile or a secure env; enables DELETE /api/v1/demo/applications. Never in prod default.
   demo:
     enabled: ${LOS_DEMO_ENABLED:false}

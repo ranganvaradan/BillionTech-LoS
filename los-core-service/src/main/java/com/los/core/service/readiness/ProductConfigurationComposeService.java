@@ -64,6 +64,7 @@ public class ProductConfigurationComposeService {
                 .map(this::assignmentSummary)
                 .toList());
         out.put("goldenPreset", goldenPreset());
+        out.put("customerConfigTemplate", customerConfigTemplate(null, null, null, Map.of()));
         out.put("resolutionOrder", List.of(
                 "Application → Product dimensions",
                 "Workflow",
@@ -121,6 +122,9 @@ public class ProductConfigurationComposeService {
                 policyDocumentId == null ? null : policyDocumentId.toString(),
                 policyVersion);
 
+        Map<String, Object> conflicts = detectActiveConflicts(borrowerType, loanProduct, workflow, rules, scorecard);
+        applyConflictGates(readiness, conflicts);
+
         Map<String, Object> compose = new LinkedHashMap<>();
         compose.put("borrowerType", borrowerType);
         compose.put("loanProduct", loanProduct);
@@ -151,9 +155,13 @@ public class ProductConfigurationComposeService {
         out.put("allowCanonicalAuthority", false);
         out.put("compose", compose);
         out.put("studioRequiredParameters", studioRequired);
+        out.put("requiredDataMatrix", readiness.get("requiredParameters"));
+        out.put("conflicts", conflicts);
+        out.put("customerConfigTemplate", customerConfigTemplate(borrowerType, loanProduct, intakeSegment, compose));
         out.put("readiness", readiness);
         out.put("status", readiness.get("status"));
         out.put("ready", readiness.get("ready"));
+        out.put("goLiveBlockers", readiness.get("gaps"));
         return out;
     }
 
@@ -279,9 +287,133 @@ public class ProductConfigurationComposeService {
 
     private static boolean productMatches(String a, String b) {
         if (a == null || b == null) return false;
-        String x = a.replace(' ', '_').toUpperCase(Locale.ROOT);
-        String y = b.replace(' ', '_').toUpperCase(Locale.ROOT);
-        return x.equals(y) || x.contains(y) || y.contains(x);
+        String x = a.replace(' ', '_').toUpperCase(Locale.ROOT).trim();
+        String y = b.replace(' ', '_').toUpperCase(Locale.ROOT).trim();
+        return x.equals(y);
+    }
+
+    private Map<String, Object> detectActiveConflicts(
+            String borrowerType, String loanProduct,
+            WorkflowConfig selectedWorkflow, UnderwritingRuleSet selectedRules,
+            UnderwritingScorecard selectedScorecard) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        List<String> messages = new ArrayList<>();
+        List<Map<String, Object>> activeWorkflows = workflowConfigRepository.findAll().stream()
+                .filter(w -> w.isActive()
+                        && eqIgnore(borrowerType, w.getBorrowerType())
+                        && productMatches(loanProduct, w.getLoanProduct()))
+                .map(this::workflowSummary)
+                .toList();
+        List<Map<String, Object>> activeRules = ruleSetRepository.findAll().stream()
+                .filter(r -> r.isActive()
+                        && eqIgnore(borrowerType, r.getBorrowerType())
+                        && productMatches(loanProduct, r.getLoanProduct()))
+                .map(this::ruleSummary)
+                .toList();
+        List<Map<String, Object>> activeScorecards = scorecardRepository.findAll().stream()
+                .filter(s -> s.isActive()
+                        && eqIgnore(borrowerType, s.getBorrowerType())
+                        && productMatches(loanProduct, s.getLoanProduct()))
+                .map(this::scorecardSummary)
+                .toList();
+        out.put("activeWorkflowCount", activeWorkflows.size());
+        out.put("activeRuleSetCount", activeRules.size());
+        out.put("activeScorecardCount", activeScorecards.size());
+        out.put("activeWorkflows", activeWorkflows);
+        out.put("activeRuleSets", activeRules);
+        out.put("activeScorecards", activeScorecards);
+        if (activeWorkflows.size() > 1) {
+            messages.add("Multiple active workflows for " + borrowerType + "/" + loanProduct
+                    + " — runtime may bind a different workflow than intended");
+        }
+        if (activeRules.size() > 1) {
+            messages.add("Multiple active Live Rule Sets for " + borrowerType + "/" + loanProduct
+                    + " — UnderwritingRuleEngine may resolve by priority, not Product Configuration selection");
+        }
+        if (activeScorecards.size() > 1) {
+            messages.add("Multiple active Scorecards for " + borrowerType + "/" + loanProduct
+                    + " — ScorecardPolicyEngine may resolve by priority, not Product Configuration selection");
+        }
+        if (selectedWorkflow != null && activeWorkflows.size() > 1) {
+            messages.add("Selected workflowId=" + selectedWorkflow.getId()
+                    + " is not uniquely authoritative among active peers");
+        }
+        if (selectedRules != null && activeRules.size() > 1) {
+            messages.add("Selected liveRuleSetId=" + selectedRules.getId()
+                    + " is not uniquely authoritative among active peers");
+        }
+        if (selectedScorecard != null && activeScorecards.size() > 1) {
+            messages.add("Selected scorecardId=" + selectedScorecard.getId()
+                    + " is not uniquely authoritative among active peers");
+        }
+        out.put("messages", messages);
+        out.put("ambiguous", !messages.isEmpty());
+        return out;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void applyConflictGates(Map<String, Object> readiness, Map<String, Object> conflicts) {
+        if (readiness == null || conflicts == null) return;
+        if (!Boolean.TRUE.equals(conflicts.get("ambiguous"))) return;
+        readiness.put("ready", false);
+        readiness.put("status", "NOT READY");
+        List<String> gaps = new ArrayList<>();
+        Object existing = readiness.get("gaps");
+        if (existing instanceof List<?> list) {
+            for (Object o : list) {
+                if (o != null) gaps.add(String.valueOf(o));
+            }
+        }
+        Object msgs = conflicts.get("messages");
+        if (msgs instanceof List<?> list) {
+            for (Object o : list) {
+                if (o != null) gaps.add(String.valueOf(o));
+            }
+        }
+        readiness.put("gaps", gaps.stream().distinct().toList());
+        Object checks = readiness.get("checks");
+        if (checks instanceof Map<?, ?> cm) {
+            Map<String, Object> next = new LinkedHashMap<>((Map<String, Object>) cm);
+            next.put("configurationUnambiguous", "NO");
+            readiness.put("checks", next);
+        }
+    }
+
+    private static Map<String, Object> customerConfigTemplate(
+            String borrowerType, String loanProduct, String intakeSegment, Map<String, Object> compose) {
+        Map<String, Object> t = new LinkedHashMap<>();
+        t.put("customerTenant", "REQUIRED_BEFORE_GO_LIVE");
+        t.put("borrowerType", borrowerType == null ? "REQUIRED" : borrowerType);
+        t.put("loanProduct", loanProduct == null ? "REQUIRED" : loanProduct);
+        t.put("intakeSegment", intakeSegment == null ? "REQUIRED" : intakeSegment);
+        t.put("workflowId", nestedId(compose, "workflow"));
+        t.put("liveRuleSetId", nestedId(compose, "liveRuleSet"));
+        t.put("scorecardId", nestedId(compose, "scorecard"));
+        t.put("lmsProductCode", nestedId(compose, "lms", "lmsProductCode"));
+        t.put("plpProgramId", "OPTIONAL_IF_APPLICABLE");
+        t.put("note", "Fill customer/tenant and confirm unique active Workflow / Live Rule Set / Scorecard before go-live.");
+        return t;
+    }
+
+    private static Object nestedId(Map<String, Object> compose, String key) {
+        Object v = compose == null ? null : compose.get(key);
+        if (v instanceof Map<?, ?> m) {
+            return m.get("id") != null ? m.get("id") : "REQUIRED";
+        }
+        return "REQUIRED";
+    }
+
+    private static Object nestedId(Map<String, Object> compose, String key, String nested) {
+        Object v = compose == null ? null : compose.get(key);
+        if (v instanceof Map<?, ?> m && m.get(nested) != null) {
+            return m.get(nested);
+        }
+        return "OPTIONAL_IF_APPLICABLE";
+    }
+
+    private static boolean eqIgnore(String a, String b) {
+        if (a == null || b == null) return false;
+        return a.trim().equalsIgnoreCase(b.trim());
     }
 
     private static String str(Map<String, Object> body, String k) {

@@ -11,6 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -40,13 +41,53 @@ public class UnderwritingEvaluationService {
             String evaluatedBy,
             UUID scorecardId,
             List<Map<String, Object>> parameterResults) {
+        return record(applicationId, multi, ctx, evaluatedBy, scorecardId, parameterResults, null);
+    }
+
+    /**
+     * Persist evaluation with optional application binding metadata (no DB migration —
+     * stored in selected_source_json for audit/reproducibility).
+     */
+    @Transactional
+    public UnderwritingEvaluation record(
+            UUID applicationId,
+            MultiRuleEvalResult multi,
+            EffectiveUnderwritingContext ctx,
+            String evaluatedBy,
+            UUID scorecardId,
+            List<Map<String, Object>> parameterResults,
+            LoanApplication application) {
         List<Map<String, Object>> rules = multi.perRule().stream()
                 .map(this::perRuleToMap)
                 .collect(Collectors.toList());
-        Map<String, Object> src = new HashMap<>();
+        Map<String, Object> src = new LinkedHashMap<>();
         src.put("bureauScoreSource", ctx.bureauSource());
         src.put("incomeSource", ctx.incomeSource());
         src.put("kycSource", ctx.kycSource());
+        src.put("productionAuthority", "LIVE_UW_PATH");
+        src.put("allowCanonicalAuthority", false);
+        src.put("scorecardId", scorecardId == null ? null : scorecardId.toString());
+        src.put("ruleSetIds", multi.perRule() == null ? List.of() : multi.perRule().stream()
+                .map(MultiRuleEvalResult.PerRuleEval::ruleId)
+                .distinct()
+                .collect(Collectors.toList()));
+        if (ctx.scorecard() != null) {
+            src.put("providerGapDefaultActive",
+                    ctx.scorecard().containsKey("PROVIDER_GAP_DEFAULT_ACTIVE")
+                            && ctx.scorecard().get("PROVIDER_GAP_DEFAULT_ACTIVE") != null
+                            && ctx.scorecard().get("PROVIDER_GAP_DEFAULT_ACTIVE")
+                            .compareTo(java.math.BigDecimal.ZERO) > 0);
+            src.put("demoFallbackActive", ctx.scorecard().containsKey("DEMO_FALLBACK_ACTIVE"));
+        }
+        if (application != null) {
+            src.put("applicationId", application.getId() == null ? applicationId.toString()
+                    : application.getId().toString());
+            src.put("workflowId", application.getWorkflowId() == null ? null
+                    : application.getWorkflowId().toString());
+            src.put("borrowerType", application.getBorrowerType());
+            src.put("loanProduct", application.getLoanProduct());
+            src.put("applicationNumber", application.getApplicationNumber());
+        }
         Map<String, Object> eff = new HashMap<>();
         eff.putAll(ctx.toMap());
         UnderwritingEvaluation e = UnderwritingEvaluation.builder()

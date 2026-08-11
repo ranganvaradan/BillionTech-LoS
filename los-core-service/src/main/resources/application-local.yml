@@ -18,6 +18,9 @@ los:
     integration-password: ${PLP_INTEGRATION_PASSWORD:Admin@PLP2026}
   security:
     local-dev-permit-all: true
+    admin-api-require-role: false
+  underwriting:
+    provider-gap-defaults-enabled: true
   demo:
     enabled: true
   # UI + API on one machine without running MinIO — files under file-storage.root

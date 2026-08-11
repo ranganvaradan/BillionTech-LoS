@@ -23,6 +23,11 @@ spring:
 los:
   security:
     local-dev-permit-all: true  # staging review only — isolated staging; never production
+    # Still require admin role for /api/v1/admin/** even when other APIs are open
+    admin-api-require-role: true
+  underwriting:
+    # Staging retains gap defaults for existing demos; production must keep false
+    provider-gap-defaults-enabled: true
   demo:
     enabled: true
   plp:

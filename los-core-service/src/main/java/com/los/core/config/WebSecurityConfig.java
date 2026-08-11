@@ -17,6 +17,9 @@ import lombok.extern.slf4j.Slf4j;
  * <p>
  * When {@code false} (default in {@code application.yml}), all requests are still permitted so behavior matches
  * the pre-security state of this service; tighten to {@code authenticated()} for production once IAM is integrated.
+ * <p>
+ * LOS-LIVE-CUSTOMER-HARDENING-1: {@code /api/v1/admin/**} is fail-closed via {@code AdminApiAccessFilter}
+ * when {@code los.security.admin-api-require-role=true} (default), independent of permitAll.
  */
 @Slf4j
 @Configuration

@@ -202,7 +202,7 @@ class LiveReadinessServicesTest {
     }
 
     @Test
-    void scopeCompatible_acceptsBusinessTermLoanAliasForTermLoan() {
+    void scopeCompatible_rejectsBusinessTermLoanMismatchForTermLoan() {
         WorkflowConfig wf = WorkflowConfig.builder()
                 .id(UUID.randomUUID())
                 .name("Company Term Loan")
@@ -232,9 +232,10 @@ class LiveReadinessServicesTest {
                 .build();
         Map<String, Object> result = validator.validate(
                 "COMPANY", "TERM_LOAN", wf, rules, sc, null, null, null);
-        assertThat(result.get("scopeCompatible")).isEqualTo(true);
-        assertThat(result.get("scorecardCompatible")).isEqualTo(true);
+        assertThat(result.get("scopeCompatible")).isEqualTo(false);
+        assertThat(result.get("scorecardCompatible")).isEqualTo(false);
         assertThat(result.get("allowCanonicalAuthority")).isEqualTo(false);
-        assertThat(result.get("status")).isEqualTo("READY");
+        assertThat(result.get("status")).isEqualTo("NOT READY");
+        assertThat(String.valueOf(result.get("gaps")).toLowerCase()).contains("scope");
     }
 }

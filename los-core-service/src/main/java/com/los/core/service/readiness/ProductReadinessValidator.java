@@ -311,12 +311,15 @@ public class ProductReadinessValidator {
         return a.trim().equalsIgnoreCase(b.trim());
     }
 
-    /** TERM_LOAN ↔ BUSINESS_TERM_LOAN style aliases used by existing fixtures. */
+    /**
+     * Exact product match after normalize. Do NOT use substring contains —
+     * TERM_LOAN must not silently match BUSINESS_TERM_LOAN (routing ambiguity).
+     */
     private static boolean productMatches(String a, String b) {
         if (a == null || b == null) return false;
-        String x = a.replace(' ', '_').toUpperCase(Locale.ROOT);
-        String y = b.replace(' ', '_').toUpperCase(Locale.ROOT);
-        return x.equals(y) || x.contains(y) || y.contains(x);
+        String x = a.replace(' ', '_').toUpperCase(Locale.ROOT).trim();
+        String y = b.replace(' ', '_').toUpperCase(Locale.ROOT).trim();
+        return x.equals(y);
     }
 
     private static String yn(boolean v) {

@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.HashMap;
 import java.util.List;
@@ -45,16 +46,22 @@ class CreditControlServiceTest {
     private LimitSizingService limitSizingService;
 
     private CreditControlService service() {
+        return service(true);
+    }
+
+    private CreditControlService service(boolean providerGapDefaultsEnabled) {
         lenient().when(documentRepository.findByApplicationIdOrderByCreatedAtDesc(any())).thenReturn(List.of());
         lenient().when(kycStepResultRepository.findTopByApplicationIdAndStepTypeOrderByCreatedAtDesc(any(), any()))
                 .thenReturn(java.util.Optional.empty());
-        return new CreditControlService(
+        CreditControlService svc = new CreditControlService(
                 kyc,
                 invoiceDiscountingVintageService,
                 documentRepository,
                 kycStepResultRepository,
                 ocrExtractionService,
                 limitSizingService);
+        ReflectionTestUtils.setField(svc, "providerGapDefaultsEnabled", providerGapDefaultsEnabled);
+        return svc;
     }
 
     @Test
@@ -161,7 +168,7 @@ class CreditControlServiceTest {
 
     @Test
     void resolveEffective_appliesGapDefaultsForBankDerivedScorecardFields() {
-        CreditControlService svc = service();
+        CreditControlService svc = service(true);
         LoanApplication app = LoanApplication.builder()
                 .applicationNumber("N")
                 .customerId(UUID.randomUUID())
@@ -179,8 +186,24 @@ class CreditControlServiceTest {
     }
 
     @Test
+    void resolveEffective_skipsInventedBankGapsWhenProviderDefaultsDisabled() {
+        CreditControlService svc = service(false);
+        LoanApplication app = LoanApplication.builder()
+                .applicationNumber("N")
+                .customerId(UUID.randomUUID())
+                .borrowerType(BorrowerType.INDIVIDUAL)
+                .loanProduct("P")
+                .bureauScore(700)
+                .build();
+        EffectiveUnderwritingContext ctx = svc.resolveEffective(app, "PASS");
+        assertThat(ctx.scorecard()).doesNotContainKey("AVERAGE_BANK_BALANCE");
+        assertThat(ctx.scorecard()).doesNotContainKey("avgDailyBalance3m");
+        assertThat(ctx.scorecard()).doesNotContainKey("ANNUAL_GST_TURNOVER");
+    }
+
+    @Test
     void resolveEffective_gapDefaultsDoNotOverrideManualBankBalance() {
-        CreditControlService svc = service();
+        CreditControlService svc = service(true);
         Map<String, Object> fi = new HashMap<>();
         Map<String, Object> cc = new HashMap<>();
         Map<String, Object> manual = new HashMap<>();

@@ -491,8 +491,7 @@ public class LoanApplicationFlowService {
                 app.setCreditDecision("MANUAL_REVIEW");
                 app.setCreditRiskScore(multi.aggregateRiskScore());
                 app = applicationRepository.save(app);
-                var prodEval = underwritingEvaluationService.record(
-                        app.getId(), multi, ctx, evaluatedByUserId, scorecardForRecord, paramResults);
+                var prodEval = underwritingEvaluationService.record(app.getId(), multi, ctx, evaluatedByUserId, scorecardForRecord, paramResults, app);
                 creditIntelligenceFoundationService.afterProduction(
                         ciPrep.orElse(null), app, prodEval, multi, aggCredit);
                 assignmentRuleApplicationService.applyAfterUnderwriting(app, ctx);
@@ -513,8 +512,7 @@ public class LoanApplicationFlowService {
                 app.setCreditRiskScore(multi.aggregateRiskScore());
                 app.setStatus(ApplicationStatus.REJECTED);
                 app = applicationRepository.save(app);
-                var prodEval = underwritingEvaluationService.record(
-                        app.getId(), multi, ctx, evaluatedByUserId, scorecardForRecord, paramResults);
+                var prodEval = underwritingEvaluationService.record(app.getId(), multi, ctx, evaluatedByUserId, scorecardForRecord, paramResults, app);
                 creditIntelligenceFoundationService.afterProduction(
                         ciPrep.orElse(null), app, prodEval, multi, aggCredit);
                 assignmentRuleApplicationService.applyAfterUnderwriting(app, ctx);
@@ -539,8 +537,7 @@ public class LoanApplicationFlowService {
                 app.setSanctionedAmount(app.getRequestedAmount());
                 limitSizingService.applySanctionCapIfConfigured(app);
                 app = applicationRepository.save(app);
-                var prodEval = underwritingEvaluationService.record(
-                        app.getId(), multi, ctx, evaluatedByUserId, scorecardForRecord, paramResults);
+                var prodEval = underwritingEvaluationService.record(app.getId(), multi, ctx, evaluatedByUserId, scorecardForRecord, paramResults, app);
                 creditIntelligenceFoundationService.afterProduction(
                         ciPrep.orElse(null), app, prodEval, multi, aggCredit);
                 assignmentRuleApplicationService.applyAfterUnderwriting(app, ctx);
@@ -561,8 +558,7 @@ public class LoanApplicationFlowService {
             app.setCreditDecision(aggCredit);
             app.setCreditRiskScore(multi.aggregateRiskScore());
             app = applicationRepository.save(app);
-            var prodEval = underwritingEvaluationService.record(
-                        app.getId(), multi, ctx, evaluatedByUserId, scorecardForRecord, paramResults);
+            var prodEval = underwritingEvaluationService.record(app.getId(), multi, ctx, evaluatedByUserId, scorecardForRecord, paramResults, app);
             creditIntelligenceFoundationService.afterProduction(
                     ciPrep.orElse(null), app, prodEval, multi, aggCredit);
             assignmentRuleApplicationService.applyAfterUnderwriting(app, ctx);
@@ -601,7 +597,7 @@ public class LoanApplicationFlowService {
                 decision.reasons() != null ? new ArrayList<>(decision.reasons()) : new ArrayList<>()
         );
         var legacyProdEval = underwritingEvaluationService.record(
-                app.getId(), legacyMulti, ctx, evaluatedByUserId, null, null);
+                app.getId(), legacyMulti, ctx, evaluatedByUserId, null, null, app);
         creditIntelligenceFoundationService.afterProduction(
                 ciPrep.orElse(null), app, legacyProdEval, legacyMulti, decision.decision());
         assignmentRuleApplicationService.applyAfterUnderwriting(app, ctx);

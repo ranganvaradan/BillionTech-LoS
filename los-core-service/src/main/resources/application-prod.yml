@@ -1,4 +1,11 @@
 los:
+  security:
+    local-dev-permit-all: false
+    admin-api-require-role: true
+  underwriting:
+    provider-gap-defaults-enabled: false
+  demo:
+    enabled: false
   document:
     storage: local
   file-storage:
