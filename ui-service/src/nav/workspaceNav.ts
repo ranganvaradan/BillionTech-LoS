@@ -47,6 +47,8 @@ export function isAdministrationWorkspacePath(pathname: string): boolean {
   return (
     pathStartsWith(pathname, '/administration') ||
     pathStartsWith(pathname, '/workflows') ||
+    pathStartsWith(pathname, '/data-parameters') ||
+    pathStartsWith(pathname, '/product-configuration') ||
     pathStartsWith(pathname, '/integrations') ||
     pathStartsWith(pathname, '/underwriting-rules') ||
     pathStartsWith(pathname, '/underwriting-scorecards') ||
@@ -109,6 +111,7 @@ export const ADMINISTRATION_NAV_GROUPS: AdminNavGroup[] = [
     items: [
       { to: '/underwriting-rules', label: 'Live Underwriting Rules' },
       { to: '/underwriting-scorecards', label: 'Live Scorecards' },
+      { to: '/product-configuration', label: 'Product Configuration' },
     ],
   },
   {
@@ -129,6 +132,7 @@ export const ADMINISTRATION_NAV_GROUPS: AdminNavGroup[] = [
   {
     label: 'Platform',
     items: [
+      { to: '/data-parameters', label: 'Data & Parameters' },
       { to: '/workflows', label: 'Workflows' },
       { to: '/integrations/provider-matrix', label: 'Integrations' },
     ],

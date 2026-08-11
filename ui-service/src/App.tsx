@@ -63,6 +63,8 @@ import { ApplicationDeletionsPage } from '@/pages/ApplicationDeletionsPage'
 import { AuditTrailPage } from '@/pages/AuditTrailPage'
 import { ReportsPage } from '@/pages/ReportsPage'
 import { AdministrationPage } from '@/pages/AdministrationPage'
+import { DataParametersPage } from '@/pages/DataParametersPage'
+import { ProductConfigurationPage } from '@/pages/ProductConfigurationPage'
 import { CiApplicationsPage } from '@/pages/creditIntelligence/CiApplicationsPage'
 import { CiWorkspacePage } from '@/pages/creditIntelligence/CiWorkspacePage'
 import { CiPolicyStudioPage } from '@/pages/creditIntelligence/CiPolicyStudioPage'
@@ -190,6 +192,22 @@ export default function App() {
           element={
             <AdminConfigGate>
               <AdministrationPage />
+            </AdminConfigGate>
+          }
+        />
+        <Route
+          path="data-parameters"
+          element={
+            <AdminConfigGate>
+              <DataParametersPage />
+            </AdminConfigGate>
+          }
+        />
+        <Route
+          path="product-configuration"
+          element={
+            <AdminConfigGate>
+              <ProductConfigurationPage />
             </AdminConfigGate>
           }
         />

@@ -54,6 +54,12 @@ const ADMIN_CATEGORIES: AdminCategoryMeta[] = [
         description: 'Current LOS production scorecards',
         icon: ScorecardsIcon,
       },
+      {
+        to: '/product-configuration',
+        label: 'Product Configuration',
+        description: 'Compose Product → Workflow → Live Rules → Scorecard and check readiness',
+        icon: DashboardIcon,
+      },
     ],
   },
   {
@@ -102,6 +108,12 @@ const ADMIN_CATEGORIES: AdminCategoryMeta[] = [
     id: 'Platform',
     label: 'Platform',
     items: [
+      {
+        to: '/data-parameters',
+        label: 'Data & Parameters',
+        description: 'CanonicalParameterRegistry — what the institution can know',
+        icon: DocumentsIcon,
+      },
       {
         to: '/workflows',
         label: 'Workflows',
