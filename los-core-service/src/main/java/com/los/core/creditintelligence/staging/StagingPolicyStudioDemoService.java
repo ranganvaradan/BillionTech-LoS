@@ -12,10 +12,12 @@ import com.los.core.creditintelligence.policystudio.domain.CiPolicyRuleCandidate
 import com.los.core.creditintelligence.policystudio.domain.ClauseType;
 import com.los.core.creditintelligence.policystudio.domain.ReviewState;
 import com.los.core.creditintelligence.policystudio.lifecycle.PolicyLifecycleService;
+import com.los.core.creditintelligence.policystudio.lifecycle.StructuredPolicySessionCloner;
 import com.los.core.creditintelligence.policystudio.model.PolicyStudioSession;
 import com.los.core.creditintelligence.policystudio.service.BusinessMeasureDesignerService;
 import com.los.core.creditintelligence.policystudio.service.DeterministicGoldenInterpretationProvider;
 import com.los.core.creditintelligence.policystudio.service.PolicyClauseExtractor;
+import com.los.core.creditintelligence.policystudio.service.PolicyDocumentService;
 import com.los.core.creditintelligence.policystudio.service.PolicyImplementabilityService;
 import com.los.core.creditintelligence.policystudio.service.PolicyReviewService;
 import com.los.core.creditintelligence.policystudio.service.PolicyStudioOrchestrator;
@@ -199,15 +201,15 @@ public class StagingPolicyStudioDemoService {
     }
 
     /**
-     * POLICY-CREATION-1 — Copy existing policy into a NEW draft without mutating the source.
-     * Reuses clone-via-processUpload pattern (same as lifecycle new-version) but allows any source status.
+     * POLICY-CREATION-1 / POLICY-VERSION-INTEGRITY-1 — Copy into a NEW draft (separate family).
+     * Distinct from Create New Version (same family, next version). Both use structured clone — no NLP re-ingest.
      */
     public Map<String, Object> copyPolicy(UUID sourceDocumentId, Map<String, Object> body, String tenantHeader) {
         PolicyStudioSession source = requireSession(sourceDocumentId, tenantHeader);
         CiPolicyDocument doc = source.getDocument();
-        if (doc == null || doc.getSourceText() == null || doc.getSourceText().isBlank()) {
+        if (doc == null) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "Source policy text is unavailable to copy.");
+                    "Source policy is unavailable to copy.");
         }
         String sourceName = doc.getName() == null ? "Policy" : doc.getName();
         String newName = body != null && body.get("policyName") != null
@@ -218,28 +220,33 @@ public class StagingPolicyStudioDemoService {
                 ? Map.of() : requireLifecycle().settingsView(source);
         String sourceVersion = String.valueOf(srcLife.getOrDefault("policyVersion",
                 "v" + (doc.getDocumentVersion() == null ? 1 : doc.getDocumentVersion())));
-        String cloneText = doc.getSourceText() + "\n\n<!-- COPIED_FROM documentId="
-                + sourceDocumentId + " name=" + sourceName + " version=" + sourceVersion + " -->\n";
-        PolicyStudioSession created = orchestrator.processUpload(
+        String baseText = doc.getSourceText() == null || doc.getSourceText().isBlank()
+                ? "STRUCTURED_POLICY_COPY provenance for " + sourceName
+                : doc.getSourceText();
+        String cloneText = baseText + "\n\n<!-- COPIED_FROM documentId="
+                + sourceDocumentId + " name=" + sourceName + " version=" + sourceVersion
+                + " structuredClone=true -->\n";
+        String createdBy = body != null && body.get("createdBy") != null
+                ? String.valueOf(body.get("createdBy")) : "credit_manager";
+        CiPolicyDocument newDoc = new PolicyDocumentService().create(
                 doc.getTenantId(),
                 newName,
                 doc.getDocumentType() == null ? "TXT" : doc.getDocumentType(),
                 cloneText,
-                body != null && body.get("createdBy") != null
-                        ? String.valueOf(body.get("createdBy")) : "credit_manager",
-                doc.getOriginalFileReference());
-        if (created.getDocument() != null) {
-            created.getDocument().setProductScope(doc.getProductScope());
-        }
-        // Preserve CM dispositions / parameter resolutions where systemRuleId matches
-        copyRuleDraftMetadata(source, created);
+                createdBy,
+                doc.getOriginalFileReference(),
+                Map.of(
+                        "structuredClone", true,
+                        "reingested", false,
+                        "copiedFromDocumentId", sourceDocumentId.toString()));
+        newDoc.setProductScope(doc.getProductScope());
+        PolicyStudioSession created = StructuredPolicySessionCloner.cloneSession(
+                source, newDoc, StructuredPolicySessionCloner.Mode.COPY);
         Map<String, Object> srcMeta = sessionMeta.getOrDefault(sourceDocumentId, Map.of());
         if (Boolean.TRUE.equals(srcMeta.get("createdFromScratch"))
                 || "scratch".equals(srcMeta.get("kind"))) {
             purgeStubClassificationRules(created);
         }
-        // POLICY-RULE-AUTHORING-FIX-1 — CM-authored rules live in session, not source text
-        copyCmAuthoredRules(source, created);
         if (lifecycleService != null) {
             requireLifecycle().saveDraft(created, Map.of(
                     "reasonForChange", "Copied from " + sourceName + " · " + sourceVersion,
@@ -254,109 +261,20 @@ public class StagingPolicyStudioDemoService {
         meta.put("copiedFromVersion", sourceVersion);
         meta.put("copiedFromLabel", "Copied from: " + sourceName + " · Version " + sourceVersion);
         meta.put("createdFromScratch", srcMeta.get("createdFromScratch"));
+        meta.put("structuredClone", true);
+        meta.put("reingested", false);
         if (created.getDocument() != null && created.getDocument().getId() != null) {
             sessionMeta.put(created.getDocument().getId(), meta);
             orchestrator.persistence().saveSessionSnapshot(created);
         }
         Map<String, Object> view = toProspectView(created, meta);
-        view.put("message", "New draft created. Source policy was not changed.");
+        view.put("message", "New draft created (structured copy). Source policy was not changed.");
         view.put("enterWorkspace", true);
         view.put("defaultTab", "scope");
         view.put("copiedFromLabel", meta.get("copiedFromLabel"));
+        view.put("structuredClone", true);
+        view.put("reingested", false);
         return view;
-    }
-
-    private void copyRuleDraftMetadata(PolicyStudioSession source, PolicyStudioSession target) {
-        if (source == null || target == null) return;
-        Map<String, CiPolicyRuleCandidate> bySys = new LinkedHashMap<>();
-        for (CiPolicyRuleCandidate r : source.getRuleCandidates()) {
-            if (r.getSystemRuleId() != null && !r.getSystemRuleId().isBlank()) {
-                bySys.put(r.getSystemRuleId().toUpperCase(Locale.ROOT), r);
-            }
-        }
-        for (CiPolicyRuleCandidate t : target.getRuleCandidates()) {
-            if (t.getSystemRuleId() == null) continue;
-            CiPolicyRuleCandidate s = bySys.get(t.getSystemRuleId().toUpperCase(Locale.ROOT));
-            if (s == null || s.getMetadata() == null || s.getMetadata().isEmpty()) continue;
-            Map<String, Object> meta = t.getMetadata() == null
-                    ? new LinkedHashMap<>() : new LinkedHashMap<>(t.getMetadata());
-            meta.putAll(s.getMetadata());
-            t.setMetadata(meta);
-            if (s.getReviewStatus() != null) t.setReviewStatus(s.getReviewStatus());
-        }
-    }
-
-    /**
-     * Deep-copy CM-authored underwriting rules into the copy draft.
-     * Upload/re-extract does not reconstruct these from policy text.
-     */
-    private void copyCmAuthoredRules(PolicyStudioSession source, PolicyStudioSession target) {
-        if (source == null || target == null || source.getRuleCandidates() == null) return;
-        if (target.getDocument() == null || target.getDocument().getId() == null) return;
-        java.util.Set<String> existingSys = new java.util.HashSet<>();
-        for (CiPolicyRuleCandidate t : target.getRuleCandidates()) {
-            if (t.getSystemRuleId() != null) {
-                existingSys.add(t.getSystemRuleId().toUpperCase(Locale.ROOT));
-            }
-        }
-        Map<UUID, CiPolicyClause> sourceClauses = new LinkedHashMap<>();
-        if (source.getClauses() != null) {
-            for (CiPolicyClause c : source.getClauses()) {
-                if (c.getId() != null) sourceClauses.put(c.getId(), c);
-            }
-        }
-        for (CiPolicyRuleCandidate s : source.getRuleCandidates()) {
-            Map<String, Object> sm = s.getMetadata() == null ? Map.of() : s.getMetadata();
-            if (!Boolean.TRUE.equals(sm.get("cmAuthored"))) continue;
-            String sys = s.getSystemRuleId() == null ? "" : s.getSystemRuleId().toUpperCase(Locale.ROOT);
-            if (!sys.isBlank() && existingSys.contains(sys)) continue;
-            UUID newClauseId = UUID.randomUUID();
-            CiPolicyClause srcClause = s.getClauseId() == null ? null : sourceClauses.get(s.getClauseId());
-            String sourceText = srcClause != null && srcClause.getSourceText() != null
-                    ? srcClause.getSourceText()
-                    : String.valueOf(sm.getOrDefault("businessSummary", s.getSystemRuleId()));
-            CiPolicyClause clause = CiPolicyClause.builder()
-                    .id(newClauseId)
-                    .policyDocumentId(target.getDocument().getId())
-                    .section(srcClause != null ? srcClause.getSection() : "Credit Rules")
-                    .sourceText(sourceText)
-                    .normalizedText(sourceText.replaceAll("\\s+", " "))
-                    .clauseType(ClauseType.HARD_RULE.name())
-                    .extractionConfidence(new BigDecimal("0.9500"))
-                    .sortOrder(target.getClauses().size())
-                    .sourceLocation("cm-authoring:copy-from:" + (s.getId() == null ? "unknown" : s.getId()))
-                    .status("EXTRACTED")
-                    .metadata(Map.of("cmAuthored", true, "copiedFromRuleId",
-                            s.getId() == null ? "" : s.getId().toString()))
-                    .effectiveScope(Map.of("products", List.of("ALL")))
-                    .build();
-            Map<String, Object> meta = new LinkedHashMap<>(sm);
-            meta.put("copiedFromRuleId", s.getId() == null ? null : s.getId().toString());
-            Map<String, Object> lineage = s.getLineage() == null
-                    ? new LinkedHashMap<>() : new LinkedHashMap<>(s.getLineage());
-            lineage.put("copiedFromDocumentId", source.getDocument() == null ? null
-                    : String.valueOf(source.getDocument().getId()));
-            lineage.put("copiedFromRuleId", s.getId() == null ? null : s.getId().toString());
-            CiPolicyRuleCandidate clone = CiPolicyRuleCandidate.builder()
-                    .id(UUID.randomUUID())
-                    .clauseId(newClauseId)
-                    .systemRuleId(s.getSystemRuleId())
-                    .ruleVersion("DRAFT")
-                    .ruleType(s.getRuleType() == null ? "HARD" : s.getRuleType())
-                    .scope(s.getScope() == null ? Map.of() : new LinkedHashMap<>(s.getScope()))
-                    .expression(s.getExpression() == null ? Map.of() : new LinkedHashMap<>(s.getExpression()))
-                    .onTrue(s.getOnTrue())
-                    .onFalse(s.getOnFalse())
-                    .onMissing(s.getOnMissing())
-                    .confidence(s.getConfidence())
-                    .reviewStatus(s.getReviewStatus())
-                    .lineage(lineage)
-                    .metadata(meta)
-                    .build();
-            target.getClauses().add(clause);
-            target.getRuleCandidates().add(clone);
-            if (!sys.isBlank()) existingSys.add(sys);
-        }
     }
 
     /** Existing policies for landing — session store (+ rule counts from session). */
@@ -1113,20 +1031,48 @@ public class StagingPolicyStudioDemoService {
         return view;
     }
 
+    /**
+     * Staging-only: stamp ACTIVE so Create New Version can be exercised without full maker-checker.
+     * Does not grant production authority. Not a lifecycle redesign.
+     */
+    public Map<String, Object> stampActiveForVersioning(
+            UUID documentId, Map<String, Object> body, String tenantHeader) {
+        if (!properties.getStagingDemo().isEnabled()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Staging demo disabled");
+        }
+        PolicyStudioSession session = requireSession(documentId, tenantHeader);
+        Map<String, Object> result = requireLifecycle().stampActiveForVersioningDemo(session, body == null ? Map.of() : body);
+        orchestrator.persistence().saveSessionSnapshot(session);
+        Map<String, Object> view = sessionView(documentId, tenantHeader);
+        view.put("lifecycle", result);
+        view.put("message", result.get("message"));
+        view.put("allowCanonicalAuthority", false);
+        return view;
+    }
+
     public Map<String, Object> createLifecycleVersion(UUID documentId, Map<String, Object> body, String tenantHeader) {
         PolicyStudioSession source = requireSession(documentId, tenantHeader);
         Map<String, Object> result = requireLifecycle().createNewVersion(source, body);
         Object newId = result.get("documentId");
         if (newId != null) {
-            Map<String, Object> meta = new LinkedHashMap<>(sessionMeta.getOrDefault(documentId, Map.of()));
-            meta.put("kind", meta.getOrDefault("kind", "version"));
+            Map<String, Object> srcMeta = sessionMeta.getOrDefault(documentId, Map.of());
+            Map<String, Object> meta = new LinkedHashMap<>();
+            meta.put("kind", "version");
             meta.put("clonedFrom", documentId.toString());
             meta.put("demo", false);
+            meta.put("structuredClone", true);
+            meta.put("reingested", false);
+            meta.put("createdFromScratch", srcMeta.get("createdFromScratch"));
+            meta.put("previousVersionLabel", result.get("lineage") instanceof Map<?, ?> lin
+                    ? lin.get("from") : null);
             sessionMeta.put(UUID.fromString(String.valueOf(newId)), meta);
             Map<String, Object> view = sessionView(UUID.fromString(String.valueOf(newId)), tenantHeader);
             view.put("lifecycle", result);
             view.put("message", result.get("message"));
             view.put("lineage", result.get("lineage"));
+            view.put("structuredClone", true);
+            view.put("reingested", false);
+            view.put("underwritingRuleCount", result.get("underwritingRuleCount"));
             return view;
         }
         return result;

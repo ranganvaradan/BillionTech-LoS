@@ -895,6 +895,18 @@ public class StagingDemoController {
                 documentId, body == null ? Map.of() : body, tenantHeader);
     }
 
+    @PostMapping("/policy-studio/documents/{documentId}/lifecycle/stamp-active-for-versioning")
+    public Map<String, Object> lifecycleStampActiveForVersioning(
+            @PathVariable UUID documentId,
+            @RequestBody(required = false) Map<String, Object> body,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token,
+            @RequestHeader(value = "X-Tenant-Id", required = false) String tenantHeader) {
+        assertInternalToken(token);
+        assertStagingDemoEnabled();
+        return policyStudioDemoService.stampActiveForVersioning(
+                documentId, body == null ? Map.of() : body, tenantHeader);
+    }
+
     @PostMapping("/policy-studio/documents/{documentId}/lifecycle/new-version")
     public Map<String, Object> lifecycleNewVersion(
             @PathVariable UUID documentId,

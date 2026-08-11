@@ -6,6 +6,7 @@ import com.los.core.creditintelligence.policystudio.domain.CiPolicyDocument;
 import com.los.core.creditintelligence.policystudio.domain.CiPolicyRuleCandidate;
 import com.los.core.creditintelligence.policystudio.domain.ReviewState;
 import com.los.core.creditintelligence.policystudio.model.PolicyStudioSession;
+import com.los.core.creditintelligence.policystudio.service.PolicyDocumentService;
 import com.los.core.creditintelligence.policystudio.service.PolicyImplementabilityService;
 import com.los.core.creditintelligence.policystudio.service.PolicyStudioOrchestrator;
 import lombok.RequiredArgsConstructor;
@@ -331,7 +332,44 @@ public class PolicyLifecycleService {
     }
 
     /**
-     * Clone approved/active policy into a new DRAFT version. Material edits happen only on the draft.
+     * Staging-demo helper: mark a draft ACTIVE so Create New Version can be exercised.
+     * Skips maker-checker / test gates. Never enables production authority.
+     */
+    public Map<String, Object> stampActiveForVersioningDemo(PolicyStudioSession session, Map<String, Object> body) {
+        Map<String, Object> life = ensureLifecycle(session);
+        if (body != null && !body.isEmpty()) {
+            try {
+                mergeApplicability(life, body);
+            } catch (IllegalArgumentException ex) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, ex.getMessage());
+            }
+        }
+        life.put("businessStatus", PolicyBusinessLifecycleStatus.ACTIVE);
+        life.put("contentImmutable", true);
+        life.put("approvedBy", str(body, "reviewer", "staging_versioning_demo"));
+        life.put("checker", str(body, "checker", "staging_versioning_demo"));
+        life.put("approvedAt", Instant.now().toString());
+        life.put("reasonForChange", str(body, "reasonForChange",
+                "Staging stamp ACTIVE for version-integrity walkthrough"));
+        if (str(life, "policyVersion", null) == null || str(life, "policyVersion", "").isBlank()) {
+            life.put("policyVersion", "v1");
+        }
+        if (str(life, "lineageId", null) == null || str(life, "lineageId", "").isBlank()) {
+            life.put("lineageId", session.documentId().toString());
+        }
+        persistLifecycle(session, life);
+        appendHistory(session, life, "STAGED_ACTIVE_FOR_VERSIONING");
+        Map<String, Object> out = settingsView(session);
+        out.put("message", "Stamped ACTIVE for Create New Version (staging demo only). "
+                + "Production authority remains DISABLED.");
+        out.put("allowCanonicalAuthority", false);
+        return out;
+    }
+
+    /**
+     * POLICY-VERSION-INTEGRITY-1 — clone approved/active policy into a new DRAFT version.
+     * Structured session clone (rules, typed values, resolutions, measures). No NLP re-ingestion.
+     * Material edits happen only on the draft; source version remains immutable.
      */
     public Map<String, Object> createNewVersion(PolicyStudioSession source, Map<String, Object> body) {
         Map<String, Object> srcLife = ensureLifecycle(source);
@@ -343,32 +381,45 @@ public class PolicyLifecycleService {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Create New Version is available from APPROVED / SCHEDULED / ACTIVE policies.");
         }
+        if (orchestrator == null) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Policy Studio orchestrator required for structured version clone.");
+        }
         CiPolicyDocument doc = source.getDocument();
         String text = doc.getSourceText();
         if (text == null || text.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
-                    "Source policy text is unavailable to clone.");
+            // Scratch drafts still need a non-blank provenance string for document hash.
+            text = "STRUCTURED_POLICY_CLONE provenance for " + doc.getName();
         }
         int nextVer = parseVersionNumber(str(srcLife, "policyVersion", "v" + doc.getDocumentVersion())) + 1;
         String versionLabel = "v" + nextVer;
         String name = str(body, "policyName", doc.getName());
 
-        // Content must differ for document hash uniqueness; footer is non-semantic lineage only.
+        // Footer is lineage / hash uniqueness only — not fed into NLP (no processUpload).
         String cloneText = text + "\n\n<!-- POLICY_VERSION " + versionLabel
-                + " replaces=" + doc.getId() + " -->\n";
+                + " replaces=" + doc.getId() + " structuredClone=true -->\n";
 
-        PolicyStudioSession created = orchestrator.processUpload(
+        PolicyDocumentService documents = new PolicyDocumentService();
+        CiPolicyDocument newDoc = documents.create(
                 doc.getTenantId(),
                 name,
                 doc.getDocumentType() == null ? "TXT" : doc.getDocumentType(),
                 cloneText,
                 str(body, "createdBy", "credit_manager"),
-                doc.getOriginalFileReference());
+                doc.getOriginalFileReference(),
+                Map.of(
+                        "structuredClone", true,
+                        "reingested", false,
+                        "clonedFromDocumentId", doc.getId().toString(),
+                        "previousVersion", str(srcLife, "policyVersion", "v1")));
+        newDoc.setDocumentVersion(nextVer);
+        newDoc.setProductScope(doc.getProductScope());
+        newDoc.setLenderId(doc.getLenderId());
+        newDoc.setLanguage(doc.getLanguage() == null ? "en" : doc.getLanguage());
 
-        if (created.getDocument() != null) {
-            created.getDocument().setDocumentVersion(nextVer);
-            created.getDocument().setProductScope(doc.getProductScope());
-        }
+        PolicyStudioSession created = StructuredPolicySessionCloner.cloneSession(
+                source, newDoc, StructuredPolicySessionCloner.Mode.NEW_VERSION);
+        orchestrator.persistence().saveSessionSnapshot(created);
 
         Map<String, Object> life = ensureLifecycle(created);
         life.put("policyVersion", versionLabel);
@@ -380,23 +431,41 @@ public class PolicyLifecycleService {
         life.put("lineageId", str(srcLife, "lineageId", doc.getId().toString()));
         life.put("contentImmutable", false);
         life.put("createdBy", str(body, "createdBy", "credit_manager"));
+        // Governance reset — do not inherit approvals / schedule / activation
+        life.remove("approvedBy");
+        life.remove("approvedAt");
+        life.remove("checker");
+        life.remove("checkerApprovedAt");
+        life.remove("scheduledAt");
+        life.remove("activatedAt");
+        life.remove("readyToSchedule");
         Map<String, Object> app = new LinkedHashMap<>(castMap(srcLife.get("applicability")));
         app.remove("effectiveFrom");
         app.remove("effectiveUntil");
         life.put("applicability", app);
         persistLifecycle(created, life);
+        orchestrator.persistence().saveSessionSnapshot(created);
         appendHistory(created, life, "DRAFT_CREATED_FROM_" + str(srcLife, "policyVersion", "?"));
+        // Also record on source lineage history (does not mutate source status)
+        appendHistory(source, srcLife, "SPAWNED_" + versionLabel);
 
+        long uwCount = StructuredPolicySessionCloner.countUnderwritingRules(created);
         Map<String, Object> out = settingsView(created);
         out.put("documentId", created.documentId().toString());
-        out.put("message", "New DRAFT version " + versionLabel + " created from "
+        out.put("structuredClone", true);
+        out.put("reingested", false);
+        out.put("underwritingRuleCount", uwCount);
+        out.put("message", "New DRAFT version " + versionLabel + " structured-cloned from "
                 + str(srcLife, "policyVersion", "?")
-                + ". AI review, Data Readiness, Tests, Simulation and maker-checker must run again.");
+                + " (" + uwCount + " underwriting rules). "
+                + "Approvals and test evidence reset — Tests, Simulation and maker-checker must run again.");
         out.put("lineage", Map.of(
                 "from", str(srcLife, "policyVersion", "?"),
                 "to", versionLabel,
                 "fromDocumentId", doc.getId().toString(),
-                "toDocumentId", created.documentId().toString()));
+                "toDocumentId", created.documentId().toString(),
+                "structuredClone", true,
+                "reingested", false));
         return out;
     }
 
