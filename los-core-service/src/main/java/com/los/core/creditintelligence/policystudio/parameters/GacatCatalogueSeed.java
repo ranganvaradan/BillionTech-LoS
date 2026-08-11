@@ -655,6 +655,8 @@ final class GacatCatalogueSeed {
                 List.of("loan amount", "requested amount"), "application.loan_amount", null);
         manual(p, "application.tenure_months", "Requested tenure (months)", APP, "MONTHS",
                 List.of("tenure", "loan tenure"), null, null);
+        manual(p, "application.business_vintage_months", "Business vintage", APP, "MONTHS",
+                List.of("vintage", "business vintage", "years in business"), null, null);
         manual(p, "application.borrower_type", "Borrower type", APP, "CODE",
                 List.of("borrower type", "entity type"), null, null);
         manual(p, "application.entity_constitution", "Entity constitution", APP, "CODE",

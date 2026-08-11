@@ -48,13 +48,20 @@ public class CmRuleAuthoringService {
         out.put("sources", bySource.keySet().stream().sorted().toList());
         out.put("bySource", bySource);
         out.put("operatorsByType", Map.of(
-                "NUMBER", List.of(">", ">=", "<", "<=", "="),
-                "PERCENT", List.of(">", ">=", "<", "<=", "="),
-                "COUNT", List.of(">", ">=", "<", "<=", "="),
-                "MONEY", List.of(">", ">=", "<", "<=", "="),
-                "FLAG", List.of("=", "is", "is not"),
-                "BOOLEAN", List.of("=", "is", "is not")));
-        out.put("treatments", List.of("Reject", "Manual Review", "Approve", "Info"));
+                "NUMBER", AuthoringValueTypes.operatorsFor(AuthoringValueTypes.CONTROL_NUMBER),
+                "PERCENT", AuthoringValueTypes.operatorsFor(AuthoringValueTypes.CONTROL_PERCENTAGE),
+                "PERCENTAGE", AuthoringValueTypes.operatorsFor(AuthoringValueTypes.CONTROL_PERCENTAGE),
+                "COUNT", AuthoringValueTypes.operatorsFor(AuthoringValueTypes.CONTROL_INTEGER),
+                "INTEGER", AuthoringValueTypes.operatorsFor(AuthoringValueTypes.CONTROL_INTEGER),
+                "MONEY", AuthoringValueTypes.operatorsFor(AuthoringValueTypes.CONTROL_MONEY),
+                "DURATION", AuthoringValueTypes.operatorsFor(AuthoringValueTypes.CONTROL_DURATION),
+                "ENUM", AuthoringValueTypes.operatorsFor(AuthoringValueTypes.CONTROL_ENUM),
+                "FLAG", AuthoringValueTypes.operatorsFor(AuthoringValueTypes.CONTROL_BOOLEAN),
+                "BOOLEAN", AuthoringValueTypes.operatorsFor(AuthoringValueTypes.CONTROL_BOOLEAN)));
+        // Failure-oriented treatments only — Approve is not a failure treatment
+        out.put("treatments", List.of("Reject", "Manual Review", "Refer", "Info"));
+        out.put("treatmentLabel", "If rule fails");
+        out.put("allowCanonicalAuthority", false);
         return out;
     }
 
@@ -95,9 +102,21 @@ public class CmRuleAuthoringService {
         }
         // Apply CM overrides from confirm body
         if (body.get("treatment") != null) draft.treatment = String.valueOf(body.get("treatment"));
-        if (body.get("operator") != null) draft.operator = String.valueOf(body.get("operator"));
-        if (body.get("value") != null) draft.value = coerceNumber(body.get("value"));
+        if (body.get("operator") != null) {
+            draft.operator = AuthoringValueTypes.normalizeOperator(
+                    String.valueOf(body.get("operator")), draft.valueControl);
+        }
+        if (body.get("rightParameterId") != null) {
+            draft.rightParameterId = String.valueOf(body.get("rightParameterId"));
+            draft.valueMode = "PARAMETER";
+        }
+        if (body.get("value") != null && !"PARAMETER".equalsIgnoreCase(draft.valueMode)) {
+            var defOpt = draft.parameterId == null ? java.util.Optional.<CanonicalParameterDefinition>empty()
+                    : REGISTRY.findById(draft.parameterId);
+            draft.value = AuthoringValueTypes.coerce(body.get("value"), defOpt.orElse(null), draft.durationUnit);
+        }
         if (body.get("period") != null) draft.period = String.valueOf(body.get("period"));
+        if (body.get("durationUnit") != null) draft.durationUnit = String.valueOf(body.get("durationUnit"));
 
         CiPolicyDocument doc = session.getDocument();
         if (doc == null) {
@@ -142,7 +161,7 @@ public class CmRuleAuthoringService {
         meta.put("plainEnglishAdded", draft.fromPlainEnglish);
         meta.put("businessTitle", draft.businessName);
         meta.put("businessParameterName", draft.businessName);
-        meta.put("businessSummary", draft.businessName + " " + draft.operator + " " + formatValue(draft));
+        meta.put("businessSummary", ruleDisplay(draft));
         meta.put("evaluatedFrom", draft.source);
         meta.put("catalogueBacked", false);
         meta.put("classificationOnly", false);
@@ -153,6 +172,16 @@ public class CmRuleAuthoringService {
         meta.put("parameterId", draft.parameterId);
         meta.put("operator", draft.operator);
         meta.put("threshold", draft.value);
+        meta.put("valueControl", draft.valueControl);
+        meta.put("valueMode", draft.valueMode == null ? "FIXED" : draft.valueMode);
+        meta.put("durationUnit", draft.durationUnit);
+        if (draft.rightParameterId != null) {
+            meta.put("rightParameterId", draft.rightParameterId);
+            // Parameter-reference rules need runtime RHS resolution — readiness convergence handles this
+            if ("application.proposed_edi".equals(draft.rightParameterId)) {
+                meta.put("NEEDS_INPUT", false); // operand presenter still marks EDI unresolved
+            }
+        }
         meta.put("period", draft.period);
         meta.put(DecisionPolicyRuleMetadata.KEY_DOMAIN, DecisionPolicyDomain.CREDIT.name());
         if (replaceId != null) {
@@ -243,11 +272,12 @@ public class CmRuleAuthoringService {
         DraftDraft d = new DraftDraft();
         d.fromPlainEnglish = false;
         d.parameterId = str(body, "parameterId", null);
-        d.operator = normalizeOp(str(body, "operator", ">="));
-        d.value = coerceNumber(body.get("value"));
         d.period = emptyToNull(str(body, "period", null));
+        d.durationUnit = emptyToNull(str(body, "durationUnit", null));
         d.treatment = str(body, "treatment", "Reject");
         d.sourceText = str(body, "text", null);
+        d.valueMode = str(body, "valueMode", "FIXED");
+        d.rightParameterId = emptyToNull(str(body, "rightParameterId", null));
         if (d.parameterId == null || d.parameterId.isBlank()) {
             d.complete = false;
             d.message = "Parameter is required";
@@ -260,17 +290,52 @@ public class CmRuleAuthoringService {
             d.source = def.get().evaluatedFrom();
             d.availability = def.get().availability();
             d.unit = def.get().unit();
+            d.valueControl = AuthoringValueTypes.valueControl(def.get());
+            if (!AuthoringValueTypes.allowedValues(def.get().id()).isEmpty()) {
+                d.valueControl = AuthoringValueTypes.CONTROL_ENUM;
+            }
             if (d.period == null) d.period = def.get().period();
         } else {
             d.businessName = friendly(d.parameterId);
             d.source = str(body, "source", "Application");
             d.availability = "AVAILABLE_AUTOMATICALLY";
+            d.valueControl = AuthoringValueTypes.CONTROL_NUMBER;
         }
-        if (d.value == null) {
-            d.complete = false;
-            d.message = "Value is required";
-            d.missing.add("value");
-            return d;
+        d.operator = AuthoringValueTypes.normalizeOperator(
+                str(body, "operator", AuthoringValueTypes.CONTROL_BOOLEAN.equals(d.valueControl)
+                        || AuthoringValueTypes.CONTROL_ENUM.equals(d.valueControl) ? "is" : ">="),
+                d.valueControl);
+
+        if ("PARAMETER".equalsIgnoreCase(d.valueMode) || d.rightParameterId != null) {
+            if (d.rightParameterId == null || d.rightParameterId.isBlank()) {
+                d.complete = false;
+                d.message = "Right-hand parameter is required";
+                d.missing.add("rightParameterId");
+                return d;
+            }
+            var right = REGISTRY.findById(d.rightParameterId);
+            if (right.isEmpty()) {
+                d.complete = false;
+                d.message = "Right-hand parameter not found in registry";
+                d.missing.add("rightParameterId");
+                return d;
+            }
+            d.valueMode = "PARAMETER";
+            d.rightBusinessName = right.get().businessName();
+            d.value = null; // RHS is parameter reference — not a fixed const
+        } else {
+            d.value = AuthoringValueTypes.coerce(body.get("value"), def.orElse(null), d.durationUnit);
+            if (d.value == null) {
+                d.complete = false;
+                d.message = AuthoringValueTypes.validationMessage(d.valueControl, body.get("value"));
+                d.missing.add("value");
+                return d;
+            }
+        }
+        if (AuthoringValueTypes.CONTROL_DURATION.equals(d.valueControl)
+                && (d.durationUnit == null || d.durationUnit.isBlank())
+                && body.get("value") != null) {
+            d.durationUnit = "Months";
         }
         if (d.operator == null || d.operator.isBlank()) {
             d.complete = false;
@@ -327,11 +392,21 @@ public class CmRuleAuthoringService {
         if (hits.isEmpty()) {
             // Known aliases not fully in registry
             if (lower.contains("vintage") || lower.contains("years in business")) {
-                d.parameterId = "application.business_vintage_months";
-                d.businessName = "Business vintage";
-                d.source = "Application";
-                d.availability = "AVAILABLE_AUTOMATICALLY";
-                d.unit = "MONTHS";
+                REGISTRY.findById("application.business_vintage_months").ifPresentOrElse(def -> {
+                    d.parameterId = def.id();
+                    d.businessName = def.businessName();
+                    d.source = def.evaluatedFrom();
+                    d.availability = def.availability();
+                    d.unit = def.unit();
+                    d.valueControl = AuthoringValueTypes.CONTROL_DURATION;
+                }, () -> {
+                    d.parameterId = "application.business_vintage_months";
+                    d.businessName = "Business vintage";
+                    d.source = "Application";
+                    d.availability = "AVAILABLE_AUTOMATICALLY";
+                    d.unit = "MONTHS";
+                    d.valueControl = AuthoringValueTypes.CONTROL_DURATION;
+                });
             } else {
                 d.complete = false;
                 d.message = "Parameter not yet mapped";
@@ -350,21 +425,57 @@ public class CmRuleAuthoringService {
             d.period = def.period();
         }
 
+        if (d.parameterId != null) {
+            REGISTRY.findById(d.parameterId).ifPresent(def -> {
+                d.valueControl = AuthoringValueTypes.valueControl(def);
+                if (!AuthoringValueTypes.allowedValues(def.id()).isEmpty()) {
+                    d.valueControl = AuthoringValueTypes.CONTROL_ENUM;
+                }
+            });
+        }
         fillOpValue(d, lower);
         if (d.operator == null) {
             d.missing.add("operator");
         }
-        if (d.value == null) {
+        if (d.value == null && !"PARAMETER".equalsIgnoreCase(d.valueMode)) {
             d.missing.add("value");
         }
         d.complete = d.missing.isEmpty();
         d.message = d.complete
                 ? "Ready to confirm"
-                : "I couldn't turn this into a complete rule. Complete the missing fields.";
+                : (d.missing.contains("value")
+                ? AuthoringValueTypes.validationMessage(d.valueControl, null)
+                : "I couldn't turn this into a complete rule. Complete the missing fields.");
         return d;
     }
 
     private void fillOpValue(DraftDraft d, String lower) {
+        boolean boolCtrl = AuthoringValueTypes.CONTROL_BOOLEAN.equals(d.valueControl);
+        // Boolean plain-English: "PAN must be verified" / "PAN verified is Yes"
+        if (boolCtrl || (d.parameterId != null && (d.parameterId.contains("verified")
+                || d.parameterId.contains(".present")))) {
+            d.valueControl = AuthoringValueTypes.CONTROL_BOOLEAN;
+            if (lower.contains("is not") || lower.contains("not verified") || lower.contains("unverified")
+                    || lower.contains("must not")) {
+                d.operator = "is not";
+            } else {
+                d.operator = "is";
+            }
+            if (lower.contains(" no") || lower.contains("= no") || lower.contains("is no")
+                    || lower.contains("false") || lower.contains("unverified") || lower.contains("not verified")) {
+                d.value = false;
+            } else if (lower.contains("verified") || lower.contains(" yes") || lower.contains("= yes")
+                    || lower.contains("is yes") || lower.contains("true") || lower.contains("must be")
+                    || lower.contains("should be")) {
+                d.value = true;
+            } else {
+                Object b = AuthoringValueTypes.coerceBoolean(
+                        lower.contains("no") ? "no" : (lower.contains("yes") ? "yes" : null));
+                if (b != null) d.value = b;
+                else if (lower.contains("verified") || lower.contains("pass")) d.value = true;
+            }
+            return;
+        }
         if (lower.contains("not exceed") || lower.contains("no more than") || lower.contains("at most")) {
             d.operator = "<=";
         } else if (lower.contains("at least") || lower.contains("minimum") || lower.contains("no less")) {
@@ -382,11 +493,18 @@ public class CmRuleAuthoringService {
                 || lower.matches(".*\\b0\\b.*") && (lower.contains("bounce") || lower.contains("return"))) {
             d.operator = "=";
             d.value = 0;
-        } else if (lower.contains("=") || lower.contains(" equal ")) {
-            d.operator = "=";
+        } else if (lower.contains("=") || lower.contains(" equal ") || lower.contains(" is ")) {
+            d.operator = AuthoringValueTypes.CONTROL_ENUM.equals(d.valueControl) ? "is" : "=";
         }
         if (d.value == null) {
-            d.value = extractNumber(lower, null);
+            CanonicalParameterDefinition def = d.parameterId == null ? null
+                    : REGISTRY.findById(d.parameterId).orElse(null);
+            Object num = extractNumber(lower, null);
+            if (num != null) {
+                String dur = lower.contains("year") ? "Years" : (lower.contains("month") ? "Months" : null);
+                d.durationUnit = dur;
+                d.value = AuthoringValueTypes.coerce(num, def, dur);
+            }
         }
         // Bounce default operator =
         if (d.parameterId != null && d.parameterId.contains("cheque_return") && d.operator == null) {
@@ -394,6 +512,17 @@ public class CmRuleAuthoringService {
         }
         if (d.parameterId != null && d.parameterId.contains("obligation") && d.operator == null) {
             d.operator = "<=";
+        }
+        // Enum codes from plain English (borrower type)
+        if (d.value == null && AuthoringValueTypes.CONTROL_ENUM.equals(d.valueControl)) {
+            for (Map<String, String> opt : AuthoringValueTypes.allowedValues(d.parameterId)) {
+                if (lower.contains(opt.get("label").toLowerCase(Locale.ROOT))
+                        || lower.contains(opt.get("value").toLowerCase(Locale.ROOT).replace('_', ' '))) {
+                    d.value = opt.get("value");
+                    if (d.operator == null) d.operator = "is";
+                    break;
+                }
+            }
         }
     }
 
@@ -419,6 +548,22 @@ public class CmRuleAuthoringService {
         }
         if (lower.contains("proposed edi") || (lower.contains("edi") && !lower.contains("credit"))) {
             REGISTRY.findById("application.proposed_edi").ifPresent(hits::add);
+            return hits;
+        }
+        if (lower.contains("pan") && (lower.contains("verif") || lower.contains("must be"))) {
+            REGISTRY.findById("kyc.pan.verified").ifPresent(hits::add);
+            return hits;
+        }
+        if (lower.contains("borrower type") || lower.contains("entity type")) {
+            REGISTRY.findById("application.borrower_type").ifPresent(hits::add);
+            return hits;
+        }
+        if (lower.contains("requested amount") || lower.contains("loan amount")) {
+            REGISTRY.findById("application.requested_amount").ifPresent(hits::add);
+            return hits;
+        }
+        if (lower.contains("vintage") || lower.contains("years in business")) {
+            REGISTRY.findById("application.business_vintage_months").ifPresent(hits::add);
             return hits;
         }
         // Alias search across registry
@@ -450,12 +595,18 @@ public class CmRuleAuthoringService {
                     Map.of("const", d.value == null ? 0 : ((Number) d.value).doubleValue() / 100.0));
             return PolicyDsl.gte(left, right);
         }
-        right = Map.of("const", d.value == null ? 0 : d.value);
-        return switch (d.operator == null ? ">=" : d.operator) {
+        if ("PARAMETER".equalsIgnoreCase(d.valueMode) && d.rightParameterId != null) {
+            right = PolicyDsl.metric(d.rightParameterId);
+        } else {
+            right = Map.of("const", d.value == null ? 0 : d.value);
+        }
+        String op = d.operator == null ? ">=" : d.operator;
+        return switch (op) {
             case ">" -> PolicyDsl.gt(left, right);
             case "<" -> PolicyDsl.lt(left, right);
             case "<=" -> PolicyDsl.lte(left, right);
-            case "=" -> PolicyDsl.eq(left, right);
+            case "=", "is" -> PolicyDsl.eq(left, right);
+            case "!=", "is not" -> PolicyDsl.ne(left, right);
             default -> PolicyDsl.gte(left, right);
         };
     }
@@ -473,12 +624,25 @@ public class CmRuleAuthoringService {
         out.put("parameterId", d.parameterId);
         out.put("operator", d.operator);
         out.put("value", d.value);
-        out.put("period", d.period == null || d.period.isBlank() ? "Not applicable" : d.period);
+        out.put("valueDisplay", formatValue(d));
+        out.put("valueControl", d.valueControl);
+        out.put("valueMode", d.valueMode == null ? "FIXED" : d.valueMode);
+        out.put("rightParameterId", d.rightParameterId);
+        out.put("rightParameter", d.rightBusinessName);
+        out.put("durationUnit", d.durationUnit);
+        boolean showPeriod = d.period != null && !d.period.isBlank()
+                && !"Not applicable".equalsIgnoreCase(d.period)
+                && !AuthoringValueTypes.CONTROL_BOOLEAN.equals(d.valueControl)
+                && !AuthoringValueTypes.CONTROL_ENUM.equals(d.valueControl);
+        out.put("period", showPeriod ? d.period : null);
+        out.put("showPeriod", showPeriod);
         out.put("treatment", d.treatment == null ? "Reject" : d.treatment);
+        out.put("treatmentLabel", "If rule fails");
         out.put("availability", availabilityLabel(d.availability));
-        out.put("ruleDisplay", d.businessName == null ? null
-                : d.businessName + " " + nullTo(d.operator, "?") + " " + formatValue(d));
+        out.put("ruleDisplay", ruleDisplay(d));
+        out.put("failureDisplay", "If not → " + (d.treatment == null ? "Reject" : d.treatment));
         out.put("fromPlainEnglish", d.fromPlainEnglish);
+        out.put("allowCanonicalAuthority", false);
         return out;
     }
 
@@ -491,7 +655,9 @@ public class CmRuleAuthoringService {
         m.put("unit", d.unit());
         m.put("period", d.period());
         m.put("availability", availabilityLabel(d.availability()));
-        m.put("kind", CanonicalParameterDefinition.RAW.equals(d.type()) ? "RAW" : "DERIVED");
+        m.put("kind", CanonicalParameterDefinition.RAW.equals(d.type()) ? "RAW"
+                : (CanonicalParameterDefinition.MANUAL.equals(d.type()) ? "MANUAL" : "DERIVED"));
+        m.putAll(AuthoringValueTypes.controlMeta(d));
         return m;
     }
 
@@ -515,9 +681,10 @@ public class CmRuleAuthoringService {
     private static String treatmentCode(String t) {
         if (t == null) return "REJECT";
         String u = t.toUpperCase(Locale.ROOT);
-        if (u.contains("MANUAL") || u.contains("REFER")) return "REFER";
+        if (u.contains("MANUAL")) return "REFER";
+        if (u.equals("REFER") || u.contains("REFER")) return "REFER";
         if (u.contains("APPROVE") || u.contains("PASS")) return "PASS";
-        if (u.contains("INFO")) return "INFO";
+        if (u.contains("INFO") || u.contains("WARNING")) return "INFO";
         return "REJECT";
     }
 
@@ -549,49 +716,33 @@ public class CmRuleAuthoringService {
         return last;
     }
 
-    private static Object coerceNumber(Object v) {
-        if (v == null) return null;
-        if (v instanceof Number n) return n;
-        String s = String.valueOf(v).trim().replace("%", "").replace(",", "");
-        try {
-            if (s.contains(".")) return Double.parseDouble(s);
-            return Long.parseLong(s);
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private static String normalizeOp(String op) {
-        if (op == null) return ">=";
-        String o = op.trim().toLowerCase(Locale.ROOT);
-        return switch (o) {
-            case "gt", "greater than", "more than", "above" -> ">";
-            case "gte", "ge", "at least", "minimum" -> ">=";
-            case "lt", "less than", "below" -> "<";
-            case "lte", "le", "at most", "not exceed", "no more than" -> "<=";
-            case "eq", "equals", "equal", "is" -> "=";
-            case ">", ">=", "<", "<=", "=" -> o;
-            default -> op.trim();
-        };
-    }
-
     private static String opCode(String op) {
         return switch (op == null ? "GTE" : op) {
             case ">" -> "GT";
             case "<" -> "LT";
             case "<=" -> "LTE";
-            case "=" -> "EQ";
+            case "=", "is" -> "EQ";
+            case "!=", "is not" -> "NE";
             default -> "GTE";
         };
     }
 
     private static String formatValue(DraftDraft d) {
-        if (d.value == null) return "?";
-        if (d.ratioPercent || "PERCENT".equalsIgnoreCase(d.unit)) return d.value + "%";
-        if ("MONTHS".equalsIgnoreCase(d.unit) || (d.period != null && d.period.contains("MONTH"))) {
-            return d.value + " months";
+        if ("PARAMETER".equalsIgnoreCase(d.valueMode) && d.rightBusinessName != null) {
+            return d.rightBusinessName;
         }
-        return String.valueOf(d.value);
+        if (d.value == null) return "?";
+        if (d.ratioPercent) return d.value + "%";
+        return AuthoringValueTypes.formatDisplay(d.value, d.valueControl, d.unit, d.durationUnit);
+    }
+
+    private static String ruleDisplay(DraftDraft d) {
+        if (d.businessName == null) return null;
+        String op = nullTo(d.operator, "?");
+        if ("is".equals(op) || "is not".equals(op)) {
+            return d.businessName + " " + op + " " + formatValue(d);
+        }
+        return d.businessName + " " + op + " " + formatValue(d);
     }
 
     private static String friendly(String id) {
@@ -638,8 +789,13 @@ public class CmRuleAuthoringService {
         String treatment = "Reject";
         String availability;
         String unit;
+        String valueControl;
+        String valueMode = "FIXED";
+        String durationUnit;
         String sourceText;
         String rightMetricId;
+        String rightParameterId;
+        String rightBusinessName;
         boolean ratioPercent;
         List<String> missing = new ArrayList<>();
         List<Map<String, Object>> candidates;

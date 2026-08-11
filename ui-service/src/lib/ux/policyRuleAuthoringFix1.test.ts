@@ -44,4 +44,15 @@ describe('POLICY-RULE-AUTHORING-FIX-1', () => {
     expect(rules).toContain('metricAdjustment')
     expect(rules).toContain('Already-classified data/calc items must never offer Replace')
   })
+
+  it('typed authoring uses canonical boolean Yes/No not Number(value)', () => {
+    const panel = read('pages/creditIntelligence/CiRuleAuthoringPanel.tsx')
+    const typed = read('lib/ux/ruleAuthoringTypedValue.ts')
+    expect(panel).not.toMatch(/Number\(value\)/)
+    expect(panel).toContain('toCanonicalBuildValue')
+    expect(panel).toContain('Yes')
+    expect(panel).toContain('If rule fails')
+    expect(typed).toContain("return true")
+    expect(typed).toContain('BOOLEAN')
+  })
 })

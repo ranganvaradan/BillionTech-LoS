@@ -5,19 +5,21 @@ import {
   previewPolicyRule,
 } from '@/api/creditIntelligence'
 import { ApiError } from '@/api/http'
-
-function asRecord(v: unknown): Record<string, unknown> {
-  return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {}
-}
-
-function asList(v: unknown): unknown[] {
-  return Array.isArray(v) ? v : []
-}
+import {
+  asList,
+  asRecord,
+  defaultOperator,
+  hasVisibleCanonicalValue,
+  operatorsForParam,
+  toCanonicalBuildValue,
+  valueControlOf,
+  type ValueControl,
+} from '@/lib/ux/ruleAuthoringTypedValue'
 
 type Path = 'menu' | 'build' | 'describe'
 
 /**
- * POLICY-RULE-AUTHORING-FIX-1 — Build Rule / Describe Rule with mandatory preview.
+ * POLICY-TYPED-RULE-AUTHORING-1 — Build / Describe / Edit with metadata-driven typed values.
  */
 export function CiRuleAuthoringPanel({
   documentId,
@@ -44,7 +46,9 @@ export function CiRuleAuthoringPanel({
   const [parameterId, setParameterId] = useState('')
   const [operator, setOperator] = useState('>=')
   const [value, setValue] = useState('')
-  const [period, setPeriod] = useState('')
+  const [durationUnit, setDurationUnit] = useState('Months')
+  const [valueMode, setValueMode] = useState<'FIXED' | 'PARAMETER'>('FIXED')
+  const [rightParameterId, setRightParameterId] = useState('')
   const [treatment, setTreatment] = useState('Reject')
   const [text, setText] = useState(initialText ?? '')
   const [preview, setPreview] = useState<Record<string, unknown> | null>(null)
@@ -62,8 +66,62 @@ export function CiRuleAuthoringPanel({
     () => asList(bySource[source]).map(asRecord),
     [bySource, source],
   )
+  const selectedParam = useMemo(
+    () => paramsForSource.find((p) => String(p.parameterId) === parameterId) ?? null,
+    [paramsForSource, parameterId],
+  )
+  const control: ValueControl = valueControlOf(selectedParam)
+  const operators = operatorsForParam(selectedParam, asRecord(sources?.operatorsByType))
   const treatments = asList(sources?.treatments).map(String)
-  const operators = asList(asRecord(sources?.operatorsByType).NUMBER).map(String)
+  const treatmentLabel = String(sources?.treatmentLabel ?? 'If rule fails')
+  const allowedValues = asList(selectedParam?.allowedValues).map(asRecord)
+  const durationUnits = asList(selectedParam?.durationUnits).map(String)
+  const showPeriod = Boolean(selectedParam?.showPeriod)
+  const supportsParamRef = Boolean(selectedParam?.supportsParameterReference)
+  const allParams = useMemo(() => {
+    const out: Record<string, unknown>[] = []
+    for (const s of sourceNames) {
+      for (const p of asList(bySource[s]).map(asRecord)) out.push(p)
+    }
+    return out
+  }, [bySource, sourceNames])
+
+  useEffect(() => {
+    if (!parameterId) return
+    setOperator(defaultOperator(control))
+    setValueMode('FIXED')
+    setRightParameterId('')
+    if (control === 'BOOLEAN') setValue('Yes')
+    else if (control === 'ENUM' && allowedValues[0]) setValue(String(allowedValues[0].value ?? ''))
+    else setValue('')
+    setPreview(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset when parameter/control changes
+  }, [parameterId, control])
+
+  const buildBody = (): Record<string, unknown> => {
+    if (valueMode === 'PARAMETER') {
+      return {
+        mode: 'BUILD',
+        parameterId,
+        operator,
+        valueMode: 'PARAMETER',
+        rightParameterId,
+        treatment,
+      }
+    }
+    return {
+      mode: 'BUILD',
+      parameterId,
+      operator,
+      value: toCanonicalBuildValue(control, value, durationUnit),
+      durationUnit: control === 'DURATION' ? durationUnit : undefined,
+      valueMode: 'FIXED',
+      treatment,
+    }
+  }
+
+  const canPreviewBuild = hasVisibleCanonicalValue(control, value, valueMode, rightParameterId)
+    && Boolean(parameterId)
 
   const runPreview = async () => {
     setBusy(true)
@@ -72,14 +130,7 @@ export function CiRuleAuthoringPanel({
     try {
       const body =
         path === 'build'
-          ? {
-              mode: 'BUILD',
-              parameterId,
-              operator,
-              value: value === '' ? null : Number(value),
-              period: period || undefined,
-              treatment,
-            }
+          ? buildBody()
           : {
               mode: 'DESCRIBE',
               text,
@@ -93,9 +144,18 @@ export function CiRuleAuthoringPanel({
         setFeedback(String(p.message ?? 'Ready to confirm'))
         if (p.parameterId) setParameterId(String(p.parameterId))
         if (p.operator) setOperator(String(p.operator))
-        if (p.value != null) setValue(String(p.value))
+        if (p.value != null && p.valueMode !== 'PARAMETER') {
+          const vc = String(p.valueControl ?? control)
+          if (vc === 'BOOLEAN') setValue(p.value === true || p.value === 'true' ? 'Yes' : 'No')
+          else setValue(String(p.value))
+        }
         if (p.treatment) setTreatment(String(p.treatment))
         if (p.source) setSource(String(p.source))
+        if (p.durationUnit) setDurationUnit(String(p.durationUnit))
+        if (p.rightParameterId) {
+          setValueMode('PARAMETER')
+          setRightParameterId(String(p.rightParameterId))
+        }
       } else {
         setFeedback(String(p.message ?? 'Incomplete'))
       }
@@ -119,10 +179,15 @@ export function CiRuleAuthoringPanel({
         text: path === 'describe' ? text : undefined,
         parameterId: parameterId || asRecord(preview).parameterId,
         operator: operator || asRecord(preview).operator,
-        value: value === '' ? asRecord(preview).value : Number(value),
-        period: period || undefined,
         treatment,
         ...(replaceRuleId ? { replaceRuleId } : {}),
+        ...(path === 'build' ? buildBody() : {}),
+      }
+      // Prefer preview canonical value when describe path filled it
+      if (path === 'describe' && asRecord(preview).value != null) {
+        body.value = asRecord(preview).value
+        body.parameterId = asRecord(preview).parameterId
+        body.operator = asRecord(preview).operator
       }
       const data = await addPlainEnglishPolicyRule(documentId, body)
       onSession(data as Record<string, unknown>)
@@ -201,7 +266,7 @@ export function CiRuleAuthoringPanel({
             rows={3}
             value={text}
             disabled={busy}
-            placeholder='e.g. Bureau score should be >= 650'
+            placeholder='e.g. PAN must be verified · Bureau score should be at least 650'
             onChange={(e) => setText(e.target.value)}
             data-testid="describe-rule-text"
           />
@@ -218,6 +283,7 @@ export function CiRuleAuthoringPanel({
                 setParameterId('')
               }}
               disabled={busy}
+              data-testid="build-source"
             >
               <option value="">Select source</option>
               {sourceNames.map((s) => (
@@ -246,12 +312,13 @@ export function CiRuleAuthoringPanel({
             </select>
           </label>
           <label className="block text-sm">
-            <span className="text-slate-600">Operator</span>
+            <span className="text-slate-600">Condition</span>
             <select
               className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
               value={operator}
               onChange={(e) => setOperator(e.target.value)}
               disabled={busy}
+              data-testid="build-operator"
             >
               {(operators.length ? operators : ['>', '>=', '<', '<=', '=']).map((o) => (
                 <option key={o} value={o}>
@@ -260,35 +327,184 @@ export function CiRuleAuthoringPanel({
               ))}
             </select>
           </label>
+
+          {supportsParamRef ? (
+            <label className="block text-sm">
+              <span className="text-slate-600">Value type</span>
+              <select
+                className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+                value={valueMode}
+                onChange={(e) => setValueMode(e.target.value as 'FIXED' | 'PARAMETER')}
+                disabled={busy}
+                data-testid="build-value-mode"
+              >
+                <option value="FIXED">Fixed value</option>
+                <option value="PARAMETER">Parameter</option>
+              </select>
+            </label>
+          ) : null}
+
+          {valueMode === 'PARAMETER' ? (
+            <label className="block text-sm sm:col-span-2">
+              <span className="text-slate-600">Right parameter</span>
+              <select
+                className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+                value={rightParameterId}
+                onChange={(e) => setRightParameterId(e.target.value)}
+                disabled={busy}
+                data-testid="build-right-parameter"
+              >
+                <option value="">Select parameter</option>
+                {allParams
+                  .filter((p) => String(p.parameterId) !== parameterId)
+                  .map((p) => (
+                    <option key={String(p.parameterId)} value={String(p.parameterId)}>
+                      {String(p.businessName)} · {String(p.source)}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          ) : control === 'BOOLEAN' ? (
+            <label className="block text-sm">
+              <span className="text-slate-600">Value</span>
+              <select
+                className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                disabled={busy}
+                data-testid="build-value"
+              >
+                <option value="Yes">Yes</option>
+                <option value="No">No</option>
+              </select>
+            </label>
+          ) : control === 'ENUM' ? (
+            <label className="block text-sm">
+              <span className="text-slate-600">Value</span>
+              <select
+                className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                disabled={busy}
+                data-testid="build-value"
+              >
+                <option value="">Select value</option>
+                {allowedValues.map((opt) => (
+                  <option key={String(opt.value)} value={String(opt.value)}>
+                    {String(opt.label ?? opt.value)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : control === 'DURATION' ? (
+            <>
+              <label className="block text-sm">
+                <span className="text-slate-600">Value</span>
+                <input
+                  type="number"
+                  className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+                  value={value}
+                  onChange={(e) => setValue(e.target.value)}
+                  disabled={busy}
+                  data-testid="build-value"
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="text-slate-600">Unit</span>
+                <select
+                  className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+                  value={durationUnit}
+                  onChange={(e) => setDurationUnit(e.target.value)}
+                  disabled={busy}
+                  data-testid="build-duration-unit"
+                >
+                  {(durationUnits.length ? durationUnits : ['Months', 'Years']).map((u) => (
+                    <option key={u} value={u}>
+                      {u}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </>
+          ) : control === 'PERCENTAGE' ? (
+            <label className="block text-sm">
+              <span className="text-slate-600">Value (%)</span>
+              <div className="mt-1 flex items-center gap-1">
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  className="w-full rounded border border-slate-300 px-3 py-2"
+                  value={value}
+                  onChange={(e) => setValue(e.target.value)}
+                  disabled={busy}
+                  data-testid="build-value"
+                />
+                <span className="text-slate-600">%</span>
+              </div>
+            </label>
+          ) : control === 'MONEY' ? (
+            <label className="block text-sm">
+              <span className="text-slate-600">Value (₹)</span>
+              <input
+                type="text"
+                inputMode="decimal"
+                className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+                value={value}
+                placeholder="e.g. 1000000 or 10,00,000"
+                onChange={(e) => setValue(e.target.value)}
+                disabled={busy}
+                data-testid="build-value"
+              />
+            </label>
+          ) : control === 'DATE' ? (
+            <label className="block text-sm">
+              <span className="text-slate-600">Value</span>
+              <input
+                type="date"
+                className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                disabled={busy}
+                data-testid="build-value"
+              />
+            </label>
+          ) : (
+            <label className="block text-sm">
+              <span className="text-slate-600">Value</span>
+              <input
+                type={control === 'INTEGER' || control === 'NUMBER' ? 'number' : 'text'}
+                className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                disabled={busy}
+                data-testid="build-value"
+              />
+            </label>
+          )}
+
+          {showPeriod ? (
+            <label className="block text-sm">
+              <span className="text-slate-600">Period</span>
+              <input
+                className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+                value={String(selectedParam?.period ?? '')}
+                readOnly
+                disabled
+              />
+            </label>
+          ) : null}
+
           <label className="block text-sm">
-            <span className="text-slate-600">Value</span>
-            <input
-              className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
-              value={value}
-              onChange={(e) => setValue(e.target.value)}
-              disabled={busy}
-              data-testid="build-value"
-            />
-          </label>
-          <label className="block text-sm">
-            <span className="text-slate-600">Period (optional)</span>
-            <input
-              className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
-              value={period}
-              onChange={(e) => setPeriod(e.target.value)}
-              disabled={busy}
-              placeholder="Not applicable"
-            />
-          </label>
-          <label className="block text-sm">
-            <span className="text-slate-600">Treatment</span>
+            <span className="text-slate-600">{treatmentLabel}</span>
             <select
               className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
               value={treatment}
               onChange={(e) => setTreatment(e.target.value)}
               disabled={busy}
+              data-testid="build-treatment"
             >
-              {(treatments.length ? treatments : ['Reject', 'Manual Review', 'Approve', 'Info']).map((t) => (
+              {(treatments.length ? treatments : ['Reject', 'Manual Review', 'Refer', 'Info']).map((t) => (
                 <option key={t} value={t}>
                   {t}
                 </option>
@@ -300,7 +516,7 @@ export function CiRuleAuthoringPanel({
 
       {path === 'describe' ? (
         <label className="block text-sm sm:w-60">
-          <span className="text-slate-600">Treatment</span>
+          <span className="text-slate-600">{treatmentLabel}</span>
           <select
             className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
             value={treatment}
@@ -320,7 +536,7 @@ export function CiRuleAuthoringPanel({
         <button
           type="button"
           className="bt-btn bt-btn-secondary bt-btn-sm"
-          disabled={busy || (path === 'describe' ? !text.trim() : !parameterId || value === '')}
+          disabled={busy || (path === 'describe' ? !text.trim() : !canPreviewBuild)}
           onClick={() => void runPreview()}
           data-testid="preview-rule"
         >
@@ -346,7 +562,13 @@ export function CiRuleAuthoringPanel({
       {preview ? (
         <div className="rounded border border-slate-200 bg-white px-3 py-2 text-sm" data-testid="rule-preview">
           <div className="font-medium text-slate-900">Preview</div>
-          <dl className="mt-1 grid gap-1 sm:grid-cols-2">
+          <p className="mt-1 font-semibold text-slate-900" data-testid="rule-preview-display">
+            {String(preview.ruleDisplay ?? `${preview.parameter ?? ''} ${preview.operator ?? ''} ${preview.valueDisplay ?? preview.value ?? ''}`)}
+          </p>
+          <p className="text-slate-700" data-testid="rule-preview-failure">
+            {String(preview.failureDisplay ?? `${treatmentLabel} → ${preview.treatment ?? treatment}`)}
+          </p>
+          <dl className="mt-2 grid gap-1 sm:grid-cols-2">
             <div>
               <dt className="text-xs text-slate-500">Evaluated from</dt>
               <dd>{String(preview.evaluatedFrom ?? preview.source ?? '—')}</dd>
@@ -356,23 +578,26 @@ export function CiRuleAuthoringPanel({
               <dd>{String(preview.parameter ?? '—')}</dd>
             </div>
             <div>
-              <dt className="text-xs text-slate-500">Rule</dt>
+              <dt className="text-xs text-slate-500">Condition</dt>
               <dd>
-                {String(preview.operator ?? '')} {String(preview.value ?? '')}
+                {String(preview.operator ?? '')}{' '}
+                {String(preview.valueDisplay ?? preview.value ?? preview.rightParameter ?? '')}
               </dd>
             </div>
             <div>
-              <dt className="text-xs text-slate-500">Treatment</dt>
+              <dt className="text-xs text-slate-500">{treatmentLabel}</dt>
               <dd>{String(preview.treatment ?? '—')}</dd>
             </div>
             <div>
               <dt className="text-xs text-slate-500">Availability</dt>
               <dd>{String(preview.availability ?? '—')}</dd>
             </div>
-            <div>
-              <dt className="text-xs text-slate-500">Period</dt>
-              <dd>{String(preview.period ?? 'Not applicable')}</dd>
-            </div>
+            {preview.showPeriod ? (
+              <div>
+                <dt className="text-xs text-slate-500">Period</dt>
+                <dd>{String(preview.period)}</dd>
+              </div>
+            ) : null}
           </dl>
           {asList(preview.candidates).length ? (
             <div className="mt-2">
