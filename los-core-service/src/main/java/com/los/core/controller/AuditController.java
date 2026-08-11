@@ -5,6 +5,7 @@ import com.los.core.model.entity.AuditEvent;
 import com.los.core.model.entity.EntityRecordAudit;
 import com.los.core.repository.ApiAuditLogRepository;
 import com.los.core.repository.AuditEventRepository;
+import com.los.core.security.StaffAccessGuard;
 import com.los.core.service.audit.AuditService;
 import com.los.core.service.audit.RecordAuditService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -29,11 +30,16 @@ public class AuditController {
     private final AuditEventRepository auditEventRepository;
     private final RecordAuditService recordAuditService;
     private final ApiAuditLogRepository apiAuditLogRepository;
+    private final StaffAccessGuard staffAccessGuard;
 
     @GetMapping("/{applicationId}")
     @Operation(summary = "Get audit trail for an application")
     public ResponseEntity<Page<AuditEvent>> getAuditTrail(
-            @PathVariable UUID applicationId, Pageable pageable) {
+            @PathVariable UUID applicationId,
+            Pageable pageable,
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
+            @RequestHeader(value = "X-User-Role", required = false) String userRole) {
+        staffAccessGuard.assertCanAccessApplication(userId, userRole, applicationId);
         return ResponseEntity.ok(auditService.getAuditTrail(applicationId, pageable));
     }
 
@@ -42,7 +48,10 @@ public class AuditController {
     public ResponseEntity<Page<AuditEvent>> listAdminAuditEvents(
             @RequestParam(required = false) UUID applicationId,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size) {
+            @RequestParam(defaultValue = "50") int size,
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
+            @RequestHeader(value = "X-User-Role", required = false) String userRole) {
+        staffAccessGuard.requireAdmin(userId, userRole);
         Pageable pageable = PageRequest.of(page, Math.min(size, 200), Sort.by(Sort.Direction.DESC, "createdAt"));
         if (applicationId != null) {
             return ResponseEntity.ok(auditEventRepository.findByApplicationIdOrderByCreatedAtDesc(applicationId, pageable));
@@ -57,7 +66,10 @@ public class AuditController {
             @RequestParam(required = false) String entityId,
             @RequestParam(required = false) UUID applicationId,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size) {
+            @RequestParam(defaultValue = "50") int size,
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
+            @RequestHeader(value = "X-User-Role", required = false) String userRole) {
+        staffAccessGuard.requireAdmin(userId, userRole);
         Pageable pageable = PageRequest.of(page, Math.min(size, 200), Sort.by(Sort.Direction.DESC, "createdAt"));
         return ResponseEntity.ok(recordAuditService.search(entityType, entityId, applicationId, pageable));
     }
@@ -68,7 +80,10 @@ public class AuditController {
             @RequestParam(required = false) UUID applicationId,
             @RequestParam(required = false) String provider,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size) {
+            @RequestParam(defaultValue = "50") int size,
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
+            @RequestHeader(value = "X-User-Role", required = false) String userRole) {
+        staffAccessGuard.requireAdmin(userId, userRole);
         Pageable pageable = PageRequest.of(page, Math.min(size, 200), Sort.by(Sort.Direction.DESC, "createdAt"));
         if (applicationId != null) {
             return ResponseEntity.ok(apiAuditLogRepository.findByApplicationIdOrderByCreatedAtDesc(applicationId, pageable));

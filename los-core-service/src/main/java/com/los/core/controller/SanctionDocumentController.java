@@ -6,6 +6,7 @@ import com.los.core.model.entity.LoanApplication;
 import com.los.core.model.entity.SanctionRecord;
 import com.los.core.repository.LoanApplicationRepository;
 import com.los.core.repository.SanctionRecordRepository;
+import com.los.core.security.StaffAccessGuard;
 import com.los.core.service.sanction.SanctionLetterPdfService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -15,6 +16,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -29,10 +31,15 @@ public class SanctionDocumentController {
     private final SanctionRecordRepository sanctionRecordRepository;
     private final LoanApplicationRepository loanApplicationRepository;
     private final SanctionLetterPdfService sanctionLetterPdfService;
+    private final StaffAccessGuard staffAccessGuard;
 
     @GetMapping
     @Operation(summary = "Get latest sanction record for the application")
-    public ResponseEntity<SanctionResponse> getLatest(@PathVariable UUID applicationId) {
+    public ResponseEntity<SanctionResponse> getLatest(
+            @PathVariable UUID applicationId,
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
+            @RequestHeader(value = "X-User-Role", required = false) String userRole) {
+        staffAccessGuard.assertCanAccessApplication(userId, userRole, applicationId);
         SanctionRecord r = sanctionRecordRepository.findTopByApplicationIdOrderByCreatedAtDesc(applicationId)
                 .orElseThrow(() -> new ResourceNotFoundException("No sanction found for this application"));
         return ResponseEntity.ok(toResponse(r));
@@ -40,7 +47,11 @@ public class SanctionDocumentController {
 
     @GetMapping(value = "/pdf", produces = MediaType.APPLICATION_PDF_VALUE)
     @Operation(summary = "Download sanction letter PDF (on demand)")
-    public ResponseEntity<byte[]> downloadPdf(@PathVariable UUID applicationId) {
+    public ResponseEntity<byte[]> downloadPdf(
+            @PathVariable UUID applicationId,
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
+            @RequestHeader(value = "X-User-Role", required = false) String userRole) {
+        staffAccessGuard.assertCanAccessApplication(userId, userRole, applicationId);
         LoanApplication app = loanApplicationRepository.findById(applicationId)
                 .orElseThrow(() -> new ResourceNotFoundException("Application not found"));
         SanctionRecord r = sanctionRecordRepository.findTopByApplicationIdOrderByCreatedAtDesc(applicationId)

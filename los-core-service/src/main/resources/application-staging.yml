@@ -88,3 +88,5 @@ credit-intelligence:
     min-real-or-stored-cases: 20
   # canonicalization families can stay false — staging demo uses validation harness stubs
   internal-token: ${CREDIT_INTELLIGENCE_INTERNAL_TOKEN:}
+  # Staging may soft-open when blank; production must require token
+  internal-token-required: false

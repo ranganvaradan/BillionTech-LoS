@@ -508,6 +508,8 @@ credit-intelligence:
     allow-canonical-authority: false
     min-real-or-stored-cases: 20
     evidence-weighting-enabled: true
-  # When non-blank, /api/v1/internal/credit-intelligence requires X-Internal-Token.
+  # When non-blank, /api/v1/internal/** requires X-Internal-Token.
   internal-token: ${CREDIT_INTELLIGENCE_INTERNAL_TOKEN:}
+  # Production must set true (see application-prod.yml). Blank token then fails closed.
+  internal-token-required: ${CREDIT_INTELLIGENCE_INTERNAL_TOKEN_REQUIRED:false}
   default-tenant-id: "00000000-0000-0000-0000-000000000001"

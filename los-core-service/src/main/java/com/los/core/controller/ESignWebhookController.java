@@ -1,6 +1,8 @@
 package com.los.core.controller;
 
+import com.los.core.security.StaffAccessGuard;
 import com.los.core.service.audit.AuditService;
+import com.los.core.service.demo.DemoModeService;
 import com.los.core.service.esign.EsignEmsignerCompletionService;
 import com.los.core.service.esign.EsignRequestTrackingService;
 import com.los.core.service.integration.IIntegrationRouterService;
@@ -8,6 +10,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -31,6 +34,8 @@ public class ESignWebhookController {
     private final AuditService auditService;
     private final EsignEmsignerCompletionService esignEmsignerCompletionService;
     private final EsignRequestTrackingService esignRequestTrackingService;
+    private final DemoModeService demoModeService;
+    private final StaffAccessGuard staffAccessGuard;
 
     @PostMapping("/webhook/kfs")
     @Operation(summary = "Webhook callback for KFS eSign completion")
@@ -95,7 +100,15 @@ public class ESignWebhookController {
 
     @PostMapping("/simulate-completion/{applicationId}")
     @Operation(summary = "Demo: treat embedded signing as complete, download + store PDF, advance application")
-    public ResponseEntity<Map<String, Object>> simulateEsignCompletion(@PathVariable UUID applicationId) {
+    public ResponseEntity<Map<String, Object>> simulateEsignCompletion(
+            @PathVariable UUID applicationId,
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
+            @RequestHeader(value = "X-User-Role", required = false) String userRole) {
+        if (!demoModeService.isDemoModeEnabled()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("message", DemoModeService.DEMO_MODE_DISABLED_MESSAGE, "success", false));
+        }
+        staffAccessGuard.requireAdmin(userId, userRole);
         try {
             Map<String, Object> r = esignEmsignerCompletionService.simulateCompletion(applicationId);
             boolean ok = Boolean.TRUE.equals(r.get("success"));
@@ -104,7 +117,7 @@ public class ESignWebhookController {
             return ResponseEntity.badRequest().body(Map.of(
                     "success", false,
                     "applicationId", applicationId.toString(),
-                    "message", ex.getMessage()));
+                    "message", "Simulation failed"));
         }
     }
 

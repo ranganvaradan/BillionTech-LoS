@@ -1179,8 +1179,13 @@ public class StagingDemoController {
     }
 
     private void assertInternalToken(String token) {
+        // Delegates to shared fail-closed/soft-open rules (filter also enforces).
+        // Soft-open only when credit-intelligence.internal-token-required=false and token blank.
         if (internalToken == null || internalToken.isBlank()) {
-            log.warn("credit-intelligence.internal-token blank — allowing staging-demo API (local/staging)");
+            if (properties.isInternalTokenRequired()) {
+                throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Internal token not configured");
+            }
+            log.warn("credit-intelligence.internal-token blank — allowing staging-demo API (token not required)");
             return;
         }
         if (token == null || !internalToken.equals(token)) {

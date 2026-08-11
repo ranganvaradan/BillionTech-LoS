@@ -2,6 +2,7 @@ los:
   security:
     local-dev-permit-all: false
     admin-api-require-role: true
+    enforce-production-hardening: true
   underwriting:
     provider-gap-defaults-enabled: false
   demo:
@@ -10,6 +11,20 @@ los:
     storage: local
   file-storage:
     root: /data/documents
+
+credit-intelligence:
+  staging-demo:
+    enabled: false
+  validation:
+    enabled: false
+  internal-token-required: true
+  # Token value MUST come from env CREDIT_INTELLIGENCE_INTERNAL_TOKEN (never commit secrets)
+  internal-token: ${CREDIT_INTELLIGENCE_INTERNAL_TOKEN:}
+  cutover:
+    enabled: false
+    dual-run-enabled: false
+    quarantine-enabled: false
+    allow-canonical-authority: false
 
 eureka:
   client:

@@ -5,6 +5,7 @@ import com.los.core.model.dto.response.DocumentResponse;
 import com.los.core.model.entity.Document;
 import com.los.core.model.enums.KycStepType;
 import com.los.core.repository.DocumentRepository;
+import com.los.core.security.StaffAccessGuard;
 import com.los.core.service.document.IDocumentService;
 import com.los.core.service.document.storage.DocumentBlobStore;
 import io.swagger.v3.oas.annotations.Operation;
@@ -33,6 +34,7 @@ public class DocumentController {
     private final IDocumentService documentService;
     private final DocumentRepository documentRepository;
     private final DocumentBlobStore documentBlobStore;
+    private final StaffAccessGuard staffAccessGuard;
 
     @PostMapping(value = "/{applicationId}/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @Operation(summary = "Upload a document for an application")
@@ -40,25 +42,34 @@ public class DocumentController {
             @PathVariable UUID applicationId,
             @RequestParam String documentType,
             @RequestParam(required = false) KycStepType kycStepType,
-            @RequestParam("file") MultipartFile file) {
+            @RequestParam("file") MultipartFile file,
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
+            @RequestHeader(value = "X-User-Role", required = false) String userRole) {
+        staffAccessGuard.assertCanAccessApplication(userId, userRole, applicationId);
         return ResponseEntity.ok(documentService.uploadDocument(applicationId, documentType, file, kycStepType));
     }
 
     @GetMapping("/{applicationId}")
     @Operation(summary = "List all documents for an application")
-    public ResponseEntity<List<DocumentResponse>> list(@PathVariable UUID applicationId) {
+    public ResponseEntity<List<DocumentResponse>> list(
+            @PathVariable UUID applicationId,
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
+            @RequestHeader(value = "X-User-Role", required = false) String userRole) {
+        staffAccessGuard.assertCanAccessApplication(userId, userRole, applicationId);
         return ResponseEntity.ok(documentService.getDocuments(applicationId));
     }
 
     @GetMapping("/download/{documentId}")
     @Operation(summary = "Download a document by ID")
-    public ResponseEntity<byte[]> download(@PathVariable UUID documentId) {
-        Document doc = documentRepository.findById(documentId)
-                .orElseThrow(() -> new ResourceNotFoundException("Document not found: " + documentId));
+    public ResponseEntity<byte[]> download(
+            @PathVariable UUID documentId,
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
+            @RequestHeader(value = "X-User-Role", required = false) String userRole) {
+        Document doc = loadAuthorized(documentId, userId, userRole);
         byte[] data = documentService.downloadDocument(documentId);
         MediaType mediaType = resolveMediaType(doc);
         ContentDisposition disposition = ContentDisposition.attachment()
-                .filename(doc.getFileName(), StandardCharsets.UTF_8)
+                .filename(safeFileName(doc), StandardCharsets.UTF_8)
                 .build();
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
@@ -68,18 +79,54 @@ public class DocumentController {
 
     @GetMapping("/content/{documentId}")
     @Operation(summary = "Preview document content by ID (inline)")
-    public ResponseEntity<byte[]> content(@PathVariable UUID documentId) {
-        Document doc = documentRepository.findById(documentId)
-                .orElseThrow(() -> new ResourceNotFoundException("Document not found: " + documentId));
+    public ResponseEntity<byte[]> content(
+            @PathVariable UUID documentId,
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
+            @RequestHeader(value = "X-User-Role", required = false) String userRole) {
+        Document doc = loadAuthorized(documentId, userId, userRole);
         byte[] data = documentService.downloadDocument(documentId);
         MediaType mediaType = resolveMediaType(doc);
         ContentDisposition disposition = ContentDisposition.inline()
-                .filename(doc.getFileName(), StandardCharsets.UTF_8)
+                .filename(safeFileName(doc), StandardCharsets.UTF_8)
                 .build();
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
                 .contentType(mediaType)
                 .body(data);
+    }
+
+    @DeleteMapping("/{documentId}")
+    @Operation(summary = "Delete a document")
+    public ResponseEntity<Void> delete(
+            @PathVariable UUID documentId,
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
+            @RequestHeader(value = "X-User-Role", required = false) String userRole) {
+        loadAuthorized(documentId, userId, userRole);
+        documentService.deleteDocument(documentId);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/{applicationId}/checklist")
+    @Operation(summary = "Check if document checklist is complete")
+    public ResponseEntity<Map<String, Object>> checklistStatus(
+            @PathVariable UUID applicationId,
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
+            @RequestHeader(value = "X-User-Role", required = false) String userRole) {
+        staffAccessGuard.assertCanAccessApplication(userId, userRole, applicationId);
+        boolean complete = documentService.isDocumentChecklistComplete(applicationId);
+        return ResponseEntity.ok(Map.of("applicationId", applicationId, "checklistComplete", complete));
+    }
+
+    private Document loadAuthorized(UUID documentId, String userId, String userRole) {
+        Document doc = documentRepository.findById(documentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Document not found"));
+        staffAccessGuard.assertCanAccessDocument(userId, userRole, doc);
+        return doc;
+    }
+
+    private static String safeFileName(Document doc) {
+        String name = doc.getFileName();
+        return (name == null || name.isBlank()) ? "document" : name;
     }
 
     private MediaType resolveMediaType(Document doc) {
@@ -109,19 +156,5 @@ public class DocumentController {
             }
         }
         return MediaType.APPLICATION_OCTET_STREAM;
-    }
-
-    @DeleteMapping("/{documentId}")
-    @Operation(summary = "Delete a document")
-    public ResponseEntity<Void> delete(@PathVariable UUID documentId) {
-        documentService.deleteDocument(documentId);
-        return ResponseEntity.noContent().build();
-    }
-
-    @GetMapping("/{applicationId}/checklist")
-    @Operation(summary = "Check if document checklist is complete")
-    public ResponseEntity<Map<String, Object>> checklistStatus(@PathVariable UUID applicationId) {
-        boolean complete = documentService.isDocumentChecklistComplete(applicationId);
-        return ResponseEntity.ok(Map.of("applicationId", applicationId, "checklistComplete", complete));
     }
 }

@@ -44,6 +44,11 @@ public class CreditIntelligenceProperties {
     private UUID defaultTenantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
     /** When non-blank, internal CI APIs require matching X-Internal-Token header. */
     private String internalToken = "";
+    /**
+     * When true, blank internal token fails closed (startup + every internal call).
+     * Must be true for production.
+     */
+    private boolean internalTokenRequired = false;
 
     @Data
     public static class Foundation {
