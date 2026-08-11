@@ -86,6 +86,9 @@ credit-intelligence:
     quarantine-enabled: true
     allow-canonical-authority: false
     min-real-or-stored-cases: 20
+  gacat:
+    require-database: true
+    allow-seed-fallback: false
   # canonicalization families can stay false — staging demo uses validation harness stubs
   internal-token: ${CREDIT_INTELLIGENCE_INTERNAL_TOKEN:}
   # Staging may soft-open when blank; production must require token

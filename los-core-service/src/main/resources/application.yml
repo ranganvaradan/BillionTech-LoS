@@ -508,6 +508,10 @@ credit-intelligence:
     allow-canonical-authority: false
     min-real-or-stored-cases: 20
     evidence-weighting-enabled: true
+  # GACAT-PERSISTENCE-1 — DB catalogue; seed fallback only for local/unit tests
+  gacat:
+    require-database: false
+    allow-seed-fallback: true
   # When non-blank, /api/v1/internal/** requires X-Internal-Token.
   internal-token: ${CREDIT_INTELLIGENCE_INTERNAL_TOKEN:}
   # Production must set true (see application-prod.yml). Blank token then fails closed.

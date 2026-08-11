@@ -123,7 +123,7 @@ export function DataParametersPage() {
     <div className="space-y-4" data-testid="data-parameters-page">
       <PageHeader
         title="Data & Parameters"
-        description="What the institution can know — CanonicalParameterRegistry read model (not a new catalogue)."
+        description="What the institution can know — CanonicalParameterRegistry (DB-backed catalogue, read-only admin)."
       />
       <AdministrationWorkspaceNav />
 
@@ -138,6 +138,8 @@ export function DataParametersPage() {
           {String(totals.derivedCount)} · Live {String(totals.productionReadyCount)} · Implemented{' '}
           {String(totals.implementedCount)}
           {overview?.inventoryVersion ? ` · ${String(overview.inventoryVersion)}` : ''}
+          {overview?.catalogueAuthority ? ` · authority=${String(overview.catalogueAuthority)}` : ''}
+          {overview?.adminWriteEnabled === false ? ' · read-only' : ''}
         </p>
       ) : null}
 
@@ -226,6 +228,7 @@ export function DataParametersPage() {
                   <div className="font-medium">{String(p.businessName)}</div>
                   <div className="text-xs text-slate-500">
                     {String(p.evaluatedFrom)} · {String(p.type)} · {String(p.id)}
+                    {p.definitionVersion != null ? ` · v${String(p.definitionVersion)}` : ''}
                   </div>
                   <div className="mt-1 text-[11px] text-slate-600">{statusBits(p)}</div>
                   {p.calculationSummary ? (

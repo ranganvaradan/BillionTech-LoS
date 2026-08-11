@@ -2,6 +2,8 @@ package com.los.core.service.readiness;
 
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterDefinition;
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterRegistry;
+import com.los.core.creditintelligence.policystudio.parameters.GacatCatalogueAuthority;
+import com.los.core.creditintelligence.policystudio.parameters.GacatCatalogueRepository;
 import com.los.core.creditintelligence.policystudio.parameters.PolicyStudioConvergencePresenter;
 import org.springframework.stereotype.Service;
 
@@ -12,10 +14,25 @@ import java.util.Map;
 
 /**
  * Administration → Data & Parameters (CanonicalParameterRegistry read model only).
- * GACAT-SOURCE-CATALOGUE-RECOVERY-1 — richer source counts + capability status.
+ * GACAT-PERSISTENCE-1 — DB-backed catalogue via registry abstraction (Admin remains read-only).
  */
 @Service
 public class DataParametersAdminService {
+
+    private final GacatCatalogueRepository catalogueRepository;
+
+    /** Unit-test convenience when JDBC catalogue is unavailable. */
+    public DataParametersAdminService() {
+        this(null);
+    }
+
+    public DataParametersAdminService(GacatCatalogueRepository catalogueRepository) {
+        this.catalogueRepository = catalogueRepository;
+    }
+
+    private boolean dbCataloguePresent() {
+        return catalogueRepository != null && catalogueRepository.tablesPresent();
+    }
 
     private CanonicalParameterRegistry registry() {
         return PolicyStudioConvergencePresenter.registry();
@@ -25,16 +42,23 @@ public class DataParametersAdminService {
         CanonicalParameterRegistry reg = registry();
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("title", "Data & Parameters");
-        out.put("subtitle", "What the institution can know — CanonicalParameterRegistry read model.");
+        out.put("subtitle", "What the institution can know — CanonicalParameterRegistry (DB-backed).");
         out.put("readModelOnly", true);
+        out.put("adminWriteEnabled", false);
         out.put("allowCanonicalAuthority", false);
-        out.put("inventoryVersion", "GACAT-SOURCE-CATALOGUE-RECOVERY-1");
+        out.put("inventoryVersion", reg.inventoryVersion());
+        out.put("catalogueAuthority", reg.authority());
+        out.put("javaSeedIsRuntimeAuthority",
+                GacatCatalogueAuthority.AUTHORITY_JAVA_SEED_TEST_ONLY.equals(reg.authority()));
         out.put("sources", reg.sources());
         out.put("catalogue", reg.catalogueView());
         out.put("bySourceSummary", bySourceSummary(reg));
         out.put("gapsManual", gapsManual(reg));
         out.put("workflowProvides", WorkflowParameterProvidesCatalog.catalogueView());
         out.put("totals", totals(reg));
+        if (dbCataloguePresent()) {
+            out.put("integrity", catalogueRepository.integrityReport());
+        }
         out.put("resolutionOrder", List.of(
                 "Application → Product dimensions",
                 "Workflow",
@@ -76,6 +100,8 @@ public class DataParametersAdminService {
     public Map<String, Object> parameterDetail(String id) {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("allowCanonicalAuthority", false);
+        out.put("catalogueAuthority", registry().authority());
+        out.put("adminWriteEnabled", false);
         registry().findById(id).ifPresentOrElse(def -> {
             out.put("parameter", enrich(def));
             out.put("found", true);
@@ -159,17 +185,35 @@ public class DataParametersAdminService {
     private Map<String, Object> enrich(CanonicalParameterDefinition d) {
         Map<String, Object> m = new LinkedHashMap<>(d.toBusinessView());
         m.put("lineage", lineage(d));
+        Map<String, Object> version = dbCataloguePresent()
+                ? catalogueRepository.parameterVersionView(d.id()) : Map.of();
+        if (!version.isEmpty()) {
+            m.put("definitionVersion", version.get("definitionVersion"));
+            m.put("effectiveFrom", version.get("effectiveFrom"));
+            m.put("version", version);
+        } else {
+            m.put("definitionVersion", 1);
+        }
+        if (dbCataloguePresent()) {
+            List<Map<String, String>> allowed = catalogueRepository.allowedValues(d.id());
+            if (!allowed.isEmpty()) {
+                m.put("allowedValues", allowed);
+            }
+        }
         Map<String, Object> advanced = new LinkedHashMap<>();
         advanced.put("existingImplementationBinding", d.existingImplementationBinding());
         advanced.put("liveRuleParameter", d.liveRuleParameter());
         advanced.put("liveScorecardParameter", d.liveScorecardParameter());
         advanced.put("id", d.id());
+        advanced.put("canonicalId", d.id());
+        advanced.put("definitionVersion", m.get("definitionVersion"));
         if (d.capability() != null) {
             advanced.put("providerFieldPath", d.capability().providerFieldPath());
             advanced.put("schema", d.capability().schema());
             advanced.put("cardinality", d.capability().cardinality());
         }
         m.put("advanced", advanced);
+        m.put("catalogueAuthority", registry().authority());
         return m;
     }
 
@@ -178,8 +222,17 @@ public class DataParametersAdminService {
         lin.put("type", d.type());
         lin.put("howCalculated", d.calculationSummary());
         lin.put("calculationSummary", d.calculationSummary());
-        lin.put("requiredPrimitives", d.requiredPrimitives() == null ? List.of() : d.requiredPrimitives());
-        lin.put("rawInputs", d.requiredPrimitives() == null ? List.of() : d.requiredPrimitives());
+        List<String> prims = d.requiredPrimitives() == null ? List.of() : d.requiredPrimitives();
+        if (dbCataloguePresent()) {
+            List<Map<String, Object>> persisted = catalogueRepository.lineageRows(d.id());
+            if (!persisted.isEmpty()) {
+                lin.put("persistedInputs", persisted);
+                prims = persisted.stream().map(r -> String.valueOf(r.get("input"))).toList();
+            }
+        }
+        lin.put("requiredPrimitives", prims);
+        lin.put("rawInputs", prims);
+        lin.put("inputs", prims);
         lin.put("period", d.period());
         lin.put("window", d.period());
         lin.put("unit", d.unit());

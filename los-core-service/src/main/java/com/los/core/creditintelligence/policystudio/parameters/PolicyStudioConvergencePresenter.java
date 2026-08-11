@@ -19,13 +19,13 @@ import java.util.Set;
  */
 public final class PolicyStudioConvergencePresenter {
 
-    private static final CanonicalParameterRegistry REGISTRY = new CanonicalParameterRegistry();
     private static final PolicyMetricLineageService LINEAGE = new PolicyMetricLineageService();
 
     private PolicyStudioConvergencePresenter() {}
 
+    /** GACAT-PERSISTENCE-1 — shared DB-backed registry() (seed only in unit-test fallback). */
     public static CanonicalParameterRegistry registry() {
-        return REGISTRY;
+        return CanonicalParameterRegistry.shared();
     }
 
     public static String evaluatedFrom(
@@ -166,7 +166,7 @@ public final class PolicyStudioConvergencePresenter {
         }
         if (dataUsed != null) {
             for (String path : dataUsed) {
-                var hit = REGISTRY.findById(path);
+                var hit = registry().findById(path);
                 if (hit.isPresent()) return hit.get().businessName();
             }
             if (!dataUsed.isEmpty()) {
@@ -255,7 +255,7 @@ public final class PolicyStudioConvergencePresenter {
             card.put("parameterName", "Overdue exception eligibility");
             if (cleanMap == null || CleanHistoryDefinitionSupport.STATUS_UNRESOLVED
                     .equals(String.valueOf(cleanMap.getOrDefault("status", STATUS_UNRESOLVED_FALLBACK)))) {
-                Map<String, Object> cleanPayload = CleanHistoryDefinitionSupport.unresolvedCardPayload(REGISTRY);
+                Map<String, Object> cleanPayload = CleanHistoryDefinitionSupport.unresolvedCardPayload(registry());
                 cleanPayload.put("useGenericResolver", true);
                 cleanPayload.put("headline", "Clean credit history — Not yet mapped");
                 card.put("cleanDefinition", cleanPayload);
@@ -286,7 +286,7 @@ public final class PolicyStudioConvergencePresenter {
         // Parameter binding from read model
         if (dataUsed != null) {
             for (String path : dataUsed) {
-                REGISTRY.findById(path).ifPresent(p ->
+                registry().findById(path).ifPresent(p ->
                         card.put("canonicalParameter", p.toBusinessView()));
             }
         }
@@ -321,7 +321,7 @@ public final class PolicyStudioConvergencePresenter {
                         .equals(String.valueOf(
                                 cleanMap == null ? STATUS_UNRESOLVED_FALLBACK
                                         : cleanMap.getOrDefault("status", STATUS_UNRESOLVED_FALLBACK))))) {
-                    Map<String, Object> cleanPayload = CleanHistoryDefinitionSupport.unresolvedCardPayload(REGISTRY);
+                    Map<String, Object> cleanPayload = CleanHistoryDefinitionSupport.unresolvedCardPayload(registry());
                     cleanPayload.put("useGenericResolver", true);
                     cleanPayload.put("headline", "Clean credit history — Not yet mapped");
                     card.put("cleanDefinition", cleanPayload);
@@ -372,7 +372,7 @@ public final class PolicyStudioConvergencePresenter {
 
     private static String friendlyPath(String path) {
         if (path == null) return "Parameter";
-        return REGISTRY.findById(path).map(CanonicalParameterDefinition::businessName)
+        return registry().findById(path).map(CanonicalParameterDefinition::businessName)
                 .orElse(path.replace("bureau.", "").replace("banking.", "").replace('_', ' '));
     }
 
@@ -405,7 +405,7 @@ public final class PolicyStudioConvergencePresenter {
         if (paramId != null) {
             card.put("parameterId", paramId);
             card.put("canonicalParameterId", paramId);
-            REGISTRY.findById(paramId).ifPresent(p -> {
+            registry().findById(paramId).ifPresent(p -> {
                 card.put("canonicalParameter", p.toBusinessView());
                 if (card.get("howCalculated") == null && p.calculationSummary() != null) {
                     Map<String, Object> how = new LinkedHashMap<>();
@@ -437,10 +437,10 @@ public final class PolicyStudioConvergencePresenter {
             }
         } else if (isReportOnlyClause(clauseText)) {
             card.put("itemKind", "REPORT_ANALYST_INFORMATION");
-        } else if (paramId != null && REGISTRY.findById(paramId).map(p ->
+        } else if (paramId != null && registry().findById(paramId).map(p ->
                 CanonicalParameterDefinition.DERIVED.equals(p.type())).orElse(false)) {
             card.put("itemKind", "DERIVED_PARAMETER");
-        } else if (paramId != null && REGISTRY.findById(paramId).map(p ->
+        } else if (paramId != null && registry().findById(paramId).map(p ->
                 CanonicalParameterDefinition.RAW.equals(p.type())).orElse(false)) {
             card.put("itemKind", "RAW_DATA_REQUIRED");
         } else {
@@ -481,7 +481,7 @@ public final class PolicyStudioConvergencePresenter {
             return "banking.inward_return.ratio_3m";
         }
         if (l.contains("emi bounce")) {
-            return "banking.emi_bounce_count_3m"; // may be unresolved in registry — frontend handles
+            return "banking.emi_bounce_count_3m"; // may be unresolved in registry() — frontend handles
         }
         if (l.contains("large credit")) {
             return "banking.large_credit_transactions";
@@ -495,8 +495,8 @@ public final class PolicyStudioConvergencePresenter {
         if (l.contains("loans disbursed") && !l.contains("removed from")) {
             return "bank.transaction.classification";
         }
-        // Prefer registry alias resolve for known phrases
-        return REGISTRY.resolve(clauseText.length() > 80 ? clauseText.substring(0, 80) : clauseText)
+        // Prefer registry() alias resolve for known phrases
+        return registry().resolve(clauseText.length() > 80 ? clauseText.substring(0, 80) : clauseText)
                 .map(CanonicalParameterDefinition::id)
                 .orElse(null);
     }

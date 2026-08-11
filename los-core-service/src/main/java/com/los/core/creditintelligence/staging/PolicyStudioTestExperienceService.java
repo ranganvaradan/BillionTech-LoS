@@ -53,7 +53,9 @@ public class PolicyStudioTestExperienceService {
     private final StagingProspectSimulationService prospectSimulationService;
     private final PolicyDslInterpreterV1 interpreter = new PolicyDslInterpreterV1();
     private final PolicyMetricLineageService lineageService = new PolicyMetricLineageService();
-    private final CanonicalParameterRegistry registry = RuleOperandPresenter.registry();
+    private CanonicalParameterRegistry registry() {
+        return RuleOperandPresenter.registry();
+    }
 
     /** Session-only recent tests (honest — not a new DB table). */
     private final ConcurrentHashMap<UUID, List<Map<String, Object>>> recentByDocument = new ConcurrentHashMap<>();
@@ -451,7 +453,7 @@ public class PolicyStudioTestExperienceService {
 
     private Map<String, Object> fromMetricPath(String path, Map<String, Object> meta) {
         Map<String, Object> p = new LinkedHashMap<>();
-        var defOpt = registry.findById(path);
+        var defOpt = registry().findById(path);
         String key = path.contains(".") ? path.substring(path.lastIndexOf('.') + 1) : path;
         // normalize known keys
         if (path.contains("proposed_edi")) key = "proposed_edi";

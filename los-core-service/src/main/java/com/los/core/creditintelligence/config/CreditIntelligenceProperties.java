@@ -41,6 +41,8 @@ public class CreditIntelligenceProperties {
     private Cutover cutover = new Cutover();
     /** Staging CEO review demo APIs — never production-authoritative. */
     private StagingDemo stagingDemo = new StagingDemo();
+    /** GACAT-PERSISTENCE-1 — DB-backed canonical parameter catalogue. */
+    private Gacat gacat = new Gacat();
     private UUID defaultTenantId = UUID.fromString("00000000-0000-0000-0000-000000000001");
     /** When non-blank, internal CI APIs require matching X-Internal-Token header. */
     private String internalToken = "";
@@ -282,5 +284,19 @@ public class CreditIntelligenceProperties {
     public static class StagingDemo {
         /** When true, expose /staging-demo CEO review APIs (isolated staging only). */
         private boolean enabled = false;
+    }
+
+    @Data
+    public static class Gacat {
+        /**
+         * When true, startup fails if catalogue cannot be loaded from DB.
+         * Staging/prod force this behaviour regardless; never silent Java-seed fallback.
+         */
+        private boolean requireDatabase = false;
+        /**
+         * Allow in-memory Java seed only for unit tests / local profiles when DB absent.
+         * Ignored when requireDatabase=true or staging/prod profiles are active.
+         */
+        private boolean allowSeedFallback = true;
     }
 }

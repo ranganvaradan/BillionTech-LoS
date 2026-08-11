@@ -31,8 +31,6 @@ import java.util.regex.Pattern;
 @Service
 public class CmRuleAuthoringService {
 
-    private static final CanonicalParameterRegistry REGISTRY = new CanonicalParameterRegistry();
-
     private static final Pattern NUM = Pattern.compile(
             "(>=|<=|>|<|=|at least|at most|not exceed|no more than|less than|greater than|more than)?\\s*"
                     + "(\\d+(?:\\.\\d+)?)\\s*(%|percent|months?|m)?",
@@ -40,7 +38,7 @@ public class CmRuleAuthoringService {
 
     public Map<String, Object> sources() {
         Map<String, List<Map<String, Object>>> bySource = new LinkedHashMap<>();
-        for (CanonicalParameterDefinition d : REGISTRY.all()) {
+        for (CanonicalParameterDefinition d : CanonicalParameterRegistry.shared().all()) {
             String src = d.evaluatedFrom() == null ? "Other" : d.evaluatedFrom();
             bySource.computeIfAbsent(src, k -> new ArrayList<>()).add(paramRow(d));
         }
@@ -112,7 +110,7 @@ public class CmRuleAuthoringService {
         }
         if (body.get("value") != null && !"PARAMETER".equalsIgnoreCase(draft.valueMode)) {
             var defOpt = draft.parameterId == null ? java.util.Optional.<CanonicalParameterDefinition>empty()
-                    : REGISTRY.findById(draft.parameterId);
+                    : CanonicalParameterRegistry.shared().findById(draft.parameterId);
             draft.value = AuthoringValueTypes.coerce(body.get("value"), defOpt.orElse(null), draft.durationUnit);
         }
         if (body.get("period") != null) draft.period = String.valueOf(body.get("period"));
@@ -284,7 +282,7 @@ public class CmRuleAuthoringService {
             d.missing.add("parameter");
             return d;
         }
-        var def = REGISTRY.findById(d.parameterId);
+        var def = CanonicalParameterRegistry.shared().findById(d.parameterId);
         if (def.isPresent()) {
             d.businessName = def.get().businessName();
             d.source = def.get().evaluatedFrom();
@@ -313,7 +311,7 @@ public class CmRuleAuthoringService {
                 d.missing.add("rightParameterId");
                 return d;
             }
-            var right = REGISTRY.findById(d.rightParameterId);
+            var right = CanonicalParameterRegistry.shared().findById(d.rightParameterId);
             if (right.isEmpty()) {
                 d.complete = false;
                 d.message = "Right-hand parameter not found in registry";
@@ -392,7 +390,7 @@ public class CmRuleAuthoringService {
         if (hits.isEmpty()) {
             // Known aliases not fully in registry
             if (lower.contains("vintage") || lower.contains("years in business")) {
-                REGISTRY.findById("application.business_vintage_months").ifPresentOrElse(def -> {
+                CanonicalParameterRegistry.shared().findById("application.business_vintage_months").ifPresentOrElse(def -> {
                     d.parameterId = def.id();
                     d.businessName = def.businessName();
                     d.source = def.evaluatedFrom();
@@ -426,7 +424,7 @@ public class CmRuleAuthoringService {
         }
 
         if (d.parameterId != null) {
-            REGISTRY.findById(d.parameterId).ifPresent(def -> {
+            CanonicalParameterRegistry.shared().findById(d.parameterId).ifPresent(def -> {
                 d.valueControl = AuthoringValueTypes.valueControl(def);
                 if (!AuthoringValueTypes.allowedValues(def.id()).isEmpty()) {
                     d.valueControl = AuthoringValueTypes.CONTROL_ENUM;
@@ -498,7 +496,7 @@ public class CmRuleAuthoringService {
         }
         if (d.value == null) {
             CanonicalParameterDefinition def = d.parameterId == null ? null
-                    : REGISTRY.findById(d.parameterId).orElse(null);
+                    : CanonicalParameterRegistry.shared().findById(d.parameterId).orElse(null);
             Object num = extractNumber(lower, null);
             if (num != null) {
                 String dur = lower.contains("year") ? "Years" : (lower.contains("month") ? "Months" : null);
@@ -531,43 +529,43 @@ public class CmRuleAuthoringService {
         // Priority phrase map
         if (lower.contains("bureau score") || lower.contains("cibil") || (lower.contains("score")
                 && (lower.contains("bureau") || lower.contains("credit score")))) {
-            REGISTRY.findById("bureau.score").ifPresent(hits::add);
+            CanonicalParameterRegistry.shared().findById("bureau.score").ifPresent(hits::add);
             return hits;
         }
         if (lower.contains("foir") || lower.contains("obligation ratio") || lower.contains("dti")) {
-            REGISTRY.findById("obligation.ratio").ifPresent(hits::add);
+            CanonicalParameterRegistry.shared().findById("obligation.ratio").ifPresent(hits::add);
             return hits;
         }
         if (lower.contains("bounce") || lower.contains("cheque return") || lower.contains("ecs return")) {
-            REGISTRY.findById("banking.cheque_return_count_3m").ifPresent(hits::add);
+            CanonicalParameterRegistry.shared().findById("banking.cheque_return_count_3m").ifPresent(hits::add);
             return hits;
         }
         if (lower.contains("average daily balance") || lower.contains("adb")) {
-            REGISTRY.findById("banking.avg_daily_balance_3m").ifPresent(hits::add);
+            CanonicalParameterRegistry.shared().findById("banking.avg_daily_balance_3m").ifPresent(hits::add);
             return hits;
         }
         if (lower.contains("proposed edi") || (lower.contains("edi") && !lower.contains("credit"))) {
-            REGISTRY.findById("application.proposed_edi").ifPresent(hits::add);
+            CanonicalParameterRegistry.shared().findById("application.proposed_edi").ifPresent(hits::add);
             return hits;
         }
         if (lower.contains("pan") && (lower.contains("verif") || lower.contains("must be"))) {
-            REGISTRY.findById("kyc.pan.verified").ifPresent(hits::add);
+            CanonicalParameterRegistry.shared().findById("kyc.pan.verified").ifPresent(hits::add);
             return hits;
         }
         if (lower.contains("borrower type") || lower.contains("entity type")) {
-            REGISTRY.findById("application.borrower_type").ifPresent(hits::add);
+            CanonicalParameterRegistry.shared().findById("application.borrower_type").ifPresent(hits::add);
             return hits;
         }
         if (lower.contains("requested amount") || lower.contains("loan amount")) {
-            REGISTRY.findById("application.requested_amount").ifPresent(hits::add);
+            CanonicalParameterRegistry.shared().findById("application.requested_amount").ifPresent(hits::add);
             return hits;
         }
         if (lower.contains("vintage") || lower.contains("years in business")) {
-            REGISTRY.findById("application.business_vintage_months").ifPresent(hits::add);
+            CanonicalParameterRegistry.shared().findById("application.business_vintage_months").ifPresent(hits::add);
             return hits;
         }
         // Alias search across registry
-        for (CanonicalParameterDefinition def : REGISTRY.all()) {
+        for (CanonicalParameterDefinition def : CanonicalParameterRegistry.shared().all()) {
             String name = def.businessName() == null ? "" : def.businessName().toLowerCase(Locale.ROOT);
             if (!name.isBlank() && lower.contains(name)) {
                 hits.add(def);

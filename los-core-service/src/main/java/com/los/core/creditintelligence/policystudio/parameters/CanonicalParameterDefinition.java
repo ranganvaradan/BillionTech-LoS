@@ -5,8 +5,9 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Unified parameter read-model entry (POLICY-CONVERGENCE / GACAT-SOURCE-CATALOGUE-RECOVERY-1).
- * Does not persist; does not create a new engine or catalogue DB.
+ * Unified parameter read-model entry (POLICY-CONVERGENCE / GACAT-PERSISTENCE-1).
+ * Persisted in ci_gacat_* tables; this record remains the in-memory face for consumers.
+ * Does not create a new engine.
  */
 public record CanonicalParameterDefinition(
         String id,

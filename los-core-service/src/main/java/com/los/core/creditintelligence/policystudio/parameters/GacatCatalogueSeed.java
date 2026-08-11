@@ -9,9 +9,11 @@ import static com.los.core.creditintelligence.policystudio.parameters.CanonicalP
 import static com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterDefinition.RAW;
 
 /**
- * GACAT-SOURCE-CATALOGUE-RECOVERY-1 — recovered source inventory seed for CanonicalParameterRegistry.
- * Evidence: Equifax extractor + CiBureauTradeline, SurePass commercial fixture, BSA/GST/ITR fixtures,
- * KycFactCatalog, GstMetricService, BureauMetricService, PolicyBureauMetricService, banking docs.
+ * GACAT-SOURCE-CATALOGUE-RECOVERY-1 / GACAT-PERSISTENCE-1.
+ * <p>
+ * Migration/bootstrap inventory only — Flyway V113 imports this once into DB.
+ * Production runtime authority is the database via {@link CanonicalParameterRegistry#shared()}.
+ * Do not use as a silent production fallback.
  * Inclusion ≠ production-ready.
  */
 final class GacatCatalogueSeed {

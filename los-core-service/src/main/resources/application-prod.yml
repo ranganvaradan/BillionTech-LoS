@@ -25,6 +25,9 @@ credit-intelligence:
     dual-run-enabled: false
     quarantine-enabled: false
     allow-canonical-authority: false
+  gacat:
+    require-database: true
+    allow-seed-fallback: false
 
 eureka:
   client:

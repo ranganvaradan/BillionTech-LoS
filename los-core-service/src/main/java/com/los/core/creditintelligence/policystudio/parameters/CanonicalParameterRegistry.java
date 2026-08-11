@@ -6,18 +6,82 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Unified READ MODEL facade (POLICY-CONVERGENCE / GACAT-SOURCE-CATALOGUE-RECOVERY-1).
- * Search order for ingestion: exact → alias → derived → capability → live rule/scorecard.
- * Seeded from {@link GacatCatalogueSeed} — not a second registry/engine.
+ * Unified READ MODEL facade (POLICY-CONVERGENCE / GACAT-PERSISTENCE-1).
+ * Application-facing abstraction for all consumers — backed by DB in runtime,
+ * optionally by {@link GacatCatalogueSeed} for unit tests only.
  */
 public class CanonicalParameterRegistry {
 
-    private final List<CanonicalParameterDefinition> all;
+    private static final AtomicReference<CanonicalParameterRegistry> INSTALLED = new AtomicReference<>();
 
+    private final List<CanonicalParameterDefinition> all;
+    private final String authority;
+    private final String inventoryVersion;
+
+    /** Unit-test convenience — loads Java seed. Not used as production runtime authority. */
     public CanonicalParameterRegistry() {
-        this.all = List.copyOf(GacatCatalogueSeed.all());
+        this(GacatCatalogueSeed.all(), GacatCatalogueAuthority.AUTHORITY_JAVA_SEED_TEST_ONLY);
+    }
+
+    public CanonicalParameterRegistry(List<CanonicalParameterDefinition> definitions) {
+        this(definitions, GacatCatalogueAuthority.AUTHORITY_DATABASE);
+    }
+
+    public CanonicalParameterRegistry(List<CanonicalParameterDefinition> definitions, String authority) {
+        this.all = List.copyOf(definitions == null ? List.of() : definitions);
+        this.authority = authority == null ? GacatCatalogueAuthority.AUTHORITY_UNLOADED : authority;
+        this.inventoryVersion = GacatCatalogueAuthority.AUTHORITY_DATABASE.equals(this.authority)
+                ? "GACAT-PERSISTENCE-1"
+                : "GACAT-SOURCE-CATALOGUE-RECOVERY-1";
+    }
+
+    public static CanonicalParameterRegistry fromSeedForTestsOnly() {
+        return new CanonicalParameterRegistry(
+                GacatCatalogueSeed.all(), GacatCatalogueAuthority.AUTHORITY_JAVA_SEED_TEST_ONLY);
+    }
+
+    public static void install(CanonicalParameterRegistry registry, String authority) {
+        if (registry == null) {
+            throw new IllegalArgumentException("registry");
+        }
+        INSTALLED.set(registry);
+        GacatCatalogueAuthority.markAuthority(authority);
+    }
+
+    public static void clearInstalledForTests() {
+        INSTALLED.set(null);
+        GacatCatalogueAuthority.markAuthority(GacatCatalogueAuthority.AUTHORITY_UNLOADED);
+        GacatCatalogueAuthority.configure(false, true);
+    }
+
+    /**
+     * Shared registry for presenters/services. Prefers Spring-installed DB snapshot.
+     * Falls back to Java seed only when {@link GacatCatalogueAuthority#seedFallbackAllowed()}.
+     */
+    public static CanonicalParameterRegistry shared() {
+        CanonicalParameterRegistry installed = INSTALLED.get();
+        if (installed != null) {
+            return installed;
+        }
+        if (GacatCatalogueAuthority.requireDatabase()) {
+            throw new IllegalStateException(
+                    "GACAT catalogue not loaded from database (silent Java-seed fallback forbidden)");
+        }
+        if (!GacatCatalogueAuthority.seedFallbackAllowed()) {
+            throw new IllegalStateException("GACAT catalogue unloaded and seed fallback disabled");
+        }
+        return fromSeedForTestsOnly();
+    }
+
+    public String authority() {
+        return authority;
+    }
+
+    public String inventoryVersion() {
+        return inventoryVersion;
     }
 
     public List<CanonicalParameterDefinition> all() {
@@ -92,7 +156,10 @@ public class CanonicalParameterRegistry {
         out.put("sources", sources());
         out.put("readModelOnly", true);
         out.put("allowCanonicalAuthority", false);
-        out.put("inventoryVersion", "GACAT-SOURCE-CATALOGUE-RECOVERY-1");
+        out.put("inventoryVersion", inventoryVersion);
+        out.put("catalogueAuthority", authority);
+        out.put("javaSeedIsRuntimeAuthority",
+                GacatCatalogueAuthority.AUTHORITY_JAVA_SEED_TEST_ONLY.equals(authority));
         return out;
     }
 
@@ -148,6 +215,7 @@ public class CanonicalParameterRegistry {
         out.put("liveCount", live);
         out.put("invented", false);
         out.put("allowCanonicalAuthority", false);
+        out.put("catalogueAuthority", authority);
         return out;
     }
 
@@ -176,6 +244,7 @@ public class CanonicalParameterRegistry {
         out.put("results", new ArrayList<>(dedup.values()));
         out.put("createsParameter", false);
         out.put("allowCanonicalAuthority", false);
+        out.put("catalogueAuthority", authority);
         return out;
     }
 
@@ -185,7 +254,6 @@ public class CanonicalParameterRegistry {
         String sel = selected.trim().toLowerCase(Locale.ROOT);
         String from = evaluatedFrom.toLowerCase(Locale.ROOT);
         if (from.equals(sel) || from.contains(sel) || sel.contains(from)) return true;
-        // Legacy "Bureau" → both retail and commercial
         if ("bureau".equals(sel) && from.contains("bureau")) return true;
         return false;
     }

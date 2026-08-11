@@ -15,12 +15,10 @@ import java.util.Set;
  */
 public final class RuleOperandPresenter {
 
-    private static final CanonicalParameterRegistry REGISTRY = new CanonicalParameterRegistry();
-
     private RuleOperandPresenter() {}
 
     public static CanonicalParameterRegistry registry() {
-        return REGISTRY;
+        return CanonicalParameterRegistry.shared();
     }
 
     /**
@@ -110,7 +108,7 @@ public final class RuleOperandPresenter {
                 continue; // never attach EDI from contaminated hints
             }
             if (seenParams.contains(path)) continue;
-            REGISTRY.findById(path).ifPresent(def -> {
+            registry().findById(path).ifPresent(def -> {
                 String key = operandKeyFor(path);
                 if (seenKeys.contains(key)) return;
                 seenKeys.add(key);
@@ -182,7 +180,7 @@ public final class RuleOperandPresenter {
         if (ParameterResolutionSupport.isResolved(stored)) {
             return faceFromResolution(key, label, stored);
         }
-        return REGISTRY.findById(registryId)
+        return registry().findById(registryId)
                 .map(def -> faceFromDefinition(key, label, def, true))
                 .orElseGet(() -> unresolvedFace(key, label));
     }
@@ -204,7 +202,7 @@ public final class RuleOperandPresenter {
             return face;
         }
         Map<String, Object> face = unresolvedFace(key, label);
-        REGISTRY.findById(registryHintId).ifPresent(hint ->
+        registry().findById(registryHintId).ifPresent(hint ->
                 face.put("suggestedParameterId", hint.id()));
         return face;
     }
