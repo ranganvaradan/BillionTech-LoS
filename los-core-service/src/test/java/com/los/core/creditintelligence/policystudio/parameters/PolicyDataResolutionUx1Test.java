@@ -60,15 +60,41 @@ class PolicyDataResolutionUx1Test {
     }
 
     @Test
-    void emiBounce_cannotBecomeReady() {
+    void emiBounce_saveWithBinding_becomesReady() {
         Map<String, Object> res = PolicyDataResolutionSupport.calculationConfiguration(
-                "banking.emi_bounce_count_3m", "cm", "doc-1");
-        assertThat(res.get("executionStatus")).isEqualTo(PolicyDataResolutionSupport.EXEC_NEEDS_CONFIG);
+                "banking.emi_bounce_count_3m", "cm", "doc-1", Map.of(
+                        "periodMonths", 3,
+                        "emiIdentification", "EXISTING_EMI_CLASSIFIER",
+                        "bounceIdentification", "EXISTING_BOUNCE_RETURN_CLASSIFIER",
+                        "confirmExecutable", true));
+        assertThat(res.get("executionStatus")).isEqualTo(PolicyDataResolutionSupport.EXEC_READY);
+        assertThat(res.get("cmStatus")).isEqualTo("READY");
+        assertThat(res.get("executionCapabilityAvailable")).isEqualTo(true);
+        assertThat(res.get("gacatMutated")).isEqualTo(false);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> def = (Map<String, Object>) res.get("definition");
+        assertThat(def.get("executableMetric")).isEqualTo(true);
+        assertThat(def.get("binding")).isEqualTo("EmiBounceCountCalculator.V1");
+        assertThat(def.get("periodMonths")).isEqualTo(3);
+    }
+
+    @Test
+    void emiBounce_designProposalOnly_staysNeedsConfiguration() {
+        Map<String, Object> res = PolicyDataResolutionSupport.calculationConfiguration(
+                "banking.emi_bounce_count_3m", "cm", "doc-1", Map.of("confirmExecutable", false));
         assertThat(res.get("cmStatus")).isEqualTo("NEEDS_CONFIGURATION");
         @SuppressWarnings("unchecked")
         Map<String, Object> def = (Map<String, Object>) res.get("definition");
         assertThat(def.get("executableMetric")).isEqualTo(false);
+    }
+
+    @Test
+    void unknownCalculation_cannotBecomeReady() {
+        Map<String, Object> res = PolicyDataResolutionSupport.calculationConfiguration(
+                "banking.unknown_metric_xyz", "cm", "doc-1");
+        assertThat(res.get("cmStatus")).isEqualTo("NEEDS_CONFIGURATION");
         assertThat(res.get("executionCapabilityAvailable")).isEqualTo(false);
+        assertThat(String.valueOf(res.get("displayStatus"))).containsIgnoringCase("IMPLEMENTATION");
     }
 
     @Test

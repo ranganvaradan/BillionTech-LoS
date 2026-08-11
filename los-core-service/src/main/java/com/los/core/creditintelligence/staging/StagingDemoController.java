@@ -453,6 +453,21 @@ public class StagingDemoController {
         }
     }
 
+    /**
+     * POLICY-DATA-CALC-FUNCTIONAL-COMPLETION-1 — preview EMI Bounce Count (same calculator as Policy Test).
+     */
+    @PostMapping("/policy-studio/documents/{documentId}/data-calculations/preview")
+    public Map<String, Object> previewDataCalculation(
+            @PathVariable UUID documentId,
+            @RequestBody(required = false) Map<String, Object> body,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token,
+            @RequestHeader(value = "X-Tenant-Id", required = false) String tenantHeader) {
+        assertInternalToken(token);
+        assertStagingDemoEnabled();
+        return policyStudioDemoService.previewDataCalculation(
+                documentId, body == null ? Map.of() : body, tenantHeader);
+    }
+
     /** POLICY-RULE-AUTHORING-FIX-1 — source/parameter picker for CM rule authoring. */
     @GetMapping("/policy-studio/rule-authoring/sources")
     public Map<String, Object> ruleAuthoringSources(

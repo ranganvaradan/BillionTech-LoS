@@ -89,6 +89,19 @@ public class PolicyMetricLineageService {
                     "CHEQUE_RETURN",
                     "banking.inward_cheque_return_count_3m");
         }
+        if (lower.contains("emi_bounce") || lower.contains("emi bounce")) {
+            return PolicyMetricLineage.of(
+                    "banking.emi_bounce_count_3m",
+                    "EMI bounce count",
+                    "Bank statement",
+                    AVAILABLE_AUTOMATICALLY,
+                    "Count EMI repayment events with matched return/bounce events "
+                            + "(existing EMI + bounce/return classifiers) via EmiBounceCountCalculator.V1",
+                    "Last 3 months",
+                    "Missing bank data / insufficient classification → DATA_INSUFFICIENT (never invent 0)",
+                    "EMI + NACH_RETURN/CHEQUE_RETURN",
+                    "banking.emi_bounce_count_3m");
+        }
         if (lower.contains("cheque_return") || lower.contains("cheque_bounce")) {
             return PolicyMetricLineage.of(
                     "banking.cheque_return_count_3m",

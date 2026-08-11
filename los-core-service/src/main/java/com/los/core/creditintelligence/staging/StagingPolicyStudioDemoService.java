@@ -919,6 +919,73 @@ public class StagingPolicyStudioDemoService {
     }
 
     /**
+     * POLICY-DATA-CALC-FUNCTIONAL-COMPLETION-1 — preview EMI Bounce Count on staging fixture / supplied txns.
+     * Uses the same calculator Policy Test / runtime binding uses.
+     */
+    public Map<String, Object> previewDataCalculation(
+            UUID documentId, Map<String, Object> body, String tenantHeader) {
+        PolicyStudioSession session = requireSession(documentId, tenantHeader);
+        String dataItemId = body == null ? "" : String.valueOf(body.getOrDefault("dataItemId",
+                body.getOrDefault("parameterId", "banking.emi_bounce_count_3m")));
+        var cfg = com.los.core.creditintelligence.policystudio.metrics.EmiBounceCountCalculator.Config
+                .fromBody(body == null ? Map.of() : body);
+        List<com.los.core.creditintelligence.policystudio.metrics.EmiBounceCountCalculator.Txn> txns =
+                com.los.core.creditintelligence.policystudio.metrics.EmiBounceCountCalculator.stagingFixture();
+        // Optional override from body.transactions for advanced callers
+        if (body != null && body.get("transactions") instanceof List<?> rawList) {
+            List<com.los.core.creditintelligence.policystudio.metrics.EmiBounceCountCalculator.Txn> parsed =
+                    new ArrayList<>();
+            for (Object o : rawList) {
+                if (!(o instanceof Map<?, ?> m)) continue;
+                try {
+                    parsed.add(new com.los.core.creditintelligence.policystudio.metrics
+                            .EmiBounceCountCalculator.Txn(
+                            java.time.LocalDate.parse(String.valueOf(m.get("date"))),
+                            m.get("narration") == null ? null : String.valueOf(m.get("narration")),
+                            m.get("direction") == null ? "DEBIT" : String.valueOf(m.get("direction")),
+                            m.get("amount") == null ? null : new BigDecimal(String.valueOf(m.get("amount"))),
+                            m.get("category") == null ? null : String.valueOf(m.get("category")),
+                            Boolean.parseBoolean(String.valueOf(
+                                    m.get("classified") == null ? Boolean.TRUE : m.get("classified"))),
+                            Boolean.parseBoolean(String.valueOf(
+                                    m.get("emiFlag") == null ? Boolean.FALSE : m.get("emiFlag"))),
+                            Boolean.parseBoolean(String.valueOf(
+                                    m.get("bounceFlag") == null ? Boolean.FALSE : m.get("bounceFlag"))),
+                            Boolean.parseBoolean(String.valueOf(
+                                    m.get("returnFlag") == null ? Boolean.FALSE : m.get("returnFlag"))),
+                            m.get("duplicateStatus") == null ? null : String.valueOf(m.get("duplicateStatus"))));
+                } catch (Exception ignored) {
+                    // skip malformed row
+                }
+            }
+            if (!parsed.isEmpty()) txns = parsed;
+        }
+        java.time.LocalDate asOf = java.time.LocalDate.of(2026, 8, 1);
+        if (body != null && body.get("asOf") != null) {
+            try {
+                asOf = java.time.LocalDate.parse(String.valueOf(body.get("asOf")));
+            } catch (Exception ignored) {
+                // keep fixture asOf
+            }
+        }
+        Map<String, Object> result = com.los.core.creditintelligence.policystudio.metrics
+                .EmiBounceCountCalculator.evaluate(txns, cfg, asOf);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("documentId", documentId.toString());
+        out.put("dataItemId", dataItemId);
+        out.put("policyName", session.getDocument() == null ? null : session.getDocument().getName());
+        out.put("preview", result);
+        out.put("fixture", body == null || !(body.get("transactions") instanceof List<?>));
+        out.put("binding", com.los.core.creditintelligence.policystudio.metrics
+                .EmiBounceCountCalculator.BINDING);
+        out.put("samePathAsPolicyTest", true);
+        out.put("allowCanonicalAuthority", false);
+        out.put("gacatMutated", false);
+        out.put("message", "Preview uses EmiBounceCountCalculator.V1 — same path as Policy Test overlays");
+        return out;
+    }
+
+    /**
      * POLICY-DATA-RESOLUTION-UX-1 — persist typed Data & Calculations definition on policy document.
      * Does not mutate GACAT. Does not invent executable metrics.
      */
@@ -960,7 +1027,8 @@ public class StagingPolicyStudioDemoService {
                                 body.get("notes") == null ? null : String.valueOf(body.get("notes")),
                                 actor, documentId);
                 case "RESOLVE_DATA_CALCULATION" -> com.los.core.creditintelligence.policystudio.parameters
-                        .PolicyDataResolutionSupport.calculationConfiguration(dataItemId, actor, documentId);
+                        .PolicyDataResolutionSupport.calculationConfiguration(
+                                dataItemId, actor, documentId, body == null ? Map.of() : body);
                 case "RESOLVE_DATA_ADJUSTMENT" -> {
                     java.math.BigDecimal mult = body.get("multiple") == null
                             ? new java.math.BigDecimal("10")

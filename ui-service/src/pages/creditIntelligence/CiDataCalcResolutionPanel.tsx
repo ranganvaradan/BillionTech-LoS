@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { ReviewRuleBody } from '@/api/creditIntelligence'
-import { proposeParameterDefinition } from '@/api/creditIntelligence'
+import { previewDataCalculation, proposeParameterDefinition } from '@/api/creditIntelligence'
 
 function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {}
@@ -29,7 +29,8 @@ export type DataCalcResolveKind =
   | 'MANUAL'
 
 /**
- * POLICY-DATA-RESOLUTION-UX-1 — typed Resolve/Define forms for Data & Calculations.
+ * POLICY-DATA-RESOLUTION-UX-1 / POLICY-DATA-CALC-FUNCTIONAL-COMPLETION-1 —
+ * typed Resolve/Define/Configure forms for Data & Calculations.
  * Policy-scoped only. Does not mutate GACAT.
  */
 export function CiDataCalcResolutionPanel({
@@ -39,6 +40,7 @@ export function CiDataCalcResolutionPanel({
   parameterId,
   title,
   ruleId,
+  documentId,
   busy,
   onResolve,
 }: {
@@ -48,6 +50,7 @@ export function CiDataCalcResolutionPanel({
   parameterId: string
   title: string
   ruleId: string
+  documentId?: string | null
   busy: boolean
   onResolve: (ruleId: string, body: ReviewRuleBody) => Promise<void>
 }) {
@@ -63,6 +66,16 @@ export function CiDataCalcResolutionPanel({
   const [proposal, setProposal] = useState<Record<string, unknown> | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [proposing, setProposing] = useState(false)
+  const [periodMonths, setPeriodMonths] = useState('3')
+  const [emiIdentification, setEmiIdentification] = useState('EXISTING_EMI_CLASSIFIER')
+  const [bounceIdentification, setBounceIdentification] = useState('EXISTING_BOUNCE_RETURN_CLASSIFIER')
+  const [excludeDuplicates, setExcludeDuplicates] = useState(true)
+  const [showAdvanced, setShowAdvanced] = useState(false)
+  const [previewBusy, setPreviewBusy] = useState(false)
+  const [preview, setPreview] = useState<Record<string, unknown> | null>(null)
+
+  const isEmiBounce =
+    parameterId === 'banking.emi_bounce_count_3m' || title.toLowerCase().includes('emi bounce')
 
   const heading = useMemo(() => {
     switch (kind) {
@@ -110,11 +123,23 @@ export function CiDataCalcResolutionPanel({
           reason: 'Intercompany / merchant-group definition (policy draft)',
         })
       } else if (kind === 'CALCULATION') {
+        if (!isEmiBounce) {
+          setError(
+            'No executable calculation binding exists for this item yet. Use Keep as policy requirement or Ignore for automation instead of Save.',
+          )
+          return
+        }
         await onResolve(ruleId, {
           uiAction: 'RESOLVE_DATA_CALCULATION',
           dataItemId: parameterId,
           parameterId,
-          reason: 'EMI bounce calculation configuration recorded — not production-ready',
+          periodMonths: Number(periodMonths) || 3,
+          emiIdentification,
+          bounceIdentification,
+          excludeDuplicates,
+          confirmExecutable: true,
+          saveMode: 'SAVE_EXECUTABLE',
+          reason: `EMI Bounce Count configured — ${periodMonths}m · ${emiIdentification} + ${bounceIdentification}`,
         })
       } else if (kind === 'ADJUSTMENT') {
         await onResolve(ruleId, {
@@ -142,6 +167,30 @@ export function CiDataCalcResolutionPanel({
     }
   }
 
+  const runPreview = async () => {
+    if (!documentId) {
+      setError('Open a policy document to run calculation preview')
+      return
+    }
+    setPreviewBusy(true)
+    setError(null)
+    try {
+      const res = await previewDataCalculation(documentId, {
+        dataItemId: parameterId || 'banking.emi_bounce_count_3m',
+        parameterId: parameterId || 'banking.emi_bounce_count_3m',
+        periodMonths: Number(periodMonths) || 3,
+        emiIdentification,
+        bounceIdentification,
+        excludeDuplicates,
+      })
+      setPreview(asRecord(res.preview ?? res))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Preview failed')
+    } finally {
+      setPreviewBusy(false)
+    }
+  }
+
   const runPropose = async () => {
     if (!describe.trim()) return
     setProposing(true)
@@ -162,6 +211,11 @@ export function CiDataCalcResolutionPanel({
     }
   }
 
+  const previewEmi = preview ? Number(preview.emiCandidates ?? 0) : null
+  const previewMatched = preview ? Number(preview.matchedBouncedEmiEvents ?? preview.emiBounceCount ?? 0) : null
+  const previewCount = preview?.emiBounceCount ?? preview?.v
+  const previewOutcome = preview ? String(preview.outcome ?? '') : ''
+
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 p-4 sm:items-center" data-testid="data-calc-resolution-panel">
       <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl border border-slate-200 bg-white p-4 shadow-xl">
@@ -178,33 +232,22 @@ export function CiDataCalcResolutionPanel({
           </button>
         </div>
 
-        {error ? (
-          <div className="mt-3 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">{error}</div>
-        ) : null}
-
         {kind === 'THRESHOLD' ? (
-          <div className="mt-4 space-y-3">
-            <label className="block text-sm">
-              <span className="text-slate-600">Definition type</span>
-              <input className="mt-1 w-full rounded border border-slate-300 px-3 py-2" value="Absolute transaction amount" disabled />
-            </label>
-            <label className="block text-sm">
+          <div className="mt-4 space-y-3 text-sm">
+            <p>Define the amount that qualifies as a large credit for this policy version.</p>
+            <label className="block">
               <span className="text-slate-600">Threshold (₹)</span>
               <input
                 className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
                 inputMode="numeric"
-                placeholder="5,00,000"
                 value={amount}
                 disabled={busy}
                 onChange={(e) => setAmount(formatInrInput(e.target.value))}
                 data-testid="large-credit-threshold"
+                placeholder="5,00,000"
               />
             </label>
-            <label className="block text-sm">
-              <span className="text-slate-600">Period</span>
-              <input className="mt-1 w-full rounded border border-slate-300 px-3 py-2" value="Last 3 months" disabled />
-            </label>
-            <label className="block text-sm">
+            <label className="block">
               <span className="text-slate-600">Notes (optional)</span>
               <textarea
                 className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
@@ -214,39 +257,38 @@ export function CiDataCalcResolutionPanel({
                 onChange={(e) => setNotes(e.target.value)}
               />
             </label>
-            <details className="rounded border border-slate-200 px-3 py-2 text-sm">
-              <summary className="cursor-pointer font-medium text-slate-800">Describe what you mean (proposal only)</summary>
+            <div className="rounded border border-slate-100 bg-slate-50 px-2 py-2 text-xs text-slate-700">
+              <p className="font-medium">Describe in plain English (optional proposal)</p>
               <textarea
-                className="mt-2 w-full rounded border border-slate-300 px-3 py-2"
+                className="mt-1 w-full rounded border border-slate-300 px-2 py-1"
                 rows={2}
-                placeholder="Large credit means any individual credit above five lakh rupees"
                 value={describe}
+                disabled={busy || proposing}
                 onChange={(e) => setDescribe(e.target.value)}
+                placeholder='e.g. "credits of ₹5 lakh or more"'
               />
               <button
                 type="button"
                 className="bt-btn bt-btn-secondary bt-btn-sm mt-2"
-                disabled={proposing || busy}
+                disabled={busy || proposing || !describe.trim()}
                 onClick={() => void runPropose()}
               >
-                Propose
+                {proposing ? 'Proposing…' : 'Suggest from description'}
               </button>
               {proposal ? (
-                <p className="mt-2 text-xs text-slate-600">
-                  Proposal: {String(proposal.plainEnglish ?? proposal.proposedCalculation ?? JSON.stringify(proposal).slice(0, 160))}
-                  {' — confirm by saving the threshold above (not auto-saved).'}
-                </p>
+                <p className="mt-2 text-slate-600">proposal only — review amount before save.</p>
               ) : null}
-            </details>
-            <p className="text-xs text-slate-500">
-              Preview: Large credit = Transaction amount &gt;= ₹{amount || '—'}
+            </div>
+            <p className="rounded border border-emerald-200 bg-emerald-50 px-2 py-2 text-xs text-emerald-950">
+              Saving stores a policy-scoped threshold. Status becomes Ready for analyst information (non-blocking).
             </p>
           </div>
         ) : null}
 
         {kind === 'CLASSIFICATION' ? (
           <div className="mt-4 space-y-3 text-sm">
-            <p className="text-slate-700">
+            <p>How should intercompany / merchant-group relationships be identified?</p>
+            <p className="text-xs text-slate-500">
               Only mechanisms actually available are offered. There is no production merchant-group master today.
             </p>
             <label className="block">
@@ -274,22 +316,149 @@ export function CiDataCalcResolutionPanel({
               />
             </label>
             <p className="rounded border border-amber-200 bg-amber-50 px-2 py-2 text-xs text-amber-950">
-              Business definition can be saved separately from execution readiness. Expect status:
-              Needs configuration until a production classifier exists.
+              Business definition can be saved. Status remains Needs configuration / Needs implementation until a
+              production classifier exists — not Ready.
             </p>
           </div>
         ) : null}
 
-        {kind === 'CALCULATION' ? (
+        {kind === 'CALCULATION' && isEmiBounce ? (
+          <div className="mt-4 space-y-3 text-sm text-slate-700" data-testid="emi-bounce-config">
+            <div className="rounded border border-slate-100 bg-slate-50 px-3 py-2 text-xs space-y-1">
+              <p>
+                <span className="font-semibold">Metric:</span> EMI Bounce Count
+              </p>
+              <p>
+                <span className="font-semibold">Source:</span> Bank Statement
+              </p>
+              <p>
+                <span className="font-semibold">Output:</span> NUMERIC / COUNT
+              </p>
+              <p>
+                <span className="font-semibold">Calculation:</span> Count EMI repayment events with matched
+                return/bounce events during the period
+              </p>
+              <p>
+                <span className="font-semibold">Missing data:</span> DATA_INSUFFICIENT if bank transactions or
+                classification unavailable (never invent 0)
+              </p>
+            </div>
+
+            <label className="block">
+              <span className="text-slate-600">Period</span>
+              <select
+                className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+                value={periodMonths}
+                disabled={busy}
+                onChange={(e) => setPeriodMonths(e.target.value)}
+                data-testid="emi-bounce-period"
+              >
+                <option value="1">Last 1 month</option>
+                <option value="3">Last 3 months (policy default)</option>
+                <option value="6">Last 6 months</option>
+                <option value="12">Last 12 months</option>
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="text-slate-600">EMI identification (base population)</span>
+              <select
+                className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+                value={emiIdentification}
+                disabled={busy}
+                onChange={(e) => setEmiIdentification(e.target.value)}
+                data-testid="emi-bounce-emi-id"
+              >
+                <option value="EXISTING_EMI_CLASSIFIER">Existing EMI classifier</option>
+                <option value="NARRATION_EMI_DEBIT">Narration contains EMI (debit)</option>
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="text-slate-600">Bounce / return match</span>
+              <select
+                className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+                value={bounceIdentification}
+                disabled={busy}
+                onChange={(e) => setBounceIdentification(e.target.value)}
+                data-testid="emi-bounce-bounce-id"
+              >
+                <option value="EXISTING_BOUNCE_RETURN_CLASSIFIER">
+                  Existing bounce/return classifier + EMI narration
+                </option>
+                <option value="NARRATION_RETURN_WITH_EMI">Return/bounce narration with EMI</option>
+              </select>
+            </label>
+
+            <label className="flex items-center gap-2 text-xs">
+              <input
+                type="checkbox"
+                checked={excludeDuplicates}
+                disabled={busy}
+                onChange={(e) => setExcludeDuplicates(e.target.checked)}
+                data-testid="emi-bounce-dedupe"
+              />
+              Exclude duplicate / reversal rows (existing bank duplicate semantics)
+            </label>
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="bt-btn bt-btn-secondary bt-btn-sm"
+                disabled={busy || previewBusy || !documentId}
+                onClick={() => void runPreview()}
+                data-testid="emi-bounce-preview"
+              >
+                {previewBusy ? 'Running…' : 'Test on sample / staging data'}
+              </button>
+              <button
+                type="button"
+                className="text-xs text-slate-500 underline"
+                onClick={() => setShowAdvanced((v) => !v)}
+              >
+                {showAdvanced ? 'Hide advanced' : 'Show advanced IDs'}
+              </button>
+            </div>
+
+            {showAdvanced ? (
+              <p className="rounded border border-slate-200 bg-white px-2 py-2 font-mono text-[11px] text-slate-600">
+                canonicalId=banking.emi_bounce_count_3m · binding=EmiBounceCountCalculator.V1
+              </p>
+            ) : null}
+
+            {preview ? (
+              <div
+                className="rounded border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-950"
+                data-testid="emi-bounce-preview-result"
+              >
+                <p className="font-semibold">Preview result</p>
+                <p className="mt-1">EMI candidates: {previewEmi}</p>
+                <p>Matched bounced EMI events: {previewMatched}</p>
+                <p>
+                  EMI Bounce Count:{' '}
+                  {previewOutcome === 'DATA_INSUFFICIENT' ? 'DATA_INSUFFICIENT' : String(previewCount ?? '—')}
+                </p>
+                {preview.reason ? <p className="mt-1 text-amber-900">{String(preview.reason)}</p> : null}
+              </div>
+            ) : null}
+
+            <p className="rounded border border-emerald-200 bg-emerald-50 px-2 py-2 text-xs text-emerald-950">
+              Saving enables the executable binding for this policy version. Status becomes Ready. Policy Test uses
+              the same calculator path.
+            </p>
+          </div>
+        ) : null}
+
+        {kind === 'CALCULATION' && !isEmiBounce ? (
           <div className="mt-4 space-y-2 text-sm text-slate-700">
-            <p className="font-medium">EMI bounce count — calculation configuration</p>
-            <ul className="list-disc pl-5 text-xs">
-              <li>EMI classifier — available</li>
-              <li>Bounce/return classifier — available</li>
-              <li>Executable combined metric — not implemented / not production-bound</li>
-            </ul>
+            <p className="font-medium">Calculation not implemented</p>
+            <p className="text-xs text-slate-600">
+              There is no executable calculation binding for <span className="font-mono">{parameterId || title}</span>{' '}
+              yet. Saving a fake configuration is not allowed.
+            </p>
             <p className="rounded border border-amber-200 bg-amber-50 px-2 py-2 text-xs text-amber-950">
-              Saving records configuration state only. This item cannot become Ready from ingredients alone.
+              Status: Needs implementation. Use Keep as policy requirement or Ignore for automation, or close this
+              dialog.
             </p>
           </div>
         ) : null}
@@ -309,7 +478,8 @@ export function CiDataCalcResolutionPanel({
               />
             </label>
             <p className="rounded border border-amber-200 bg-amber-50 px-2 py-2 text-xs text-amber-950">
-              Policy definition can be saved; executable calculator remains Needs configuration until average-deposit baseline wiring is production-bound.
+              Policy definition can be saved; this is a design proposal. Executable calculator remains Needs
+              configuration until average-deposit baseline wiring is production-bound — not Ready.
             </p>
           </div>
         ) : null}
@@ -345,19 +515,27 @@ export function CiDataCalcResolutionPanel({
           </div>
         ) : null}
 
+        {error ? (
+          <p className="mt-3 rounded border border-rose-200 bg-rose-50 px-2 py-2 text-xs text-rose-900" data-testid="data-calc-resolve-error">
+            {error}
+          </p>
+        ) : null}
+
         <div className="mt-5 flex flex-wrap justify-end gap-2">
           <button type="button" className="bt-btn bt-btn-secondary bt-btn-sm" disabled={busy} onClick={onClose}>
             Cancel
           </button>
-          <button
-            type="button"
-            className="bt-btn bt-btn-primary bt-btn-sm"
-            disabled={busy}
-            onClick={() => void save()}
-            data-testid="data-calc-resolve-save"
-          >
-            Save definition
-          </button>
+          {kind === 'CALCULATION' && !isEmiBounce ? null : (
+            <button
+              type="button"
+              className="bt-btn bt-btn-primary bt-btn-sm"
+              disabled={busy}
+              onClick={() => void save()}
+              data-testid="data-calc-resolve-save"
+            >
+              {kind === 'CALCULATION' ? 'Save configuration' : 'Save definition'}
+            </button>
+          )}
         </div>
       </div>
     </div>

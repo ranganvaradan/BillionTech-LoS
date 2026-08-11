@@ -198,6 +198,35 @@ public class PolicyStudioTestExperienceService {
             putMetric(metrics, facts, policyParams, e.getKey(), e.getKey(), coerce(e.getValue()));
         }
 
+        // EMI Bounce Count — if configured on this policy and not manually supplied, use shared calculator
+        // on the deterministic staging fixture (same path as Data & Calculations preview).
+        if (!metrics.containsKey("banking.emi_bounce_count_3m")
+                && policyHasEmiBounceBinding(session)) {
+            Map<String, Object> eval = com.los.core.creditintelligence.policystudio.metrics
+                    .EmiBounceCountCalculator.evaluate(
+                    com.los.core.creditintelligence.policystudio.metrics.EmiBounceCountCalculator.stagingFixture(),
+                    emiBounceConfigFromSession(session),
+                    java.time.LocalDate.of(2026, 8, 1));
+            if (com.los.core.creditintelligence.policystudio.metrics.EmiBounceCountCalculator.OUTCOME_PASS
+                    .equals(eval.get("outcome")) && eval.get("v") != null) {
+                metrics.put("banking.emi_bounce_count_3m", eval.get("v"));
+                facts.put("banking.emi_bounce_count_3m", eval.get("v"));
+                Map<String, Object> prov = new LinkedHashMap<>();
+                prov.put("parameterKey", "banking.emi_bounce_count_3m");
+                prov.put("businessName", "EMI Bounce Count");
+                prov.put("metricId", "banking.emi_bounce_count_3m");
+                prov.put("value", eval.get("v"));
+                prov.put("status", "AUTOMATIC_DERIVED");
+                prov.put("sourceLabel", "EmiBounceCountCalculator.V1 (staging fixture)");
+                prov.put("howCalculated", eval.get("calculation"));
+                prov.put("preview", Map.of(
+                        "emiCandidates", eval.get("emiCandidates"),
+                        "matchedBouncedEmiEvents", eval.get("matchedBouncedEmiEvents"),
+                        "emiBounceCount", eval.get("emiBounceCount")));
+                valueProvenance.add(prov);
+            }
+        }
+
         String product = body != null && body.get("product") != null
                 ? String.valueOf(body.get("product")) : "DIGILEAP";
 
@@ -1011,7 +1040,10 @@ public class PolicyStudioTestExperienceService {
             if (k.contains("txn") || k.contains("transaction")) {
                 metrics.put("banking.txn_count_3m", value);
             }
-            if (k.contains("inward") || k.contains("bounce")) {
+            if (k.contains("emi_bounce") || "emi bounce".equals(k) || k.contains("emi bounce")) {
+                metrics.put("banking.emi_bounce_count_3m", value);
+                facts.put("banking.emi_bounce_count_3m", value);
+            } else if (k.contains("inward") || (k.contains("bounce") && !k.contains("emi"))) {
                 metrics.put("banking.inward_return_count_3m", value);
                 metrics.putIfAbsent("banking.bounce_count_3m", value);
             }
@@ -1079,7 +1111,8 @@ public class PolicyStudioTestExperienceService {
         if (k.contains("avg_daily") || k.contains("average_daily") || k.contains("adb")) return 75000;
         if (k.contains("settlement")) return 25;
         if (k.contains("txn") || k.contains("transaction")) return 40;
-        if (k.contains("inward") || k.contains("bounce")) return 0;
+        if (k.contains("emi_bounce") || k.contains("emi bounce")) return null; // use calculator / fixture — never invent 0
+        if (k.contains("inward") || (k.contains("bounce") && !k.contains("emi"))) return 0;
         if (k.contains("foir")) return 42;
         if (k.contains("vintage")) return 36;
         if (k.contains("bank_gst") || k.contains("gst_ratio")) return 80;
@@ -1284,6 +1317,53 @@ public class PolicyStudioTestExperienceService {
 
     private static String nullTo(String v, String def) {
         return v == null || v.isBlank() ? def : v;
+    }
+
+    /** True when this draft has an executable EMI Bounce Count binding. */
+    @SuppressWarnings("unchecked")
+    private static boolean policyHasEmiBounceBinding(PolicyStudioSession session) {
+        if (session == null || session.getDocument() == null || session.getDocument().getMetadata() == null) {
+            return false;
+        }
+        Object raw = session.getDocument().getMetadata().get(
+                com.los.core.creditintelligence.policystudio.parameters.PolicyDataResolutionSupport.DOC_META_KEY);
+        if (!(raw instanceof Map<?, ?> maps)) return false;
+        Object res = maps.get("banking.emi_bounce_count_3m");
+        if (!(res instanceof Map<?, ?> m)) return false;
+        if (!"READY".equals(String.valueOf(m.get("cmStatus")))
+                && !"READY".equals(String.valueOf(m.get("executionStatus")))) {
+            return false;
+        }
+        Object def = m.get("definition");
+        if (def instanceof Map<?, ?> d) {
+            return Boolean.TRUE.equals(d.get("executableMetric"))
+                    || com.los.core.creditintelligence.policystudio.metrics.EmiBounceCountCalculator.BINDING
+                    .equals(String.valueOf(d.get("binding")));
+        }
+        return Boolean.TRUE.equals(m.get("executionCapabilityAvailable"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static com.los.core.creditintelligence.policystudio.metrics.EmiBounceCountCalculator.Config
+    emiBounceConfigFromSession(PolicyStudioSession session) {
+        if (session == null || session.getDocument() == null || session.getDocument().getMetadata() == null) {
+            return com.los.core.creditintelligence.policystudio.metrics.EmiBounceCountCalculator.Config.defaults();
+        }
+        Object raw = session.getDocument().getMetadata().get(
+                com.los.core.creditintelligence.policystudio.parameters.PolicyDataResolutionSupport.DOC_META_KEY);
+        if (!(raw instanceof Map<?, ?> maps)) {
+            return com.los.core.creditintelligence.policystudio.metrics.EmiBounceCountCalculator.Config.defaults();
+        }
+        Object res = maps.get("banking.emi_bounce_count_3m");
+        if (!(res instanceof Map<?, ?> m)) {
+            return com.los.core.creditintelligence.policystudio.metrics.EmiBounceCountCalculator.Config.defaults();
+        }
+        Object def = m.get("definition");
+        if (def instanceof Map<?, ?> d) {
+            return com.los.core.creditintelligence.policystudio.metrics.EmiBounceCountCalculator.Config
+                    .fromBody((Map<String, Object>) d);
+        }
+        return com.los.core.creditintelligence.policystudio.metrics.EmiBounceCountCalculator.Config.defaults();
     }
 
     @SuppressWarnings("unchecked")

@@ -369,6 +369,18 @@ export async function previewPolicyRule(
   return data
 }
 
+/** POLICY-DATA-CALC-FUNCTIONAL-COMPLETION-1 — EMI Bounce Count preview (same calculator as Policy Test). */
+export async function previewDataCalculation(
+  documentId: string,
+  body: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const { data } = await http.post<Record<string, unknown>>(
+    `${BASE}/policy-studio/documents/${encodeURIComponent(documentId)}/data-calculations/preview`,
+    body,
+  )
+  return data
+}
+
 export async function replayStagingCase(caseCode: string): Promise<StagingReplayResult> {
   const { data } = await http.post<StagingReplayResult>(
     `${BASE}/cases/${encodeURIComponent(caseCode)}/replay`,

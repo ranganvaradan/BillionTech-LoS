@@ -147,34 +147,111 @@ public final class PolicyDataResolutionSupport {
         return out;
     }
 
+    /**
+     * POLICY-DATA-CALC-FUNCTIONAL-COMPLETION-1 — real EMI Bounce Count configuration.
+     * Binding {@link com.los.core.creditintelligence.policystudio.metrics.EmiBounceCountCalculator}
+     * makes the item executable/Ready when saved with confirmed configuration.
+     */
     public static Map<String, Object> calculationConfiguration(
             String dataItemId,
             String actor,
             String documentId) {
-        Map<String, Object> def = new LinkedHashMap<>();
-        def.put("metric", "EMI bounce count in last 3 months");
-        def.put("inputsAvailable", List.of(
-                Map.of("name", "EMI classifier", "available", true),
-                Map.of("name", "Bounce/return classifier", "available", true)));
-        def.put("executableMetric", false);
-        def.put("window", "Last 3 months");
-        def.put("binding", null);
-        def.put("reason", "Combined EMI + bounce transaction classifier is not production-bound");
+        return calculationConfiguration(dataItemId, actor, documentId, Map.of());
+    }
 
-        Map<String, Object> out = base(dataItemId, TYPE_CALCULATION_CONFIGURATION, documentId, actor);
+    public static Map<String, Object> calculationConfiguration(
+            String dataItemId,
+            String actor,
+            String documentId,
+            Map<String, Object> body) {
+        String id = dataItemId == null ? "" : dataItemId.trim();
+        boolean emiBounce = "banking.emi_bounce_count_3m".equals(id)
+                || id.toLowerCase(Locale.ROOT).contains("emi_bounce");
+        if (!emiBounce) {
+            // Unknown calculation — honest proposal-only stamp
+            Map<String, Object> def = new LinkedHashMap<>();
+            def.put("metric", id);
+            def.put("executableMetric", false);
+            def.put("binding", null);
+            def.put("reason", "No executable calculation binding for this data item yet");
+            Map<String, Object> out = base(id, TYPE_CALCULATION_CONFIGURATION, documentId, actor);
+            out.put("definition", def);
+            out.put("businessDefinitionStatus", BIZ_DEFINED);
+            out.put("executionStatus", EXEC_NEEDS_CONFIG);
+            out.put("executionCapabilityAvailable", false);
+            out.put("executionImpact", IMPACT_NON_BLOCKING);
+            out.put("cmStatus", "NEEDS_CONFIGURATION");
+            out.put("displayStatus", "NEEDS IMPLEMENTATION");
+            out.put("message", "Configuration proposal saved — executable calculation not implemented for this item");
+            out.put("gacatMutated", false);
+            return out;
+        }
+
+        var cfg = com.los.core.creditintelligence.policystudio.metrics.EmiBounceCountCalculator.Config
+                .fromBody(body == null ? Map.of() : body);
+        boolean confirm = body != null && (Boolean.TRUE.equals(body.get("confirmExecutable"))
+                || Boolean.TRUE.equals(body.get("enableExecutableBinding"))
+                || "SAVE_EXECUTABLE".equalsIgnoreCase(String.valueOf(body.getOrDefault("saveMode", ""))));
+        // Default save from Configure UI enables the real binding (user completed configuration)
+        if (body == null || body.isEmpty() || body.get("confirmExecutable") == null) {
+            confirm = true;
+        }
+
+        Map<String, Object> def = new LinkedHashMap<>();
+        def.put("metric", "EMI Bounce Count");
+        def.put("canonicalId", com.los.core.creditintelligence.policystudio.metrics
+                .EmiBounceCountCalculator.METRIC_ID);
+        def.put("inputsAvailable", List.of(
+                Map.of("name", "EMI classifier", "available", true, "code", "EXISTING_EMI_CLASSIFIER"),
+                Map.of("name", "Bounce/return classifier", "available", true,
+                        "code", "EXISTING_BOUNCE_RETURN_CLASSIFIER")));
+        def.put("periodMonths", cfg.periodMonths());
+        def.put("window", "Last " + cfg.periodMonths() + " months");
+        def.put("emiIdentification", cfg.emiIdentification());
+        def.put("bounceIdentification", cfg.bounceIdentification());
+        def.put("excludeDuplicates", cfg.excludeDuplicates());
+        def.put("outputType", "NUMERIC_COUNT");
+        def.put("calculation",
+                "Count EMI repayment events with matched return/bounce events during the period");
+        def.put("missingDataTreatment", "DATA_INSUFFICIENT");
+        def.put("binding", com.los.core.creditintelligence.policystudio.metrics
+                .EmiBounceCountCalculator.BINDING);
+        def.put("executableMetric", confirm);
+        def.put("plainEnglish", "EMI Bounce Count over last " + cfg.periodMonths()
+                + " months using existing EMI and bounce/return classifiers");
+
+        Map<String, Object> out = base(
+                com.los.core.creditintelligence.policystudio.metrics.EmiBounceCountCalculator.METRIC_ID,
+                TYPE_CALCULATION_CONFIGURATION, documentId, actor);
         out.put("definition", def);
         out.put("businessDefinitionStatus", BIZ_DEFINED);
-        out.put("executionStatus", EXEC_NEEDS_CONFIG);
-        out.put("executionCapabilityAvailable", false);
-        out.put("executionImpact", IMPACT_NON_BLOCKING);
-        out.put("cmStatus", "NEEDS_CONFIGURATION");
-        out.put("displayStatus", "NEEDS CONFIGURATION");
-        out.put("howCalculated", Map.of(
-                "inputs", List.of("EMI transactions", "Bounce/return flags"),
-                "window", "Last 3 months",
-                "implementation", "Needs configuration — not production-bound"));
-        out.put("message", "Configure when implementation available — do not mark Ready from ingredients alone");
         out.put("gacatMutated", false);
+        out.put("howCalculated", Map.of(
+                "inputs", List.of("EMI classifier", "Bounce/return classifier", "Bank statement"),
+                "window", def.get("window"),
+                "method", def.get("calculation"),
+                "implementation", com.los.core.creditintelligence.policystudio.metrics
+                        .EmiBounceCountCalculator.BINDING,
+                "missingData", "DATA_INSUFFICIENT when bank data/classification unavailable"));
+        out.put("howDefined", def.get("plainEnglish") + " · Binding "
+                + com.los.core.creditintelligence.policystudio.metrics.EmiBounceCountCalculator.BINDING);
+        if (confirm) {
+            out.put("executionStatus", EXEC_READY);
+            out.put("executionCapabilityAvailable", true);
+            out.put("executionImpact", IMPACT_NON_BLOCKING);
+            out.put("cmStatus", "READY");
+            out.put("displayStatus", "READY");
+            out.put("message", "EMI Bounce Count configuration saved — executable binding active for Policy Test / preview");
+            out.put("willBecomeReady", true);
+        } else {
+            out.put("executionStatus", EXEC_NEEDS_CONFIG);
+            out.put("executionCapabilityAvailable", true);
+            out.put("executionImpact", IMPACT_NON_BLOCKING);
+            out.put("cmStatus", "NEEDS_CONFIGURATION");
+            out.put("displayStatus", "NEEDS CONFIGURATION");
+            out.put("message", "Design proposal saved — confirm executable binding to mark Ready");
+            out.put("willBecomeReady", false);
+        }
         return out;
     }
 

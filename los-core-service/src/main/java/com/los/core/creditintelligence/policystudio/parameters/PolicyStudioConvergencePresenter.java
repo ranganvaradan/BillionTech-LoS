@@ -530,8 +530,8 @@ public final class PolicyStudioConvergencePresenter {
         }
         if (l.contains("emi bounce")) {
             m.put("field", "emiBounceDerivation");
-            m.put("question", "EMI bounce derivation needs configuration");
-            m.put("hint", "Bank classifier has EMI and bounce/return flags separately; a combined EMI-bounce metric is not production-bound.");
+            m.put("question", "Configure EMI Bounce Count calculation");
+            m.put("hint", "Bind period and existing EMI + bounce/return classifiers via EmiBounceCountCalculator.V1, then preview and save.");
             m.put("action", "CONFIGURE");
             return m;
         }

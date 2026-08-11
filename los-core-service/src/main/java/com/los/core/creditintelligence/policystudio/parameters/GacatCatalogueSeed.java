@@ -449,6 +449,13 @@ final class GacatCatalogueSeed {
                 "PolicyBankingMetricService",
                 List.of("cheque return count", "bounce count"), null, null,
                 bankStudio(), true, true, true, true, false);
+        derived(p, "banking.emi_bounce_count_3m", "EMI bounce count", BS, "COUNT", "TRAILING_3M",
+                "Count of EMI repayment events with matched return/bounce events in trailing 3 months "
+                        + "(existing EMI + bounce/return classifiers; DATA_INSUFFICIENT when coverage missing)",
+                List.of("bank.transaction", "EMI", "NACH_RETURN", "CHEQUE_RETURN"),
+                "EmiBounceCountCalculator.V1",
+                List.of("emi bounce", "emi bounce count", "bounced emi", "emi return count"), null, null,
+                bankStudio(), true, true, true, true, false);
         derived(p, "banking.settlement.count_monthly_avg_3m", "Average monthly settlements", BS, "COUNT", "TRAILING_3M",
                 "Number of qualifying QR settlement credits during the trailing 3 months ÷ 3",
                 List.of("bank.transaction", "QR_SETTLEMENT"),

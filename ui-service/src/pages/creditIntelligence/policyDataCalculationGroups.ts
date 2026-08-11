@@ -242,15 +242,22 @@ function groupCmStatus(parameterId: string, members: Record<string, unknown>[], 
 
   if (Object.keys(resolution).length > 0) {
     const st = String(resolution.cmStatus ?? 'NEEDS_CONFIGURATION') as CmParamStatus
-    // EMI bounce must never become READY from a calculation config stamp alone
+    // EMI bounce Ready only when an executable binding is present (not a proposal stamp)
     if (parameterId === 'banking.emi_bounce_count_3m' && st === 'READY') {
-      return {
-        status: 'NEEDS_CONFIGURATION',
-        reason: 'Combined EMI-bounce metric is not production-bound',
-        missingDefinition: missing,
-        howDefined: String(resolution.howDefined ?? ''),
-        displayStatus: 'NEEDS CONFIGURATION',
-        resolution,
+      const def = asRecord(resolution.definition)
+      const executable =
+        def.executableMetric === true ||
+        resolution.executionCapabilityAvailable === true ||
+        String(def.binding ?? '') === 'EmiBounceCountCalculator.V1'
+      if (!executable) {
+        return {
+          status: 'NEEDS_CONFIGURATION',
+          reason: 'EMI Bounce Count saved without executable binding',
+          missingDefinition: missing,
+          howDefined: String(resolution.howDefined ?? ''),
+          displayStatus: 'NEEDS CONFIGURATION',
+          resolution,
+        }
       }
     }
     return {
@@ -287,10 +294,10 @@ function groupCmStatus(parameterId: string, members: Record<string, unknown>[], 
   if (parameterId === 'banking.emi_bounce_count_3m' || texts.includes('emi bounce')) {
     return {
       status: 'NEEDS_CONFIGURATION',
-      reason: 'EMI and bounce classifiers exist separately; combined EMI-bounce metric is not production-bound',
+      reason: 'Configure EMI Bounce Count (period + existing EMI/bounce classifiers) to enable executable binding',
       missingDefinition: missing && Object.keys(missing).length ? missing : {
-        question: 'EMI bounce derivation needs configuration',
-        hint: 'Combined EMI-bounce metric is not production-bound.',
+        question: 'Configure EMI Bounce Count calculation',
+        hint: 'Bind period and existing EMI + bounce/return classifiers, preview, then save.',
         action: 'CONFIGURE',
       },
     }

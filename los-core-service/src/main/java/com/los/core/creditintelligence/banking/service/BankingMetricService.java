@@ -54,6 +54,7 @@ public class BankingMetricService {
     public static final String CHEQUE_6M = "banking.cheque_return_count_6m";
     public static final String NACH_3M = "banking.nach_return_count_3m";
     public static final String NACH_6M = "banking.nach_return_count_6m";
+    public static final String EMI_BOUNCE_3M = "banking.emi_bounce_count_3m";
     public static final String MONTHLY_OBL = "banking.monthly_obligation";
     public static final String OD_AVG_6M = "banking.od_cc_average_utilisation_6m";
     public static final String OD_PEAK_6M = "banking.od_cc_peak_utilisation_6m";
@@ -155,6 +156,8 @@ public class BankingMetricService {
                 TxnCategory.NACH_RETURN, 3, date, NACH_3M)));
         results.add(persist(countCategory(tenantId, applicationId, sourceRecordId, eligibleTxns,
                 TxnCategory.NACH_RETURN, 6, date, NACH_6M)));
+        // EMI bounce count — shared calculator with Policy Studio Data & Calculations
+        results.add(persist(countEmiBounce(tenantId, applicationId, sourceRecordId, eligibleTxns, 3, date)));
 
         // EMI
         UUID primaryAcctId = accounts != null && !accounts.isEmpty() ? accounts.get(0).getId() : null;
@@ -295,6 +298,43 @@ public class BankingMetricService {
                 : BankingMetricOutcome.REFER.name();
         return result(tenantId, applicationId, sourceRecordId, COMPLETENESS,
                 outcome, valueOf(ratio), qualityOf(outcome), List.of(), List.of(), evidence);
+    }
+
+    private CiMetricResult countEmiBounce(
+            UUID tenantId, UUID applicationId, UUID sourceRecordId,
+            List<CiBankTransaction> txns, int months, LocalDate asOf) {
+        List<com.los.core.creditintelligence.policystudio.metrics.EmiBounceCountCalculator.Txn> inputs =
+                txns == null ? List.of() : txns.stream().map(t -> {
+                    String narration = t.getDescriptionNormalized() != null && !t.getDescriptionNormalized().isBlank()
+                            ? t.getDescriptionNormalized() : t.getDescriptionRaw();
+                    return new com.los.core.creditintelligence.policystudio.metrics.EmiBounceCountCalculator.Txn(
+                            t.getTransactionDate(),
+                            narration,
+                            t.getDirection(),
+                            t.getAmount(),
+                            t.getCategory(),
+                            t.getCategory() != null && !"UNKNOWN".equalsIgnoreCase(t.getCategory()),
+                            t.isEmiFlag(),
+                            t.isBounceFlag(),
+                            t.isReturnFlag(),
+                            t.getDuplicateStatus());
+                }).toList();
+        var cfg = new com.los.core.creditintelligence.policystudio.metrics.EmiBounceCountCalculator.Config(
+                months, "EXISTING_EMI_CLASSIFIER", "EXISTING_BOUNCE_RETURN_CLASSIFIER", true);
+        Map<String, Object> eval = com.los.core.creditintelligence.policystudio.metrics
+                .EmiBounceCountCalculator.evaluate(inputs, cfg, asOf);
+        String outcome = com.los.core.creditintelligence.policystudio.metrics
+                .EmiBounceCountCalculator.OUTCOME_DI.equals(eval.get("outcome"))
+                ? BankingMetricOutcome.DATA_INSUFFICIENT.name()
+                : BankingMetricOutcome.PASS.name();
+        Map<String, Object> evidence = new LinkedHashMap<>(eval);
+        evidence.put("binding", com.los.core.creditintelligence.policystudio.metrics
+                .EmiBounceCountCalculator.BINDING);
+        Object v = eval.get("v");
+        return result(tenantId, applicationId, sourceRecordId, EMI_BOUNCE_3M,
+                outcome,
+                v == null ? null : Map.of("v", v),
+                qualityOf(outcome), List.of(), List.of(), evidence);
     }
 
     private CiMetricResult countCategory(

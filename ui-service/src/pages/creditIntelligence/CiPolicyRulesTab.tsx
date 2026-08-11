@@ -1195,7 +1195,10 @@ export function CiPolicyRulesTab({
                 ) : null}
 
                 {(g.cmStatus === 'NEEDS_YOUR_INPUT' || g.cmStatus === 'NEEDS_CONFIGURATION'
-                  || (g.missingDefinition && Object.keys(g.missingDefinition).length > 0)) ? (
+                  || (g.cmStatus !== 'READY' && g.cmStatus !== 'MANUAL_INPUT'
+                    && g.cmStatus !== 'IGNORED_FOR_AUTOMATION' && g.cmStatus !== 'POLICY_REQUIREMENT'
+                    && g.missingDefinition && Object.keys(g.missingDefinition).length > 0)
+                  || (g.cmStatus === 'READY' && g.parameterId === 'banking.emi_bounce_count_3m')) ? (
                   <div className="mt-2 rounded border border-sky-100 bg-sky-50 px-2 py-2 text-xs text-sky-950">
                     {!g.howDefined && g.missingDefinition ? (
                       <>
@@ -1208,6 +1211,8 @@ export function CiPolicyRulesTab({
                       </>
                     ) : null}
                     <div className="mt-2 flex flex-wrap gap-2">
+                      {(g.cmStatus === 'NEEDS_YOUR_INPUT' || g.cmStatus === 'NEEDS_CONFIGURATION'
+                        || g.parameterId === 'banking.emi_bounce_count_3m') ? (
                       <button
                         type="button"
                         className="bt-btn bt-btn-primary bt-btn-sm"
@@ -1230,12 +1235,15 @@ export function CiPolicyRulesTab({
                           })
                         }}
                       >
-                        {g.resolveAction === 'CONFIGURE'
+                        {g.cmStatus === 'READY' && g.parameterId === 'banking.emi_bounce_count_3m'
+                          ? 'Edit configuration'
+                          : g.resolveAction === 'CONFIGURE'
                           ? 'Configure calculation'
                           : g.resolveAction === 'RESOLVE'
                             ? 'Resolve parameter'
                             : 'Define'}
                       </button>
+                      ) : null}
                       <button
                         type="button"
                         className="bt-btn bt-btn-secondary bt-btn-sm"
@@ -1385,6 +1393,7 @@ export function CiPolicyRulesTab({
         parameterId={dataCalcResolver?.parameterId ?? ''}
         title={dataCalcResolver?.title ?? ''}
         ruleId={dataCalcResolver?.ruleId ?? ''}
+        documentId={documentId}
         busy={busy}
         onResolve={onReview}
       />
