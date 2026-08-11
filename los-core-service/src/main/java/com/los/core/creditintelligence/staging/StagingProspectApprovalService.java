@@ -971,29 +971,16 @@ public class StagingProspectApprovalService {
      * technical implementability "critical data gap" for CM/Checker approvals.
      */
     private boolean underwritingRulesAuthoringComplete(PolicyStudioSession session) {
+        // POLICY-READINESS-CONVERGENCE-1 — catalogueBacked alone is not complete when EDI/CLEAN unresolved
         List<CiPolicyRuleCandidate> uw = session.getRuleCandidates().stream()
-                .filter(r -> !com.los.core.creditintelligence.policystudio.parameters
-                        .PolicyStudioConvergencePresenter.isCompoundChild(r.getSystemRuleId()))
-                .filter(r -> {
-                    Map<String, Object> m = r.getMetadata() == null ? Map.of() : r.getMetadata();
-                    return !Boolean.TRUE.equals(m.get("classificationOnly"))
-                            && !Boolean.TRUE.equals(m.get("dataRequirementOnly"))
-                            && !Boolean.TRUE.equals(m.get("metricAdjustment"))
-                            && !Boolean.TRUE.equals(m.get("deleted"));
-                })
+                .filter(com.los.core.creditintelligence.policystudio.parameters
+                        .PolicyExecutionReadiness::isIncludedExecutableRule)
                 .toList();
         if (uw.isEmpty()) {
             return false;
         }
-        return uw.stream().allMatch(r ->
-                com.los.core.creditintelligence.policystudio.parameters.PolicyAuthoringCompleteness
-                        .isAuthoringComplete(r)
-                        || (r.getMetadata() != null
-                        && Boolean.TRUE.equals(r.getMetadata().get("cmAuthored"))
-                        && !Boolean.TRUE.equals(r.getMetadata().get("NEEDS_INPUT")))
-                        || (r.getMetadata() != null
-                        && Boolean.TRUE.equals(r.getMetadata().get("catalogueBacked"))
-                        && !Boolean.TRUE.equals(r.getMetadata().get("NEEDS_INPUT"))));
+        return uw.stream().allMatch(com.los.core.creditintelligence.policystudio.parameters
+                .PolicyExecutionReadiness::isExecutionReady);
     }
 
     private boolean hasDocumentApproval(PolicyStudioSession session, String state) {

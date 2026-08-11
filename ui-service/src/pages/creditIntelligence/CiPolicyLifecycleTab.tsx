@@ -293,9 +293,20 @@ export function CiPolicyLifecycleTab({
             <ul className="mt-1 list-disc pl-5">
               {blockerDetails.map((raw, i) => {
                 const b = asRecord(raw)
+                const category = b.category ? String(b.category) : ''
+                const action = b.action ? String(b.action) : ''
+                const ruleName = b.ruleName ? String(b.ruleName) : ''
+                const reason = b.reason ? String(b.reason) : String(b.message ?? '')
                 return (
-                  <li key={i}>
-                    {String(b.message)}{' '}
+                  <li key={String(b.blockerKey ?? i)}>
+                    {category ? (
+                      <span className="mr-1 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+                        {category}
+                      </span>
+                    ) : null}
+                    {ruleName ? <span className="font-medium">{ruleName}: </span> : null}
+                    {reason}{' '}
+                    {action ? <span className="text-amber-900">[{action}]</span> : null}{' '}
                     {b.tab ? (
                       <button
                         type="button"

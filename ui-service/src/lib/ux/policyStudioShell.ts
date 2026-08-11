@@ -45,14 +45,26 @@ export function underwritingRuleStats(cards: unknown[]): {
     return String(r.status ?? '')
   }
   const total = list.length
-  const ready = list.filter((c) =>
-    ['Ready', 'Accepted', 'Edited', 'Approved'].includes(statusOf(c)),
-  ).length
-  const needsInput = list.filter((c) =>
-    ['Needs your input', 'Needs Review', 'Blocked', 'Needs configuration', 'Unavailable'].includes(
-      statusOf(c),
-    ),
-  ).length
+  const executionReadyOf = (c: unknown): boolean | null => {
+    const r = c && typeof c === 'object' ? (c as Record<string, unknown>) : {}
+    if (typeof r.executionReady === 'boolean') return r.executionReady
+    return null
+  }
+  // POLICY-READINESS-CONVERGENCE-1 — ACCEPTED disposition must not count as Ready when executionReady=false
+  const ready = list.filter((c) => {
+    if (executionReadyOf(c) === false) return false
+    return ['Ready', 'Accepted', 'Edited', 'Approved'].includes(statusOf(c))
+  }).length
+  const needsInput = list.filter((c) => {
+    if (executionReadyOf(c) === false) return true
+    return [
+      'Needs your input',
+      'Needs Review',
+      'Blocked',
+      'Needs configuration',
+      'Unavailable',
+    ].includes(statusOf(c))
+  }).length
   const ignored = list.filter((c) => statusOf(c) === 'Ignored').length
   return { total, ready, needsInput, ignored }
 }

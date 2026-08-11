@@ -58,6 +58,18 @@ public final class PolicyRulePresentationSemantics {
                 .PolicyAuthoringCompleteness.isAuthoringComplete(r);
         String authoringGap = com.los.core.creditintelligence.policystudio.parameters
                 .PolicyAuthoringCompleteness.authoringGapMessage(r);
+        // POLICY-READINESS-CONVERGENCE-1 — unresolved required operands block Ready/Accepted
+        boolean included = com.los.core.creditintelligence.policystudio.parameters
+                .PolicyExecutionReadiness.isIncludedExecutableRule(r);
+        boolean executionReady = com.los.core.creditintelligence.policystudio.parameters
+                .PolicyExecutionReadiness.isExecutionReady(r);
+        if (included && !executionReady
+                && (!com.los.core.creditintelligence.policystudio.parameters
+                .PolicyExecutionReadiness.unresolvedOperands(r).isEmpty()
+                || !com.los.core.creditintelligence.policystudio.parameters
+                .PolicyExecutionReadiness.unavailableOperands(r).isEmpty())) {
+            return "Needs your input";
+        }
         if (!authoringComplete && (Boolean.TRUE.equals(meta.get("NEEDS_INPUT"))
                 || (authoringGap != null && !authoringGap.isBlank()))) {
             return "Needs your input";
@@ -80,10 +92,11 @@ public final class PolicyRulePresentationSemantics {
             return "Needs configuration";
         }
         if ("EDITED".equalsIgnoreCase(String.valueOf(meta.getOrDefault("disposition", "")))) {
-            return "Edited";
+            return included && !executionReady ? "Needs your input" : "Edited";
         }
         if ("ACCEPTED".equalsIgnoreCase(String.valueOf(meta.getOrDefault("disposition", "")))) {
-            return "Accepted";
+            // Disposition ACCEPTED ≠ execution READY
+            return included && !executionReady ? "Needs your input" : "Accepted";
         }
         if (Boolean.TRUE.equals(meta.get("catalogueBacked"))
                 || "GOLDEN_FALLBACK".equals(String.valueOf(meta.getOrDefault("source", "")))
@@ -92,6 +105,9 @@ public final class PolicyRulePresentationSemantics {
                 || IngestionMatchClassification.EXISTING_CAPABILITY_PARAMETER_CHANGE.name().equals(classification)) {
             if (Boolean.TRUE.equals(meta.get("excludedFromActivation"))
                     && Boolean.TRUE.equals(meta.get("NEEDS_INPUT"))) {
+                return "Needs your input";
+            }
+            if (included && !executionReady) {
                 return "Needs your input";
             }
             return "Ready";

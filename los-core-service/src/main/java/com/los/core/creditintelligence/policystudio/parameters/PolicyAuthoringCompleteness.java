@@ -73,6 +73,8 @@ public final class PolicyAuthoringCompleteness {
 
     /**
      * Reconcile card status/blockedReason so runtime-missing never blocks authoring Ready.
+     * POLICY-READINESS-CONVERGENCE-1 — Ready/Accepted only when execution-ready
+     * (authoring complete AND required operands resolved). Disposition ACCEPTED stays distinct.
      */
     public static void reconcileCard(Map<String, Object> card, CiPolicyRuleCandidate r) {
         if (card == null || r == null) return;
@@ -87,7 +89,13 @@ public final class PolicyAuthoringCompleteness {
                 blocked = MSG_THRESHOLD_MISSING;
             }
         }
-        if (isAuthoringComplete(r)
+        boolean executionReady = PolicyExecutionReadiness.isExecutionReady(r)
+                || (!PolicyExecutionReadiness.isIncludedExecutableRule(r)
+                && isAuthoringComplete(r)
+                && !hasUnresolvedAuthoringOperand(meta)
+                && PolicyExecutionReadiness.unresolvedOperands(r).isEmpty());
+        if (executionReady
+                && isAuthoringComplete(r)
                 && !hasUnresolvedAuthoringOperand(meta)
                 && Set.of("Needs your input", "Needs Review", "Blocked").contains(String.valueOf(card.get("status")))
                 && (blocked == null || blocked.isBlank()
@@ -111,6 +119,8 @@ public final class PolicyAuthoringCompleteness {
         card.put("authoringComplete", isAuthoringComplete(r));
         card.put("authoringThreshold", authoringThreshold(r));
         card.put("runtimeValueRequired", false); // never required for policy authoring readiness
+        // Canonical execution readiness — may demote Ready/Accepted → Needs your input
+        PolicyExecutionReadiness.applyToCard(card, r);
     }
 
     /**
@@ -187,7 +197,11 @@ public final class PolicyAuthoringCompleteness {
     private static boolean isNonThresholdComplete(CiPolicyRuleCandidate r, Map<String, Object> meta) {
         Map<String, Object> expr = r.getExpression() == null ? Map.of() : r.getExpression();
         String op = String.valueOf(expr.getOrDefault("op", ""));
-        if (Set.of("EXISTS", "NOT", "AND", "OR", "IF").contains(op.toUpperCase(Locale.ROOT))) {
+        if (Set.of("EXISTS", "NOT", "AND", "OR", "IF", "TRUE", "FALSE").contains(op.toUpperCase(Locale.ROOT))) {
+            return true;
+        }
+        // Lifecycle/scratch fixtures sometimes use op:"true" without a numeric threshold
+        if ("true".equalsIgnoreCase(op) || "false".equalsIgnoreCase(op)) {
             return true;
         }
         if (Boolean.TRUE.equals(meta.get("catalogueBacked"))
@@ -254,6 +268,11 @@ public final class PolicyAuthoringCompleteness {
     public static void healMetadata(CiPolicyRuleCandidate r) {
         if (r == null || r.getMetadata() == null) return;
         if (!isAuthoringComplete(r)) return;
+        // Do not heal away NEEDS_INPUT when required runtime operands are still unresolved
+        if (!PolicyExecutionReadiness.unresolvedOperands(r).isEmpty()
+                || !PolicyExecutionReadiness.unavailableOperands(r).isEmpty()) {
+            return;
+        }
         Map<String, Object> meta = new LinkedHashMap<>(r.getMetadata());
         if (Boolean.TRUE.equals(meta.get("NEEDS_INPUT"))
                 && !hasUnresolvedAuthoringOperand(meta)) {

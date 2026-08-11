@@ -114,9 +114,25 @@ class PolicyLifecycleServiceTest {
         lifecycle.saveDraft(session, Map.of(
                 "products", List.of("DIGILEAP"),
                 "effectiveFrom", "2026-04-01"));
-        // Thin fixture typically has critical data gaps → approve must block
+        // POLICY-READINESS-CONVERGENCE-1 — unresolved required operand blocks Approve
+        session.getRuleCandidates().clear();
+        session.getRuleCandidates().add(CiPolicyRuleCandidate.builder()
+                .id(UUID.randomUUID())
+                .clauseId(UUID.randomUUID())
+                .systemRuleId("BANK_ADB_GE_PROPOSED_EDI")
+                .expression(Map.of(
+                        "op", "GTE",
+                        "left", Map.of("metric", "banking.avg_daily_balance_3m"),
+                        "right", Map.of("metric", "application.proposed_edi")))
+                .metadata(new LinkedHashMap<>(Map.of(
+                        "businessTitle", "DigiLeap — Banking Capacity",
+                        "catalogueBacked", true,
+                        "parameters", Map.of("ratio", 1),
+                        "threshold", 1)))
+                .build());
         assertThatThrownBy(() -> lifecycle.approvePolicy(session, Map.of()))
-                .isInstanceOf(ResponseStatusException.class);
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("EDI");
     }
 
     @Test

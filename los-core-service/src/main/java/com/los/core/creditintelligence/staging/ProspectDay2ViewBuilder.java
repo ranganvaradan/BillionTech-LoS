@@ -45,6 +45,11 @@ final class ProspectDay2ViewBuilder {
         out.put("ambiguityCategories", categoryCounts(ambiguityCards));
         out.put("ambiguityFilters", List.of("All", "Blocking", "Non-blocking", "Resolved"));
         out.put("convergenceModel", "SCOPE_SOURCE_PARAMETER_RULE_TREATMENT");
+        // POLICY-READINESS-CONVERGENCE-1 — same execution blockers as Versions/Lifecycle
+        Map<String, Object> execStats = com.los.core.creditintelligence.policystudio.parameters
+                .PolicyExecutionReadiness.executionReadinessStats(session);
+        out.put("executionReadiness", execStats);
+        out.put("executionBlockers", execStats.get("executionBlockers"));
 
         // Enrich counts used by summary banner
         @SuppressWarnings("unchecked")
@@ -52,10 +57,14 @@ final class ProspectDay2ViewBuilder {
                 ? new LinkedHashMap<>((Map<String, Object>) out.get("counts"))
                 : new LinkedHashMap<>();
         long readyRules = ruleCards.stream()
+                .filter(r -> Boolean.TRUE.equals(r.get("executionReady"))
+                        || (r.get("executionReady") == null
+                        && Set.of("Ready", "Accepted", "Edited", "Approved").contains(String.valueOf(r.get("status")))))
                 .filter(r -> Set.of("Ready", "Accepted", "Edited", "Approved").contains(String.valueOf(r.get("status"))))
                 .count();
         long needsReview = ruleCards.stream()
-                .filter(r -> Set.of("Needs your input", "Needs Review", "Blocked").contains(String.valueOf(r.get("status"))))
+                .filter(r -> Set.of("Needs your input", "Needs Review", "Blocked").contains(String.valueOf(r.get("status")))
+                        || Boolean.FALSE.equals(r.get("executionReady")))
                 .count();
         long blockedRules = ruleCards.stream().filter(r -> "Blocked".equals(r.get("status"))).count();
         long approvedRules = ruleCards.stream()

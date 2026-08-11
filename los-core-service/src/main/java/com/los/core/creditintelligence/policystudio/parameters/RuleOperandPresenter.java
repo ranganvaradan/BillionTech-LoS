@@ -189,7 +189,12 @@ public final class RuleOperandPresenter {
                 .equals(String.valueOf(res.get("status"))));
         face.put("resolveAction", false);
         face.put("persistence", res.getOrDefault("persistence", "SESSION_DRAFT_ONLY"));
-        face.put("manualInput", res.get("enteredBy") != null);
+        face.put("manualInput", res.get("enteredBy") != null
+                || ParameterResolutionSupport.STATUS_MANUAL.equals(String.valueOf(res.get("status"))));
+        if (res.get("enteredBy") != null) face.put("enteredBy", res.get("enteredBy"));
+        if (res.get("dataType") != null) face.put("dataType", res.get("dataType"));
+        if (res.get("factSource") != null) face.put("factSource", res.get("factSource"));
+        if (res.get("guidance") != null) face.put("guidance", res.get("guidance"));
         return face;
     }
 
