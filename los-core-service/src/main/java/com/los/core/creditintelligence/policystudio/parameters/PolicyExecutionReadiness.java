@@ -336,6 +336,9 @@ public final class PolicyExecutionReadiness {
                     return sys.contains("ADB") || blob.contains("avg_daily_balance");
                 });
         if (!adbConsumed) return out;
+        if (hasExecutableAdbBulkAdjustment(session)) {
+            return out;
+        }
         for (CiPolicyRuleCandidate r : session.getRuleCandidates()) {
             Map<String, Object> m = r.getMetadata() == null ? Map.of() : r.getMetadata();
             if (!Boolean.TRUE.equals(m.get("metricAdjustment"))) continue;
@@ -354,6 +357,31 @@ public final class PolicyExecutionReadiness {
             }
         }
         return out;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static boolean hasExecutableAdbBulkAdjustment(PolicyStudioSession session) {
+        if (session == null || session.getDocument() == null || session.getDocument().getMetadata() == null) {
+            return false;
+        }
+        Object raw = session.getDocument().getMetadata().get(PolicyDataResolutionSupport.DOC_META_KEY);
+        if (!(raw instanceof Map<?, ?> maps)) return false;
+        Object res = maps.get(com.los.core.creditintelligence.policystudio.metrics
+                .AdbBulkDepositAdjustmentCalculator.ADJUSTMENT_ID);
+        if (!(res instanceof Map<?, ?> m)) return false;
+        if (!"READY".equals(String.valueOf(m.get("cmStatus")))
+                && !"READY".equals(String.valueOf(m.get("executionStatus")))) {
+            return false;
+        }
+        Object def = m.get("definition");
+        if (def instanceof Map<?, ?> d) {
+            return Boolean.TRUE.equals(d.get("executable"))
+                    || Boolean.TRUE.equals(d.get("executableMetric"))
+                    || com.los.core.creditintelligence.policystudio.metrics
+                    .AdbBulkDepositAdjustmentCalculator.BINDING
+                    .equals(String.valueOf(d.get("binding")));
+        }
+        return Boolean.TRUE.equals(m.get("executionCapabilityAvailable"));
     }
 
     private static List<Map<String, Object>> ambiguityBlockers(PolicyStudioSession session) {

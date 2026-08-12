@@ -227,6 +227,38 @@ public class PolicyStudioTestExperienceService {
             }
         }
 
+        // Adjusted ADB — when bulk >10× adjustment is executable on this policy, overlay the
+        // adjusted value onto banking.avg_daily_balance_3m (same calculator as Data & Calculations preview).
+        if (policyHasAdbBulkBinding(session)) {
+            Map<String, Object> eval = com.los.core.creditintelligence.policystudio.metrics
+                    .AdbBulkDepositAdjustmentCalculator.evaluate(
+                    com.los.core.creditintelligence.policystudio.metrics
+                            .AdbBulkDepositAdjustmentCalculator.stagingFixture(),
+                    adbBulkConfigFromSession(session),
+                    java.time.LocalDate.of(2026, 8, 1));
+            if (com.los.core.creditintelligence.policystudio.metrics.AdbBulkDepositAdjustmentCalculator.OUTCOME_PASS
+                    .equals(eval.get("outcome")) && eval.get("adjustedAdb") != null) {
+                Object adjusted = eval.get("adjustedAdb");
+                metrics.put("banking.avg_daily_balance_3m", adjusted);
+                facts.put("banking.avg_daily_balance_3m", adjusted);
+                metrics.put("BANK_POLICY_ADJUSTED_ADB_3M", adjusted);
+                facts.put("BANK_POLICY_ADJUSTED_ADB_3M", adjusted);
+                Map<String, Object> prov = new LinkedHashMap<>();
+                prov.put("parameterKey", "banking.avg_daily_balance_3m");
+                prov.put("businessName", "Adjusted Average Daily Balance");
+                prov.put("metricId", "banking.avg_daily_balance_3m");
+                prov.put("value", adjusted);
+                prov.put("status", "AUTOMATIC_DERIVED");
+                prov.put("sourceLabel", "AdbBulkDepositAdjustmentCalculator.V1 (staging fixture)");
+                prov.put("baseAdb", eval.get("baseAdb"));
+                prov.put("adjustedAdb", adjusted);
+                prov.put("bulkThreshold", eval.get("bulkThreshold"));
+                prov.put("averageDepositAmount", eval.get("averageDepositAmount"));
+                prov.put("excludedCredits", eval.get("excludedCredits"));
+                valueProvenance.add(prov);
+            }
+        }
+
         String product = body != null && body.get("product") != null
                 ? String.valueOf(body.get("product")) : "DIGILEAP";
 
@@ -1364,6 +1396,60 @@ public class PolicyStudioTestExperienceService {
                     .fromBody((Map<String, Object>) d);
         }
         return com.los.core.creditintelligence.policystudio.metrics.EmiBounceCountCalculator.Config.defaults();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static boolean policyHasAdbBulkBinding(PolicyStudioSession session) {
+        if (session == null || session.getDocument() == null || session.getDocument().getMetadata() == null) {
+            return false;
+        }
+        Object raw = session.getDocument().getMetadata().get(
+                com.los.core.creditintelligence.policystudio.parameters.PolicyDataResolutionSupport.DOC_META_KEY);
+        if (!(raw instanceof Map<?, ?> maps)) return false;
+        Object res = maps.get(com.los.core.creditintelligence.policystudio.metrics
+                .AdbBulkDepositAdjustmentCalculator.ADJUSTMENT_ID);
+        if (!(res instanceof Map<?, ?> m)) return false;
+        if (!"READY".equals(String.valueOf(m.get("cmStatus")))
+                && !"READY".equals(String.valueOf(m.get("executionStatus")))) {
+            return false;
+        }
+        Object def = m.get("definition");
+        if (def instanceof Map<?, ?> d) {
+            return Boolean.TRUE.equals(d.get("executable"))
+                    || Boolean.TRUE.equals(d.get("executableMetric"))
+                    || com.los.core.creditintelligence.policystudio.metrics
+                    .AdbBulkDepositAdjustmentCalculator.BINDING
+                    .equals(String.valueOf(d.get("binding")));
+        }
+        return Boolean.TRUE.equals(m.get("executionCapabilityAvailable"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static com.los.core.creditintelligence.policystudio.metrics.AdbBulkDepositAdjustmentCalculator.Config
+    adbBulkConfigFromSession(PolicyStudioSession session) {
+        if (session == null || session.getDocument() == null || session.getDocument().getMetadata() == null) {
+            return com.los.core.creditintelligence.policystudio.metrics
+                    .AdbBulkDepositAdjustmentCalculator.Config.defaults();
+        }
+        Object raw = session.getDocument().getMetadata().get(
+                com.los.core.creditintelligence.policystudio.parameters.PolicyDataResolutionSupport.DOC_META_KEY);
+        if (!(raw instanceof Map<?, ?> maps)) {
+            return com.los.core.creditintelligence.policystudio.metrics
+                    .AdbBulkDepositAdjustmentCalculator.Config.defaults();
+        }
+        Object res = maps.get(com.los.core.creditintelligence.policystudio.metrics
+                .AdbBulkDepositAdjustmentCalculator.ADJUSTMENT_ID);
+        if (!(res instanceof Map<?, ?> m)) {
+            return com.los.core.creditintelligence.policystudio.metrics
+                    .AdbBulkDepositAdjustmentCalculator.Config.defaults();
+        }
+        Object def = m.get("definition");
+        if (def instanceof Map<?, ?> d) {
+            return com.los.core.creditintelligence.policystudio.metrics
+                    .AdbBulkDepositAdjustmentCalculator.Config.fromBody((Map<String, Object>) d);
+        }
+        return com.los.core.creditintelligence.policystudio.metrics
+                .AdbBulkDepositAdjustmentCalculator.Config.defaults();
     }
 
     @SuppressWarnings("unchecked")

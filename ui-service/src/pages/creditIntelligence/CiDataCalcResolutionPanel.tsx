@@ -144,10 +144,19 @@ export function CiDataCalcResolutionPanel({
       } else if (kind === 'ADJUSTMENT') {
         await onResolve(ruleId, {
           uiAction: 'RESOLVE_DATA_ADJUSTMENT',
-          dataItemId: parameterId,
-          parameterId,
+          dataItemId: parameterId.includes('adb') || parameterId.includes('bulk') || parameterId.includes('avg_daily')
+            ? 'banking.adb_bulk_deposit_adjustment'
+            : parameterId,
+          parameterId: 'banking.adb_bulk_deposit_adjustment',
           multiple: multiple || '10',
-          reason: `ADB bulk exclusion ${multiple}× recorded (execution still needs configuration)`,
+          periodMonths: Number(periodMonths) || 3,
+          strictGreaterThan: true,
+          excludeLoanDisbursements: true,
+          excludeOnlineGaming: true,
+          excludeDuplicates: true,
+          confirmExecutable: true,
+          saveMode: 'SAVE_EXECUTABLE',
+          reason: `ADB bulk exclusion >${multiple || '10'}× average deposits — executable binding`,
         })
       } else if (kind === 'MANUAL') {
         await onResolve(ruleId, {
@@ -175,14 +184,33 @@ export function CiDataCalcResolutionPanel({
     setPreviewBusy(true)
     setError(null)
     try {
-      const res = await previewDataCalculation(documentId, {
-        dataItemId: parameterId || 'banking.emi_bounce_count_3m',
-        parameterId: parameterId || 'banking.emi_bounce_count_3m',
-        periodMonths: Number(periodMonths) || 3,
-        emiIdentification,
-        bounceIdentification,
-        excludeDuplicates,
-      })
+      const isAdb =
+        kind === 'ADJUSTMENT' ||
+        parameterId.includes('adb') ||
+        parameterId.includes('bulk') ||
+        parameterId.includes('avg_daily')
+      const res = await previewDataCalculation(
+        documentId,
+        isAdb
+          ? {
+              dataItemId: 'banking.adb_bulk_deposit_adjustment',
+              parameterId: 'banking.adb_bulk_deposit_adjustment',
+              periodMonths: Number(periodMonths) || 3,
+              multiple: multiple || '10',
+              strictGreaterThan: true,
+              excludeLoanDisbursements: true,
+              excludeOnlineGaming: true,
+              excludeDuplicates: true,
+            }
+          : {
+              dataItemId: parameterId || 'banking.emi_bounce_count_3m',
+              parameterId: parameterId || 'banking.emi_bounce_count_3m',
+              periodMonths: Number(periodMonths) || 3,
+              emiIdentification,
+              bounceIdentification,
+              excludeDuplicates,
+            },
+      )
       setPreview(asRecord(res.preview ?? res))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Preview failed')
@@ -464,10 +492,56 @@ export function CiDataCalcResolutionPanel({
         ) : null}
 
         {kind === 'ADJUSTMENT' ? (
-          <div className="mt-4 space-y-3 text-sm">
-            <p>Exclude bulk deposits above a multiple of average deposits from ADB.</p>
+          <div className="mt-4 space-y-3 text-sm text-slate-700" data-testid="adb-bulk-config">
+            <div className="rounded border border-slate-100 bg-slate-50 px-3 py-2 text-xs space-y-1">
+              <p>
+                <span className="font-semibold">Adjustment:</span> Exclude unusually large credit deposits from
+                ADB
+              </p>
+              <p>
+                <span className="font-semibold">Period:</span> Last {periodMonths || '3'} months
+              </p>
+              <p>
+                <span className="font-semibold">Deposit population:</span> Qualifying merchant credit deposits
+                (existing classifiers)
+              </p>
+              <p>
+                <span className="font-semibold">Average deposit:</span> Mean of deposits ≤ 3× median over the
+                period (loan / gaming / duplicates excluded)
+              </p>
+              <p>
+                <span className="font-semibold">Bulk threshold:</span> {multiple || '10'} × average deposit
+              </p>
+              <p>
+                <span className="font-semibold">Comparison:</span> Amount &gt; threshold (strict — exactly 10×
+                is not excluded)
+              </p>
+              <p>
+                <span className="font-semibold">Action:</span> Exclude qualifying bulk deposit from Adjusted ADB
+                (EOD reconstruction)
+              </p>
+              <p>
+                <span className="font-semibold">Existing exclusions (applied with this adjustment):</span> Loan
+                disbursements · Online gaming credits
+              </p>
+            </div>
+
             <label className="block">
-              <span className="text-slate-600">Multiple of average deposits</span>
+              <span className="text-slate-600">Period</span>
+              <select
+                className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+                value={periodMonths}
+                disabled={busy}
+                onChange={(e) => setPeriodMonths(e.target.value)}
+                data-testid="adb-bulk-period"
+              >
+                <option value="3">Last 3 months (policy default)</option>
+                <option value="6">Last 6 months</option>
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="text-slate-600">Bulk threshold multiple</span>
               <input
                 className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
                 inputMode="numeric"
@@ -477,9 +551,66 @@ export function CiDataCalcResolutionPanel({
                 data-testid="adb-bulk-multiple"
               />
             </label>
-            <p className="rounded border border-amber-200 bg-amber-50 px-2 py-2 text-xs text-amber-950">
-              Policy definition can be saved; this is a design proposal. Executable calculator remains Needs
-              configuration until average-deposit baseline wiring is production-bound — not Ready.
+
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="bt-btn bt-btn-secondary bt-btn-sm"
+                disabled={busy || previewBusy || !documentId}
+                onClick={() => void runPreview()}
+                data-testid="adb-bulk-preview"
+              >
+                {previewBusy ? 'Running…' : 'Preview calculation with sample'}
+              </button>
+              <button
+                type="button"
+                className="text-xs text-slate-500 underline"
+                onClick={() => setShowAdvanced((v) => !v)}
+              >
+                {showAdvanced ? 'Hide advanced' : 'Show advanced IDs'}
+              </button>
+            </div>
+
+            {showAdvanced ? (
+              <p className="rounded border border-slate-200 bg-white px-2 py-2 font-mono text-[11px] text-slate-600">
+                adjustmentId=banking.adb_bulk_deposit_adjustment · binding=AdbBulkDepositAdjustmentCalculator.V1
+                · affected=banking.avg_daily_balance_3m · adjusted=BANK_POLICY_ADJUSTED_ADB_3M
+              </p>
+            ) : null}
+
+            {preview ? (
+              <div
+                className="rounded border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-950 space-y-0.5"
+                data-testid="adb-bulk-preview-result"
+              >
+                <p className="font-semibold">Preview result</p>
+                <p>Qualifying deposit count: {String(preview.qualifyingDepositCount ?? '—')}</p>
+                <p>Core deposits for average: {String(preview.coreDepositCountForAverage ?? '—')}</p>
+                <p>Average deposit: ₹{String(preview.averageDepositAmount ?? '—')}</p>
+                <p>
+                  Multiplier / threshold: {String(preview.multiplier ?? multiple)}× → ₹
+                  {String(preview.bulkThreshold ?? '—')}
+                </p>
+                <p>
+                  Excluded bulk credits:{' '}
+                  {Array.isArray(preview.excludedCredits)
+                    ? preview.excludedCredits.length
+                    : String(preview.excludedCredits ?? '—')}
+                </p>
+                <p>Base ADB: ₹{String(preview.baseAdb ?? '—')}</p>
+                <p>
+                  Adjusted ADB:{' '}
+                  {String(preview.outcome) === 'DATA_INSUFFICIENT'
+                    ? 'DATA_INSUFFICIENT'
+                    : `₹${String(preview.adjustedAdb ?? preview.v ?? '—')}`}
+                </p>
+                {preview.reason ? <p className="mt-1 text-amber-900">{String(preview.reason)}</p> : null}
+              </div>
+            ) : null}
+
+            <p className="rounded border border-emerald-200 bg-emerald-50 px-2 py-2 text-xs text-emerald-950">
+              Saving enables the executable binding for this policy version. Status becomes Ready. Policy Test uses
+              the same Adjusted ADB calculator path. Does not mutate global GACAT ADB.
             </p>
           </div>
         ) : null}
@@ -533,7 +664,9 @@ export function CiDataCalcResolutionPanel({
               onClick={() => void save()}
               data-testid="data-calc-resolve-save"
             >
-              {kind === 'CALCULATION' ? 'Save configuration' : 'Save definition'}
+              {kind === 'CALCULATION' || kind === 'ADJUSTMENT'
+                ? 'Save configuration'
+                : 'Save definition'}
             </button>
           )}
         </div>

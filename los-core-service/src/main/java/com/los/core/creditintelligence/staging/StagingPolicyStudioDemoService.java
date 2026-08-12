@@ -919,7 +919,8 @@ public class StagingPolicyStudioDemoService {
     }
 
     /**
-     * POLICY-DATA-CALC-FUNCTIONAL-COMPLETION-1 — preview EMI Bounce Count on staging fixture / supplied txns.
+     * POLICY-DATA-CALC-FUNCTIONAL-COMPLETION-1 / BANKING-BRE-FINAL-CLOSURE-1 —
+     * preview EMI Bounce Count or ADB bulk adjustment on staging fixture / supplied txns.
      * Uses the same calculator Policy Test / runtime binding uses.
      */
     public Map<String, Object> previewDataCalculation(
@@ -927,6 +928,65 @@ public class StagingPolicyStudioDemoService {
         PolicyStudioSession session = requireSession(documentId, tenantHeader);
         String dataItemId = body == null ? "" : String.valueOf(body.getOrDefault("dataItemId",
                 body.getOrDefault("parameterId", "banking.emi_bounce_count_3m")));
+        java.time.LocalDate asOf = java.time.LocalDate.of(2026, 8, 1);
+        if (body != null && body.get("asOf") != null) {
+            try {
+                asOf = java.time.LocalDate.parse(String.valueOf(body.get("asOf")));
+            } catch (Exception ignored) {
+                // keep fixture asOf
+            }
+        }
+
+        boolean adbBulk = dataItemId.contains("adb") || dataItemId.contains("bulk")
+                || dataItemId.contains("avg_daily")
+                || "banking.adb_bulk_deposit_adjustment".equals(dataItemId);
+        if (adbBulk) {
+            var cfg = com.los.core.creditintelligence.policystudio.metrics
+                    .AdbBulkDepositAdjustmentCalculator.Config.fromBody(body == null ? Map.of() : body);
+            List<com.los.core.creditintelligence.policystudio.metrics.AdbBulkDepositAdjustmentCalculator.Txn> txns =
+                    com.los.core.creditintelligence.policystudio.metrics
+                            .AdbBulkDepositAdjustmentCalculator.stagingFixture();
+            if (body != null && body.get("transactions") instanceof List<?> rawList) {
+                List<com.los.core.creditintelligence.policystudio.metrics
+                        .AdbBulkDepositAdjustmentCalculator.Txn> parsed = new ArrayList<>();
+                for (Object o : rawList) {
+                    if (!(o instanceof Map<?, ?> m)) continue;
+                    try {
+                        parsed.add(new com.los.core.creditintelligence.policystudio.metrics
+                                .AdbBulkDepositAdjustmentCalculator.Txn(
+                                java.time.LocalDate.parse(String.valueOf(m.get("date"))),
+                                m.get("narration") == null ? null : String.valueOf(m.get("narration")),
+                                m.get("direction") == null ? "CREDIT" : String.valueOf(m.get("direction")),
+                                m.get("amount") == null ? null : new BigDecimal(String.valueOf(m.get("amount"))),
+                                m.get("category") == null ? null : String.valueOf(m.get("category")),
+                                Boolean.parseBoolean(String.valueOf(
+                                        m.get("classified") == null ? Boolean.TRUE : m.get("classified"))),
+                                m.get("balanceAfter") == null ? null
+                                        : new BigDecimal(String.valueOf(m.get("balanceAfter"))),
+                                m.get("duplicateStatus") == null ? null : String.valueOf(m.get("duplicateStatus"))));
+                    } catch (Exception ignored) {
+                        // skip malformed row
+                    }
+                }
+                if (!parsed.isEmpty()) txns = parsed;
+            }
+            Map<String, Object> result = com.los.core.creditintelligence.policystudio.metrics
+                    .AdbBulkDepositAdjustmentCalculator.evaluate(txns, cfg, asOf);
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("documentId", documentId.toString());
+            out.put("dataItemId", "banking.adb_bulk_deposit_adjustment");
+            out.put("policyName", session.getDocument() == null ? null : session.getDocument().getName());
+            out.put("preview", result);
+            out.put("fixture", body == null || !(body.get("transactions") instanceof List<?>));
+            out.put("binding", com.los.core.creditintelligence.policystudio.metrics
+                    .AdbBulkDepositAdjustmentCalculator.BINDING);
+            out.put("samePathAsPolicyTest", true);
+            out.put("allowCanonicalAuthority", false);
+            out.put("gacatMutated", false);
+            out.put("message", "Preview uses AdbBulkDepositAdjustmentCalculator.V1 — same path as Policy Test");
+            return out;
+        }
+
         var cfg = com.los.core.creditintelligence.policystudio.metrics.EmiBounceCountCalculator.Config
                 .fromBody(body == null ? Map.of() : body);
         List<com.los.core.creditintelligence.policystudio.metrics.EmiBounceCountCalculator.Txn> txns =
@@ -959,14 +1019,6 @@ public class StagingPolicyStudioDemoService {
                 }
             }
             if (!parsed.isEmpty()) txns = parsed;
-        }
-        java.time.LocalDate asOf = java.time.LocalDate.of(2026, 8, 1);
-        if (body != null && body.get("asOf") != null) {
-            try {
-                asOf = java.time.LocalDate.parse(String.valueOf(body.get("asOf")));
-            } catch (Exception ignored) {
-                // keep fixture asOf
-            }
         }
         Map<String, Object> result = com.los.core.creditintelligence.policystudio.metrics
                 .EmiBounceCountCalculator.evaluate(txns, cfg, asOf);
@@ -1034,9 +1086,11 @@ public class StagingPolicyStudioDemoService {
                             ? new java.math.BigDecimal("10")
                             : new java.math.BigDecimal(String.valueOf(body.get("multiple")).trim());
                     String adjKey = dataItemId.contains("avg_daily") || dataItemId.contains("adb")
+                            || dataItemId.contains("bulk")
                             ? "banking.adb_bulk_deposit_adjustment" : dataItemId;
                     yield com.los.core.creditintelligence.policystudio.parameters
-                            .PolicyDataResolutionSupport.policyAdjustment(adjKey, mult, actor, documentId);
+                            .PolicyDataResolutionSupport.policyAdjustment(
+                                    adjKey, mult, actor, documentId, body == null ? Map.of() : body);
                 }
                 case "RESOLVE_DATA_MANUAL" -> com.los.core.creditintelligence.policystudio.parameters
                         .PolicyDataResolutionSupport.manualInput(

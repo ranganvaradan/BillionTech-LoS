@@ -298,32 +298,75 @@ public class PolicyReviewService {
     private void regenerateInwardReturnTests(PolicyStudioSession session, String selection) {
         session.getTestCases().removeIf(t ->
                 t.getName() != null && t.getName().toUpperCase(Locale.ROOT).contains("INWARD")
-                        && t.getName().toUpperCase(Locale.ROOT).contains("100"));
+                        && (t.getName().toUpperCase(Locale.ROOT).contains("100")
+                        || t.getName().toUpperCase(Locale.ROOT).contains("BOUNDARY_99")
+                        || t.getName().toUpperCase(Locale.ROOT).contains("BOUNDARY_101")));
         var rule = session.getRuleCandidates().stream()
-                .filter(r -> "BANK_INWARD_RETURN_BRANCHED_100".equals(r.getSystemRuleId()))
+                .filter(r -> "BANK_INWARD_RETURN_BRANCHED_100".equals(r.getSystemRuleId())
+                        || com.los.core.creditintelligence.policystudio.parameters
+                        .InwardReturnCompoundSupport.looksLikeInwardReturnCompound(r))
                 .findFirst().orElse(null);
         if (rule == null) {
             return;
         }
         String mode = selection == null ? "ASK_CUSTOMER" : selection;
+        boolean ratioAt100 = com.los.core.creditintelligence.policystudio.parameters
+                .InwardReturnCompoundSupport.OPTION_RATIO.equals(mode)
+                || "INCLUDE_100_IN_RATIO_BRANCH".equalsIgnoreCase(mode);
+        boolean ask = mode.toUpperCase(Locale.ROOT).contains("ASK");
         List<CiPolicyTestCase> generated = new ArrayList<>();
-        generated.add(CiPolicyTestCase.builder()
+        // Deterministic 99 / 100 / 101 boundary goldens (BANKING-BRE-FINAL-CLOSURE-1)
+        generated.add(boundaryCase(rule, "INWARD_RETURN_BOUNDARY_99_" + mode, Map.of(
+                "banking.transaction_count.total_3m", 99,
+                "banking.transaction_count_3m", 99,
+                "banking.inward_return.count_3m", 3,
+                "banking.inward_cheque_return_count_3m", 3,
+                "banking.inward_return.ratio_3m", 10,
+                "banking.inward_cheque_return_ratio_3m", 10),
+                ask ? "DATA_INSUFFICIENT" : "PASS", // count branch: 3 <= 5
+                Map.of("boundaryTxnCount", 99, "boundarySelection", mode, "expectedBranch", "COUNT")));
+        generated.add(boundaryCase(rule, "INWARD_RETURN_EXACTLY_100_" + mode, Map.of(
+                "banking.transaction_count.total_3m", 100,
+                "banking.transaction_count_3m", 100,
+                "banking.inward_return.count_3m", 1,
+                "banking.inward_cheque_return_count_3m", 1,
+                "banking.inward_return.ratio_3m", 4,
+                "banking.inward_cheque_return_ratio_3m", 4),
+                ask ? "DATA_INSUFFICIENT" : "PASS", // ratio@100 when OPTION_RATIO; count@100 when OPTION_COUNT
+                Map.of("boundaryTxnCount", 100, "boundarySelection", mode,
+                        "expectedBranch", ratioAt100 ? "RATIO" : "COUNT", "exactly100", mode)));
+        generated.add(boundaryCase(rule, "INWARD_RETURN_BOUNDARY_101_" + mode, Map.of(
+                "banking.transaction_count.total_3m", 101,
+                "banking.transaction_count_3m", 101,
+                "banking.inward_return.count_3m", 99,
+                "banking.inward_cheque_return_count_3m", 99,
+                "banking.inward_return.ratio_3m", 5,
+                "banking.inward_cheque_return_ratio_3m", 5),
+                ask ? "DATA_INSUFFICIENT" : "PASS", // ratio branch: 5 <= 5
+                Map.of("boundaryTxnCount", 101, "boundarySelection", mode, "expectedBranch", "RATIO")));
+        session.getTestCases().addAll(generated);
+    }
+
+    private static CiPolicyTestCase boundaryCase(
+            com.los.core.creditintelligence.policystudio.domain.CiPolicyRuleCandidate rule,
+            String name,
+            Map<String, Object> metrics,
+            String expected,
+            Map<String, Object> meta) {
+        return CiPolicyTestCase.builder()
                 .id(UUID.randomUUID())
                 .clauseId(rule.getClauseId())
                 .ruleCandidateId(rule.getId())
-                .name("INWARD_RETURN_EXACTLY_100_" + mode)
-                .inputFacts(Map.of("boundarySelection", mode))
-                .inputMetrics(Map.of("banking.transaction_count_3m", 100,
-                        "banking.inward_cheque_return_count_3m", 1))
-                .expectedOutcome(mode.toUpperCase(Locale.ROOT).contains("ASK")
-                        ? "DATA_INSUFFICIENT" : "PASS")
+                .name(name)
+                .inputFacts(Map.of("boundarySelection", meta.getOrDefault("boundarySelection", "")))
+                .inputMetrics(metrics)
+                .expectedOutcome(expected)
                 .boundaryCase(true)
                 .aiExpectedOutcome("DATA_INSUFFICIENT")
                 .generatedBy("SYSTEM_AFTER_BOUNDARY_RESOLUTION")
                 .reviewStatus(ReviewState.AI_DRAFTED.name())
-                .metadata(Map.of("exactly100", mode))
-                .build());
-        session.getTestCases().addAll(generated);
+                .metadata(meta)
+                .build();
     }
 
     private void appendPreviousResolution(CiPolicyAmbiguity amb) {

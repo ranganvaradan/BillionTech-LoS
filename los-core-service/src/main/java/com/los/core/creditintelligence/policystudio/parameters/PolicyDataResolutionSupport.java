@@ -260,27 +260,106 @@ public final class PolicyDataResolutionSupport {
             BigDecimal multiple,
             String actor,
             String documentId) {
-        BigDecimal mult = multiple == null ? new BigDecimal("10") : multiple;
+        return policyAdjustment(dataItemId, multiple, actor, documentId, Map.of());
+    }
+
+    /**
+     * BANKING-BRE-FINAL-CLOSURE-1 — policy-scoped bulk &gt;N× ADB adjustment with executable binding.
+     */
+    public static Map<String, Object> policyAdjustment(
+            String dataItemId,
+            BigDecimal multiple,
+            String actor,
+            String documentId,
+            Map<String, Object> body) {
+        var cfg = com.los.core.creditintelligence.policystudio.metrics.AdbBulkDepositAdjustmentCalculator.Config
+                .fromBody(body == null ? Map.of() : body);
+        BigDecimal mult = multiple != null ? multiple : cfg.multiple();
+        if (body != null && body.get("multiple") == null && body.get("multipleOfAverageDeposits") == null) {
+            // keep explicit multiple arg when body omits it
+            cfg = new com.los.core.creditintelligence.policystudio.metrics
+                    .AdbBulkDepositAdjustmentCalculator.Config(
+                    cfg.periodMonths(), mult, cfg.strictGreaterThan(),
+                    cfg.excludeLoanDisbursements(), cfg.excludeOnlineGaming(), cfg.excludeDuplicates());
+        }
+        boolean confirm = body == null || body.isEmpty()
+                || body.get("confirmExecutable") == null
+                || Boolean.TRUE.equals(body.get("confirmExecutable"))
+                || Boolean.TRUE.equals(body.get("enableExecutableBinding"))
+                || "SAVE_EXECUTABLE".equalsIgnoreCase(String.valueOf(body.getOrDefault("saveMode", "")));
+        if (body != null && Boolean.FALSE.equals(body.get("confirmExecutable"))) {
+            confirm = false;
+        }
+
+        String adjKey = dataItemId == null || dataItemId.isBlank()
+                || dataItemId.contains("avg_daily") || dataItemId.contains("adb")
+                ? com.los.core.creditintelligence.policystudio.metrics
+                .AdbBulkDepositAdjustmentCalculator.ADJUSTMENT_ID
+                : dataItemId;
+
         Map<String, Object> def = new LinkedHashMap<>();
         def.put("adjustmentType", "EXCLUDE_BULK_DEPOSITS");
-        def.put("multipleOfAverageDeposits", mult);
-        def.put("affectedMetric", "banking.avg_daily_balance_3m");
-        def.put("plainEnglish", "Exclude bulk deposits > " + mult.toPlainString()
-                + "× average deposits from ADB");
-        def.put("executable", false);
-        def.put("reason", "Average-deposit baseline wiring / bulk exclusion calculator not production-bound");
+        def.put("multipleOfAverageDeposits", cfg.multiple());
+        def.put("multiple", cfg.multiple());
+        def.put("periodMonths", cfg.periodMonths());
+        def.put("periodLabel", "Last " + cfg.periodMonths() + " months");
+        def.put("strictGreaterThan", cfg.strictGreaterThan());
+        def.put("comparison", cfg.strictGreaterThan() ? ">" : ">=");
+        def.put("depositPopulation", "Qualifying merchant credit deposits");
+        def.put("averageDefinition",
+                "Average qualifying deposit amount (mean of deposits ≤ 3× median; loan/gaming/duplicates excluded)");
+        def.put("excludeLoanDisbursements", cfg.excludeLoanDisbursements());
+        def.put("excludeOnlineGaming", cfg.excludeOnlineGaming());
+        def.put("excludeDuplicates", cfg.excludeDuplicates());
+        def.put("affectedMetric", com.los.core.creditintelligence.policystudio.metrics
+                .AdbBulkDepositAdjustmentCalculator.AFFECTED_METRIC);
+        def.put("adjustedMetric", com.los.core.creditintelligence.policystudio.metrics
+                .AdbBulkDepositAdjustmentCalculator.ADJUSTED_METRIC);
+        def.put("binding", com.los.core.creditintelligence.policystudio.metrics
+                .AdbBulkDepositAdjustmentCalculator.BINDING);
+        def.put("action", "Exclude qualifying bulk deposit from Adjusted ADB (EOD reconstruction)");
+        def.put("plainEnglish", "Exclude bulk deposits " + (cfg.strictGreaterThan() ? ">" : ">=")
+                + " " + cfg.multiple().toPlainString()
+                + "× average deposits from Adjusted ADB");
+        def.put("executable", confirm);
+        def.put("executableMetric", confirm);
+        def.put("gacatMutated", false);
 
-        Map<String, Object> out = base(dataItemId, TYPE_POLICY_ADJUSTMENT, documentId, actor);
+        Map<String, Object> out = base(adjKey, TYPE_POLICY_ADJUSTMENT, documentId, actor);
         out.put("definition", def);
         out.put("businessDefinitionStatus", BIZ_DEFINED);
-        out.put("executionStatus", EXEC_NEEDS_CONFIG);
-        out.put("executionCapabilityAvailable", false);
-        // When ADB is used by UW rules, PolicyExecutionReadiness already marks REQUIRED_POLICY_ADJUSTMENT
-        out.put("executionImpact", IMPACT_BLOCKING);
-        out.put("cmStatus", "NEEDS_CONFIGURATION");
-        out.put("displayStatus", "NEEDS CONFIGURATION");
-        out.put("howDefined", def.get("plainEnglish") + " — Defined in this policy version; execution not bound");
         out.put("gacatMutated", false);
+        out.put("howCalculated", Map.of(
+                "inputs", List.of(
+                        "Bank statement credits",
+                        "Existing loan-disbursement classifier",
+                        "Existing online-gaming classifier",
+                        "BANK_AVERAGE_DAILY_BALANCE_V1 EOD carry-forward"),
+                "window", def.get("periodLabel"),
+                "method", "Average qualifying deposit → bulk threshold → reverse excluded credits in EOD series → Adjusted ADB",
+                "implementation", com.los.core.creditintelligence.policystudio.metrics
+                        .AdbBulkDepositAdjustmentCalculator.BINDING,
+                "missingData", "DATA_INSUFFICIENT when bank data/classification unavailable — never invent 0"));
+        out.put("howDefined", def.get("plainEnglish") + " · Binding "
+                + com.los.core.creditintelligence.policystudio.metrics
+                .AdbBulkDepositAdjustmentCalculator.BINDING);
+        if (confirm) {
+            out.put("executionStatus", EXEC_READY);
+            out.put("executionCapabilityAvailable", true);
+            out.put("executionImpact", IMPACT_NON_BLOCKING);
+            out.put("cmStatus", "READY");
+            out.put("displayStatus", "READY");
+            out.put("message", "Bulk >10× ADB adjustment saved — executable binding active for Policy Test / preview");
+            out.put("willBecomeReady", true);
+        } else {
+            out.put("executionStatus", EXEC_NEEDS_CONFIG);
+            out.put("executionCapabilityAvailable", true);
+            out.put("executionImpact", IMPACT_BLOCKING);
+            out.put("cmStatus", "NEEDS_CONFIGURATION");
+            out.put("displayStatus", "NEEDS CONFIGURATION");
+            out.put("message", "Design proposal saved — confirm executable binding to mark Ready");
+            out.put("willBecomeReady", false);
+        }
         return out;
     }
 
