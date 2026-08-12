@@ -243,9 +243,12 @@ public class PolicyReviewService {
                 && ("RESOLVED".equals(amb.getResolutionStatus()))) {
             patchInwardReturnBoundaryExpression(session, resolvedOption);
             regenerateInwardReturnTests(session, resolvedOption);
+            int superseded = supersedeRelatedHundredBoundaryAmbiguities(
+                    session, amb.getId(), resolvedOption, resolvedBy);
             resultExtras.put("inwardReturnTestsRegenerated", true);
             resultExtras.put("inwardReturnBoundaryPatched", true);
             resultExtras.put("boundaryOption", resolvedOption);
+            resultExtras.put("relatedAmbiguitiesSuperseded", superseded);
         }
 
         amb.setResolvedBy(resolvedBy);
@@ -258,6 +261,50 @@ public class PolicyReviewService {
 
         persistenceService.saveSessionSnapshot(session);
         return new CiPolicyAmbiguityResolveResult(amb.getId(), amb.getResolutionStatus(), amb.getResolvedOption(), act.name(), resultExtras);
+    }
+
+    /**
+     * POLICY-READINESS-SINGLE-SOURCE-OF-TRUTH-1 — when =100 boundary is resolved on this version,
+     * sibling OPEN "more/less than 100" rows become SUPERSEDED (history retained, no longer blocking).
+     */
+    private int supersedeRelatedHundredBoundaryAmbiguities(
+            PolicyStudioSession session, UUID resolvedId, String resolvedOption, String resolvedBy) {
+        if (session.getAmbiguities() == null) return 0;
+        int n = 0;
+        for (CiPolicyAmbiguity other : session.getAmbiguities()) {
+            if (other == null || other.getId() == null) continue;
+            if (resolvedId != null && resolvedId.equals(other.getId())) continue;
+            if (!"OPEN".equals(other.getResolutionStatus())) continue;
+            String phrase = other.getPhrase() == null ? "" : other.getPhrase().toLowerCase(Locale.ROOT);
+            if (!(phrase.contains("exactly 100") || phrase.contains("100 transactions")
+                    || phrase.contains("more than 100") || phrase.contains("less than 100")
+                    || phrase.contains("= 100"))) {
+                continue;
+            }
+            Map<String, Object> prev = new LinkedHashMap<>();
+            prev.put("resolutionStatus", other.getResolutionStatus());
+            prev.put("resolvedOption", other.getResolvedOption());
+            prev.put("resolvedAt", other.getResolvedAt() == null ? null : other.getResolvedAt().toString());
+            prev.put("resolutionNotes", other.getResolutionNotes());
+            List<Object> history = other.getPreviousResolution() == null
+                    ? new ArrayList<>() : new ArrayList<>(other.getPreviousResolution());
+            history.add(prev);
+            other.setPreviousResolution(history);
+            other.setResolutionStatus("SUPERSEDED");
+            other.setResolvedOption(resolvedOption == null
+                    ? "SUPERSEDED_BY_BOUNDARY_RESOLUTION" : resolvedOption);
+            other.setResolvedBy(resolvedBy == null ? "system" : resolvedBy);
+            other.setResolvedAt(Instant.now());
+            other.setResolutionNotes(
+                    "Superseded by approved transaction-count=100 boundary resolution on this policy version");
+            Map<String, Object> om = other.getMetadata() == null
+                    ? new LinkedHashMap<>() : new LinkedHashMap<>(other.getMetadata());
+            om.put("supersededByAmbiguityId", resolvedId == null ? null : resolvedId.toString());
+            om.put("supersededReason", "BOUNDARY_RESOLVED_ON_CURRENT_VERSION");
+            other.setMetadata(om);
+            n++;
+        }
+        return n;
     }
 
     private void patchInwardReturnBoundaryExpression(PolicyStudioSession session, String selection) {

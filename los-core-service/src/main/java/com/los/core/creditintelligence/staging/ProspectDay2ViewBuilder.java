@@ -596,8 +596,12 @@ final class ProspectDay2ViewBuilder {
         String fileName = session.getDocument() == null ? null : session.getDocument().getName();
         List<Map<String, Object>> cards = new ArrayList<>();
         for (CiPolicyRuleCandidate r : session.getRuleCandidates()) {
-            cards.add(toRuleCard(r, clauses.get(r.getClauseId()), interps.get(r.getClauseId()),
-                    openPhrases, fileName));
+            Map<String, Object> card = toRuleCard(r, clauses.get(r.getClauseId()), interps.get(r.getClauseId()),
+                    openPhrases, fileName);
+            // POLICY-READINESS-SINGLE-SOURCE-OF-TRUTH-1 — session blockers (boundary ambs) demote Ready
+            com.los.core.creditintelligence.policystudio.parameters.PolicyExecutionReadiness
+                    .applyToCard(card, r, session);
+            cards.add(card);
         }
         cards.sort(Comparator
                 .comparing((Map<String, Object> m) -> statusOrder(String.valueOf(m.get("status"))))

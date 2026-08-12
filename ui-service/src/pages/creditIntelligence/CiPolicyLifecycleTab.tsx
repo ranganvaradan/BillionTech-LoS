@@ -201,9 +201,17 @@ export function CiPolicyLifecycleTab({
     setFeedback(String(primary.disabledReason ?? 'No action available in this status.'))
   }
 
-  const readyForNext = readinessItems.length
+  // POLICY-READINESS-SINGLE-SOURCE-OF-TRUTH-1 — never show Ready when execution blockers remain
+  // or Submit is disabled for an execution reason. Checklist alone previously lied green.
+  const checklistOk = readinessItems.length
     ? readinessItems.every((raw) => Boolean(asRecord(raw).ok))
     : Boolean(settings?.readyForNextStep)
+  const executionOk = settings?.executionReadinessOk !== false
+  const primaryEnabled = Boolean(asRecord(primary).enabled)
+  const readyForNext =
+    checklistOk &&
+    executionOk &&
+    (primaryEnabled || Boolean(settings?.readyForNextStep))
 
   return (
     <div className="space-y-4" data-testid="policy-lifecycle-tab">

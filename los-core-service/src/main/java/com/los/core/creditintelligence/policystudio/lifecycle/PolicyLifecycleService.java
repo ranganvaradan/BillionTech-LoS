@@ -1152,38 +1152,26 @@ public class PolicyLifecycleService {
     }
 
     private long rulesNeedingInput(PolicyStudioSession session) {
-        // Included executable rules that are not execution-ready (canonical)
-        return session.getRuleCandidates().stream()
-                .filter(com.los.core.creditintelligence.policystudio.parameters
-                        .PolicyExecutionReadiness::isIncludedExecutableRule)
-                .filter(r -> !com.los.core.creditintelligence.policystudio.parameters
-                        .PolicyExecutionReadiness.isExecutionReady(r))
-                .count();
+        Map<String, Object> eval = com.los.core.creditintelligence.policystudio.parameters
+                .PolicyExecutionReadiness.evaluate(session);
+        long included = ((Number) eval.getOrDefault("includedExecutableRules", 0L)).longValue();
+        long ready = ((Number) eval.getOrDefault("executionReadyRules", 0L)).longValue();
+        return Math.max(0, included - ready);
     }
 
     private boolean underwritingRulesAuthoringComplete(PolicyStudioSession session) {
-        List<CiPolicyRuleCandidate> uw = session.getRuleCandidates().stream()
-                .filter(com.los.core.creditintelligence.policystudio.parameters
-                        .PolicyExecutionReadiness::isIncludedExecutableRule)
-                .toList();
-        if (uw.isEmpty()) {
-            return false;
-        }
-        return uw.stream().allMatch(com.los.core.creditintelligence.policystudio.parameters
-                .PolicyExecutionReadiness::isExecutionReady);
+        return Boolean.TRUE.equals(com.los.core.creditintelligence.policystudio.parameters
+                .PolicyExecutionReadiness.evaluate(session).get("executionReady"));
     }
 
     private long unresolvedAuthoringParameters(PolicyStudioSession session) {
-        return com.los.core.creditintelligence.policystudio.parameters.PolicyExecutionReadiness
-                .sessionExecutionBlockers(session).stream()
-                .filter(b -> {
-                    String t = String.valueOf(b.get("blockerType"));
-                    return "UNRESOLVED_OPERAND".equals(t)
-                            || "UNAVAILABLE_OPERAND".equals(t)
-                            || "NEEDS_CONFIGURATION".equals(t)
-                            || "REQUIRED_POLICY_ADJUSTMENT".equals(t);
-                })
-                .count();
+        Map<String, Object> eval = com.los.core.creditintelligence.policystudio.parameters
+                .PolicyExecutionReadiness.evaluate(session);
+        if (!Boolean.TRUE.equals(eval.get("requiredParametersResolved"))
+                || !Boolean.TRUE.equals(eval.get("boundaryAmbiguitiesResolved"))) {
+            return 1L;
+        }
+        return 0L;
     }
 
     /**
@@ -1201,11 +1189,16 @@ public class PolicyLifecycleService {
         boolean checker = Boolean.TRUE.equals(impl.get("checker"));
         boolean policyTest = Boolean.TRUE.equals(impl.get("policyTest"))
                 || (Boolean.TRUE.equals(impl.get("tests")) && Boolean.TRUE.equals(impl.get("simulation")));
-        long uw = underwritingRuleCount(session);
-        long needs = rulesNeedingInput(session);
-        long readyRules = Math.max(0, uw - needs);
-        List<Map<String, Object>> executionBlockers = com.los.core.creditintelligence.policystudio.parameters
-                .PolicyExecutionReadiness.sessionExecutionBlockers(session);
+        // POLICY-READINESS-SINGLE-SOURCE-OF-TRUTH-1 — checklist + submit share evaluate()
+        Map<String, Object> execEval = com.los.core.creditintelligence.policystudio.parameters
+                .PolicyExecutionReadiness.evaluate(session);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> executionBlockers = execEval.get("executionBlockers") instanceof List<?> l
+                ? (List<Map<String, Object>>) l : List.of();
+        long uw = ((Number) execEval.getOrDefault("includedExecutableRules", 0L)).longValue();
+        long readyRules = ((Number) execEval.getOrDefault("executionReadyRules", 0L)).longValue();
+        long needs = Math.max(0, uw - readyRules);
+        boolean executionReady = Boolean.TRUE.equals(execEval.get("executionReady"));
         boolean scopeOk = castMap(life.get("applicability")).get("products") instanceof List<?> p && !p.isEmpty();
         List<Map<String, Object>> governanceBlockers = com.los.core.creditintelligence.policystudio.parameters
                 .PolicyExecutionReadiness.sessionGovernanceBlockers(scopeOk, policyTest, cm, checker);
@@ -1216,13 +1209,18 @@ public class PolicyLifecycleService {
                 "scope", "Scope missing product"));
         readinessItems.add(readyItem(
                 readyRules + " underwriting rule" + (readyRules == 1 ? "" : "s") + " execution-ready",
-                uw > 0 && needs == 0,
+                uw > 0 && executionReady,
                 "rules",
-                needs > 0 ? needs + " rule(s) need confirmation" : "Add underwriting rules"));
+                needs > 0
+                        ? needs + " rule(s) need confirmation"
+                        : (!executionBlockers.isEmpty()
+                        ? "Resolve execution blockers before continuing"
+                        : "Add underwriting rules")));
         readinessItems.add(readyItem("Required parameters resolved",
-                unresolvedAuthoringParameters(session) == 0,
+                Boolean.TRUE.equals(execEval.get("requiredParametersResolved"))
+                        && Boolean.TRUE.equals(execEval.get("boundaryAmbiguitiesResolved")),
                 "rules",
-                "Resolve required parameters"));
+                "Resolve required parameters / boundary ambiguities"));
         readinessItems.add(readyItem("Test completed", policyTest, "tests", "Run Policy Test"));
 
         List<Map<String, Object>> blockerDetails = new ArrayList<>();
@@ -1248,16 +1246,22 @@ public class PolicyLifecycleService {
         }
 
         Map<String, Object> primary = primaryAction(status, actions, cm, checker, submitBlockers, approveBlockers);
+        // Ready-for-next-step cannot be true while any execution blocker remains (invariant).
+        boolean checklistOk = readinessItems.stream().allMatch(i -> Boolean.TRUE.equals(i.get("ok")));
+        boolean readyForNext = checklistOk && executionBlockers.isEmpty()
+                && Boolean.TRUE.equals(primary.get("enabled"));
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("progressSteps", List.of("DRAFT", "IN REVIEW", "APPROVED", "SCHEDULED", "ACTIVE"));
         out.put("progressCurrent", normalizeProgressStatus(status));
         out.put("readinessItems", readinessItems);
-        out.put("readyForNextStep", Boolean.TRUE.equals(primary.get("enabled")));
+        out.put("readyForNextStep", readyForNext);
         out.put("blockerDetails", blockerDetails);
         out.put("executionBlockers", executionBlockers);
         out.put("governanceBlockers", governanceBlockers);
         out.put("executionReadinessOk", executionBlockers.isEmpty());
         out.put("governanceReadinessOk", governanceBlockers.isEmpty());
+        out.put("authoritativeReadiness", execEval);
+        out.put("readySubmitContradictionImpossible", true);
         out.put("approvals", Map.of(
                 "creditManager", Map.of(
                         "label", "Credit Manager",

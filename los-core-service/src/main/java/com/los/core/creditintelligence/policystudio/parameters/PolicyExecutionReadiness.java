@@ -39,6 +39,72 @@ public final class PolicyExecutionReadiness {
 
     private PolicyExecutionReadiness() {}
 
+    /**
+     * POLICY-READINESS-SINGLE-SOURCE-OF-TRUTH-1 — single authoritative evaluation for Rules,
+     * Versions checklist, and lifecycle submit/approve/schedule guards.
+     */
+    public static Map<String, Object> evaluate(PolicyStudioSession session) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        List<Map<String, Object>> executionBlockers = sessionExecutionBlockers(session);
+        long included = 0L;
+        long ready = 0L;
+        if (session != null && session.getRuleCandidates() != null) {
+            for (CiPolicyRuleCandidate r : session.getRuleCandidates()) {
+                if (!isIncludedExecutableRule(r)) continue;
+                included++;
+                if (isExecutionReadyInSession(session, r, executionBlockers)) {
+                    ready++;
+                }
+            }
+        }
+        boolean executionReady = executionBlockers.isEmpty() && included > 0 && ready == included;
+        out.put("executionReady", executionReady);
+        out.put("executionBlockers", executionBlockers);
+        out.put("executionBlockerCount", executionBlockers.size());
+        out.put("includedExecutableRules", included);
+        out.put("executionReadyRules", ready);
+        out.put("requiredParametersResolved", executionBlockers.stream().noneMatch(b -> {
+            String t = String.valueOf(b.get("blockerType"));
+            return BLOCKER_UNRESOLVED_OPERAND.equals(t)
+                    || BLOCKER_UNAVAILABLE_OPERAND.equals(t)
+                    || BLOCKER_NEEDS_CONFIGURATION.equals(t)
+                    || BLOCKER_REQUIRED_ADJUSTMENT.equals(t)
+                    || BLOCKER_THRESHOLD_MISSING.equals(t);
+        }));
+        // Boundary / material ambiguities are execution blockers — not "parameters", but they
+        // must prevent a green "execution-ready" checklist (same authority as submit).
+        out.put("boundaryAmbiguitiesResolved", executionBlockers.stream().noneMatch(b ->
+                BLOCKER_BOUNDARY_AMBIGUITY.equals(String.valueOf(b.get("blockerType")))
+                        || BLOCKER_MATERIAL_AMBIGUITY.equals(String.valueOf(b.get("blockerType")))));
+        out.put("allowCanonicalAuthority", false);
+        out.put("authority", "PolicyExecutionReadiness.evaluate");
+        return out;
+    }
+
+    /**
+     * Rule-level readiness in session context: operands complete AND no session execution
+     * blocker attaches to this rule (boundary ambiguity, required adjustment, etc.).
+     */
+    public static boolean isExecutionReadyInSession(
+            PolicyStudioSession session,
+            CiPolicyRuleCandidate r,
+            List<Map<String, Object>> sessionBlockers) {
+        if (!isExecutionReady(r)) return false;
+        if (sessionBlockers == null || sessionBlockers.isEmpty() || r == null) return true;
+        String rid = r.getId() == null ? null : r.getId().toString();
+        String sys = r.getSystemRuleId();
+        for (Map<String, Object> b : sessionBlockers) {
+            String br = String.valueOf(b.getOrDefault("ruleId", ""));
+            if (rid != null && rid.equals(br)) return false;
+            if (sys != null && sys.equals(br)) return false;
+        }
+        return true;
+    }
+
+    public static boolean isExecutionReadyInSession(PolicyStudioSession session, CiPolicyRuleCandidate r) {
+        return isExecutionReadyInSession(session, r, sessionExecutionBlockers(session));
+    }
+
     public static boolean isIncludedExecutableRule(CiPolicyRuleCandidate r) {
         if (r == null) return false;
         if (PolicyStudioConvergencePresenter.isCompoundChild(r.getSystemRuleId())) return false;
@@ -71,12 +137,13 @@ public final class PolicyExecutionReadiness {
         if (session == null || session.getRuleCandidates() == null) {
             return 0L;
         }
+        List<Map<String, Object>> blockers = sessionExecutionBlockers(session);
         long n = 0L;
         for (CiPolicyRuleCandidate r : session.getRuleCandidates()) {
             if (!isIncludedExecutableRule(r)) {
                 continue;
             }
-            if (!isExecutionReady(r)) {
+            if (!isExecutionReadyInSession(session, r, blockers)) {
                 n++;
             }
         }
@@ -401,12 +468,20 @@ public final class PolicyExecutionReadiness {
             if (isNonBlockingAmbiguityPhrase(lower)) continue;
             CiPolicyRuleCandidate affected = findAffectedRule(session, a);
             if (affected != null && !isIncludedExecutableRule(affected)) continue;
+            // Stale =100 / more-less-100: if the compound rule already has an approved boundary
+            // resolution on the current version, do not keep blocking from OPEN ambiguity rows.
+            if (affected != null && isHundredBoundaryPhrase(lower)
+                    && ruleBoundaryAlreadyClosed(affected)) {
+                continue;
+            }
             String ruleName = affected == null ? "Policy rule" : ruleDisplayName(affected);
             String ruleId = affected == null ? null
                     : (affected.getId() == null ? affected.getSystemRuleId() : affected.getId().toString());
             String type = lower.contains("exactly 100") || lower.contains("= 100") || lower.contains("boundary")
+                    || lower.contains("more than 100") || lower.contains("less than 100")
                     ? BLOCKER_BOUNDARY_AMBIGUITY : BLOCKER_MATERIAL_AMBIGUITY;
             String reason = lower.contains("exactly 100") || lower.contains("100 transactions")
+                    || lower.contains("more than 100") || lower.contains("less than 100")
                     ? "Behaviour when transaction count = 100 is not defined."
                     : ("Unresolved: " + phrase);
             Map<String, Object> b = blocker(type, ruleId, ruleName, null, reason,
@@ -415,7 +490,8 @@ public final class PolicyExecutionReadiness {
                 b.put("ambiguityId", a.getId().toString());
             }
             if (type.equals(BLOCKER_BOUNDARY_AMBIGUITY)
-                    && (lower.contains("exactly 100") || lower.contains("100 transactions"))) {
+                    && (lower.contains("exactly 100") || lower.contains("100 transactions")
+                    || lower.contains("more than 100") || lower.contains("less than 100"))) {
                 b.putAll(com.los.core.creditintelligence.policystudio.parameters
                         .InwardReturnCompoundSupport.boundaryResolverPayload(
                                 a.getId() == null ? null : a.getId().toString(), ruleId));
@@ -424,6 +500,31 @@ public final class PolicyExecutionReadiness {
             out.add(b);
         }
         return out;
+    }
+
+    private static boolean isHundredBoundaryPhrase(String lower) {
+        if (lower == null) return false;
+        return lower.contains("exactly 100") || lower.contains("= 100")
+                || lower.contains("100 transactions")
+                || lower.contains("more than 100") || lower.contains("less than 100");
+    }
+
+    /** Current-version rule already carries an approved boundary choice (expression + metadata). */
+    private static boolean ruleBoundaryAlreadyClosed(CiPolicyRuleCandidate r) {
+        if (r == null) return false;
+        Map<String, Object> meta = r.getMetadata() == null ? Map.of() : r.getMetadata();
+        if (Boolean.TRUE.equals(meta.get("boundaryResolved"))) {
+            String opt = String.valueOf(meta.getOrDefault("boundaryOption", ""));
+            return InwardReturnCompoundSupport.boundaryClosedForReadiness(r.getExpression(), opt);
+        }
+        // Lineage from boundary patch without meta (defensive)
+        Map<String, Object> lineage = r.getLineage() == null ? Map.of() : r.getLineage();
+        Object opt = lineage.get("boundaryResolvedOption");
+        if (opt != null) {
+            return InwardReturnCompoundSupport.boundaryClosedForReadiness(
+                    r.getExpression(), String.valueOf(opt));
+        }
+        return false;
     }
 
     private static boolean isNonBlockingAmbiguityPhrase(String lower) {
@@ -524,12 +625,12 @@ public final class PolicyExecutionReadiness {
 
     /** Required executable inputs resolved / total — for data-readiness %. */
     public static Map<String, Object> executionReadinessStats(PolicyStudioSession session) {
-        List<Map<String, Object>> blockers = sessionExecutionBlockers(session);
-        long included = session.getRuleCandidates().stream().filter(PolicyExecutionReadiness::isIncludedExecutableRule).count();
-        long ready = session.getRuleCandidates().stream()
-                .filter(PolicyExecutionReadiness::isIncludedExecutableRule)
-                .filter(PolicyExecutionReadiness::isExecutionReady)
-                .count();
+        Map<String, Object> eval = evaluate(session);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> blockers = eval.get("executionBlockers") instanceof List<?> l
+                ? (List<Map<String, Object>>) l : List.of();
+        long included = ((Number) eval.getOrDefault("includedExecutableRules", 0L)).longValue();
+        long ready = ((Number) eval.getOrDefault("executionReadyRules", 0L)).longValue();
         // Denominator = distinct required operand/dependency keys from included rules + required adjustments
         Set<String> required = new java.util.LinkedHashSet<>();
         Set<String> resolved = new java.util.LinkedHashSet<>();
@@ -570,20 +671,41 @@ public final class PolicyExecutionReadiness {
     }
 
     public static void applyToCard(Map<String, Object> card, CiPolicyRuleCandidate r) {
+        applyToCard(card, r, null);
+    }
+
+    public static void applyToCard(
+            Map<String, Object> card, CiPolicyRuleCandidate r, PolicyStudioSession session) {
         if (card == null || r == null) return;
         boolean included = isIncludedExecutableRule(r);
-        boolean execReady = included && isExecutionReady(r);
+        List<Map<String, Object>> sessionBlockers = session == null
+                ? List.of() : sessionExecutionBlockers(session);
+        boolean execReady = included && (session == null
+                ? isExecutionReady(r)
+                : isExecutionReadyInSession(session, r, sessionBlockers));
+        Map<String, Object> meta = r.getMetadata() == null ? Map.of() : r.getMetadata();
+        boolean boundaryIncomplete = (Boolean.TRUE.equals(card.get("boundaryIncomplete"))
+                || looksLikeUnresolvedHundredBoundary(r, sessionBlockers))
+                && !Boolean.TRUE.equals(meta.get("boundaryResolved"));
+        if (boundaryIncomplete) {
+            execReady = false;
+        }
         card.put("executionReady", execReady);
         card.put("includedForActivation", included);
-        List<Map<String, Object>> blockers = executionBlockersForRule(r);
+        List<Map<String, Object>> blockers = new ArrayList<>(executionBlockersForRule(r));
+        if (session != null) {
+            String rid = r.getId() == null ? null : r.getId().toString();
+            for (Map<String, Object> b : sessionBlockers) {
+                if (rid != null && rid.equals(String.valueOf(b.get("ruleId")))) {
+                    blockers.add(b);
+                }
+            }
+        }
         card.put("executionBlockers", blockers);
-        Map<String, Object> meta = r.getMetadata() == null ? Map.of() : r.getMetadata();
         String disposition = String.valueOf(meta.getOrDefault("disposition", ""));
         if ("ACCEPTED".equalsIgnoreCase(disposition) || "EDITED".equalsIgnoreCase(disposition)) {
             card.put("reviewDisposition", disposition.toUpperCase(Locale.ROOT));
         }
-        boolean boundaryIncomplete = Boolean.TRUE.equals(card.get("boundaryIncomplete"))
-                && !Boolean.TRUE.equals(meta.get("boundaryResolved"));
         if (("ACCEPTED".equalsIgnoreCase(disposition) || "EDITED".equalsIgnoreCase(disposition))
                 && boundaryIncomplete) {
             card.put("reviewBadge", "Accepted · Boundary incomplete");
@@ -614,6 +736,19 @@ public final class PolicyExecutionReadiness {
                 card.put("blockedReason", String.valueOf(blockers.get(0).get("reason")));
             }
         }
+    }
+
+    private static boolean looksLikeUnresolvedHundredBoundary(
+            CiPolicyRuleCandidate r, List<Map<String, Object>> sessionBlockers) {
+        if (r == null) return false;
+        if (!InwardReturnCompoundSupport.looksLikeInwardReturnCompound(r)) return false;
+        if (ruleBoundaryAlreadyClosed(r)) return false;
+        String rid = r.getId() == null ? null : r.getId().toString();
+        for (Map<String, Object> b : sessionBlockers == null ? List.<Map<String, Object>>of() : sessionBlockers) {
+            if (!BLOCKER_BOUNDARY_AMBIGUITY.equals(String.valueOf(b.get("blockerType")))) continue;
+            if (rid != null && rid.equals(String.valueOf(b.get("ruleId")))) return true;
+        }
+        return false;
     }
 
     private static Map<String, Object> blocker(
