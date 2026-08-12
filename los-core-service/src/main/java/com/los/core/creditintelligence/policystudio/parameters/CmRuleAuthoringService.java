@@ -1186,12 +1186,15 @@ public class CmRuleAuthoringService {
     }
 
     /**
-     * Flat DESCRIBE may only return complete=true if the entire material input is consumed —
-     * no leftover clause-level AND/OR / extra condition.
+     * Flat DESCRIBE may only return complete=true when the material input is consumed —
+     * no leftover clause-bearing content (second parameter, connective, condition).
      */
     private static DraftDraft failClosedIfResidualConnective(DraftDraft d) {
         if (d == null || !d.complete) return d;
-        if (!CompoundPlainEnglishParser.hasResidualLogicalConnective(d.sourceText)) return d;
+        if (!PlainEnglishConsumptionGuard.hasUnconsumedSubstantiveContent(
+                d.sourceText, d.parameterId, d.operator, d.value, d.businessName)) {
+            return d;
+        }
         d.complete = false;
         d.message = "Some parts of this rule have not been mapped yet.";
         if (!d.missing.contains("residualConnective")) {
@@ -1213,11 +1216,13 @@ public class CmRuleAuthoringService {
                 d.operator = "is";
             }
             if (lower.contains(" no") || lower.contains("= no") || lower.contains("is no")
-                    || lower.contains("false") || lower.contains("unverified") || lower.contains("not verified")) {
+                    || lower.contains("false") || lower.contains("unverified") || lower.contains("not verified")
+                    || lower.contains("disallow") || lower.contains("not allow") || lower.contains("remove ntc")) {
                 d.value = false;
             } else if (lower.contains("verified") || lower.contains(" yes") || lower.contains("= yes")
                     || lower.contains("is yes") || lower.contains("true") || lower.contains("must be")
-                    || lower.contains("should be")) {
+                    || lower.contains("should be") || lower.contains("allow") || lower.contains("include")
+                    || (d.parameterId != null && d.parameterId.contains("ntc") && lower.contains("ntc"))) {
                 d.value = true;
             } else {
                 Object b = AuthoringValueTypes.coerceBoolean(
@@ -1299,6 +1304,12 @@ public class CmRuleAuthoringService {
             CanonicalParameterRegistry.shared().findById("bureau.score").ifPresent(hits::add);
             return hits;
         }
+        // Standalone NTC / thin-file authoring → boolean Fact (not numeric thin_file_indicator)
+        if (looksLikeStandaloneNtc(lower)) {
+            CanonicalParameterRegistry.shared().findById(CompoundExpressionAuthoringSupport.NTC_FACT)
+                    .ifPresent(hits::add);
+            return hits;
+        }
         if (lower.contains("foir") || lower.contains("obligation ratio") || lower.contains("dti")) {
             CanonicalParameterRegistry.shared().findById("obligation.ratio").ifPresent(hits::add);
             return hits;
@@ -1361,6 +1372,23 @@ public class CmRuleAuthoringService {
         return hits;
     }
 
+    /** Standalone DESCRIBE NTC wording — prefer boolean bureau.status_ntc Fact. */
+    private static boolean looksLikeStandaloneNtc(String lower) {
+        if (lower == null || lower.isBlank()) return false;
+        boolean mentionsNtc = lower.matches(".*\\bntc\\b.*")
+                || lower.contains("thin file")
+                || lower.contains("thin-file")
+                || lower.contains("new to credit");
+        if (!mentionsNtc) return false;
+        // Leave multi-arm bureau lists / score+NTC compounds to the compound parser
+        if (lower.contains("bureau score") || lower.contains("cibil")
+                || lower.contains("650") || lower.contains("-1")
+                || CompoundPlainEnglishParser.looksLikeMultiClause(lower)) {
+            return false;
+        }
+        return true;
+    }
+
     @SuppressWarnings("unchecked")
     private DraftDraft draftFromConceptResolution(DraftDraft d, Map<String, Object> concept, String lower) {
         d.conceptResolution = concept;
@@ -1403,7 +1431,7 @@ public class CmRuleAuthoringService {
             d.valueControl = AuthoringValueTypes.CONTROL_INTEGER;
             d.complete = true;
             d.message = String.valueOf(concept.getOrDefault("message", "Ready to confirm"));
-            return d;
+            return failClosedIfResidualConnective(d);
         }
         d.complete = false;
         d.message = String.valueOf(concept.getOrDefault("message",

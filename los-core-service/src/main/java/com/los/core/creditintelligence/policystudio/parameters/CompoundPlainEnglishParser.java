@@ -44,9 +44,9 @@ public final class CompoundPlainEnglishParser {
             Pattern.CASE_INSENSITIVE);
     private static final Pattern SYMBOLIC_EQ = Pattern.compile(
             "(?<![<>!])=\\s*(-?\\d+(?:\\.\\d+)?)\\s*%?");
-    /** Clause-level OR — not "or more/above/below/higher/greater". */
+    /** Clause-level OR — not "or more/above/below/higher/greater/equal". */
     private static final Pattern CLAUSE_OR = Pattern.compile(
-            "(?i)\\s+or\\s+(?!more\\b|above\\b|below\\b|higher\\b|greater\\b)");
+            "(?i)\\s+or\\s+(?!more\\b|above\\b|below\\b|higher\\b|greater\\b|equal(?:s)?\\b)");
     /** Clause-level AND — not "and above/below". */
     private static final Pattern CLAUSE_AND = Pattern.compile(
             "(?i)\\s+and\\s+(?!above\\b|below\\b)");

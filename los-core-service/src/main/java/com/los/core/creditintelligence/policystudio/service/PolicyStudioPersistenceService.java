@@ -1,15 +1,22 @@
 package com.los.core.creditintelligence.policystudio.service;
 
 import com.los.core.creditintelligence.policystudio.domain.CiPolicyAuthoringSession;
+import com.los.core.creditintelligence.policystudio.domain.CiPolicyDocument;
 import com.los.core.creditintelligence.policystudio.domain.CiPolicyDraftDiff;
 import com.los.core.creditintelligence.policystudio.domain.CiPolicyDraftPackage;
 import com.los.core.creditintelligence.policystudio.domain.CiPolicyParameter;
 import com.los.core.creditintelligence.policystudio.domain.CiPolicySimulationRun;
+import com.los.core.creditintelligence.policystudio.domain.CiPolicyStudioSessionSnapshot;
 import com.los.core.creditintelligence.policystudio.domain.CiPolicyVocabulary;
 import com.los.core.creditintelligence.policystudio.model.PolicyStudioSession;
+import com.los.core.creditintelligence.policystudio.repository.CiPolicyDocumentRepository;
+import com.los.core.creditintelligence.policystudio.repository.CiPolicyStudioSessionSnapshotRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
@@ -24,16 +31,32 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Persists Policy Studio session snapshots.
- * In-memory store for active sessions; resolution overlays also written to
- * {@link PolicyStudioDurableResolutionStore} so they survive service restart and demo reopen.
+ * <p>
+ * Working set is an in-memory map. Full session state (rules, expression AST,
+ * parameter bindings) is also written to {@code ci_policy_studio_session_snapshot}
+ * via JPA when repositories are available, so reload-by-documentId survives JVM
+ * restart. Resolution-identity overlays remain on
+ * {@link PolicyStudioDurableResolutionStore} for demo reopen / selective invalidation.
+ * <p>
+ * Note: {@link CiPolicyDocument} alone cannot hold underwriting AST — only source
+ * text + metadata. That is why the session-snapshot table exists.
  */
 @Service
 public class PolicyStudioPersistenceService {
+
+    private static final Logger log = LoggerFactory.getLogger(PolicyStudioPersistenceService.class);
 
     private final ConcurrentHashMap<UUID, PolicyStudioSession> storeByDocumentId = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, UUID> sessionIdToDocumentId = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, PolicyStudioSession> cacheByDocumentId = new ConcurrentHashMap<>();
     private final PolicyStudioDurableResolutionStore durableStore;
+
+    /** Optional — present in Spring Boot; null in unit-test constructors. */
+    private CiPolicyDocumentRepository documentRepository;
+    /** Optional — present in Spring Boot; null in unit-test constructors. */
+    private CiPolicyStudioSessionSnapshotRepository sessionSnapshotRepository;
+    /** Optional — independent TX writer; null in unit-test constructors. */
+    private PolicyStudioSessionDurableWriter durableWriter;
 
     public PolicyStudioPersistenceService() {
         this(new PolicyStudioDurableResolutionStore("./data/policy-studio-resolutions"));
@@ -46,6 +69,40 @@ public class PolicyStudioPersistenceService {
                 : new PolicyStudioDurableResolutionStore("./data/policy-studio-resolutions");
     }
 
+    public PolicyStudioPersistenceService(
+            PolicyStudioDurableResolutionStore durableStore,
+            CiPolicyDocumentRepository documentRepository,
+            CiPolicyStudioSessionSnapshotRepository sessionSnapshotRepository) {
+        this(durableStore);
+        this.documentRepository = documentRepository;
+        this.sessionSnapshotRepository = sessionSnapshotRepository;
+    }
+
+    public PolicyStudioPersistenceService(
+            PolicyStudioDurableResolutionStore durableStore,
+            CiPolicyDocumentRepository documentRepository,
+            CiPolicyStudioSessionSnapshotRepository sessionSnapshotRepository,
+            PolicyStudioSessionDurableWriter durableWriter) {
+        this(durableStore, documentRepository, sessionSnapshotRepository);
+        this.durableWriter = durableWriter;
+    }
+
+    @Autowired(required = false)
+    public void setDocumentRepository(CiPolicyDocumentRepository documentRepository) {
+        this.documentRepository = documentRepository;
+    }
+
+    @Autowired(required = false)
+    public void setSessionSnapshotRepository(CiPolicyStudioSessionSnapshotRepository sessionSnapshotRepository) {
+        this.sessionSnapshotRepository = sessionSnapshotRepository;
+    }
+
+    @Autowired(required = false)
+    public void setDurableWriter(PolicyStudioSessionDurableWriter durableWriter) {
+        this.durableWriter = durableWriter;
+    }
+
+    @Transactional
     public void saveSessionSnapshot(PolicyStudioSession session) {
         if (session == null || session.getDocument() == null || session.getDocument().getId() == null) {
             throw new IllegalArgumentException("Session document required");
@@ -66,6 +123,7 @@ public class PolicyStudioPersistenceService {
         }
         cacheByDocumentId.put(docId, session);
         durableStore.saveFromSession(session);
+        persistDurableSession(copy);
     }
 
     public PolicyStudioSession loadSession(UUID documentId) {
@@ -75,7 +133,14 @@ public class PolicyStudioPersistenceService {
         }
         PolicyStudioSession stored = storeByDocumentId.get(documentId);
         if (stored == null) {
-            return null;
+            stored = loadDurableSession(documentId);
+            if (stored == null) {
+                return null;
+            }
+            storeByDocumentId.put(documentId, deepCopy(stored));
+            if (stored.getAuthoringSession() != null && stored.getAuthoringSession().getId() != null) {
+                sessionIdToDocumentId.put(stored.getAuthoringSession().getId(), documentId);
+            }
         }
         PolicyStudioSession reloaded = deepCopy(stored);
         cacheByDocumentId.put(documentId, reloaded);
@@ -115,6 +180,8 @@ public class PolicyStudioPersistenceService {
     /**
      * Simulate full process restart for goldens: wipe in-memory maps.
      * Durable resolution overlays on disk remain and are rebound on next demo open.
+     * JPA session snapshots (when configured) remain and are rebound on next
+     * {@link #loadSession(UUID)} by documentId.
      */
     public void simulateProcessRestart() {
         cacheByDocumentId.clear();
@@ -200,6 +267,78 @@ public class PolicyStudioPersistenceService {
         }
         as.setVersion(as.getVersion() == null ? 1L : as.getVersion() + 1);
         saveSessionSnapshot(session);
+    }
+
+    /**
+     * Persist document row + full session payload so reload-by-id survives process restart.
+     * No-ops when JPA writer/repositories are unavailable (unit tests).
+     * Uses {@link PolicyStudioSessionDurableWriter} (REQUIRES_NEW) so insert failures
+     * cannot poison the caller transaction after a pre-assigned-UUID merge miss.
+     */
+    private void persistDurableSession(PolicyStudioSession session) {
+        if (durableWriter == null
+                && (documentRepository == null || sessionSnapshotRepository == null)) {
+            log.debug("policy-studio durable session skip — JPA repositories unavailable");
+            return;
+        }
+        try {
+            log.info("policy-studio durable session save documentId={} rules={}",
+                    session.documentId(),
+                    session.getRuleCandidates() == null ? 0 : session.getRuleCandidates().size());
+            if (durableWriter != null) {
+                durableWriter.write(session);
+                return;
+            }
+            // Fallback for tests that inject repos without the writer bean
+            CiPolicyDocument doc = session.getDocument();
+            if (doc.getMetadata() == null) {
+                doc.setMetadata(new LinkedHashMap<>());
+            } else if (!(doc.getMetadata() instanceof LinkedHashMap)) {
+                doc.setMetadata(new LinkedHashMap<>(doc.getMetadata()));
+            }
+            documentRepository.saveAndFlush(doc);
+            Map<String, Object> payload = PolicyStudioSessionSnapshotCodec.toPayload(session);
+            CiPolicyStudioSessionSnapshot snap = sessionSnapshotRepository.findById(doc.getId())
+                    .orElseGet(() -> CiPolicyStudioSessionSnapshot.builder()
+                            .policyDocumentId(doc.getId())
+                            .tenantId(doc.getTenantId())
+                            .createdAt(Instant.now())
+                            .build());
+            snap.setTenantId(doc.getTenantId());
+            snap.setPayload(payload);
+            snap.setContentHash(doc.getContentHash());
+            snap.setUpdatedAt(Instant.now());
+            if (snap.getCreatedAt() == null) {
+                snap.setCreatedAt(Instant.now());
+            }
+            sessionSnapshotRepository.saveAndFlush(snap);
+        } catch (Exception e) {
+            log.warn("policy-studio durable session save failed documentId={} reason={}",
+                    session.documentId(), e.toString(), e);
+        }
+    }
+
+    private PolicyStudioSession loadDurableSession(UUID documentId) {
+        if (sessionSnapshotRepository == null || documentId == null) {
+            return null;
+        }
+        try {
+            Optional<CiPolicyStudioSessionSnapshot> opt = sessionSnapshotRepository.findById(documentId);
+            if (opt.isEmpty() || opt.get().getPayload() == null || opt.get().getPayload().isEmpty()) {
+                return null;
+            }
+            PolicyStudioSession session = PolicyStudioSessionSnapshotCodec.fromPayload(opt.get().getPayload());
+            if (session != null && session.getDocument() != null) {
+                log.info("policy-studio durable session rebound documentId={} rules={}",
+                        documentId,
+                        session.getRuleCandidates() == null ? 0 : session.getRuleCandidates().size());
+            }
+            return session;
+        } catch (Exception e) {
+            log.warn("policy-studio durable session load failed documentId={} reason={}",
+                    documentId, e.toString(), e);
+            return null;
+        }
     }
 
     private void ensureAuthoringSession(PolicyStudioSession session) {

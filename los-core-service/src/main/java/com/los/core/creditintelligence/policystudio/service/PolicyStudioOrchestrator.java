@@ -78,6 +78,7 @@ public class PolicyStudioOrchestrator {
                 null, null, null, null, null, null, null, null);
     }
 
+    @Autowired
     public PolicyStudioOrchestrator(
             CreditIntelligenceProperties properties,
             PolicyDocumentService documentService,
