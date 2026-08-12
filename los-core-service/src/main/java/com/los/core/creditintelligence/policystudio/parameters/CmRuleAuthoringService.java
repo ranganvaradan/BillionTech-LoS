@@ -32,8 +32,9 @@ import java.util.regex.Pattern;
 public class CmRuleAuthoringService {
 
     private static final Pattern NUM = Pattern.compile(
-            "(>=|<=|>|<|=|at least|at most|not exceed|no more than|less than|greater than|more than)?\\s*"
-                    + "(\\d+(?:\\.\\d+)?)\\s*(%|percent|months?|m)?",
+            "(>=|<=|>|<|=|at least|at most|not exceed|no more than|less than|greater than|more than"
+                    + "|and above|& above|or more|or higher)?\\s*"
+                    + "(-?\\d+(?:\\.\\d+)?)\\s*(%|percent|months?|m)?",
             Pattern.CASE_INSENSITIVE);
     /** Period window phrases — numbers here must never become condition thresholds. */
     private static final Pattern PERIOD_PHRASE = Pattern.compile(
@@ -67,6 +68,25 @@ public class CmRuleAuthoringService {
         out.put("treatments", List.of("Reject", "Manual Review", "Refer", "Info"));
         out.put("treatmentLabel", "If rule fails");
         out.put("allowCanonicalAuthority", false);
+        // Authoring-only special values (do not mutate GACAT)
+        out.put("specialValuesByParameter", Map.of(
+                CompoundExpressionAuthoringSupport.BUREAU_SCORE, List.of(
+                        Map.of("value", -1, "label", "Score sentinel -1")),
+                CompoundExpressionAuthoringSupport.NTC_FACT, List.of(
+                        Map.of("value", true, "label", "NTC"))));
+        List<Map<String, Object>> bureauExtras = new ArrayList<>();
+        bureauExtras.add(Map.of(
+                "parameterId", CompoundExpressionAuthoringSupport.NTC_FACT,
+                "businessName", "Bureau status (NTC)",
+                "source", "Bureau",
+                "valueControl", AuthoringValueTypes.CONTROL_BOOLEAN,
+                "leftKind", "FACT",
+                "allowedValues", List.of(Map.of("value", "true", "label", "NTC")),
+                "kind", "FACT"));
+        @SuppressWarnings("unchecked")
+        Map<String, List<Map<String, Object>>> bySourceMut =
+                (Map<String, List<Map<String, Object>>>) out.get("bySource");
+        bySourceMut.computeIfAbsent("Bureau", k -> new ArrayList<>()).addAll(bureauExtras);
         return out;
     }
 
@@ -76,14 +96,35 @@ public class CmRuleAuthoringService {
         if ("COMPOUND".equalsIgnoreCase(mode) || body.get("branches") instanceof List<?>) {
             return previewCompound(body);
         }
+        if ("COMPOUND_GROUP".equalsIgnoreCase(mode)
+                || CompoundExpressionAuthoringSupport.looksLikeGroupModel(body)) {
+            return previewCompoundGroup(body);
+        }
         if ("PRESERVE".equalsIgnoreCase(mode) && body.get("existingExpression") instanceof Map<?, ?>) {
             return previewPreserve(body);
+        }
+        // Incremental NL amendment against proposed structured group
+        if (body.get("proposedModel") instanceof Map<?, ?>
+                || body.get("proposedExpression") instanceof Map<?, ?>) {
+            String amendText = str(body, "text", str(body, "amendment", str(body, "businessRule", "")));
+            if (amendText != null && !amendText.isBlank()
+                    && looksLikeAmendment(amendText)) {
+                return previewAmendment(body, amendText);
+            }
         }
         DraftDraft draft;
         if ("BUILD".equalsIgnoreCase(mode) || body.get("parameterId") != null) {
             draft = fromStructured(body);
         } else {
-            draft = fromPlainEnglish(str(body, "text", str(body, "businessRule", "")));
+            String text = str(body, "text", str(body, "businessRule", ""));
+            // Prefer lossless compound parse before flat single-comparison DESCRIBE
+            if (CompoundPlainEnglishParser.looksLikeMultiClause(text)) {
+                CompoundPlainEnglishParser.ParseResult pr = CompoundPlainEnglishParser.parse(text);
+                if (pr.compound) {
+                    return toCompoundPreview(pr, str(body, "treatment", "Reject"));
+                }
+            }
+            draft = fromPlainEnglish(text);
         }
         return toPreview(draft);
     }
@@ -100,12 +141,31 @@ public class CmRuleAuthoringService {
                 || body.get("branches") instanceof List<?>) {
             return confirmCompound(session, body);
         }
+        if ("COMPOUND_GROUP".equalsIgnoreCase(mode)
+                || CompoundExpressionAuthoringSupport.looksLikeGroupModel(body)
+                || body.get("proposedModel") instanceof Map<?, ?>
+                || (body.get("expression") instanceof Map<?, ?> exprMap
+                && CompoundExpressionAuthoringSupport.isGroupExpression(
+                castMap(exprMap)))) {
+            return confirmCompoundGroup(session, body);
+        }
 
         Map<String, Object> preview = preview(body);
         if (!Boolean.TRUE.equals(preview.get("complete"))) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                     String.valueOf(preview.getOrDefault("message",
                             "I couldn't turn this into a complete rule. Complete the missing fields.")));
+        }
+        if ("COMPOUND_GROUP".equals(String.valueOf(preview.get("mode")))
+                || Boolean.TRUE.equals(preview.get("compoundGroup"))) {
+            Map<String, Object> groupBody = new LinkedHashMap<>(body);
+            groupBody.put("mode", "COMPOUND_GROUP");
+            groupBody.put("combinator", preview.get("combinator"));
+            groupBody.put("conditions", preview.get("conditions"));
+            groupBody.put("expression", preview.get("expression"));
+            groupBody.put("treatment", preview.getOrDefault("treatment",
+                    body.getOrDefault("treatment", "Reject")));
+            return confirmCompoundGroup(session, groupBody);
         }
         DraftDraft draft = "BUILD".equalsIgnoreCase(mode)
                 || body.get("parameterId") != null
@@ -281,6 +341,288 @@ public class CmRuleAuthoringService {
         out.put("gacatMutated", false);
         out.put("allowCanonicalAuthority", false);
         return out;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> previewCompoundGroup(Map<String, Object> body) {
+        List<Map<String, Object>> conditions = new ArrayList<>();
+        if (body.get("conditions") instanceof List<?> raw) {
+            for (Object o : raw) {
+                if (o instanceof Map<?, ?> m) conditions.add(new LinkedHashMap<>((Map<String, Object>) m));
+            }
+        } else if (body.get("expression") instanceof Map<?, ?> expr
+                || body.get("existingExpression") instanceof Map<?, ?> ) {
+            Map<String, Object> expr = body.get("expression") instanceof Map<?, ?> e
+                    ? new LinkedHashMap<>((Map<String, Object>) e)
+                    : new LinkedHashMap<>((Map<String, Object>) body.get("existingExpression"));
+            Map<String, Object> model = CompoundExpressionAuthoringSupport.toEditableModel(expr, Map.of());
+            Object c = model.get("conditions");
+            if (c instanceof List<?> list) {
+                for (Object o : list) {
+                    if (o instanceof Map<?, ?> m) conditions.add(new LinkedHashMap<>((Map<String, Object>) m));
+                }
+            }
+            body = new LinkedHashMap<>(body);
+            body.put("combinator", model.get("combinator"));
+        }
+        String combinator = str(body, "combinator", CompoundExpressionAuthoringSupport.COMBINATOR_ANY);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("mode", "COMPOUND_GROUP");
+        out.put("compoundGroup", true);
+        out.put("combinator", combinator);
+        out.put("conditions", conditions);
+        if (conditions.isEmpty()) {
+            out.put("complete", false);
+            out.put("status", "INCOMPLETE");
+            out.put("message", "Add at least one condition.");
+            return out;
+        }
+        boolean complete = conditions.stream().allMatch(c ->
+                c.get("parameterId") != null && c.get("operator") != null && c.get("value") != null);
+        Map<String, Object> expr;
+        try {
+            expr = CompoundExpressionAuthoringSupport.buildExpression(combinator, conditions);
+        } catch (IllegalArgumentException ex) {
+            out.put("complete", false);
+            out.put("message", ex.getMessage());
+            return out;
+        }
+        out.put("complete", complete);
+        out.put("status", complete ? "READY" : "INCOMPLETE");
+        out.put("expression", expr);
+        out.put("editableModel", CompoundExpressionAuthoringSupport.toEditableModel(expr, Map.of(
+                "failureTreatment", str(body, "treatment", "Reject"))));
+        out.put("previewLines", CompoundExpressionAuthoringSupport.previewLines(combinator, conditions));
+        out.put("ruleDisplay", CompoundExpressionAuthoringSupport.businessSummary(combinator, conditions));
+        out.put("failureDisplay", "Otherwise → " + str(body, "treatment", "Reject"));
+        out.put("treatment", str(body, "treatment", "Reject"));
+        out.put("treatmentLabel", "If rule fails");
+        out.put("message", complete ? "Ready to confirm" : "Complete the missing condition fields.");
+        out.put("allowCanonicalAuthority", false);
+        out.put("semanticLoss", false);
+        out.put("unresolved", List.of());
+        return out;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> previewAmendment(Map<String, Object> body, String amendText) {
+        Map<String, Object> proposed;
+        if (body.get("proposedModel") instanceof Map<?, ?> pm) {
+            proposed = new LinkedHashMap<>((Map<String, Object>) pm);
+        } else {
+            Map<String, Object> expr = new LinkedHashMap<>((Map<String, Object>) body.get("proposedExpression"));
+            proposed = CompoundExpressionAuthoringSupport.toEditableModel(expr, Map.of());
+        }
+        CompoundPlainEnglishParser.ParseResult pr = CompoundPlainEnglishParser.amend(proposed, amendText);
+        Map<String, Object> out = toCompoundPreview(pr, str(body, "treatment", "Reject"));
+        out.put("amended", true);
+        return out;
+    }
+
+    private Map<String, Object> toCompoundPreview(
+            CompoundPlainEnglishParser.ParseResult pr, String treatment) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("mode", "COMPOUND_GROUP");
+        out.put("compoundGroup", true);
+        out.put("complete", pr.complete);
+        out.put("status", pr.status);
+        out.put("message", pr.message);
+        out.put("combinator", pr.combinator);
+        out.put("conditions", pr.conditions);
+        out.put("unresolved", pr.unresolved);
+        out.put("extractedClauses", pr.extractedClauses);
+        out.put("semanticLoss", !pr.unresolved.isEmpty());
+        out.put("needsUserConfirmation", "NEEDS_USER_CONFIRMATION".equals(pr.status));
+        out.put("expression", pr.expression);
+        if (pr.expression != null) {
+            out.put("editableModel", CompoundExpressionAuthoringSupport.toEditableModel(
+                    pr.expression, Map.of("failureTreatment", treatment)));
+        }
+        out.put("previewLines", pr.previewLines == null || pr.previewLines.isEmpty()
+                ? CompoundExpressionAuthoringSupport.previewLines(pr.combinator, pr.conditions)
+                : pr.previewLines);
+        out.put("ruleDisplay", pr.ruleDisplay);
+        out.put("failureDisplay", "Otherwise → " + (treatment == null ? "Reject" : treatment));
+        out.put("treatment", treatment == null ? "Reject" : treatment);
+        out.put("treatmentLabel", "If rule fails");
+        out.put("fromPlainEnglish", true);
+        out.put("sourceText", pr.sourceText);
+        out.put("allowCanonicalAuthority", false);
+        if (!pr.unresolved.isEmpty()) {
+            out.put("message", "Some parts of this rule have not been mapped yet.");
+            out.put("complete", false);
+        }
+        return out;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> confirmCompoundGroup(PolicyStudioSession session, Map<String, Object> body) {
+        Map<String, Object> preview = previewCompoundGroup(body);
+        // Allow DESCRIBE confirm payload that already went through preview()
+        if (body.get("conditions") == null && body.get("text") != null) {
+            preview = preview(body);
+        }
+        if (!Boolean.TRUE.equals(preview.get("complete"))) {
+            String msg = String.valueOf(preview.getOrDefault("message",
+                    "Some parts of this rule have not been mapped yet."));
+            if (preview.get("unresolved") instanceof List<?> u && !u.isEmpty()) {
+                msg = msg + " Unresolved: " + u;
+            }
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, msg);
+        }
+        List<Map<String, Object>> conditions = new ArrayList<>();
+        if (preview.get("conditions") instanceof List<?> raw) {
+            for (Object o : raw) {
+                if (o instanceof Map<?, ?> m) conditions.add(new LinkedHashMap<>((Map<String, Object>) m));
+            }
+        }
+        String combinator = String.valueOf(preview.getOrDefault("combinator",
+                CompoundExpressionAuthoringSupport.COMBINATOR_ANY));
+        Map<String, Object> expression = preview.get("expression") instanceof Map<?, ?> e
+                ? new LinkedHashMap<>((Map<String, Object>) e)
+                : CompoundExpressionAuthoringSupport.buildExpression(combinator, conditions);
+        String treatment = str(body, "treatment", str(preview, "treatment", "Reject"));
+        String summary = CompoundExpressionAuthoringSupport.businessSummary(combinator, conditions);
+        String sourceText = str(body, "text", summary);
+
+        CiPolicyDocument doc = session.getDocument();
+        if (doc == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Policy document not found");
+        }
+        UUID replaceId = parseReplaceId(body);
+
+        CiPolicyClause clause = CiPolicyClause.builder()
+                .id(UUID.randomUUID())
+                .policyDocumentId(doc.getId())
+                .section("Credit Rules")
+                .sourceText(sourceText)
+                .normalizedText(sourceText.replaceAll("\\s+", " "))
+                .clauseType(ClauseType.HARD_RULE.name())
+                .extractionConfidence(new BigDecimal("0.9500"))
+                .sortOrder(session.getClauses().size())
+                .sourceLocation(replaceId == null ? "cm-authoring:compound-group"
+                        : "cm-authoring:compound-group-edit:" + replaceId)
+                .status("EXTRACTED")
+                .metadata(Map.of(
+                        "cmAuthored", true,
+                        "plainEnglishAdded", body.get("text") != null,
+                        "compoundGroup", true,
+                        "businessGroup", "Credit Rules"))
+                .effectiveScope(Map.of("products", List.of("ALL")))
+                .build();
+
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("disposition", "ACCEPTED");
+        meta.put("cmAuthored", true);
+        meta.put("plainEnglishAdded", body.get("text") != null);
+        meta.put("compoundGroup", true);
+        meta.put("compoundRule", true);
+        meta.put("combinator", combinator);
+        meta.put("businessTitle", "Compound eligibility rule");
+        meta.put("businessSummary", summary);
+        meta.put("businessParameterName", "Compound conditions");
+        meta.put("evaluatedFrom", "Bureau");
+        meta.put("catalogueBacked", false);
+        meta.put("classificationOnly", false);
+        meta.put("excludedFromActivation", false);
+        meta.put("deleted", false);
+        meta.put("NEEDS_INPUT", false);
+        meta.put("failureTreatment", treatmentCode(treatment));
+        meta.put("mappedParameters", conditions.stream()
+                .map(c -> String.valueOf(c.get("parameterId"))).distinct().toList());
+        meta.put("parameterId", conditions.isEmpty() ? null : conditions.get(0).get("parameterId"));
+        meta.put(DecisionPolicyRuleMetadata.KEY_DOMAIN, DecisionPolicyDomain.CREDIT.name());
+
+        TreatmentPair tp = treatmentPair(treatment);
+        String systemId = "CM_COMPOUND_" + combinator + "_"
+                + conditions.size() + "C";
+
+        CiPolicyRuleCandidate rule;
+        if (replaceId != null) {
+            CiPolicyRuleCandidate existing = session.getRuleCandidates().stream()
+                    .filter(r -> replaceId.equals(r.getId()))
+                    .findFirst()
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Rule to edit not found"));
+            Map<String, Object> lineage = existing.getLineage() == null
+                    ? new LinkedHashMap<>() : new LinkedHashMap<>(existing.getLineage());
+            lineage.put("priorExpression", existing.getExpression());
+            lineage.put("priorSystemRuleId", existing.getSystemRuleId());
+            lineage.put("sourceText", sourceText);
+            lineage.put("editedByCm", true);
+            lineage.put("compoundGroupRoundtrip", true);
+            existing.setClauseId(clause.getId());
+            existing.setSystemRuleId(systemId);
+            existing.setRuleType("HARD");
+            existing.setExpression(expression);
+            existing.setOnTrue(tp.onTrue);
+            existing.setOnFalse(tp.onFalse);
+            existing.setOnMissing("DATA_INSUFFICIENT");
+            existing.setReviewStatus(ReviewState.CREDIT_MANAGER_APPROVED.name());
+            existing.setLineage(lineage);
+            existing.setMetadata(meta);
+            rule = existing;
+            session.getClauses().add(clause);
+        } else {
+            Map<String, Object> lineage = new LinkedHashMap<>();
+            lineage.put("documentId", doc.getId().toString());
+            lineage.put("documentName", doc.getName());
+            lineage.put("clauseId", clause.getId().toString());
+            lineage.put("sourceText", sourceText);
+            lineage.put("cmAuthored", true);
+            lineage.put("compoundGroup", true);
+            rule = CiPolicyRuleCandidate.builder()
+                    .id(UUID.randomUUID())
+                    .clauseId(clause.getId())
+                    .systemRuleId(systemId)
+                    .ruleVersion("DRAFT")
+                    .ruleType("HARD")
+                    .scope(Map.of(
+                            DecisionPolicyRuleMetadata.KEY_DOMAIN, DecisionPolicyDomain.CREDIT.name(),
+                            "products", List.of("ALL")))
+                    .expression(expression)
+                    .onTrue(tp.onTrue)
+                    .onFalse(tp.onFalse)
+                    .onMissing("DATA_INSUFFICIENT")
+                    .confidence(new BigDecimal("0.9500"))
+                    .reviewStatus(ReviewState.CREDIT_MANAGER_APPROVED.name())
+                    .lineage(lineage)
+                    .metadata(meta)
+                    .build();
+            session.getClauses().add(clause);
+            session.getRuleCandidates().add(rule);
+        }
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("confirmed", true);
+        out.put("ruleId", rule.getId().toString());
+        out.put("systemRuleId", rule.getSystemRuleId());
+        out.put("replaced", replaceId != null);
+        out.put("compound", true);
+        out.put("compoundGroup", true);
+        out.put("message", replaceId != null
+                ? "Compound rule updated without losing alternatives."
+                : "Compound underwriting rule added.");
+        out.put("preview", preview);
+        out.put("editableModel", CompoundExpressionAuthoringSupport.toEditableModel(expression, meta));
+        out.put("expression", expression);
+        out.put("allowCanonicalAuthority", false);
+        return out;
+    }
+
+    private static boolean looksLikeAmendment(String text) {
+        String lower = text.toLowerCase(Locale.ROOT);
+        return lower.contains("also ") || lower.contains("also add") || lower.contains("i also want")
+                || lower.startsWith("add ") || lower.contains("remove ")
+                || lower.contains("change ") && lower.contains(" to ")
+                || lower.contains("make it ")
+                || lower.contains("except ") || lower.contains("instead")
+                || lower.contains("keep everything else");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> castMap(Object o) {
+        if (o instanceof Map<?, ?> m) return (Map<String, Object>) m;
+        return Map.of();
     }
 
     @SuppressWarnings("unchecked")
@@ -595,6 +937,24 @@ public class CmRuleAuthoringService {
             return d;
         }
 
+        // POLICY-STUDIO-COMPOUND-RULE-AUTHORING-P0 — never silently flatten multi-clause NL
+        if (CompoundPlainEnglishParser.looksLikeMultiClause(d.sourceText)) {
+            CompoundPlainEnglishParser.ParseResult pr = CompoundPlainEnglishParser.parse(d.sourceText);
+            if (pr.compound) {
+                d.complete = false;
+                d.message = pr.complete
+                        ? "Compound rule detected — use compound preview path"
+                        : (pr.message == null
+                        ? "Some parts of this rule have not been mapped yet."
+                        : pr.message);
+                d.missing.add("compoundGroup");
+                if (!pr.unresolved.isEmpty()) {
+                    d.missing.addAll(pr.unresolved.stream().map(u -> "unresolved:" + u).toList());
+                }
+                return d;
+            }
+        }
+
         // Multi-parameter phrases first
         if ((lower.contains("bank") || lower.contains("banking") || lower.contains("turnover"))
                 && lower.contains("gst")) {
@@ -710,7 +1070,11 @@ public class CmRuleAuthoringService {
             }
             return;
         }
-        if (lower.contains("not exceed") || lower.contains("no more than") || lower.contains("at most")) {
+        // Inclusive phrases first — never silently map "650 & above" to exclusive ">"
+        String boundaryOp = CompoundPlainEnglishParser.detectBoundaryOperator(lower);
+        if (boundaryOp != null) {
+            d.operator = boundaryOp;
+        } else if (lower.contains("not exceed") || lower.contains("no more than") || lower.contains("at most")) {
             d.operator = "<=";
         } else if (lower.contains("at least") || lower.contains("minimum") || lower.contains("no less")) {
             d.operator = ">=";
@@ -719,9 +1083,10 @@ public class CmRuleAuthoringService {
         } else if (lower.contains("<=") || lower.contains("less than or equal")) {
             d.operator = "<=";
         } else if (lower.contains(">") || lower.contains("greater than") || lower.contains("more than")
-                || lower.contains("above")) {
+                || (lower.contains("above") && !lower.contains("and above") && !lower.contains("& above"))) {
             d.operator = ">";
-        } else if (lower.contains("<") || lower.contains("less than") || lower.contains("below")) {
+        } else if (lower.contains("<") || lower.contains("less than")
+                || (lower.contains("below") && !lower.contains("and below") && !lower.contains("& below"))) {
             d.operator = "<";
         } else if (lower.contains("must be 0") || lower.contains("= 0") || lower.contains("zero")
                 || lower.matches(".*\\b0\\b.*") && (lower.contains("bounce") || lower.contains("return"))) {

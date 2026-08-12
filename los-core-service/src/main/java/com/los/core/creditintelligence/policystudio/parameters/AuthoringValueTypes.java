@@ -270,10 +270,12 @@ public final class AuthoringValueTypes {
         String o = op.trim().toLowerCase(Locale.ROOT);
         boolean boolish = CONTROL_BOOLEAN.equals(control) || CONTROL_ENUM.equals(control);
         return switch (o) {
-            case "gt", "greater than", "more than", "above", ">" -> ">";
-            case "gte", "ge", "at least", "minimum", ">=" -> ">=";
-            case "lt", "less than", "below", "<" -> "<";
-            case "lte", "le", "at most", "not exceed", "no more than", "<=" -> "<=";
+            case "gt", "greater than", "more than", ">" -> ">";
+            case "above" -> ">"; // bare "above"; "N and above" handled by CompoundPlainEnglishParser
+            case "gte", "ge", "at least", "minimum", ">=", "and above", "& above", "or more", "or higher" -> ">=";
+            case "lt", "less than", "<" -> "<";
+            case "below" -> "<";
+            case "lte", "le", "at most", "not exceed", "no more than", "<=", "and below", "& below" -> "<=";
             case "eq", "equals", "equal", "is", "=" -> boolish ? "is" : "=";
             case "ne", "!=", "is not", "not" -> boolish ? "is not" : "!=";
             default -> op.trim();

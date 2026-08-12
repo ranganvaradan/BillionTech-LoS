@@ -16,7 +16,7 @@ import {
   type ValueControl,
 } from '@/lib/ux/ruleAuthoringTypedValue'
 
-type Path = 'menu' | 'build' | 'describe' | 'compound'
+type Path = 'menu' | 'build' | 'describe' | 'compound' | 'group'
 
 type CompoundBranch = {
   label?: string
@@ -29,6 +29,16 @@ type CompoundBranch = {
   thenOperator: string
   thenValue: string | number
   thenUnit?: string
+}
+
+type GroupCondition = {
+  parameterId: string
+  parameterName?: string
+  operator: string
+  value: string | number | boolean
+  leftKind?: string
+  valueControl?: string
+  valueLabel?: string
 }
 
 /**
@@ -58,12 +68,18 @@ export function CiRuleAuthoringPanel({
   initialEditableModel?: Record<string, unknown> | null
   onClose?: () => void
 }) {
-  const isCompound = Boolean(
+  const isCompoundIf = Boolean(
     initialEditableModel?.kind === 'COMPOUND_IF'
       || String(asRecord(initialExpression).op ?? '').toUpperCase() === 'IF'
       || String(initialText ?? '').includes(';'),
   )
-  const [path, setPath] = useState<Path>(replaceRuleId ? (isCompound ? 'compound' : 'build') : 'menu')
+  const isCompoundGroup = Boolean(
+    initialEditableModel?.kind === 'COMPOUND_GROUP'
+      || ['OR', 'AND'].includes(String(asRecord(initialExpression).op ?? '').toUpperCase()),
+  )
+  const [path, setPath] = useState<Path>(
+    replaceRuleId ? (isCompoundIf ? 'compound' : isCompoundGroup ? 'group' : 'build') : 'menu',
+  )
   const [sources, setSources] = useState<Record<string, unknown> | null>(null)
   const [source, setSource] = useState('')
   const [parameterId, setParameterId] = useState('')
@@ -118,6 +134,25 @@ export function CiRuleAuthoringPanel({
             thenUnit: 'count',
           },
         ],
+  )
+  const seedGroup = asList(initialEditableModel?.conditions).map((c) => {
+    const r = asRecord(c)
+    return {
+      parameterId: String(r.parameterId ?? ''),
+      parameterName: String(r.parameterName ?? r.parameterId ?? ''),
+      operator: String(r.operator ?? '='),
+      value: (r.value as string | number | boolean) ?? '',
+      leftKind: r.leftKind ? String(r.leftKind) : undefined,
+      valueControl: r.valueControl ? String(r.valueControl) : undefined,
+      valueLabel: r.valueLabel ? String(r.valueLabel) : undefined,
+    } satisfies GroupCondition
+  })
+  const [combinator, setCombinator] = useState<'ANY' | 'ALL'>(
+    String(initialEditableModel?.combinator ?? 'ANY').toUpperCase() === 'ALL' ? 'ALL' : 'ANY',
+  )
+  const [groupConditions, setGroupConditions] = useState<GroupCondition[]>(seedGroup)
+  const [proposedModel, setProposedModel] = useState<Record<string, unknown> | null>(
+    isCompoundGroup ? asRecord(initialEditableModel) : null,
   )
 
   useEffect(() => {
@@ -203,17 +238,49 @@ export function CiRuleAuthoringPanel({
               ...(replaceRuleId ? { replaceRuleId } : {}),
               ...(initialExpression ? { existingExpression: initialExpression } : {}),
             }
-          : path === 'build'
-            ? buildBody()
-            : {
-                mode: 'DESCRIBE',
-                text,
+          : path === 'group'
+            ? {
+                mode: 'COMPOUND_GROUP',
+                combinator,
+                conditions: groupConditions,
                 treatment,
                 ...(replaceRuleId ? { replaceRuleId } : {}),
               }
+            : path === 'build'
+              ? buildBody()
+              : {
+                  mode: 'DESCRIBE',
+                  text,
+                  treatment,
+                  ...(replaceRuleId ? { replaceRuleId } : {}),
+                  ...(proposedModel
+                    ? { proposedModel, amendment: text }
+                    : {}),
+                }
       const data = await previewPolicyRule(documentId, body)
       const p = asRecord(data.preview ?? data)
       setPreview(p)
+      if (p.compoundGroup || p.mode === 'COMPOUND_GROUP') {
+        const conds = asList(p.conditions).map((c) => {
+          const r = asRecord(c)
+          return {
+            parameterId: String(r.parameterId ?? ''),
+            parameterName: String(r.parameterName ?? ''),
+            operator: String(r.operator ?? '='),
+            value: (r.value as string | number | boolean) ?? '',
+            leftKind: r.leftKind ? String(r.leftKind) : undefined,
+            valueControl: r.valueControl ? String(r.valueControl) : undefined,
+            valueLabel: r.valueLabel ? String(r.valueLabel) : undefined,
+          } satisfies GroupCondition
+        })
+        if (conds.length) setGroupConditions(conds)
+        if (p.combinator) setCombinator(String(p.combinator).toUpperCase() === 'ALL' ? 'ALL' : 'ANY')
+        setProposedModel({
+          kind: 'COMPOUND_GROUP',
+          combinator: p.combinator ?? combinator,
+          conditions: conds,
+        })
+      }
       if (p.complete) {
         setFeedback(String(p.message ?? 'Ready to confirm'))
         if (p.parameterId) setParameterId(String(p.parameterId))
@@ -231,7 +298,12 @@ export function CiRuleAuthoringPanel({
           setRightParameterId(String(p.rightParameterId))
         }
       } else {
-        setFeedback(String(p.message ?? 'Incomplete'))
+        const unresolved = asList(p.unresolved).map(String)
+        setFeedback(
+          unresolved.length
+            ? `${String(p.message ?? 'Some parts of this rule have not been mapped yet.')} Unresolved: ${unresolved.join(', ')}`
+            : String(p.message ?? 'Incomplete'),
+        )
       }
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : 'Could not preview rule'
@@ -247,6 +319,7 @@ export function CiRuleAuthoringPanel({
     onError(null)
     setFeedback(null)
     try {
+      const p = asRecord(preview)
       const body: Record<string, unknown> =
         path === 'compound'
           ? {
@@ -257,21 +330,32 @@ export function CiRuleAuthoringPanel({
               ...(replaceRuleId ? { replaceRuleId } : {}),
               ...(initialExpression ? { existingExpression: initialExpression } : {}),
             }
-          : {
-              confirm: true,
-              mode: path === 'build' ? 'BUILD' : 'DESCRIBE',
-              text: path === 'describe' ? text : undefined,
-              parameterId: parameterId || asRecord(preview).parameterId,
-              operator: operator || asRecord(preview).operator,
-              treatment,
-              ...(replaceRuleId ? { replaceRuleId } : {}),
-              ...(path === 'build' ? buildBody() : {}),
-            }
+          : path === 'group' || p.compoundGroup || p.mode === 'COMPOUND_GROUP'
+            ? {
+                confirm: true,
+                mode: 'COMPOUND_GROUP',
+                combinator: p.combinator ?? combinator,
+                conditions: asList(p.conditions).length ? p.conditions : groupConditions,
+                expression: p.expression,
+                text: path === 'describe' ? text : undefined,
+                treatment,
+                ...(replaceRuleId ? { replaceRuleId } : {}),
+              }
+            : {
+                confirm: true,
+                mode: path === 'build' ? 'BUILD' : 'DESCRIBE',
+                text: path === 'describe' ? text : undefined,
+                parameterId: parameterId || p.parameterId,
+                operator: operator || p.operator,
+                treatment,
+                ...(replaceRuleId ? { replaceRuleId } : {}),
+                ...(path === 'build' ? buildBody() : {}),
+              }
       // Prefer preview canonical value when describe path filled it
-      if (path === 'describe' && asRecord(preview).value != null) {
-        body.value = asRecord(preview).value
-        body.parameterId = asRecord(preview).parameterId
-        body.operator = asRecord(preview).operator
+      if (path === 'describe' && !p.compoundGroup && p.value != null) {
+        body.value = p.value
+        body.parameterId = p.parameterId
+        body.operator = p.operator
       }
       const data = await addPlainEnglishPolicyRule(documentId, body)
       onSession(data as Record<string, unknown>)
@@ -338,17 +422,17 @@ export function CiRuleAuthoringPanel({
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-semibold text-slate-900">
           {replaceRuleId
-            ? path === 'compound'
+            ? path === 'compound' || path === 'group'
               ? 'Edit compound rule'
               : 'Edit rule'
             : path === 'build'
               ? 'Build rule'
-              : path === 'compound'
+              : path === 'compound' || path === 'group'
                 ? 'Build compound rule'
                 : 'Describe rule'}
         </h3>
         <div className="flex items-center gap-2">
-          {isCompound ? (
+          {isCompoundIf ? (
             <button
               type="button"
               className="text-xs text-sky-800 hover:underline"
@@ -359,6 +443,18 @@ export function CiRuleAuthoringPanel({
               }}
             >
               Switch to {path === 'compound' ? 'Describe' : 'Build'}
+            </button>
+          ) : isCompoundGroup || path === 'group' || Boolean(asRecord(preview).compoundGroup) ? (
+            <button
+              type="button"
+              className="text-xs text-sky-800 hover:underline"
+              onClick={() => {
+                setPath(path === 'group' ? 'describe' : 'group')
+                setPreview(null)
+                setFeedback(null)
+              }}
+            >
+              Switch to {path === 'group' ? 'Describe' : 'Build'}
             </button>
           ) : (
             <button
@@ -386,6 +482,151 @@ export function CiRuleAuthoringPanel({
           </button>
         </div>
       </div>
+
+      {path === 'group' ? (
+        <div className="space-y-3 text-sm" data-testid="compound-group-editor">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-slate-600">Match</span>
+            <select
+              className="rounded border border-slate-300 px-2 py-1"
+              value={combinator}
+              disabled={busy}
+              data-testid="group-combinator"
+              onChange={(e) => {
+                setCombinator(e.target.value === 'ALL' ? 'ALL' : 'ANY')
+                setPreview(null)
+              }}
+            >
+              <option value="ANY">ANY (OR)</option>
+              <option value="ALL">ALL (AND)</option>
+            </select>
+            <span className="text-xs text-slate-500">of these conditions</span>
+          </div>
+          {groupConditions.map((c, idx) => (
+            <div key={idx} className="flex flex-wrap items-center gap-2 rounded border border-slate-200 bg-white px-3 py-2">
+              <select
+                className="rounded border border-slate-300 px-2 py-1 min-w-[10rem]"
+                value={c.parameterId}
+                disabled={busy}
+                onChange={(e) => {
+                  const pid = e.target.value
+                  const meta = allParams.find((p) => String(p.parameterId) === pid)
+                  const next = [...groupConditions]
+                  next[idx] = {
+                    ...next[idx],
+                    parameterId: pid,
+                    parameterName: String(meta?.businessName ?? pid),
+                    leftKind: pid === 'bureau.status_ntc' ? 'FACT' : 'METRIC',
+                    value: pid === 'bureau.status_ntc' ? true : next[idx].value,
+                    operator: pid === 'bureau.status_ntc' ? '=' : next[idx].operator,
+                  }
+                  setGroupConditions(next)
+                  setPreview(null)
+                }}
+              >
+                <option value="bureau.score">Bureau score</option>
+                <option value="bureau.status_ntc">Bureau status (NTC)</option>
+                {allParams
+                  .filter((p) => !['bureau.score', 'bureau.status_ntc'].includes(String(p.parameterId)))
+                  .slice(0, 40)
+                  .map((p) => (
+                    <option key={String(p.parameterId)} value={String(p.parameterId)}>
+                      {String(p.businessName)}
+                    </option>
+                  ))}
+              </select>
+              <select
+                className="rounded border border-slate-300 px-2 py-1"
+                value={c.operator}
+                disabled={busy}
+                onChange={(e) => {
+                  const next = [...groupConditions]
+                  next[idx] = { ...next[idx], operator: e.target.value }
+                  setGroupConditions(next)
+                  setPreview(null)
+                }}
+              >
+                <option value="=">=</option>
+                <option value="!=">≠</option>
+                <option value=">">&gt;</option>
+                <option value=">=">≥</option>
+                <option value="<">&lt;</option>
+                <option value="<=">≤</option>
+              </select>
+              {c.parameterId === 'bureau.status_ntc' ? (
+                <select
+                  className="rounded border border-slate-300 px-2 py-1"
+                  value={String(c.value)}
+                  disabled={busy}
+                  onChange={(e) => {
+                    const next = [...groupConditions]
+                    next[idx] = { ...next[idx], value: e.target.value === 'true', valueLabel: 'NTC' }
+                    setGroupConditions(next)
+                    setPreview(null)
+                  }}
+                >
+                  <option value="true">NTC</option>
+                  <option value="false">Not NTC</option>
+                </select>
+              ) : (
+                <input
+                  className="w-24 rounded border border-slate-300 px-2 py-1"
+                  value={String(c.value)}
+                  disabled={busy}
+                  onChange={(e) => {
+                    const next = [...groupConditions]
+                    const raw = e.target.value
+                    const num = Number(raw)
+                    next[idx] = { ...next[idx], value: raw === '' || Number.isNaN(num) ? raw : num }
+                    setGroupConditions(next)
+                    setPreview(null)
+                  }}
+                />
+              )}
+              <button
+                type="button"
+                className="text-xs text-rose-700 hover:underline"
+                disabled={busy || groupConditions.length <= 1}
+                onClick={() => {
+                  setGroupConditions(groupConditions.filter((_, i) => i !== idx))
+                  setPreview(null)
+                }}
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+          <button
+            type="button"
+            className="text-xs text-sky-800 hover:underline"
+            disabled={busy}
+            onClick={() => {
+              setGroupConditions([
+                ...groupConditions,
+                { parameterId: 'bureau.score', parameterName: 'Bureau score', operator: '>=', value: 650 },
+              ])
+              setPreview(null)
+            }}
+          >
+            Add condition
+          </button>
+          <label className="block text-sm sm:w-60">
+            <span className="text-slate-600">If rule fails</span>
+            <select
+              className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+              value={treatment}
+              onChange={(e) => setTreatment(e.target.value)}
+              disabled={busy}
+            >
+              {(treatments.length ? treatments : ['Reject', 'Manual Review', 'Refer', 'Info']).map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      ) : null}
 
       {path === 'compound' ? (
         <div className="space-y-3 text-sm" data-testid="compound-rule-editor">
@@ -503,23 +744,35 @@ export function CiRuleAuthoringPanel({
 
       {path === 'describe' ? (
         <label className="block text-sm">
-          <span className="text-slate-600">Describe the rule in plain English</span>
+          <span className="text-slate-600">
+            {proposedModel
+              ? 'Amend the proposed rule in plain English'
+              : 'Describe the rule in plain English'}
+          </span>
           <textarea
             className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
             rows={3}
             value={text}
             disabled={busy}
-            placeholder='e.g. PAN must be verified · Bureau score should be at least 650'
+            placeholder={
+              proposedModel
+                ? 'e.g. I also want to add Bureau Score of -1 and NTC'
+                : 'e.g. Bureau Score of -1, NTC and 650 & above only will be allowed'
+            }
             onChange={(e) => setText(e.target.value)}
             data-testid="describe-rule-text"
           />
-          {isCompound ? (
+          {isCompoundIf ? (
             <p className="mt-1 text-xs text-amber-800">
               This is a compound rule. Prefer Build to edit branches — free-text rewrite cannot safely keep both branches.
             </p>
+          ) : proposedModel ? (
+            <p className="mt-1 text-xs text-slate-600">
+              Amendments update the current proposed conditions (also add / remove / change / make it…).
+            </p>
           ) : null}
         </label>
-      ) : path === 'compound' ? null : (
+      ) : path === 'compound' || path === 'group' ? null : (
         <div className="grid gap-2 sm:grid-cols-2">
           <label className="block text-sm">
             <span className="text-slate-600">Source</span>
@@ -786,7 +1039,13 @@ export function CiRuleAuthoringPanel({
           className="bt-btn bt-btn-secondary bt-btn-sm"
           disabled={
             busy ||
-            (path === 'describe' ? !text.trim() : path === 'compound' ? branches.length < 2 : !canPreviewBuild)
+            (path === 'describe'
+              ? !text.trim()
+              : path === 'compound'
+                ? branches.length < 2
+                : path === 'group'
+                  ? groupConditions.length < 1
+                  : !canPreviewBuild)
           }
           onClick={() => void runPreview()}
           data-testid="preview-rule"
@@ -813,12 +1072,37 @@ export function CiRuleAuthoringPanel({
       {preview ? (
         <div className="rounded border border-slate-200 bg-white px-3 py-2 text-sm" data-testid="rule-preview">
           <div className="font-medium text-slate-900">Preview</div>
-          <p className="mt-1 font-semibold text-slate-900" data-testid="rule-preview-display">
-            {String(preview.ruleDisplay ?? `${preview.parameter ?? ''} ${preview.operator ?? ''} ${preview.valueDisplay ?? preview.value ?? ''}`)}
-          </p>
-          <p className="text-slate-700" data-testid="rule-preview-failure">
-            {String(preview.failureDisplay ?? `${treatmentLabel} → ${preview.treatment ?? treatment}`)}
-          </p>
+          {asList(preview.previewLines).length ? (
+            <div className="mt-1 space-y-0.5 font-semibold text-slate-900" data-testid="rule-preview-display">
+              {asList(preview.previewLines).map((line, i) => (
+                <p key={i}>{String(line)}</p>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-1 font-semibold text-slate-900" data-testid="rule-preview-display">
+              {String(preview.ruleDisplay ?? `${preview.parameter ?? ''} ${preview.operator ?? ''} ${preview.valueDisplay ?? preview.value ?? ''}`)}
+            </p>
+          )}
+          {!asList(preview.previewLines).length ? (
+            <p className="text-slate-700" data-testid="rule-preview-failure">
+              {String(preview.failureDisplay ?? `${treatmentLabel} → ${preview.treatment ?? treatment}`)}
+            </p>
+          ) : null}
+          {asList(preview.unresolved).length ? (
+            <div className="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-950" data-testid="rule-preview-unresolved">
+              <p className="font-semibold">Some parts of this rule have not been mapped yet.</p>
+              <p>Unresolved: {asList(preview.unresolved).map(String).join(', ')}</p>
+            </div>
+          ) : null}
+          {preview.compoundGroup ? (
+            <button
+              type="button"
+              className="mt-2 text-xs text-sky-800 hover:underline"
+              onClick={() => setPath('group')}
+            >
+              Switch to Build (edit conditions)
+            </button>
+          ) : null}
           <dl className="mt-2 grid gap-1 sm:grid-cols-2">
             <div>
               <dt className="text-xs text-slate-500">Evaluated from</dt>

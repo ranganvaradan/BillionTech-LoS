@@ -819,6 +819,13 @@ final class ProspectDay2ViewBuilder {
             card.put("compoundEditable", true);
             card.put("editableModel", com.los.core.creditintelligence.policystudio.parameters
                     .InwardReturnCompoundSupport.toEditableModel(r.getExpression(), meta));
+        } else if (com.los.core.creditintelligence.policystudio.parameters
+                .CompoundExpressionAuthoringSupport.isGroupExpression(r.getExpression())
+                || Boolean.TRUE.equals(meta.get("compoundGroup"))) {
+            card.put("compoundEditable", true);
+            card.put("compoundGroup", true);
+            card.put("editableModel", com.los.core.creditintelligence.policystudio.parameters
+                    .CompoundExpressionAuthoringSupport.toEditableModel(r.getExpression(), meta));
         }
         // POLICY-CONVERGENCE-1 — Live Rules shaped CM fields + source/provenance split
         PolicyStudioConvergencePresenter.applyConvergenceFields(card, r, clause, dataUsed, fileName);
@@ -1220,8 +1227,9 @@ final class ProspectDay2ViewBuilder {
             return PolicyStudioConvergencePresenter.compoundOverdueVisual(null);
         }
 
-        if ("AND".equals(op) && expr.get("args") instanceof List<?> args && args.size() >= 2) {
+        if (("AND".equals(op) || "OR".equals(op)) && expr.get("args") instanceof List<?> args && args.size() >= 2) {
             visual.put("kind", "COMPOUND");
+            visual.put("combinator", "OR".equals(op) ? "ANY" : "ALL");
             List<Map<String, Object>> parts = new ArrayList<>();
             for (Object arg : args) {
                 if (arg instanceof Map<?, ?> m) {

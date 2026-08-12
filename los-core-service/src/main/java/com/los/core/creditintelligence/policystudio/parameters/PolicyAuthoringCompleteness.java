@@ -133,6 +133,19 @@ public final class PolicyAuthoringCompleteness {
         String cap = String.valueOf(meta.getOrDefault("businessCapabilityId", ""));
         String sys = r.getSystemRuleId() == null ? "" : r.getSystemRuleId().toUpperCase(Locale.ROOT);
         Object thr = authoringThreshold(r);
+        // Never flatten OR/AND compound bureau eligibility into a single >= threshold label
+        Map<String, Object> expr = r.getExpression();
+        boolean compoundGroup = Boolean.TRUE.equals(meta.get("compoundGroup"))
+                || CompoundExpressionAuthoringSupport.isGroupExpression(expr);
+        if (compoundGroup) {
+            String summary = String.valueOf(meta.getOrDefault("businessSummary",
+                    card.getOrDefault("businessRule", "")));
+            if (summary != null && !summary.isBlank() && !"null".equals(summary)) {
+                card.put("businessRule", summary);
+            }
+            card.put("compoundGroup", true);
+            return;
+        }
         boolean bureauMin = "BUREAU.MIN_SCORE".equals(cap)
                 || "ELIG.MIN_BUREAU_SCORE".equals(cap)
                 || sys.contains("BUREAU_SCORE")
