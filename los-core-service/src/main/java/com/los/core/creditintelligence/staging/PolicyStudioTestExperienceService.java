@@ -1065,6 +1065,14 @@ public class PolicyStudioTestExperienceService {
         if (metricId != null && !metricId.isBlank() && metricId.contains(".")) {
             metrics.put(metricId, value);
             facts.put(metricId, value);
+            // Gate-3: stamp known runtime/snapshot aliases so Policy Test semantics match runtime paths
+            for (String alias : com.los.core.creditintelligence.policystudio.parameters
+                    .ParameterExecutabilitySupport.runtimeFactAliases(metricId)) {
+                if (alias != null && !alias.isBlank()) {
+                    metrics.putIfAbsent(alias, value);
+                    facts.putIfAbsent(alias, value);
+                }
+            }
         }
         if (key != null) {
             String k = key.toLowerCase(Locale.ROOT);

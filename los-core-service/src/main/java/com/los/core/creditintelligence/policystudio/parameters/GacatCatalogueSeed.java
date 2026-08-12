@@ -264,6 +264,22 @@ final class GacatCatalogueSeed {
                 null, null,
                 prodBureau(true), true, true, true, true, true);
 
+        // Gate-3: non-CC / CC write-off splits are Policy-Test / studio calculators — NOT production UW.
+        derived(p, "bureau.accounts.writeoff_non_cc", "Non-credit-card write-off count", BR, "COUNT", "PIT",
+                "Count of written-off tradelines excluding credit cards (PolicyBureauMetricService.writeoffCounts)",
+                List.of("bureau.tradeline.write_off_amount", "bureau.tradeline.account_status"),
+                "PolicyBureauMetricService.writeoffCounts",
+                List.of("non cc write off", "write-off except credit card", "loan write-offs except credit cards"),
+                null, null,
+                studioImpl(), true, true, true, true, false);
+        derived(p, "bureau.accounts.cc_writeoff", "Credit-card write-off count", BR, "COUNT", "PIT",
+                "Count of written-off credit-card tradelines",
+                List.of("bureau.tradeline.write_off_amount", "bureau.tradeline.account_status"),
+                "PolicyBureauMetricService.writeoffCounts",
+                List.of("credit card write off", "cc write-off"),
+                null, null,
+                studioImpl(), true, true, true, true, false);
+
         derived(p, "bureau.cc_overdue_amount", "Credit-card overdue amount", BR, "INR", "PIT",
                 "Sum of credit-card overdue amounts",
                 List.of("bureau.tradeline.overdue_amount"),
@@ -330,6 +346,15 @@ final class GacatCatalogueSeed {
         derivedDefined(p, "bureau.thin_file_indicator", "Thin-file / NTC indicator", BR,
                 "NTC / thin-file from score status or explicit NTC flag",
                 List.of("bureau.score"), List.of("ntc", "thin file"));
+        // Gate-3: authored Fact id used by PolicyDsl compounds — Policy-Test ready; Live scorecard uses NTC_FLAG.
+        derived(p, "bureau.status_ntc", "Bureau NTC / thin-file status", BR, "BOOLEAN", "PIT",
+                "True when bureau report is NTC / thin-file (PolicyBureauMetricService.consumerNtc); "
+                        + "Live scorecard maps NTC_FLAG (do not invent false when missing)",
+                List.of("bureau.score"),
+                "PolicyBureauMetricService.consumerNtc / Scorecard NTC_FLAG",
+                List.of("ntc", "status ntc", "thin file", "new to credit"),
+                null, "NTC_FLAG",
+                studioImpl(), true, true, true, true, false);
     }
 
     private static void bureauCommercialRaw(List<CanonicalParameterDefinition> p) {
@@ -457,9 +482,11 @@ final class GacatCatalogueSeed {
                 "Count of EMI repayment events with matched return/bounce events in trailing 3 months "
                         + "(existing EMI + bounce/return classifiers; DATA_INSUFFICIENT when coverage missing)",
                 List.of("bank.transaction", "EMI", "NACH_RETURN", "CHEQUE_RETURN"),
-                "EmiBounceCountCalculator.V1",
+                "BankingMetricService.countEmiBounce / EmiBounceCountCalculator.V1",
                 List.of("emi bounce", "emi bounce count", "bounced emi", "emi return count"), null, null,
-                bankStudio(), true, true, true, true, false);
+                // Gate-3: runtime calculator + snapshot path banking.bounce.emi_count_3m — production-ready binding.
+                // Product Config still requires AA/BSA workflow acquisition.
+                prodBank(), true, true, true, true, true);
         derived(p, "banking.settlement.count_monthly_avg_3m", "Average monthly settlements", BS, "COUNT", "TRAILING_3M",
                 "Number of qualifying QR settlement credits during the trailing 3 months ÷ 3",
                 List.of("bank.transaction", "QR_SETTLEMENT"),

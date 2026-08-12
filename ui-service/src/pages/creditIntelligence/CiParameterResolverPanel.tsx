@@ -243,6 +243,23 @@ export function CiParameterResolverPanel({
                   ? ` · ${String(suggestion.businessName ?? suggestion.canonicalParameter)}`
                   : ''}
               </p>
+              {suggestion.canonicalParameter ? (
+                <p className="text-xs mt-1" data-testid="executability-modes">
+                  Policy Test: {suggestion.policyTestReady === true ? 'READY' : 'NOT READY'}
+                  {' · '}
+                  Runtime: {suggestion.runtimeReady === true ? 'READY' : 'NOT READY'}
+                  {' · '}
+                  Production: {suggestion.productionReady === true ? 'READY' : 'NOT READY'}
+                  {suggestion.executionState
+                    ? ` · (${String(suggestion.executionState)})`
+                    : ''}
+                </p>
+              ) : null}
+              {suggestion.productionReady !== true && suggestion.policyTestReady === true ? (
+                <p className="text-xs text-amber-800 mt-1">
+                  Studio / Policy-Test ready only — not production go-live until certified.
+                </p>
+              ) : null}
               {suggestion.mappedToProposedEdi === true ? (
                 <p className="text-xs text-rose-800 font-semibold">Refused Proposed EDI mapping</p>
               ) : null}

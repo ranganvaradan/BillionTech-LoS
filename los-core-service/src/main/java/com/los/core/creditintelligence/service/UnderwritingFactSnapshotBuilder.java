@@ -1012,6 +1012,7 @@ public class UnderwritingFactSnapshotBuilder {
             case BankingMetricService.OD_PEAK_6M -> "banking.od_cc.peak_utilisation_6m";
             case BankingMetricService.OD_DAYS_90 -> "banking.od_cc.days_above_90pct_6m";
             case BankingMetricService.COMPLETENESS -> "banking.statement.completeness_ratio";
+            case BankingMetricService.EMI_BOUNCE_3M -> "banking.bounce.emi_count_3m";
             default -> null;
         };
     }

@@ -2,6 +2,7 @@ package com.los.core.service.readiness;
 
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterDefinition;
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterRegistry;
+import com.los.core.creditintelligence.policystudio.parameters.ParameterExecutabilitySupport;
 import com.los.core.creditintelligence.policystudio.parameters.PolicyStudioConvergencePresenter;
 import com.los.core.model.entity.UnderwritingRuleSet;
 import com.los.core.model.entity.UnderwritingScorecard;
@@ -226,10 +227,19 @@ public class ProductReadinessValidator {
     private Map<String, Object> classify(String parameterId, Set<String> provided, WorkflowConfig workflow) {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("parameterId", parameterId);
+        Map<String, Object> exec = ParameterExecutabilitySupport.evaluate(parameterId);
+        ParameterExecutabilitySupport.stampOnto(row, exec);
         var defOpt = registry().findById(parameterId);
-        if (defOpt.isEmpty()) {
+        if (defOpt.isEmpty() && !Boolean.TRUE.equals(exec.get("policyTestReady"))) {
             row.put("classification", UNRESOLVED);
             row.put("gap", "Parameter not in CanonicalParameterRegistry: " + parameterId);
+            return row;
+        }
+        if (defOpt.isEmpty()) {
+            // Overlay: Policy-Test only — never AVAILABLE_AUTOMATICALLY for Product Config
+            row.put("classification", UNAVAILABLE);
+            row.put("gap", parameterId + " is Policy-Test/studio only — not productionReady");
+            row.put("note", "Gate-3: Product Config uses same executability as ParameterExecutabilitySupport");
             return row;
         }
         CanonicalParameterDefinition def = defOpt.get();
@@ -239,14 +249,25 @@ public class ProductReadinessValidator {
 
         if (CanonicalParameterDefinition.MANUAL.equalsIgnoreCase(def.type())) {
             row.put("classification", MANUAL);
-            row.put("readiness", "MANUAL");
+            row.put("readiness", "MANUAL_AUTHORISED");
             row.put("actor", "Credit Analyst / Relationship Manager");
             row.put("captureStage", "Application / CAM underwriting review");
             row.put("workflowPoint", "Pre-decision manual underwriting / CAM capture");
             row.put("gap", null);
-            row.put("note", "Manual input — Application/CAM path exists for known manual merges");
+            row.put("note", "Manual input — Application/CAM path; provenance MANUAL_AUTHORISED");
             return row;
         }
+
+        // Gate-3: Product Config production readiness requires productionReady=true
+        if (!Boolean.TRUE.equals(exec.get("productionReady"))) {
+            row.put("classification", UNAVAILABLE);
+            row.put("readiness", String.valueOf(exec.get("executionState")));
+            row.put("gap", def.businessName()
+                    + " is not productionReady (executionState=" + exec.get("executionState")
+                    + ") — Policy Test may still evaluate it");
+            return row;
+        }
+
         if (provided.contains(parameterId)) {
             row.put("classification", AVAILABLE_AUTOMATICALLY);
             row.put("gap", null);

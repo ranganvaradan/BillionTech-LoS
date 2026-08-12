@@ -291,6 +291,41 @@ public class StagingDemoController {
                 .resolve(concept, source);
     }
 
+    /**
+     * POLICY-STUDIO-GATE3 — authoritative executability for a canonical parameter.
+     */
+    @GetMapping("/policy-studio/parameters/{parameterId}/executability")
+    public Map<String, Object> parameterExecutability(
+            @PathVariable String parameterId,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        assertInternalToken(token);
+        assertStagingDemoEnabled();
+        return com.los.core.creditintelligence.policystudio.parameters.ParameterExecutabilitySupport
+                .evaluate(parameterId);
+    }
+
+    @PostMapping("/policy-studio/parameters/executability/batch")
+    public Map<String, Object> parameterExecutabilityBatch(
+            @RequestHeader(value = "X-Internal-Token", required = false) String token,
+            @RequestBody Map<String, Object> body) {
+        assertInternalToken(token);
+        assertStagingDemoEnabled();
+        @SuppressWarnings("unchecked")
+        java.util.List<String> ids = body == null || body.get("parameterIds") == null
+                ? java.util.List.of()
+                : (java.util.List<String>) body.get("parameterIds");
+        Map<String, Object> out = new java.util.LinkedHashMap<>();
+        out.put("allowCanonicalAuthority", false);
+        java.util.List<Map<String, Object>> rows = new java.util.ArrayList<>();
+        for (String id : ids) {
+            rows.add(com.los.core.creditintelligence.policystudio.parameters.ParameterExecutabilitySupport
+                    .evaluate(id));
+        }
+        out.put("parameters", rows);
+        out.put("count", rows.size());
+        return out;
+    }
+
     @GetMapping("/policy-studio/capabilities/scf-representability")
     public Map<String, Object> scfRepresentability(
             @RequestHeader(value = "X-Internal-Token", required = false) String token) {

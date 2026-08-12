@@ -176,6 +176,16 @@ export async function resolveBusinessConcept(body: {
   return data
 }
 
+/** POLICY-STUDIO-GATE3 — executability ladder for a canonical parameter. */
+export async function getParameterExecutability(
+  parameterId: string,
+): Promise<Record<string, unknown>> {
+  const { data } = await http.get<Record<string, unknown>>(
+    `${BASE}/policy-studio/parameters/${encodeURIComponent(parameterId)}/executability`,
+  )
+  return data
+}
+
 export type CatalogueCapabilityAddBody = {
   businessCapabilityId: string
   parameters?: Record<string, unknown>

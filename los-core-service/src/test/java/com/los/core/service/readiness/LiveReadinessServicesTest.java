@@ -38,7 +38,10 @@ class LiveReadinessServicesTest {
         Set<String> ids = WorkflowParameterProvidesCatalog.parametersProvidedByWorkflow(
                 List.of(Map.of("step", "PAN_VERIFY"), Map.of("step", "BUREAU_PULL")),
                 true, true);
-        assertThat(ids).contains("bureau.score", "bureau.max_dpd_6m");
+        // Gate-3: production provides only — studio helpers (max_dpd_6m) excluded
+        assertThat(ids).contains("bureau.score");
+        assertThat(ids).doesNotContain("bureau.max_dpd_6m");
+        assertThat(ids).contains("bureau.max_dpd_12m");
     }
 
     @Test

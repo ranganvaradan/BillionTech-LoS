@@ -152,6 +152,14 @@ public record CanonicalParameterDefinition(
         m.put("implemented", cap.implemented());
         m.put("productionReady", cap.productionReady());
         m.put("capabilityStatus", cap.primaryStatus());
+        // Gate-3 mode distinction (same Capability SSOT)
+        Map<String, Object> exec = ParameterExecutabilitySupport.evaluate(this);
+        m.put("executionState", exec.get("executionState"));
+        m.put("policyTestReady", exec.get("policyTestReady"));
+        m.put("runtimeReady", exec.get("runtimeReady"));
+        m.put("policyTest", Boolean.TRUE.equals(exec.get("policyTestReady")) ? "READY" : "NOT READY");
+        m.put("runtime", Boolean.TRUE.equals(exec.get("runtimeReady")) ? "READY" : "NOT READY");
+        m.put("production", Boolean.TRUE.equals(exec.get("productionReady")) ? "READY" : "NOT READY");
         if (cap.cardinality() != null) m.put("cardinality", cap.cardinality());
         if (cap.providerFieldPath() != null) m.put("providerFieldPath", cap.providerFieldPath());
         return m;

@@ -118,12 +118,14 @@ public final class BusinessConceptResolver {
             out.put("executable", false);
             out.put("dataAvailability", ParameterResolutionSupport.AVAIL_MANUAL);
             out.put("message", "Requires manual input");
+            stampExec(out, String.valueOf(top.get("parameterId")));
             return out;
         }
         if (!executable) {
             out.put("resolutionState", NEEDS_DERIVATION);
             out.put("executable", false);
             out.put("message", "Concept mapped but derivation/calculator is not executable yet");
+            stampExec(out, String.valueOf(top.get("parameterId")));
             return out;
         }
         if (CanonicalParameterDefinition.DERIVED.equals(type)) {
@@ -134,6 +136,7 @@ public final class BusinessConceptResolver {
         out.put("executable", true);
         out.put("dataAvailability", top.get("availability"));
         out.put("message", "Ready — existing catalogue binding");
+        stampExec(out, String.valueOf(top.get("parameterId")));
         return out;
     }
 
@@ -198,6 +201,12 @@ public final class BusinessConceptResolver {
                             "tradeline.creditCard flag")));
             out.put("message", "Mapped to Bureau non-credit-card write-off count (not Proposed EDI)");
             out.put("mappedToProposedEdi", false);
+            ParameterExecutabilitySupport.stampOnto(out,
+                    ParameterExecutabilitySupport.evaluate(WRITEOFF_NON_CC));
+            // Gate-3 honesty: READY_DERIVED here means Policy-Test-ready, not production.
+            out.put("policyTestReady", true);
+            out.put("runtimeReady", false);
+            out.put("productionReady", false);
             return out;
         }
 
@@ -230,14 +239,27 @@ public final class BusinessConceptResolver {
         out.put("businessName", row.get("businessName"));
         out.put("source", row.get("evaluatedFrom"));
         out.put("resolutionType", row.get("type"));
-        out.put("executable", Boolean.TRUE.equals(row.get("executable")));
-        out.put("resolutionState", CanonicalParameterDefinition.DERIVED.equals(row.get("type"))
-                ? READY_DERIVED : READY_EXISTING);
+        boolean exec = Boolean.TRUE.equals(row.get("executable"))
+                || Boolean.TRUE.equals(row.get("policyStudioReady"));
+        out.put("executable", exec);
+        if (CanonicalParameterDefinition.MANUAL.equals(row.get("type"))) {
+            // Known mapped manual parameter — READY_EXISTING means "mapped"; capture still manual.
+            out.put("resolutionState", READY_EXISTING);
+            out.put("executable", true);
+            out.put("dataAvailability", ParameterResolutionSupport.AVAIL_MANUAL);
+        } else if (!exec) {
+            out.put("resolutionState", NEEDS_DERIVATION);
+        } else if (CanonicalParameterDefinition.DERIVED.equals(row.get("type"))) {
+            out.put("resolutionState", READY_DERIVED);
+        } else {
+            out.put("resolutionState", READY_EXISTING);
+        }
         out.put("provenance", Map.of(
                 "parameterId", id,
                 "evaluatedFrom", row.get("evaluatedFrom"),
                 "type", row.get("type")));
         out.put("message", "Mapped to " + row.get("businessName"));
+        stampExec(out, id);
         return out;
     }
 
@@ -309,13 +331,15 @@ public final class BusinessConceptResolver {
         m.put("availability", def.availability());
         m.put("howCalculated", def.calculationSummary());
         m.put("unit", def.unit());
-        boolean ready = true;
-        if (def.capability() != null) {
-            ready = def.capability().implemented() || def.capability().productionReady()
-                    || def.capability().derivationDefined();
-        }
-        m.put("policyStudioReady", ready);
-        m.put("executable", ready);
+        // Gate-3: Policy Studio ready requires an implemented calculator — NOT derivationDefined alone.
+        Map<String, Object> exec = ParameterExecutabilitySupport.evaluate(def);
+        boolean studioReady = Boolean.TRUE.equals(exec.get("policyTestReady"));
+        m.put("policyStudioReady", studioReady);
+        m.put("executable", studioReady);
+        m.put("executionState", exec.get("executionState"));
+        m.put("policyTestReady", exec.get("policyTestReady"));
+        m.put("runtimeReady", exec.get("runtimeReady"));
+        m.put("productionReady", exec.get("productionReady"));
         m.put("aliases", def.aliases());
         return m;
     }
@@ -336,7 +360,15 @@ public final class BusinessConceptResolver {
         m.put("executable", executable);
         m.put("authoringOverlay", true);
         m.put("calculator", "PolicyBureauMetricService");
+        Map<String, Object> exec = ParameterExecutabilitySupport.studioOverlay(
+                id, "PolicyBureauMetricService.writeoffCounts", ingredients);
+        ParameterExecutabilitySupport.stampOnto(m, exec);
         return m;
+    }
+
+    private static void stampExec(Map<String, Object> out, String parameterId) {
+        if (parameterId == null || parameterId.isBlank() || "null".equals(parameterId)) return;
+        ParameterExecutabilitySupport.stampOnto(out, ParameterExecutabilitySupport.evaluate(parameterId));
     }
 
     private static Map<String, Object> withScore(Map<String, Object> row, int score) {
