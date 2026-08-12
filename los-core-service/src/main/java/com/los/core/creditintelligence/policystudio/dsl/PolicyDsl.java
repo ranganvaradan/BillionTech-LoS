@@ -1,5 +1,6 @@
 package com.los.core.creditintelligence.policystudio.dsl;
 
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -80,5 +81,32 @@ public final class PolicyDsl {
 
     public static Map<String, Object> ne(Object left, Object right) {
         return op("NE", left, right);
+    }
+
+    /** Membership: left IN set (list of consts or raw values). */
+    public static Map<String, Object> in(Object left, List<?> values) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("op", "IN");
+        m.put("left", left);
+        m.put("set", constList(values));
+        return m;
+    }
+
+    public static Map<String, Object> notIn(Object left, List<?> values) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("op", "NOT_IN");
+        m.put("left", left);
+        m.put("set", constList(values));
+        return m;
+    }
+
+    private static List<Object> constList(List<?> values) {
+        List<Object> out = new ArrayList<>();
+        if (values == null) return out;
+        for (Object v : values) {
+            if (v instanceof Map<?, ?>) out.add(v);
+            else out.add(Map.of("const", v));
+        }
+        return out;
     }
 }

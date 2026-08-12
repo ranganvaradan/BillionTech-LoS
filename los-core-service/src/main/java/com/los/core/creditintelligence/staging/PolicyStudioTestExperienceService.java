@@ -141,6 +141,14 @@ public class PolicyStudioTestExperienceService {
         List<String> idsBefore = session.getRuleCandidates().stream()
                 .map(CiPolicyRuleCandidate::getSystemRuleId).toList();
 
+        // Paths actually referenced by executable rule expressions — do not invent defaults for others
+        Set<String> expressionPaths = new LinkedHashSet<>();
+        for (CiPolicyRuleCandidate r : session.getRuleCandidates()) {
+            if (isExcludedFromEvaluation(r) || isDataCalculationOnly(r)) continue;
+            expressionPaths.addAll(extractMetricPaths(r.getExpression()));
+        }
+        boolean useFixtureDefaults = body != null && Boolean.TRUE.equals(body.get("useFixtureDefaults"));
+
         for (Map<String, Object> p : required) {
             String key = String.valueOf(p.get("parameterKey"));
             String metricId = p.get("metricId") == null ? null : String.valueOf(p.get("metricId"));
@@ -151,43 +159,57 @@ public class PolicyStudioTestExperienceService {
             prov.put("businessName", p.get("businessName"));
             prov.put("metricId", metricId);
 
+            boolean referenced = metricId != null && expressionPaths.contains(metricId)
+                    || expressionPaths.stream().anyMatch(path ->
+                    path.equals(key) || path.endsWith("." + key)
+                            || (metricId != null && path.equals(metricId)));
+            // Alias: bureau_score / score → bureau.score
+            if (!referenced && metricId == null) {
+                referenced = expressionPaths.contains(key);
+            }
+            if (!referenced && ("bureau_score".equals(key) || "score".equals(key))) {
+                referenced = expressionPaths.contains("bureau.score");
+            }
+            if (!referenced && key != null && key.contains("foir")) {
+                referenced = expressionPaths.contains("obligation.ratio")
+                        || expressionPaths.contains("application.foir");
+            }
+
             if (supplied != null && !String.valueOf(supplied).isBlank()) {
                 Object coerced = coerce(supplied);
                 putMetric(metrics, facts, policyParams, metricId, key, coerced);
                 prov.put("value", coerced);
-                prov.put("status", "MANUAL_TEST_VALUE");
+                prov.put("status", "USER_SUPPLIED");
                 prov.put("sourceLabel", "Test value entered manually");
                 prov.put("simulationOnly", true);
-            } else if ("AUTOMATIC_DERIVED".equals(status) || "DERIVED".equals(status)
-                    || "RAW".equals(status)) {
-                Object def = p.get("defaultHint");
-                if (def != null) {
-                    Object coerced = coerce(def);
-                    putMetric(metrics, facts, policyParams, metricId, key, coerced);
-                    prov.put("value", coerced);
-                    prov.put("status", "AUTOMATIC_DERIVED");
-                    prov.put("sourceLabel", p.getOrDefault("sourceLabel", "Derived / available parameter"));
-                    prov.put("howCalculated", p.get("howCalculated"));
-                } else {
-                    prov.put("status", "UNAVAILABLE");
-                    prov.put("sourceLabel", "No automatic value available for this test");
-                    blockers.add(String.valueOf(p.get("businessName")) + " — unavailable");
-                }
+            } else if (!referenced) {
+                prov.put("status", "NOT_REQUIRED");
+                prov.put("sourceLabel", "Not required by the expressions under test");
+                // Do not invent a value
+            } else if ("UNRESOLVED".equals(status)) {
+                prov.put("status", "MISSING");
+                prov.put("sourceLabel", "Required by expression — unresolved / missing");
+                prov.put("needsTestValue", true);
+                blockers.add(String.valueOf(p.get("businessName")) + " — missing");
             } else if ("MANUAL_INPUT".equals(status) || "MANUAL".equals(status)) {
-                prov.put("status", "MANUAL_INPUT");
-                prov.put("sourceLabel", "Manual input required — enter a test value");
+                prov.put("status", "MISSING");
+                prov.put("sourceLabel", "Required by expression — enter a test value");
                 prov.put("needsTestValue", true);
                 blockers.add(String.valueOf(p.get("businessName")) + " — manual input required");
-            } else if ("UNRESOLVED".equals(status)) {
-                prov.put("status", "UNRESOLVED");
-                prov.put("sourceLabel", "Cannot evaluate until this parameter is resolved");
-                prov.put("needsTestValue", true);
-                prov.put("resolveHint", "Resolve parameter in Rules, or enter a temporary test value");
-                blockers.add(String.valueOf(p.get("businessName")) + " — unresolved");
+            } else if (useFixtureDefaults
+                    && ("AUTOMATIC_DERIVED".equals(status) || "DERIVED".equals(status) || "RAW".equals(status))
+                    && p.get("defaultHint") != null) {
+                // Opt-in only — never fabricate unrelated defaults by default
+                Object coerced = coerce(p.get("defaultHint"));
+                putMetric(metrics, facts, policyParams, metricId, key, coerced);
+                prov.put("value", coerced);
+                prov.put("status", "FIXTURE_SUPPLIED");
+                prov.put("sourceLabel", "Fixture default (useFixtureDefaults=true)");
             } else {
-                prov.put("status", "UNAVAILABLE");
+                prov.put("status", "MISSING");
+                prov.put("sourceLabel", "Required by expression — no value supplied");
                 prov.put("needsTestValue", true);
-                blockers.add(String.valueOf(p.get("businessName")) + " — unavailable");
+                blockers.add(String.valueOf(p.get("businessName")) + " — missing");
             }
             valueProvenance.add(prov);
         }
@@ -633,6 +655,9 @@ public class PolicyStudioTestExperienceService {
         int passed = 0, failed = 0, needsInput = 0, cannotEval = 0;
 
         for (CiPolicyRuleCandidate rule : session.getRuleCandidates()) {
+            if (isExcludedFromEvaluation(rule)) {
+                continue; // soft-deleted / excluded — must not affect Policy Test decision
+            }
             if (PolicyStudioConvergencePresenter.isCompoundChild(rule.getSystemRuleId())) {
                 compoundChildren.add(evaluateChildFace(rule, metrics, facts, policyParams, clock));
                 continue;
@@ -1059,9 +1084,18 @@ public class PolicyStudioTestExperienceService {
                 metrics.put("bureau.credit_after_overdue.clean_history_months", value);
                 facts.put("bureau.credit_after_overdue.clean_history_months", value);
             }
-            if (k.contains("foir")) {
-                metrics.put("application.foir", value);
-                facts.put("application.foir", value);
+            if (k.contains("foir") || "obligation.ratio".equals(metricId) || k.contains("obligation")) {
+                metrics.put("obligation.ratio", value);
+                facts.put("obligation.ratio", value);
+                metrics.putIfAbsent("application.foir", value);
+            }
+            if (k.contains("ltv") || "collateral.ltv".equals(metricId)) {
+                metrics.put("collateral.ltv", value);
+                facts.put("collateral.ltv", value);
+            }
+            if (k.contains("status_ntc") || "bureau.status_ntc".equals(metricId) || k.equals("ntc")) {
+                facts.put("bureau.status_ntc", value);
+                metrics.put("bureau.status_ntc", value);
             }
             if (k.contains("vintage")) {
                 metrics.put("application.business_vintage_months", value);
@@ -1189,6 +1223,19 @@ public class PolicyStudioTestExperienceService {
         } else if (node instanceof List<?> list) {
             for (Object o : list) collectPaths(o, paths);
         }
+    }
+
+    /** Soft-deleted / excluded rules must not participate in Policy Test or path collection. */
+    private static boolean isExcludedFromEvaluation(CiPolicyRuleCandidate r) {
+        if (r == null) return true;
+        Map<String, Object> meta = r.getMetadata() == null ? Map.of() : r.getMetadata();
+        if (Boolean.TRUE.equals(meta.get("deleted"))
+                || Boolean.TRUE.equals(meta.get("excludedFromActivation"))
+                || "DELETED".equalsIgnoreCase(String.valueOf(meta.getOrDefault("disposition", "")))) {
+            return true;
+        }
+        String rs = r.getReviewStatus() == null ? "" : r.getReviewStatus().toUpperCase(Locale.ROOT);
+        return "REJECTED".equals(rs) || "EXCLUDED".equals(rs) || "DELETED".equals(rs);
     }
 
     private static boolean isDataCalculationOnly(CiPolicyRuleCandidate r) {

@@ -67,10 +67,10 @@ public final class AuthoringValueTypes {
     public static List<String> operatorsFor(String control) {
         return switch (control == null ? CONTROL_NUMBER : control) {
             case CONTROL_BOOLEAN -> List.of("is", "is not");
-            case CONTROL_ENUM -> List.of("is", "is not");
-            case CONTROL_STRING -> List.of("=", "!=");
+            case CONTROL_ENUM -> List.of("is", "is not", "in", "not in");
+            case CONTROL_STRING -> List.of("=", "!=", "in", "not in");
             case CONTROL_DATE -> List.of("=", ">=", "<=", ">", "<");
-            default -> List.of(">", ">=", "<", "<=", "=", "!=");
+            default -> List.of(">", ">=", "<", "<=", "=", "!=", "in", "not in");
         };
     }
 

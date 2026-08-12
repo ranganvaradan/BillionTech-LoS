@@ -31,14 +31,96 @@ type CompoundBranch = {
   thenUnit?: string
 }
 
-type GroupCondition = {
-  parameterId: string
+/** Recursive ANY/ALL group node — CONDITION leaf or nested COMPOUND_GROUP. */
+type GroupNode = {
+  kind: 'CONDITION' | 'COMPOUND_GROUP'
+  combinator?: 'ANY' | 'ALL'
+  children?: GroupNode[]
+  parameterId?: string
   parameterName?: string
-  operator: string
-  value: string | number | boolean
+  operator?: string
+  value?: string | number | boolean | Array<string | number>
+  values?: Array<string | number>
   leftKind?: string
   valueControl?: string
   valueLabel?: string
+}
+
+function mapApiNode(raw: unknown): GroupNode {
+  const r = asRecord(raw)
+  const kind = String(r.kind ?? 'CONDITION').toUpperCase()
+  if (kind === 'COMPOUND_GROUP' || Array.isArray(r.children)) {
+    return {
+      kind: 'COMPOUND_GROUP',
+      combinator: String(r.combinator ?? 'ANY').toUpperCase() === 'ALL' ? 'ALL' : 'ANY',
+      children: asList(r.children).map(mapApiNode),
+    }
+  }
+  const vals = r.values ?? r.value
+  return {
+    kind: 'CONDITION',
+    parameterId: String(r.parameterId ?? ''),
+    parameterName: String(r.parameterName ?? r.parameterId ?? ''),
+    operator: String(r.operator ?? '='),
+    value: (Array.isArray(vals) ? vals : (r.value as string | number | boolean)) ?? '',
+    values: Array.isArray(vals) ? (vals as Array<string | number>) : undefined,
+    leftKind: r.leftKind ? String(r.leftKind) : undefined,
+    valueControl: r.valueControl ? String(r.valueControl) : undefined,
+    valueLabel: r.valueLabel ? String(r.valueLabel) : undefined,
+  }
+}
+
+function seedGroupNodes(model: Record<string, unknown> | null | undefined): GroupNode[] {
+  if (!model) return []
+  const fromChildren = asList(model.children)
+  if (fromChildren.length) return fromChildren.map(mapApiNode)
+  return asList(model.conditions).map(mapApiNode)
+}
+
+function toApiChildren(nodes: GroupNode[]): Record<string, unknown>[] {
+  return nodes.map((n) => {
+    if (n.kind === 'COMPOUND_GROUP') {
+      return {
+        kind: 'COMPOUND_GROUP',
+        combinator: n.combinator ?? 'ANY',
+        children: toApiChildren(n.children ?? []),
+      }
+    }
+    const op = String(n.operator ?? '=')
+    const multi = op.toLowerCase() === 'in' || op.toLowerCase() === 'not in'
+    return {
+      kind: 'CONDITION',
+      parameterId: n.parameterId,
+      parameterName: n.parameterName,
+      operator: op,
+      value: multi ? (n.values ?? n.value) : n.value,
+      values: multi ? (n.values ?? (Array.isArray(n.value) ? n.value : undefined)) : undefined,
+      leftKind: n.leftKind,
+      valueControl: n.valueControl,
+      valueLabel: n.valueLabel,
+    }
+  })
+}
+
+function updateAtPath(nodes: GroupNode[], path: number[], updater: (n: GroupNode) => GroupNode): GroupNode[] {
+  if (path.length === 0) return nodes
+  const [head, ...rest] = path
+  return nodes.map((n, i) => {
+    if (i !== head) return n
+    if (rest.length === 0) return updater(n)
+    if (n.kind !== 'COMPOUND_GROUP') return n
+    return { ...n, children: updateAtPath(n.children ?? [], rest, updater) }
+  })
+}
+
+function removeAtPath(nodes: GroupNode[], path: number[]): GroupNode[] {
+  if (path.length === 0) return nodes
+  const [head, ...rest] = path
+  if (rest.length === 0) return nodes.filter((_, i) => i !== head)
+  return nodes.map((n, i) => {
+    if (i !== head || n.kind !== 'COMPOUND_GROUP') return n
+    return { ...n, children: removeAtPath(n.children ?? [], rest) }
+  })
 }
 
 /**
@@ -135,25 +217,19 @@ export function CiRuleAuthoringPanel({
           },
         ],
   )
-  const seedGroup = asList(initialEditableModel?.conditions).map((c) => {
-    const r = asRecord(c)
-    return {
-      parameterId: String(r.parameterId ?? ''),
-      parameterName: String(r.parameterName ?? r.parameterId ?? ''),
-      operator: String(r.operator ?? '='),
-      value: (r.value as string | number | boolean) ?? '',
-      leftKind: r.leftKind ? String(r.leftKind) : undefined,
-      valueControl: r.valueControl ? String(r.valueControl) : undefined,
-      valueLabel: r.valueLabel ? String(r.valueLabel) : undefined,
-    } satisfies GroupCondition
-  })
   const [combinator, setCombinator] = useState<'ANY' | 'ALL'>(
     String(initialEditableModel?.combinator ?? 'ANY').toUpperCase() === 'ALL' ? 'ALL' : 'ANY',
   )
-  const [groupConditions, setGroupConditions] = useState<GroupCondition[]>(seedGroup)
+  const [groupChildren, setGroupChildren] = useState<GroupNode[]>(() => {
+    const seeded = seedGroupNodes(asRecord(initialEditableModel))
+    return seeded.length
+      ? seeded
+      : [{ kind: 'CONDITION', parameterId: 'bureau.score', parameterName: 'Bureau score', operator: '>=', value: 650 }]
+  })
   const [proposedModel, setProposedModel] = useState<Record<string, unknown> | null>(
     isCompoundGroup ? asRecord(initialEditableModel) : null,
   )
+  const operatorsByParameter = asRecord(sources?.operatorsByParameter)
 
   useEffect(() => {
     void getRuleAuthoringSources()
@@ -242,7 +318,7 @@ export function CiRuleAuthoringPanel({
             ? {
                 mode: 'COMPOUND_GROUP',
                 combinator,
-                conditions: groupConditions,
+                children: toApiChildren(groupChildren),
                 treatment,
                 ...(replaceRuleId ? { replaceRuleId } : {}),
               }
@@ -261,24 +337,17 @@ export function CiRuleAuthoringPanel({
       const p = asRecord(data.preview ?? data)
       setPreview(p)
       if (p.compoundGroup || p.mode === 'COMPOUND_GROUP') {
-        const conds = asList(p.conditions).map((c) => {
-          const r = asRecord(c)
-          return {
-            parameterId: String(r.parameterId ?? ''),
-            parameterName: String(r.parameterName ?? ''),
-            operator: String(r.operator ?? '='),
-            value: (r.value as string | number | boolean) ?? '',
-            leftKind: r.leftKind ? String(r.leftKind) : undefined,
-            valueControl: r.valueControl ? String(r.valueControl) : undefined,
-            valueLabel: r.valueLabel ? String(r.valueLabel) : undefined,
-          } satisfies GroupCondition
-        })
-        if (conds.length) setGroupConditions(conds)
+        const nodes = seedGroupNodes({
+          children: p.children,
+          conditions: p.conditions,
+          combinator: p.combinator,
+        } as Record<string, unknown>)
+        if (nodes.length) setGroupChildren(nodes)
         if (p.combinator) setCombinator(String(p.combinator).toUpperCase() === 'ALL' ? 'ALL' : 'ANY')
         setProposedModel({
           kind: 'COMPOUND_GROUP',
           combinator: p.combinator ?? combinator,
-          conditions: conds,
+          children: toApiChildren(nodes.length ? nodes : groupChildren),
         })
       }
       if (p.complete) {
@@ -298,12 +367,21 @@ export function CiRuleAuthoringPanel({
           setRightParameterId(String(p.rightParameterId))
         }
       } else {
-        const unresolved = asList(p.unresolved).map(String)
-        setFeedback(
-          unresolved.length
-            ? `${String(p.message ?? 'Some parts of this rule have not been mapped yet.')} Unresolved: ${unresolved.join(', ')}`
-            : String(p.message ?? 'Incomplete'),
-        )
+        const understood = asList(p.weUnderstood ?? p.understood).map(String)
+        const clarify = asList(p.weStillNeedClarify ?? p.clarify ?? p.unresolved).map(String)
+        if (understood.length || clarify.length) {
+          setFeedback(
+            [
+              String(p.message ?? 'Some parts of this rule have not been mapped yet.'),
+              understood.length ? `We understood: ${understood.join('; ')}` : '',
+              clarify.length ? `We still need you to clarify: ${clarify.join('; ')}` : '',
+            ]
+              .filter(Boolean)
+              .join(' '),
+          )
+        } else {
+          setFeedback(String(p.message ?? 'Incomplete'))
+        }
       }
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : 'Could not preview rule'
@@ -335,7 +413,7 @@ export function CiRuleAuthoringPanel({
                 confirm: true,
                 mode: 'COMPOUND_GROUP',
                 combinator: p.combinator ?? combinator,
-                conditions: asList(p.conditions).length ? p.conditions : groupConditions,
+                children: asList(p.children).length ? p.children : toApiChildren(groupChildren),
                 expression: p.expression,
                 text: path === 'describe' ? text : undefined,
                 treatment,
@@ -500,116 +578,71 @@ export function CiRuleAuthoringPanel({
               <option value="ANY">ANY (OR)</option>
               <option value="ALL">ALL (AND)</option>
             </select>
-            <span className="text-xs text-slate-500">of these conditions</span>
+            <span className="text-xs text-slate-500">of these conditions / groups (nesting preserved)</span>
           </div>
-          {groupConditions.map((c, idx) => (
-            <div key={idx} className="flex flex-wrap items-center gap-2 rounded border border-slate-200 bg-white px-3 py-2">
-              <select
-                className="rounded border border-slate-300 px-2 py-1 min-w-[10rem]"
-                value={c.parameterId}
-                disabled={busy}
-                onChange={(e) => {
-                  const pid = e.target.value
-                  const meta = allParams.find((p) => String(p.parameterId) === pid)
-                  const next = [...groupConditions]
-                  next[idx] = {
-                    ...next[idx],
-                    parameterId: pid,
-                    parameterName: String(meta?.businessName ?? pid),
-                    leftKind: pid === 'bureau.status_ntc' ? 'FACT' : 'METRIC',
-                    value: pid === 'bureau.status_ntc' ? true : next[idx].value,
-                    operator: pid === 'bureau.status_ntc' ? '=' : next[idx].operator,
-                  }
-                  setGroupConditions(next)
-                  setPreview(null)
-                }}
-              >
-                <option value="bureau.score">Bureau score</option>
-                <option value="bureau.status_ntc">Bureau status (NTC)</option>
-                {allParams
-                  .filter((p) => !['bureau.score', 'bureau.status_ntc'].includes(String(p.parameterId)))
-                  .slice(0, 40)
-                  .map((p) => (
-                    <option key={String(p.parameterId)} value={String(p.parameterId)}>
-                      {String(p.businessName)}
-                    </option>
-                  ))}
-              </select>
-              <select
-                className="rounded border border-slate-300 px-2 py-1"
-                value={c.operator}
-                disabled={busy}
-                onChange={(e) => {
-                  const next = [...groupConditions]
-                  next[idx] = { ...next[idx], operator: e.target.value }
-                  setGroupConditions(next)
-                  setPreview(null)
-                }}
-              >
-                <option value="=">=</option>
-                <option value="!=">≠</option>
-                <option value=">">&gt;</option>
-                <option value=">=">≥</option>
-                <option value="<">&lt;</option>
-                <option value="<=">≤</option>
-              </select>
-              {c.parameterId === 'bureau.status_ntc' ? (
-                <select
-                  className="rounded border border-slate-300 px-2 py-1"
-                  value={String(c.value)}
-                  disabled={busy}
-                  onChange={(e) => {
-                    const next = [...groupConditions]
-                    next[idx] = { ...next[idx], value: e.target.value === 'true', valueLabel: 'NTC' }
-                    setGroupConditions(next)
-                    setPreview(null)
-                  }}
-                >
-                  <option value="true">NTC</option>
-                  <option value="false">Not NTC</option>
-                </select>
-              ) : (
-                <input
-                  className="w-24 rounded border border-slate-300 px-2 py-1"
-                  value={String(c.value)}
-                  disabled={busy}
-                  onChange={(e) => {
-                    const next = [...groupConditions]
-                    const raw = e.target.value
-                    const num = Number(raw)
-                    next[idx] = { ...next[idx], value: raw === '' || Number.isNaN(num) ? raw : num }
-                    setGroupConditions(next)
-                    setPreview(null)
-                  }}
-                />
-              )}
-              <button
-                type="button"
-                className="text-xs text-rose-700 hover:underline"
-                disabled={busy || groupConditions.length <= 1}
-                onClick={() => {
-                  setGroupConditions(groupConditions.filter((_, i) => i !== idx))
-                  setPreview(null)
-                }}
-              >
-                Remove
-              </button>
-            </div>
-          ))}
-          <button
-            type="button"
-            className="text-xs text-sky-800 hover:underline"
-            disabled={busy}
-            onClick={() => {
-              setGroupConditions([
-                ...groupConditions,
-                { parameterId: 'bureau.score', parameterName: 'Bureau score', operator: '>=', value: 650 },
-              ])
+          <GroupTreeEditor
+            nodes={groupChildren}
+            pathPrefix={[]}
+            busy={busy}
+            allParams={allParams}
+            operatorsByParameter={operatorsByParameter}
+            rootCombinator={combinator}
+            onChange={(next) => {
+              setGroupChildren(next)
               setPreview(null)
             }}
-          >
-            Add condition
-          </button>
+          />
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              className="text-xs text-sky-800 hover:underline"
+              disabled={busy}
+              data-testid="group-add-condition"
+              onClick={() => {
+                setGroupChildren([
+                  ...groupChildren,
+                  {
+                    kind: 'CONDITION',
+                    parameterId: 'bureau.score',
+                    parameterName: 'Bureau score',
+                    operator: '>=',
+                    value: 650,
+                  },
+                ])
+                setPreview(null)
+              }}
+            >
+              Add condition
+            </button>
+            <button
+              type="button"
+              className="text-xs text-sky-800 hover:underline"
+              disabled={busy}
+              data-testid="group-add-nested"
+              onClick={() => {
+                setGroupChildren([
+                  ...groupChildren,
+                  {
+                    kind: 'COMPOUND_GROUP',
+                    combinator: combinator === 'ALL' ? 'ANY' : 'ALL',
+                    children: [
+                      {
+                        kind: 'CONDITION',
+                        parameterId: 'obligation.ratio',
+                        parameterName: 'FOIR',
+                        operator: '<=',
+                        value: 50,
+                        valueControl: 'PERCENTAGE',
+                      },
+                    ],
+                  },
+                ])
+                setPreview(null)
+              }}
+            >
+              Add nested group
+            </button>
+          </div>
           <label className="block text-sm sm:w-60">
             <span className="text-slate-600">If rule fails</span>
             <select
@@ -1044,7 +1077,7 @@ export function CiRuleAuthoringPanel({
               : path === 'compound'
                 ? branches.length < 2
                 : path === 'group'
-                  ? groupConditions.length < 1
+                  ? groupChildren.length < 1
                   : !canPreviewBuild)
           }
           onClick={() => void runPreview()}
@@ -1088,10 +1121,23 @@ export function CiRuleAuthoringPanel({
               {String(preview.failureDisplay ?? `${treatmentLabel} → ${preview.treatment ?? treatment}`)}
             </p>
           ) : null}
-          {asList(preview.unresolved).length ? (
+          {asList(preview.weUnderstood ?? preview.understood).length
+            || asList(preview.weStillNeedClarify ?? preview.clarify ?? preview.unresolved).length ? (
             <div className="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-950" data-testid="rule-preview-unresolved">
               <p className="font-semibold">Some parts of this rule have not been mapped yet.</p>
-              <p>Unresolved: {asList(preview.unresolved).map(String).join(', ')}</p>
+              {asList(preview.weUnderstood ?? preview.understood).length ? (
+                <p data-testid="we-understood">
+                  We understood: {asList(preview.weUnderstood ?? preview.understood).map(String).join('; ')}
+                </p>
+              ) : null}
+              {asList(preview.weStillNeedClarify ?? preview.clarify ?? preview.unresolved).length ? (
+                <p data-testid="we-still-need-clarify">
+                  We still need you to clarify:{' '}
+                  {asList(preview.weStillNeedClarify ?? preview.clarify ?? preview.unresolved)
+                    .map(String)
+                    .join('; ')}
+                </p>
+              ) : null}
             </div>
           ) : null}
           {preview.compoundGroup ? (
@@ -1166,6 +1212,274 @@ export function CiRuleAuthoringPanel({
           ) : null}
         </div>
       ) : null}
+    </div>
+  )
+}
+
+function opsForParam(
+  parameterId: string | undefined,
+  operatorsByParameter: Record<string, unknown>,
+  allParams: Record<string, unknown>[],
+): string[] {
+  if (parameterId && asList(operatorsByParameter[parameterId]).length) {
+    return asList(operatorsByParameter[parameterId]).map(String)
+  }
+  const meta = allParams.find((p) => String(p.parameterId) === parameterId)
+  const fromMeta = asList(meta?.operators).map(String)
+  if (fromMeta.length) return fromMeta
+  if (parameterId === 'bureau.status_ntc') return ['is', 'is not', '=', '!=']
+  if (
+    parameterId === 'application.borrower_type'
+    || parameterId === 'bureau.commercial.industry_type'
+  ) {
+    return ['=', '!=', 'in', 'not in']
+  }
+  return ['>', '>=', '<', '<=', '=', '!=', 'in', 'not in']
+}
+
+function GroupTreeEditor({
+  nodes,
+  pathPrefix,
+  busy,
+  allParams,
+  operatorsByParameter,
+  rootCombinator,
+  onChange,
+}: {
+  nodes: GroupNode[]
+  pathPrefix: number[]
+  busy: boolean
+  allParams: Record<string, unknown>[]
+  operatorsByParameter: Record<string, unknown>
+  rootCombinator: 'ANY' | 'ALL'
+  onChange: (next: GroupNode[]) => void
+}) {
+  return (
+    <div className="space-y-2" data-testid={pathPrefix.length ? 'nested-group' : 'root-group-children'}>
+      {nodes.map((node, idx) => {
+        const path = [...pathPrefix, idx]
+        const joinLabel = idx === 0 ? null : rootCombinator === 'ALL' ? 'AND' : 'OR'
+        if (node.kind === 'COMPOUND_GROUP') {
+          const nestedComb = node.combinator ?? 'ANY'
+          return (
+            <div key={path.join('.')} className="space-y-1">
+              {joinLabel ? (
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{joinLabel}</p>
+              ) : null}
+              <div
+                className="rounded border-2 border-slate-400 bg-slate-50 px-3 py-2 space-y-2"
+                data-testid={`group-node-${path.join('-')}`}
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-semibold text-slate-700">( Nested group</span>
+                  <select
+                    className="rounded border border-slate-300 px-2 py-1 text-xs"
+                    value={nestedComb}
+                    disabled={busy}
+                    onChange={(e) => {
+                      onChange(
+                        updateAtPath(nodes, [idx], (n) => ({
+                          ...n,
+                          combinator: e.target.value === 'ALL' ? 'ALL' : 'ANY',
+                        })),
+                      )
+                    }}
+                  >
+                    <option value="ANY">ANY (OR)</option>
+                    <option value="ALL">ALL (AND)</option>
+                  </select>
+                  <span className="text-xs font-semibold text-slate-700">)</span>
+                  <button
+                    type="button"
+                    className="ml-auto text-xs text-sky-800 hover:underline"
+                    disabled={busy}
+                    onClick={() =>
+                      onChange(
+                        updateAtPath(nodes, [idx], (n) => ({
+                          ...n,
+                          children: [
+                            ...(n.children ?? []),
+                            {
+                              kind: 'CONDITION',
+                              parameterId: 'bureau.score',
+                              parameterName: 'Bureau score',
+                              operator: '>=',
+                              value: 650,
+                            },
+                          ],
+                        })),
+                      )
+                    }
+                  >
+                    Add condition inside
+                  </button>
+                  <button
+                    type="button"
+                    className="text-xs text-rose-700 hover:underline"
+                    disabled={busy || nodes.length <= 1}
+                    onClick={() => onChange(removeAtPath(nodes, [idx]))}
+                  >
+                    Remove group
+                  </button>
+                </div>
+                <GroupTreeEditor
+                  nodes={node.children ?? []}
+                  pathPrefix={[]}
+                  busy={busy}
+                  allParams={allParams}
+                  operatorsByParameter={operatorsByParameter}
+                  rootCombinator={nestedComb}
+                  onChange={(childNext) =>
+                    onChange(updateAtPath(nodes, [idx], (n) => ({ ...n, children: childNext })))
+                  }
+                />
+              </div>
+            </div>
+          )
+        }
+
+        const ops = opsForParam(node.parameterId, operatorsByParameter, allParams)
+        const op = String(node.operator ?? '=')
+        const multi = op.toLowerCase() === 'in' || op.toLowerCase() === 'not in'
+        return (
+          <div key={path.join('.')} className="space-y-1">
+            {joinLabel ? (
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{joinLabel}</p>
+            ) : null}
+            <div className="flex flex-wrap items-center gap-2 rounded border border-slate-200 bg-white px-3 py-2">
+              <select
+                className="rounded border border-slate-300 px-2 py-1 min-w-[10rem]"
+                value={node.parameterId}
+                disabled={busy}
+                onChange={(e) => {
+                  const pid = e.target.value
+                  const meta = allParams.find((p) => String(p.parameterId) === pid)
+                  const nextOps = opsForParam(pid, operatorsByParameter, allParams)
+                  onChange(
+                    updateAtPath(nodes, [idx], () => ({
+                      kind: 'CONDITION',
+                      parameterId: pid,
+                      parameterName: String(meta?.businessName ?? pid),
+                      leftKind: pid === 'bureau.status_ntc' ? 'FACT' : 'METRIC',
+                      value: pid === 'bureau.status_ntc' ? true : '',
+                      operator: pid === 'bureau.status_ntc' ? 'is' : nextOps[0] ?? '>=',
+                      valueControl: String(meta?.valueControl ?? ''),
+                    })),
+                  )
+                }}
+              >
+                <option value="bureau.score">Bureau score</option>
+                <option value="bureau.status_ntc">Bureau status (NTC)</option>
+                <option value="obligation.ratio">FOIR</option>
+                <option value="collateral.ltv">LTV</option>
+                <option value="application.borrower_type">Borrower type</option>
+                <option value="bureau.commercial.industry_type">Industry type</option>
+                {allParams
+                  .filter(
+                    (p) =>
+                      ![
+                        'bureau.score',
+                        'bureau.status_ntc',
+                        'obligation.ratio',
+                        'collateral.ltv',
+                        'application.borrower_type',
+                        'bureau.commercial.industry_type',
+                      ].includes(String(p.parameterId)),
+                  )
+                  .slice(0, 40)
+                  .map((p) => (
+                    <option key={String(p.parameterId)} value={String(p.parameterId)}>
+                      {String(p.businessName)}
+                    </option>
+                  ))}
+              </select>
+              <select
+                className="rounded border border-slate-300 px-2 py-1"
+                value={op}
+                disabled={busy}
+                onChange={(e) =>
+                  onChange(updateAtPath(nodes, [idx], (n) => ({ ...n, operator: e.target.value })))
+                }
+              >
+                {ops.map((o) => (
+                  <option key={o} value={o}>
+                    {o}
+                  </option>
+                ))}
+              </select>
+              {node.parameterId === 'bureau.status_ntc' ? (
+                <select
+                  className="rounded border border-slate-300 px-2 py-1"
+                  value={String(node.value)}
+                  disabled={busy}
+                  onChange={(e) =>
+                    onChange(
+                      updateAtPath(nodes, [idx], (n) => ({
+                        ...n,
+                        value: e.target.value === 'true',
+                        valueLabel: 'NTC',
+                      })),
+                    )
+                  }
+                >
+                  <option value="true">NTC</option>
+                  <option value="false">Not NTC</option>
+                </select>
+              ) : multi ? (
+                <input
+                  className="min-w-[12rem] flex-1 rounded border border-slate-300 px-2 py-1"
+                  placeholder="comma-separated values"
+                  value={
+                    Array.isArray(node.values)
+                      ? node.values.join(', ')
+                      : Array.isArray(node.value)
+                        ? node.value.join(', ')
+                        : String(node.value ?? '')
+                  }
+                  disabled={busy}
+                  onChange={(e) => {
+                    const parts = e.target.value
+                      .split(',')
+                      .map((s) => s.trim())
+                      .filter(Boolean)
+                    onChange(
+                      updateAtPath(nodes, [idx], (n) => ({
+                        ...n,
+                        values: parts,
+                        value: parts,
+                      })),
+                    )
+                  }}
+                />
+              ) : (
+                <input
+                  className="w-24 rounded border border-slate-300 px-2 py-1"
+                  value={String(node.value ?? '')}
+                  disabled={busy}
+                  onChange={(e) => {
+                    const raw = e.target.value
+                    const num = Number(raw)
+                    onChange(
+                      updateAtPath(nodes, [idx], (n) => ({
+                        ...n,
+                        value: raw === '' || Number.isNaN(num) ? raw : num,
+                      })),
+                    )
+                  }}
+                />
+              )}
+              <button
+                type="button"
+                className="text-xs text-rose-700 hover:underline"
+                disabled={busy || nodes.length <= 1}
+                onClick={() => onChange(removeAtPath(nodes, [idx]))}
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }

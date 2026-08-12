@@ -53,22 +53,35 @@ public class CmRuleAuthoringService {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("sources", bySource.keySet().stream().sorted().toList());
         out.put("bySource", bySource);
-        out.put("operatorsByType", Map.of(
-                "NUMBER", AuthoringValueTypes.operatorsFor(AuthoringValueTypes.CONTROL_NUMBER),
-                "PERCENT", AuthoringValueTypes.operatorsFor(AuthoringValueTypes.CONTROL_PERCENTAGE),
-                "PERCENTAGE", AuthoringValueTypes.operatorsFor(AuthoringValueTypes.CONTROL_PERCENTAGE),
-                "COUNT", AuthoringValueTypes.operatorsFor(AuthoringValueTypes.CONTROL_INTEGER),
-                "INTEGER", AuthoringValueTypes.operatorsFor(AuthoringValueTypes.CONTROL_INTEGER),
-                "MONEY", AuthoringValueTypes.operatorsFor(AuthoringValueTypes.CONTROL_MONEY),
-                "DURATION", AuthoringValueTypes.operatorsFor(AuthoringValueTypes.CONTROL_DURATION),
-                "ENUM", AuthoringValueTypes.operatorsFor(AuthoringValueTypes.CONTROL_ENUM),
-                "FLAG", AuthoringValueTypes.operatorsFor(AuthoringValueTypes.CONTROL_BOOLEAN),
-                "BOOLEAN", AuthoringValueTypes.operatorsFor(AuthoringValueTypes.CONTROL_BOOLEAN)));
+        Map<String, Object> operatorsByType = new LinkedHashMap<>();
+        operatorsByType.put("NUMBER", AuthoringValueTypes.operatorsFor(AuthoringValueTypes.CONTROL_NUMBER));
+        operatorsByType.put("PERCENT", AuthoringValueTypes.operatorsFor(AuthoringValueTypes.CONTROL_PERCENTAGE));
+        operatorsByType.put("PERCENTAGE", AuthoringValueTypes.operatorsFor(AuthoringValueTypes.CONTROL_PERCENTAGE));
+        operatorsByType.put("COUNT", AuthoringValueTypes.operatorsFor(AuthoringValueTypes.CONTROL_INTEGER));
+        operatorsByType.put("INTEGER", AuthoringValueTypes.operatorsFor(AuthoringValueTypes.CONTROL_INTEGER));
+        operatorsByType.put("MONEY", AuthoringValueTypes.operatorsFor(AuthoringValueTypes.CONTROL_MONEY));
+        operatorsByType.put("DURATION", AuthoringValueTypes.operatorsFor(AuthoringValueTypes.CONTROL_DURATION));
+        operatorsByType.put("ENUM", AuthoringValueTypes.operatorsFor(AuthoringValueTypes.CONTROL_ENUM));
+        operatorsByType.put("STRING", AuthoringValueTypes.operatorsFor(AuthoringValueTypes.CONTROL_STRING));
+        operatorsByType.put("FLAG", AuthoringValueTypes.operatorsFor(AuthoringValueTypes.CONTROL_BOOLEAN));
+        operatorsByType.put("BOOLEAN", AuthoringValueTypes.operatorsFor(AuthoringValueTypes.CONTROL_BOOLEAN));
+        out.put("operatorsByType", operatorsByType);
+        Map<String, Object> operatorsByParameter = new LinkedHashMap<>();
+        for (String pid : List.of(
+                CompoundExpressionAuthoringSupport.BUREAU_SCORE,
+                CompoundExpressionAuthoringSupport.NTC_FACT,
+                CompoundExpressionAuthoringSupport.FOIR,
+                CompoundExpressionAuthoringSupport.LTV,
+                CompoundExpressionAuthoringSupport.BORROWER_TYPE,
+                CompoundExpressionAuthoringSupport.INDUSTRY)) {
+            operatorsByParameter.put(pid, CompoundExpressionAuthoringSupport.operatorsForParameter(pid));
+        }
+        out.put("operatorsByParameter", operatorsByParameter);
         // Failure-oriented treatments only — Approve is not a failure treatment
         out.put("treatments", List.of("Reject", "Manual Review", "Refer", "Info"));
         out.put("treatmentLabel", "If rule fails");
         out.put("allowCanonicalAuthority", false);
-        // Authoring-only special values (do not mutate GACAT)
+        // Authoring-only special values / catalogue metric overlays (do not mutate GACAT)
         out.put("specialValuesByParameter", Map.of(
                 CompoundExpressionAuthoringSupport.BUREAU_SCORE, List.of(
                         Map.of("value", -1, "label", "Score sentinel -1")),
@@ -82,11 +95,30 @@ public class CmRuleAuthoringService {
                 "valueControl", AuthoringValueTypes.CONTROL_BOOLEAN,
                 "leftKind", "FACT",
                 "allowedValues", List.of(Map.of("value", "true", "label", "NTC")),
-                "kind", "FACT"));
+                "kind", "FACT",
+                "operators", CompoundExpressionAuthoringSupport.operatorsForParameter(
+                        CompoundExpressionAuthoringSupport.NTC_FACT)));
         @SuppressWarnings("unchecked")
         Map<String, List<Map<String, Object>>> bySourceMut =
                 (Map<String, List<Map<String, Object>>>) out.get("bySource");
         bySourceMut.computeIfAbsent("Bureau", k -> new ArrayList<>()).addAll(bureauExtras);
+        // collateral.ltv is used by catalogue capabilities — authoring overlay, not a GACAT mutation
+        bySourceMut.computeIfAbsent("Collateral", k -> new ArrayList<>()).add(Map.of(
+                "parameterId", CompoundExpressionAuthoringSupport.LTV,
+                "businessName", "LTV",
+                "source", "Collateral",
+                "valueControl", AuthoringValueTypes.CONTROL_PERCENTAGE,
+                "leftKind", "METRIC",
+                "kind", "DERIVED",
+                "operators", CompoundExpressionAuthoringSupport.operatorsForParameter(
+                        CompoundExpressionAuthoringSupport.LTV)));
+        out.put("authoringGrammar", Map.of(
+                "comparisons", List.of("EQ", "NE", "GT", "GTE", "LT", "LTE"),
+                "membership", List.of("IN", "NOT_IN"),
+                "composition", List.of("AND", "OR", "NESTED_GROUPS"),
+                "branched", List.of("IF_THEN_ELSE"),
+                "amendments", true,
+                "failClosed", true));
         return out;
     }
 
@@ -120,7 +152,8 @@ public class CmRuleAuthoringService {
             // Prefer lossless compound parse before flat single-comparison DESCRIBE
             if (CompoundPlainEnglishParser.looksLikeMultiClause(text)) {
                 CompoundPlainEnglishParser.ParseResult pr = CompoundPlainEnglishParser.parse(text);
-                if (pr.compound) {
+                if (pr.compound || pr.complete || "NEEDS_CLARIFICATION".equals(pr.status)
+                        || "INCOMPLETE".equals(pr.status)) {
                     return toCompoundPreview(pr, str(body, "treatment", "Reject"));
                 }
             }
@@ -161,6 +194,8 @@ public class CmRuleAuthoringService {
             Map<String, Object> groupBody = new LinkedHashMap<>(body);
             groupBody.put("mode", "COMPOUND_GROUP");
             groupBody.put("combinator", preview.get("combinator"));
+            // Prefer nested children over flattened conditions (preserves AND(A, OR(B,C)))
+            groupBody.put("children", preview.get("children"));
             groupBody.put("conditions", preview.get("conditions"));
             groupBody.put("expression", preview.get("expression"));
             groupBody.put("treatment", preview.getOrDefault("treatment",
@@ -345,43 +380,60 @@ public class CmRuleAuthoringService {
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> previewCompoundGroup(Map<String, Object> body) {
-        List<Map<String, Object>> conditions = new ArrayList<>();
-        if (body.get("conditions") instanceof List<?> raw) {
+        Map<String, Object> model = new LinkedHashMap<>();
+        model.put("kind", CompoundExpressionAuthoringSupport.KIND_GROUP);
+        model.put("combinator", str(body, "combinator", CompoundExpressionAuthoringSupport.COMBINATOR_ANY));
+        List<Map<String, Object>> children = new ArrayList<>();
+        if (body.get("children") instanceof List<?> raw) {
             for (Object o : raw) {
-                if (o instanceof Map<?, ?> m) conditions.add(new LinkedHashMap<>((Map<String, Object>) m));
+                if (o instanceof Map<?, ?> m) children.add(new LinkedHashMap<>((Map<String, Object>) m));
             }
-        } else if (body.get("expression") instanceof Map<?, ?> expr
-                || body.get("existingExpression") instanceof Map<?, ?> ) {
+        } else if (body.get("conditions") instanceof List<?> raw) {
+            for (Object o : raw) {
+                if (o instanceof Map<?, ?> m) {
+                    Map<String, Object> c = new LinkedHashMap<>((Map<String, Object>) m);
+                    c.putIfAbsent("kind", CompoundExpressionAuthoringSupport.KIND_CONDITION);
+                    children.add(c);
+                }
+            }
+        } else if (body.get("expression") instanceof Map<?, ?> || body.get("existingExpression") instanceof Map<?, ?>) {
             Map<String, Object> expr = body.get("expression") instanceof Map<?, ?> e
                     ? new LinkedHashMap<>((Map<String, Object>) e)
                     : new LinkedHashMap<>((Map<String, Object>) body.get("existingExpression"));
-            Map<String, Object> model = CompoundExpressionAuthoringSupport.toEditableModel(expr, Map.of());
-            Object c = model.get("conditions");
-            if (c instanceof List<?> list) {
-                for (Object o : list) {
-                    if (o instanceof Map<?, ?> m) conditions.add(new LinkedHashMap<>((Map<String, Object>) m));
-                }
-            }
-            body = new LinkedHashMap<>(body);
-            body.put("combinator", model.get("combinator"));
+            Map<String, Object> editable = CompoundExpressionAuthoringSupport.toEditableModel(expr, Map.of());
+            model.put("combinator", editable.get("combinator"));
+            children.addAll(CompoundExpressionAuthoringSupport.childrenOf(editable));
         }
-        String combinator = str(body, "combinator", CompoundExpressionAuthoringSupport.COMBINATOR_ANY);
+        model.put("children", children);
+        // Type-safe operator gate
+        List<String> typeErrors = new ArrayList<>();
+        validateOperatorsRecursive(children, typeErrors);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("mode", "COMPOUND_GROUP");
         out.put("compoundGroup", true);
-        out.put("combinator", combinator);
-        out.put("conditions", conditions);
-        if (conditions.isEmpty()) {
+        out.put("combinator", model.get("combinator"));
+        out.put("children", children);
+        out.put("conditions", CompoundExpressionAuthoringSupport.childrenOf(model));
+        if (children.isEmpty()) {
             out.put("complete", false);
             out.put("status", "INCOMPLETE");
             out.put("message", "Add at least one condition.");
             return out;
         }
-        boolean complete = conditions.stream().allMatch(c ->
-                c.get("parameterId") != null && c.get("operator") != null && c.get("value") != null);
+        if (!typeErrors.isEmpty()) {
+            out.put("complete", false);
+            out.put("status", "NEEDS_CLARIFICATION");
+            out.put("message", "Some parts of this rule have not been mapped yet.");
+            out.put("understood", List.of());
+            out.put("clarify", typeErrors);
+            out.put("unresolved", typeErrors);
+            out.put("semanticLoss", true);
+            return out;
+        }
+        boolean complete = CompoundExpressionAuthoringSupport.isCompleteNode(model);
         Map<String, Object> expr;
         try {
-            expr = CompoundExpressionAuthoringSupport.buildExpression(combinator, conditions);
+            expr = CompoundExpressionAuthoringSupport.buildExpression(model);
         } catch (IllegalArgumentException ex) {
             out.put("complete", false);
             out.put("message", ex.getMessage());
@@ -392,8 +444,8 @@ public class CmRuleAuthoringService {
         out.put("expression", expr);
         out.put("editableModel", CompoundExpressionAuthoringSupport.toEditableModel(expr, Map.of(
                 "failureTreatment", str(body, "treatment", "Reject"))));
-        out.put("previewLines", CompoundExpressionAuthoringSupport.previewLines(combinator, conditions));
-        out.put("ruleDisplay", CompoundExpressionAuthoringSupport.businessSummary(combinator, conditions));
+        out.put("previewLines", CompoundExpressionAuthoringSupport.previewLines(model));
+        out.put("ruleDisplay", CompoundExpressionAuthoringSupport.businessSummary(model));
         out.put("failureDisplay", "Otherwise → " + str(body, "treatment", "Reject"));
         out.put("treatment", str(body, "treatment", "Reject"));
         out.put("treatmentLabel", "If rule fails");
@@ -402,6 +454,22 @@ public class CmRuleAuthoringService {
         out.put("semanticLoss", false);
         out.put("unresolved", List.of());
         return out;
+    }
+
+    private static void validateOperatorsRecursive(List<Map<String, Object>> nodes, List<String> errors) {
+        if (nodes == null) return;
+        for (Map<String, Object> n : nodes) {
+            if (CompoundExpressionAuthoringSupport.KIND_GROUP.equalsIgnoreCase(String.valueOf(n.get("kind")))
+                    || n.get("children") instanceof List<?>) {
+                validateOperatorsRecursive(CompoundExpressionAuthoringSupport.childrenOf(n), errors);
+                continue;
+            }
+            String pid = n.get("parameterId") == null ? null : String.valueOf(n.get("parameterId"));
+            String op = n.get("operator") == null ? null : String.valueOf(n.get("operator"));
+            if (pid != null && op != null && !CompoundExpressionAuthoringSupport.operatorAllowed(pid, op)) {
+                errors.add(op + " is not valid for " + CompoundExpressionAuthoringSupport.friendlyParam(pid));
+            }
+        }
     }
 
     @SuppressWarnings("unchecked")
@@ -428,13 +496,20 @@ public class CmRuleAuthoringService {
         out.put("status", pr.status);
         out.put("message", pr.message);
         out.put("combinator", pr.combinator);
+        out.put("children", pr.children);
         out.put("conditions", pr.conditions);
         out.put("unresolved", pr.unresolved);
+        out.put("understood", pr.understood);
+        out.put("clarify", pr.unresolved);
         out.put("extractedClauses", pr.extractedClauses);
         out.put("semanticLoss", !pr.unresolved.isEmpty());
-        out.put("needsUserConfirmation", "NEEDS_USER_CONFIRMATION".equals(pr.status));
+        out.put("needsUserConfirmation", "NEEDS_USER_CONFIRMATION".equals(pr.status)
+                || "NEEDS_CLARIFICATION".equals(pr.status));
+        out.put("needsClarification", "NEEDS_CLARIFICATION".equals(pr.status));
         out.put("expression", pr.expression);
-        if (pr.expression != null) {
+        if (pr.editableModel != null) {
+            out.put("editableModel", pr.editableModel);
+        } else if (pr.expression != null) {
             out.put("editableModel", CompoundExpressionAuthoringSupport.toEditableModel(
                     pr.expression, Map.of("failureTreatment", treatment)));
         }
@@ -449,18 +524,31 @@ public class CmRuleAuthoringService {
         out.put("sourceText", pr.sourceText);
         out.put("allowCanonicalAuthority", false);
         if (!pr.unresolved.isEmpty()) {
-            out.put("message", "Some parts of this rule have not been mapped yet.");
             out.put("complete", false);
+            out.put("status", "NEEDS_CLARIFICATION");
+            out.put("message", "Some parts of this rule have not been mapped yet.");
+            out.put("weUnderstood", pr.understood);
+            out.put("weStillNeedClarify", pr.unresolved);
         }
         return out;
     }
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> confirmCompoundGroup(PolicyStudioSession session, Map<String, Object> body) {
-        Map<String, Object> preview = previewCompoundGroup(body);
-        // Allow DESCRIBE confirm payload that already went through preview()
-        if (body.get("conditions") == null && body.get("text") != null) {
+        Map<String, Object> preview;
+        // Prefer nested expression/children from DESCRIBE preview — do not rebuild from flat conditions
+        if (body.get("expression") instanceof Map<?, ?> existingExpr
+                && CompoundExpressionAuthoringSupport.isGroupExpression(castMap(existingExpr))) {
+            preview = previewCompoundGroup(Map.of(
+                    "mode", "COMPOUND_GROUP",
+                    "expression", existingExpr,
+                    "treatment", str(body, "treatment", "Reject")));
+        } else if (body.get("children") instanceof List<?> ch && !ch.isEmpty()) {
+            preview = previewCompoundGroup(body);
+        } else if (body.get("text") != null && body.get("conditions") == null) {
             preview = preview(body);
+        } else {
+            preview = previewCompoundGroup(body);
         }
         if (!Boolean.TRUE.equals(preview.get("complete"))) {
             String msg = String.valueOf(preview.getOrDefault("message",
@@ -470,19 +558,34 @@ public class CmRuleAuthoringService {
             }
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, msg);
         }
-        List<Map<String, Object>> conditions = new ArrayList<>();
-        if (preview.get("conditions") instanceof List<?> raw) {
+        List<Map<String, Object>> children = new ArrayList<>();
+        if (preview.get("children") instanceof List<?> rawCh) {
+            for (Object o : rawCh) {
+                if (o instanceof Map<?, ?> m) children.add(new LinkedHashMap<>((Map<String, Object>) m));
+            }
+        } else if (preview.get("conditions") instanceof List<?> raw) {
             for (Object o : raw) {
-                if (o instanceof Map<?, ?> m) conditions.add(new LinkedHashMap<>((Map<String, Object>) m));
+                if (o instanceof Map<?, ?> m) children.add(new LinkedHashMap<>((Map<String, Object>) m));
             }
         }
         String combinator = String.valueOf(preview.getOrDefault("combinator",
                 CompoundExpressionAuthoringSupport.COMBINATOR_ANY));
-        Map<String, Object> expression = preview.get("expression") instanceof Map<?, ?> e
-                ? new LinkedHashMap<>((Map<String, Object>) e)
-                : CompoundExpressionAuthoringSupport.buildExpression(combinator, conditions);
+        Map<String, Object> model = new LinkedHashMap<>();
+        model.put("kind", CompoundExpressionAuthoringSupport.KIND_GROUP);
+        model.put("combinator", combinator);
+        model.put("children", children);
+        Map<String, Object> expression;
+        if (body.get("expression") instanceof Map<?, ?> be
+                && CompoundExpressionAuthoringSupport.isGroupExpression(castMap(be))) {
+            expression = new LinkedHashMap<>((Map<String, Object>) be);
+        } else if (preview.get("expression") instanceof Map<?, ?> e) {
+            expression = new LinkedHashMap<>((Map<String, Object>) e);
+        } else {
+            expression = CompoundExpressionAuthoringSupport.buildExpression(model);
+        }
         String treatment = str(body, "treatment", str(preview, "treatment", "Reject"));
-        String summary = CompoundExpressionAuthoringSupport.businessSummary(combinator, conditions);
+        String summary = CompoundExpressionAuthoringSupport.businessSummary(model);
+        List<Map<String, Object>> conditions = children;
         String sourceText = str(body, "text", summary);
 
         CiPolicyDocument doc = session.getDocument();
