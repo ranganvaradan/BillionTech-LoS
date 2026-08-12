@@ -340,21 +340,118 @@ public class StagingPolicyStudioDemoService {
     }
 
     public Map<String, Object> build(String kind) {
+        return build(kind, false);
+    }
+
+    /**
+     * Open demo policy. By default resumes the latest resolved Banking/Bureau/KYC demo
+     * for this kind (POLICY-RESOLUTION-PERSISTENCE-P0). Pass forceFresh via resetDemo to reseed.
+     */
+    public Map<String, Object> build(String kind, boolean forceFresh) {
         DemoSpec spec = resolveDemoSpec(kind);
         String text = loadClasspathText(spec.resource());
         UUID tenantId = properties.getDefaultTenantId();
+
+        if (!forceFresh) {
+            Map<String, Object> resumed = tryResumeDemo(spec, text);
+            if (resumed != null) {
+                return resumed;
+            }
+        }
+
         PolicyStudioSession session = orchestrator.processUpload(
                 tenantId, spec.name(), "TXT", text, "staging-demo", spec.fileName());
 
+        // After restart, memory is empty but durable overlays remain — rebind by identity.
+        if (!forceFresh) {
+            UUID priorId = orchestrator.persistence().durableResolutionStore().latestDemoDocumentId(spec.kind());
+            if (priorId != null) {
+                Map<String, Object> bundle = orchestrator.persistence().durableResolutionStore().loadBundle(priorId);
+                if (!bundle.isEmpty()) {
+                    com.los.core.creditintelligence.policystudio.parameters.PolicyResolutionIdentity
+                            .rebind(session, bundle);
+                    Object lineage = bundle.get("lineageRootId");
+                    if (lineage != null && session.getDocument() != null) {
+                        Map<String, Object> dm = session.getDocument().getMetadata();
+                        if (dm == null) {
+                            dm = new LinkedHashMap<>();
+                            session.getDocument().setMetadata(dm);
+                        }
+                        dm.put("lineageRootId", String.valueOf(lineage));
+                        dm.put("reboundFromDocumentId", String.valueOf(priorId));
+                    }
+                    log.info("policy-resolution-persistence rebound demoKind={} fromPriorDoc={} onto={}",
+                            spec.kind(), priorId, session.getDocument().getId());
+                }
+            }
+        }
+
         Map<String, Object> meta = demoMeta(spec.kind(), spec.fileName(), spec.resource(), text);
+        if (session.getDocument() != null) {
+            Map<String, Object> docMeta = session.getDocument().getMetadata();
+            if (docMeta == null) {
+                docMeta = new LinkedHashMap<>();
+                session.getDocument().setMetadata(docMeta);
+            }
+            docMeta.put("kind", spec.kind());
+            docMeta.put("demo", true);
+            // Preserve lineage from rebound durable bundle when present
+            if (!docMeta.containsKey("lineageRootId") || docMeta.get("lineageRootId") == null) {
+                if (session.getDocument().getId() != null) {
+                    docMeta.put("lineageRootId", session.getDocument().getId().toString());
+                }
+            }
+        }
+        orchestrator.persistence().saveSessionSnapshot(session);
         return toProspectView(session, meta);
     }
 
-    /** Staging-only: restore Banking/Bureau demo to fixture baseline. */
+    private Map<String, Object> tryResumeDemo(DemoSpec spec, String text) {
+        PolicyStudioSession best = null;
+        Instant bestUpdated = Instant.EPOCH;
+        for (PolicyStudioSession s : orchestrator.persistence().listAllSessions()) {
+            if (s.getDocument() == null || s.getDocument().getMetadata() == null) continue;
+            Map<String, Object> m = s.getDocument().getMetadata();
+            if (!spec.kind().equals(String.valueOf(m.getOrDefault("kind", "")))) continue;
+            if (!Boolean.TRUE.equals(m.get("demo"))) continue;
+            Instant updated = s.getAuthoringSession() != null && s.getAuthoringSession().getLastUpdatedAt() != null
+                    ? s.getAuthoringSession().getLastUpdatedAt() : Instant.EPOCH;
+            if (updated.isAfter(bestUpdated)) {
+                bestUpdated = updated;
+                best = s;
+            }
+        }
+        if (best == null) {
+            UUID latest = orchestrator.persistence().durableResolutionStore().latestDemoDocumentId(spec.kind());
+            if (latest != null) {
+                best = orchestrator.persistence().loadSession(latest);
+            }
+        } else if (best.getDocument() != null && best.getDocument().getId() != null) {
+            // Prefer cache/live instance so mutations persist consistently
+            PolicyStudioSession live = orchestrator.persistence().loadSession(best.getDocument().getId());
+            if (live != null) best = live;
+        }
+        if (best == null) return null;
+        Map<String, Object> meta = demoMeta(spec.kind(), spec.fileName(), spec.resource(), text);
+        meta.put("resumed", true);
+        meta.put("resumedDocumentId", best.getDocument().getId().toString());
+        log.info("policy-resolution-persistence resume demoKind={} documentId={}",
+                spec.kind(), best.getDocument().getId());
+        return toProspectView(best, meta);
+    }
+
+    /** Staging-only: restore Banking/Bureau demo to fixture baseline (intentional wipe). */
     public Map<String, Object> resetDemo(String kind) {
         DemoSpec spec = resolveDemoSpec(kind);
-        log.info("staging-demo reset demo policy kind={}", spec.kind());
-        return build(spec.kind());
+        log.info("staging-demo reset demo policy kind={} (force fresh — clears durable resume index)", spec.kind());
+        orchestrator.persistence().durableResolutionStore().clearDemoLatest(spec.kind());
+        return build(spec.kind(), true);
+    }
+
+    /** Golden helper — wipe in-memory sessions; durable overlays remain. */
+    public void simulateProcessRestart() {
+        orchestrator.persistence().simulateProcessRestart();
+        log.info("policy-resolution-persistence simulateProcessRestart — in-memory cleared");
     }
 
     public Map<String, Object> upload(MultipartFile file, String uploadedBy, String tenantHeader) {

@@ -7,6 +7,7 @@ import com.los.core.creditintelligence.policystudio.domain.CiPolicyParameter;
 import com.los.core.creditintelligence.policystudio.domain.CiPolicySimulationRun;
 import com.los.core.creditintelligence.policystudio.domain.CiPolicyVocabulary;
 import com.los.core.creditintelligence.policystudio.model.PolicyStudioSession;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -22,18 +23,28 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Persists Policy Studio session snapshots. Uses an in-memory durable store for unit tests
- * and when JPA repos are unavailable; thin cache can be cleared to simulate process restart.
+ * Persists Policy Studio session snapshots.
+ * In-memory store for active sessions; resolution overlays also written to
+ * {@link PolicyStudioDurableResolutionStore} so they survive service restart and demo reopen.
  */
 @Service
 public class PolicyStudioPersistenceService {
 
-    /** Durable store (survives cache clear — restart simulation). */
     private final ConcurrentHashMap<UUID, PolicyStudioSession> storeByDocumentId = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, UUID> sessionIdToDocumentId = new ConcurrentHashMap<>();
-
-    /** Optional thin cache; clear to force reload from store. */
     private final ConcurrentHashMap<UUID, PolicyStudioSession> cacheByDocumentId = new ConcurrentHashMap<>();
+    private final PolicyStudioDurableResolutionStore durableStore;
+
+    public PolicyStudioPersistenceService() {
+        this(new PolicyStudioDurableResolutionStore("./data/policy-studio-resolutions"));
+    }
+
+    @Autowired
+    public PolicyStudioPersistenceService(PolicyStudioDurableResolutionStore durableStore) {
+        this.durableStore = durableStore != null
+                ? durableStore
+                : new PolicyStudioDurableResolutionStore("./data/policy-studio-resolutions");
+    }
 
     public void saveSessionSnapshot(PolicyStudioSession session) {
         if (session == null || session.getDocument() == null || session.getDocument().getId() == null) {
@@ -54,6 +65,7 @@ public class PolicyStudioPersistenceService {
             sessionIdToDocumentId.put(copy.getAuthoringSession().getId(), docId);
         }
         cacheByDocumentId.put(docId, session);
+        durableStore.saveFromSession(session);
     }
 
     public PolicyStudioSession loadSession(UUID documentId) {
@@ -98,6 +110,20 @@ public class PolicyStudioPersistenceService {
     /** Simulate JVM restart: drop thin cache; durable store remains. */
     public void clearCache() {
         cacheByDocumentId.clear();
+    }
+
+    /**
+     * Simulate full process restart for goldens: wipe in-memory maps.
+     * Durable resolution overlays on disk remain and are rebound on next demo open.
+     */
+    public void simulateProcessRestart() {
+        cacheByDocumentId.clear();
+        storeByDocumentId.clear();
+        sessionIdToDocumentId.clear();
+    }
+
+    public PolicyStudioDurableResolutionStore durableResolutionStore() {
+        return durableStore;
     }
 
     public void clearAllForTests() {
@@ -222,7 +248,7 @@ public class PolicyStudioPersistenceService {
                     .createdAt(a.getCreatedAt())
                     .build());
         }
-        dst.setDocument(src.getDocument());
+        dst.setDocument(copyDocument(src.getDocument()));
         dst.getClauses().addAll(src.getClauses());
         dst.getInterpretations().addAll(src.getInterpretations());
         dst.getMappings().addAll(src.getMappings());
@@ -243,6 +269,30 @@ public class PolicyStudioPersistenceService {
         dst.getSimulationRuns().addAll(new ArrayList<>(src.getSimulationRuns()));
         dst.getDraftDiffs().addAll(new ArrayList<>(src.getDraftDiffs()));
         return dst;
+    }
+
+    private com.los.core.creditintelligence.policystudio.domain.CiPolicyDocument copyDocument(
+            com.los.core.creditintelligence.policystudio.domain.CiPolicyDocument src) {
+        if (src == null) return null;
+        return com.los.core.creditintelligence.policystudio.domain.CiPolicyDocument.builder()
+                .id(src.getId())
+                .tenantId(src.getTenantId())
+                .lenderId(src.getLenderId())
+                .productScope(src.getProductScope())
+                .name(src.getName())
+                .documentType(src.getDocumentType())
+                .originalFileReference(src.getOriginalFileReference())
+                .contentHash(src.getContentHash())
+                .uploadedBy(src.getUploadedBy())
+                .uploadedAt(src.getUploadedAt())
+                .status(src.getStatus())
+                .documentVersion(src.getDocumentVersion())
+                .language(src.getLanguage())
+                .sourceText(src.getSourceText())
+                .metadata(copyMap(src.getMetadata()))
+                .version(src.getVersion())
+                .createdAt(src.getCreatedAt())
+                .build();
     }
 
     private Map<String, Object> copyMap(Map<String, Object> m) {

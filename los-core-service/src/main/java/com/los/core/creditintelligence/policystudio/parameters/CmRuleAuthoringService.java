@@ -897,6 +897,15 @@ public class CmRuleAuthoringService {
             lineage.put("sourceText", sourceText);
             lineage.put("clauseId", clause.getId().toString());
             lineage.put("editedByCm", true);
+            // Selective invalidation: only ADB bulk resolution stales when its wording changes
+            Object priorSrc = lineage.get("priorSourceText");
+            if (com.los.core.creditintelligence.policystudio.parameters.PolicyResolutionIdentity
+                    .adbWordingChanged(priorSrc == null ? null : String.valueOf(priorSrc), sourceText)) {
+                com.los.core.creditintelligence.policystudio.parameters.PolicyResolutionIdentity
+                        .invalidateAdbBulk(session);
+                meta.put("adbBulkResolutionStale", true);
+                meta.put("adbBulkStaleReason", "ADB_BULK_WORDING_CHANGED");
+            }
             existing.setClauseId(clause.getId());
             existing.setSystemRuleId(systemId);
             existing.setRuleType("HARD");

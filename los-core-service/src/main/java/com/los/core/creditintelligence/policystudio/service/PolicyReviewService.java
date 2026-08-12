@@ -257,7 +257,30 @@ public class PolicyReviewService {
         Map<String, Object> meta = new LinkedHashMap<>(amb.getMetadata() == null ? Map.of() : amb.getMetadata());
         meta.put("action", act.name());
         meta.putAll(resultExtras);
+        String identity = com.los.core.creditintelligence.policystudio.parameters
+                .PolicyResolutionIdentity.forAmbiguity(amb);
+        if (identity != null) {
+            com.los.core.creditintelligence.policystudio.parameters
+                    .PolicyResolutionIdentity.stampIdentity(meta, identity);
+        }
         amb.setMetadata(meta);
+
+        // Boundary rule metadata gets durable identity when patched
+        if (Boolean.TRUE.equals(resultExtras.get("inwardReturnBoundaryPatched"))) {
+            session.getRuleCandidates().stream()
+                    .filter(r -> com.los.core.creditintelligence.policystudio.parameters
+                            .InwardReturnCompoundSupport.looksLikeInwardReturnCompound(r))
+                    .findFirst()
+                    .ifPresent(r -> {
+                        Map<String, Object> rm = r.getMetadata() == null
+                                ? new LinkedHashMap<>() : new LinkedHashMap<>(r.getMetadata());
+                        com.los.core.creditintelligence.policystudio.parameters
+                                .PolicyResolutionIdentity.stampIdentity(rm,
+                                        com.los.core.creditintelligence.policystudio.parameters
+                                                .PolicyResolutionIdentity.INWARD_100_BOUNDARY);
+                        r.setMetadata(rm);
+                    });
+        }
 
         persistenceService.saveSessionSnapshot(session);
         return new CiPolicyAmbiguityResolveResult(amb.getId(), amb.getResolutionStatus(), amb.getResolvedOption(), act.name(), resultExtras);

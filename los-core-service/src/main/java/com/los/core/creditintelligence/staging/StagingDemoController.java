@@ -466,6 +466,24 @@ public class StagingDemoController {
         }
     }
 
+    /**
+     * POLICY-RESOLUTION-PERSISTENCE-P0 — simulate JVM/process restart for golden tests.
+     * Wipes in-memory sessions; durable resolution overlays remain on disk.
+     */
+    @PostMapping("/policy-studio/simulate-process-restart")
+    public Map<String, Object> simulateProcessRestart(
+            @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        assertInternalToken(token);
+        assertStagingDemoEnabled();
+        policyStudioDemoService.simulateProcessRestart();
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("simulated", true);
+        out.put("inMemoryCleared", true);
+        out.put("durableOverlaysRetained", true);
+        out.put("message", "In-memory Policy Studio sessions cleared; durable resolution store retained");
+        return out;
+    }
+
     @PostMapping("/policy-studio/documents/{documentId}/ambiguities/{id}/resolve")
     public Map<String, Object> resolveAmbiguity(
             @PathVariable UUID documentId,

@@ -6,7 +6,7 @@ import java.util.Map;
 
 /**
  * POLICY-PARAMETER-RESOLVER-1 — generic policy-scoped parameter resolution.
- * SESSION_DRAFT_ONLY persistence on rule/document metadata. No DB migration.
+ * POLICY_VERSION_DURABLE persistence on rule/document metadata (+ durable overlay store).
  * Does not invent meanings (e.g. CLEAN ≠ DPD=0). Does not grant production authority.
  */
 public final class ParameterResolutionSupport {
@@ -71,7 +71,8 @@ public final class ParameterResolutionSupport {
         out.put("period", def.period());
         out.put("howCalculated", def.calculationSummary());
         out.put("originalTerm", originalTerm);
-        out.put("persistence", "SESSION_DRAFT_ONLY");
+        out.put("persistence", "POLICY_VERSION_DURABLE");
+        out.put("resolutionIdentity", PolicyResolutionIdentity.forParameter(def.id()));
         out.put("scope", "POLICY_DRAFT");
         out.put("reusablePromotion", "NOT_IMPLEMENTED");
         out.put("silentlyInvented", false);
@@ -100,7 +101,9 @@ public final class ParameterResolutionSupport {
         out.put("originalTerm", originalTerm);
         out.put("factSource", true);
         out.put("notManualReviewTreatment", true);
-        out.put("persistence", "SESSION_DRAFT_ONLY");
+        out.put("persistence", "POLICY_VERSION_DURABLE");
+        out.put("resolutionIdentity", PolicyResolutionIdentity.forParameter(
+                originalTerm == null ? businessLabel : originalTerm));
         out.put("scope", "POLICY_DRAFT");
         out.put("silentlyInvented", false);
         out.put("allowCanonicalAuthority", false);
@@ -118,7 +121,8 @@ public final class ParameterResolutionSupport {
         out.put("howCalculated", proposal.get("proposedCalculation"));
         out.put("proposal", proposal);
         out.put("originalTerm", originalTerm);
-        out.put("persistence", "SESSION_DRAFT_ONLY");
+        out.put("persistence", "POLICY_VERSION_DURABLE");
+        out.put("resolutionIdentity", PolicyResolutionIdentity.forParameter(originalTerm));
         out.put("scope", "POLICY_DRAFT");
         out.put("silentlyInvented", false);
         out.put("confirmedByCreditManager", true);
@@ -136,7 +140,9 @@ public final class ParameterResolutionSupport {
                 ? "Parameter is understood but not available from current data sources."
                 : reason);
         out.put("originalTerm", originalTerm);
-        out.put("persistence", "SESSION_DRAFT_ONLY");
+        out.put("persistence", "POLICY_VERSION_DURABLE");
+        out.put("resolutionIdentity", PolicyResolutionIdentity.forParameter(
+                parameterId == null ? originalTerm : parameterId));
         out.put("distinctFromUnresolved", true);
         out.put("allowCanonicalAuthority", false);
         return out;
@@ -167,7 +173,7 @@ public final class ParameterResolutionSupport {
         if (resolution == null) return null;
         String status = String.valueOf(resolution.getOrDefault("status", STATUS_UNRESOLVED));
         Map<String, Object> bridge = new LinkedHashMap<>();
-        bridge.put("persistence", "SESSION_DRAFT_ONLY");
+        bridge.put("persistence", "POLICY_VERSION_DURABLE");
         bridge.put("silentlyInvented", false);
         bridge.put("viaGenericResolver", true);
         if (STATUS_MANUAL.equals(status)) {

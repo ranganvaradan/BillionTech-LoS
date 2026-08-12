@@ -450,7 +450,9 @@ public final class PolicyDataResolutionSupport {
         out.put("actor", actor == null || actor.isBlank() ? "credit_manager" : actor);
         out.put("createdAt", Instant.now().toString());
         out.put("updatedAt", Instant.now().toString());
-        out.put("persistence", "SESSION_DRAFT_ONLY");
+        out.put("persistence", "POLICY_VERSION_DURABLE");
+        out.put("resolutionIdentity", PolicyResolutionIdentity.forAdjustment(
+                String.valueOf(out.getOrDefault("dataItemId", ""))));
         out.put("scope", "POLICY_VERSION");
         out.put("provenance", "POLICY_DATA_RESOLUTION_UX_1");
         out.put("allowCanonicalAuthority", false);
