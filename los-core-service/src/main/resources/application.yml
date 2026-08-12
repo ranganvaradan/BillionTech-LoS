@@ -371,6 +371,16 @@ management:
   endpoint:
     health:
       show-details: always
+    info:
+      enabled: true
+  info:
+    env:
+      enabled: true
+    git:
+      mode: full
+      enabled: true
+    build:
+      enabled: true
   metrics:
     export:
       prometheus:
