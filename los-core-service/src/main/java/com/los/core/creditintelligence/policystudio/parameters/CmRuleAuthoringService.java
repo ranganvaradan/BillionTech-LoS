@@ -1100,7 +1100,7 @@ public class CmRuleAuthoringService {
             d.ratioPercent = true;
             d.complete = true;
             d.message = "Interpreted as bank credits ≥ " + d.value + "% of GST turnover";
-            return d;
+            return failClosedIfResidualConnective(d);
         }
 
         // POLICY-STUDIO-GATE2 — write-off / known hard concepts via BusinessConceptResolver
@@ -1182,6 +1182,21 @@ public class CmRuleAuthoringService {
                 : (d.missing.contains("value")
                 ? AuthoringValueTypes.validationMessage(d.valueControl, null)
                 : "I couldn't turn this into a complete rule. Complete the missing fields.");
+        return failClosedIfResidualConnective(d);
+    }
+
+    /**
+     * Flat DESCRIBE may only return complete=true if the entire material input is consumed —
+     * no leftover clause-level AND/OR / extra condition.
+     */
+    private static DraftDraft failClosedIfResidualConnective(DraftDraft d) {
+        if (d == null || !d.complete) return d;
+        if (!CompoundPlainEnglishParser.hasResidualLogicalConnective(d.sourceText)) return d;
+        d.complete = false;
+        d.message = "Some parts of this rule have not been mapped yet.";
+        if (!d.missing.contains("residualConnective")) {
+            d.missing.add("residualConnective");
+        }
         return d;
     }
 
@@ -1481,6 +1496,11 @@ public class CmRuleAuthoringService {
         if (!d.complete && d.candidates != null && !d.candidates.isEmpty()) {
             out.put("status", "NEEDS_PARAMETER_SELECTION");
             out.put("needsClarification", true);
+        }
+        if (!d.complete && d.missing.contains("residualConnective")) {
+            out.put("status", "NEEDS_CLARIFICATION");
+            out.put("needsClarification", true);
+            out.put("semanticLoss", true);
         }
         return out;
     }

@@ -28,11 +28,28 @@ public final class CompoundPlainEnglishParser {
                     + "|\\b(?:at\\s+most|not\\s+exceed(?:ing)?)\\s*(-?\\d+(?:\\.\\d+)?)\\s*%?",
             Pattern.CASE_INSENSITIVE);
     private static final Pattern EXCLUSIVE_ABOVE = Pattern.compile(
-            "\\b(?:above|more\\s+than|greater\\s+than)\\s*(-?\\d+(?:\\.\\d+)?)\\s*%?",
+            "\\b(?:above|more\\s+than|greater\\s+than)\\s*(-?\\d+(?:\\.\\d+)?)\\s*%?"
+                    + "|>(?!\\s*=)\\s*(-?\\d+(?:\\.\\d+)?)\\s*%?",
             Pattern.CASE_INSENSITIVE);
     private static final Pattern EXCLUSIVE_BELOW = Pattern.compile(
-            "\\b(?:below|less\\s+than|under)\\s*(-?\\d+(?:\\.\\d+)?)\\s*%?",
+            "\\b(?:below|less\\s+than|under)\\s*(-?\\d+(?:\\.\\d+)?)\\s*%?"
+                    + "|<(?!\\s*=)\\s*(-?\\d+(?:\\.\\d+)?)\\s*%?",
             Pattern.CASE_INSENSITIVE);
+    private static final Pattern SYMBOLIC_GTE = Pattern.compile(
+            ">=\\s*(-?\\d+(?:\\.\\d+)?)\\s*%?", Pattern.CASE_INSENSITIVE);
+    private static final Pattern SYMBOLIC_LTE = Pattern.compile(
+            "<=\\s*(-?\\d+(?:\\.\\d+)?)\\s*%?", Pattern.CASE_INSENSITIVE);
+    private static final Pattern EQUALS_PHRASE = Pattern.compile(
+            "\\b(?:is\\s+equal\\s+to|equals(?:\\s+to)?)\\s*(-?\\d+(?:\\.\\d+)?)\\s*%?",
+            Pattern.CASE_INSENSITIVE);
+    private static final Pattern SYMBOLIC_EQ = Pattern.compile(
+            "(?<![<>!])=\\s*(-?\\d+(?:\\.\\d+)?)\\s*%?");
+    /** Clause-level OR — not "or more/above/below/higher/greater". */
+    private static final Pattern CLAUSE_OR = Pattern.compile(
+            "(?i)\\s+or\\s+(?!more\\b|above\\b|below\\b|higher\\b|greater\\b)");
+    /** Clause-level AND — not "and above/below". */
+    private static final Pattern CLAUSE_AND = Pattern.compile(
+            "(?i)\\s+and\\s+(?!above\\b|below\\b)");
     private static final Pattern SIGNED_NUMBER = Pattern.compile("(?<!\\d)(-\\d+)\\b");
     private static final Pattern VAGUE = Pattern.compile(
             "\\b(good|high|low|around|maybe|something|satisfactory|adequate|decent|nice)\\b",
@@ -98,14 +115,25 @@ public final class CompoundPlainEnglishParser {
             return bureauOr;
         }
 
+        // Explicit clause-level OR: "A OR B"
+        ParseResult ored = parseDisjunction(r.sourceText);
+        if (ored.compound || ored.complete || !ored.unresolved.isEmpty()) {
+            return ored;
+        }
+
         // AND of distinct parameters (C4)
         ParseResult anded = parseConjunction(r.sourceText);
         if (anded.compound) {
             return anded;
         }
 
-        // Single comparison (C1/C2)
+        // Single comparison (C1/C2) — never complete if material AND/OR remains
         ParseResult single = parseSingleComparison(r.sourceText);
+        if (single.complete && hasResidualLogicalConnective(r.sourceText)) {
+            return needsClarification(single,
+                    single.understood == null ? List.of() : single.understood,
+                    List.of("Additional AND/OR conditions were not mapped"));
+        }
         if (single.complete || !single.unresolved.isEmpty()) {
             return single;
         }
@@ -218,6 +246,8 @@ public final class CompoundPlainEnglishParser {
         if (looksLikeIfBranchWording(lower)) return true;
         // Vague / adversarial NL must fail closed via compound parse (never flat DESCRIBE)
         if (isAdversarialVague(lower)) return true;
+        // Explicit free-text clause connectives → compound parser (never flat DESCRIBE)
+        if (hasClauseLevelOr(text) || hasClauseLevelAnd(text)) return true;
         if (lower.contains(" either ") || lower.contains(" or below") && lower.contains(" and ")) return true;
         if (lower.contains(" must be ") && lower.contains(" and ")
                 && (lower.contains("foir") || lower.contains("ltv") || lower.contains("bureau"))) {
@@ -238,6 +268,22 @@ public final class CompoundPlainEnglishParser {
         return false;
     }
 
+    /** True when text still has clause-level AND/OR that flat DESCRIBE must not silently drop. */
+    public static boolean hasResidualLogicalConnective(String text) {
+        if (text == null || text.isBlank()) return false;
+        return hasClauseLevelOr(text) || hasClauseLevelAnd(text);
+    }
+
+    public static boolean hasClauseLevelOr(String text) {
+        if (text == null) return false;
+        return CLAUSE_OR.matcher(text).find();
+    }
+
+    public static boolean hasClauseLevelAnd(String text) {
+        if (text == null) return false;
+        return CLAUSE_AND.matcher(text).find();
+    }
+
     public static String detectBoundaryOperator(String phrase) {
         if (phrase == null) return null;
         String lower = phrase.toLowerCase(Locale.ROOT);
@@ -245,16 +291,31 @@ public final class CompoundPlainEnglishParser {
                 || AT_LEAST.matcher(lower).find()
                 || lower.contains("and above") || lower.contains("& above")
                 || lower.contains("or more") || lower.contains("or higher")
-                || lower.contains("or above")) {
+                || lower.contains("or above")
+                || SYMBOLIC_GTE.matcher(lower).find()
+                || lower.contains(">=") || lower.contains("greater than or equal")) {
             return ">=";
         }
         if (INCLUSIVE_BELOW.matcher(lower).find() || lower.contains("and below")
                 || lower.contains("& below") || lower.contains("not exceed")
-                || lower.contains("at most") || lower.contains("or below")) {
+                || lower.contains("at most") || lower.contains("or below")
+                || SYMBOLIC_LTE.matcher(lower).find()
+                || lower.contains("<=") || lower.contains("less than or equal")) {
             return "<=";
         }
-        if (EXCLUSIVE_ABOVE.matcher(lower).find()) return ">";
-        if (EXCLUSIVE_BELOW.matcher(lower).find()) return "<";
+        if (EQUALS_PHRASE.matcher(lower).find() || SYMBOLIC_EQ.matcher(phrase).find()
+                || lower.contains("is equal to") || lower.contains("equals")) {
+            return "=";
+        }
+        if (EXCLUSIVE_ABOVE.matcher(lower).find() || lower.contains("greater than")
+                || lower.contains("more than")
+                || Pattern.compile(">(?!\\s*=)\\s*-?\\d").matcher(phrase).find()) {
+            return ">";
+        }
+        if (EXCLUSIVE_BELOW.matcher(lower).find() || lower.contains("less than")
+                || Pattern.compile("<(?!\\s*=)\\s*-?\\d").matcher(phrase).find()) {
+            return "<";
+        }
         return null;
     }
 
@@ -264,6 +325,8 @@ public final class CompoundPlainEnglishParser {
         ParseResult r = new ParseResult();
         r.sourceText = text;
         String lower = text.toLowerCase(Locale.ROOT);
+        // Explicit clause-level OR ("A OR B") → parseDisjunction, not list/NTC scraper
+        if (hasClauseLevelOr(text)) return r;
         boolean bureauCtx = lower.contains("bureau") || lower.contains("cibil")
                 || lower.contains("credit score") || lower.contains("bureau score");
         if (!bureauCtx) return r;
@@ -335,6 +398,52 @@ public final class CompoundPlainEnglishParser {
         r.compound = conditions.size() > 1;
         r.understood = understood;
         return finalizeGroup(r, CompoundExpressionAuthoringSupport.COMBINATOR_ANY, conditions);
+    }
+
+    private static ParseResult parseDisjunction(String text) {
+        ParseResult r = new ParseResult();
+        r.sourceText = text;
+        if (!hasClauseLevelOr(text)) return r;
+        String[] parts = CLAUSE_OR.split(text);
+        if (parts.length < 2) return r;
+        List<Map<String, Object>> children = new ArrayList<>();
+        List<String> understood = new ArrayList<>();
+        List<String> unresolved = new ArrayList<>();
+        for (String part : parts) {
+            String frag = part == null ? "" : part.trim();
+            if (frag.isBlank()) continue;
+            ParseResult one = parseSingleComparison(frag);
+            if (one.complete && !one.children.isEmpty()) {
+                children.addAll(one.children);
+                understood.addAll(one.understood);
+            } else if (one.complete && !one.conditions.isEmpty()) {
+                children.addAll(one.conditions);
+                understood.addAll(one.understood);
+            } else if (!one.unresolved.isEmpty()) {
+                unresolved.addAll(one.unresolved);
+            } else {
+                ParseResult b = parseBureauFragment(frag);
+                if (!b.conditions.isEmpty()) {
+                    children.addAll(b.conditions);
+                    understood.addAll(b.understood);
+                } else {
+                    unresolved.add(frag);
+                }
+            }
+        }
+        if (children.isEmpty() && unresolved.isEmpty()) return r;
+        r.compound = true;
+        r.understood = understood;
+        r.unresolved = unresolved;
+        if (!unresolved.isEmpty() || children.size() < 2) {
+            r.children = children;
+            if (children.size() < 2 && unresolved.isEmpty()) {
+                unresolved = new ArrayList<>(List.of(
+                        "Could not map both sides of OR — clarify each condition"));
+            }
+            return needsClarification(r, understood, unresolved);
+        }
+        return finalizeGroup(r, CompoundExpressionAuthoringSupport.COMBINATOR_ANY, children);
     }
 
     private static ParseResult parseConjunction(String text) {
@@ -527,7 +636,7 @@ public final class CompoundPlainEnglishParser {
         String op = detectBoundaryOperator(lower);
         Object value = extractThresholdValue(text);
         if (op == null && value != null && (lower.contains("must be") || lower.contains("should be")
-                || lower.contains(" is "))) {
+                || lower.contains(" is ") || lower.contains("equal"))) {
             op = "=";
         }
         if (op == null || value == null) {
@@ -580,7 +689,7 @@ public final class CompoundPlainEnglishParser {
 
     private static Object extractThresholdValue(String text) {
         for (Pattern p : List.of(INCLUSIVE_ABOVE, INCLUSIVE_OR_MORE, AT_LEAST, EXCLUSIVE_ABOVE,
-                EXCLUSIVE_BELOW, INCLUSIVE_BELOW)) {
+                EXCLUSIVE_BELOW, INCLUSIVE_BELOW, SYMBOLIC_GTE, SYMBOLIC_LTE, EQUALS_PHRASE, SYMBOLIC_EQ)) {
             Matcher m = p.matcher(text);
             if (m.find()) {
                 for (int g = 1; g <= m.groupCount(); g++) {

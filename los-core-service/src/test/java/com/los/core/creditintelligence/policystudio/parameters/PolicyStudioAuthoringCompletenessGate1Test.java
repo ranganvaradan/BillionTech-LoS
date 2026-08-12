@@ -61,6 +61,123 @@ class PolicyStudioAuthoringCompletenessGate1Test {
     }
 
     @Test
+    void uat_explicitClauseOr_gt700_or_eqNeg1() {
+        String text = "bureau score > 700 OR bureau score IS EQUAL TO -1";
+        Map<String, Object> p = authoring.preview(Map.of("mode", "DESCRIBE", "text", text));
+        assertThat(p.get("complete")).isEqualTo(true);
+        assertThat(p.get("combinator")).isEqualTo("ANY");
+        assertThat(String.valueOf(p.get("status"))).isEqualTo("READY");
+        assertThat(String.valueOf(p.getOrDefault("message", ""))).isEqualTo("Ready to confirm");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> expr = (Map<String, Object>) p.get("expression");
+        assertThat(String.valueOf(expr.get("op"))).isEqualToIgnoringCase("OR");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> args = (List<Map<String, Object>>) expr.get("args");
+        assertThat(args).hasSize(2);
+        assertThat(String.valueOf(args.get(0).get("op"))).isEqualToIgnoringCase("GT");
+        assertThat(metricOf(args.get(0))).isEqualTo("bureau.score");
+        assertThat(constOf(args.get(0))).isEqualTo(700);
+        assertThat(String.valueOf(args.get(1).get("op"))).isEqualToIgnoringCase("EQ");
+        assertThat(metricOf(args.get(1))).isEqualTo("bureau.score");
+        assertThat(constOf(args.get(1))).isEqualTo(-1);
+        String summary = String.valueOf(p.get("ruleDisplay"));
+        assertThat(summary).contains("Bureau score > 700");
+        assertThat(summary).contains("Bureau score = -1");
+        assertThat(summary).contains("OR");
+        @SuppressWarnings("unchecked")
+        List<String> lines = (List<String>) p.get("previewLines");
+        assertThat(String.join(" ", lines)).containsIgnoringCase("ANY");
+        assertThat(String.join(" ", lines)).contains("Bureau score > 700");
+        assertThat(String.join(" ", lines)).contains("Bureau score = -1");
+
+        assertDecision(expr, Map.of("bureau.score", -1), Map.of(), true);
+        assertDecision(expr, Map.of("bureau.score", 699), Map.of(), false);
+        assertDecision(expr, Map.of("bureau.score", 700), Map.of(), false);
+        assertDecision(expr, Map.of("bureau.score", 701), Map.of(), true);
+
+        PolicyStudioSession session = scratchSession();
+        Map<String, Object> confirmed = authoring.confirm(session, Map.of(
+                "confirm", true,
+                "mode", "DESCRIBE",
+                "text", text,
+                "treatment", "Reject",
+                "expression", expr,
+                "children", p.get("children"),
+                "combinator", p.get("combinator")));
+        assertThat(confirmed.get("confirmed")).isEqualTo(true);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> saved = (Map<String, Object>) confirmed.get("expression");
+        assertThat(CompoundExpressionAuthoringSupport.sameTree(expr, saved)).isTrue();
+    }
+
+    @Test
+    void explicitFreeTextAnd_routesCompound() {
+        Map<String, Object> p = authoring.preview(Map.of(
+                "mode", "DESCRIBE",
+                "text", "Bureau score must be at least 700 AND FOIR must not exceed 50%"));
+        assertThat(p.get("complete")).isEqualTo(true);
+        assertThat(p.get("compoundGroup")).isEqualTo(true);
+        assertThat(p.get("combinator")).isEqualTo("ALL");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> expr = (Map<String, Object>) p.get("expression");
+        assertThat(String.valueOf(expr.get("op"))).isEqualToIgnoringCase("AND");
+        assertThat(((List<?>) expr.get("args"))).hasSize(2);
+    }
+
+    @Test
+    void flatPathResidualOrNeverReady() {
+        // Unmapped right arm → compound fail-closed, never flat Ready
+        Map<String, Object> p = authoring.preview(Map.of(
+                "mode", "DESCRIBE",
+                "text", "bureau score > 700 OR unknown widget must be blue"));
+        assertThat(p.get("complete")).isEqualTo(false);
+        assertThat(String.valueOf(p.get("status"))).isEqualTo("NEEDS_CLARIFICATION");
+        assertThat(String.valueOf(p.getOrDefault("message", ""))).doesNotContain("Ready to confirm");
+    }
+
+    @Test
+    void flatPathResidualAndNeverReady() {
+        Map<String, Object> p = authoring.preview(Map.of(
+                "mode", "DESCRIBE",
+                "text", "bureau score > 700 AND unknown widget must be blue"));
+        assertThat(p.get("complete")).isEqualTo(false);
+        assertThat(String.valueOf(p.get("status"))).isEqualTo("NEEDS_CLARIFICATION");
+        assertThat(String.valueOf(p.getOrDefault("message", ""))).doesNotContain("Ready to confirm");
+    }
+
+    @Test
+    void c3_bureauOrAlternatives_executionStillPasses() {
+        Map<String, Object> p = authoring.preview(Map.of(
+                "mode", "DESCRIBE",
+                "text", "Bureau Score of -1, NTC and 650 & above only will be allowed"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> expr = (Map<String, Object>) p.get("expression");
+        assertDecision(expr, Map.of("bureau.score", -1), Map.of(), true);
+        assertDecision(expr, Map.of("bureau.score", 649), Map.of("bureau.status_ntc", true), true);
+        assertDecision(expr, Map.of("bureau.score", 649), Map.of("bureau.status_ntc", false), false);
+        assertDecision(expr, Map.of("bureau.score", 650), Map.of("bureau.status_ntc", false), true);
+        assertDecision(expr, Map.of("bureau.score", 651), Map.of("bureau.status_ntc", false), true);
+    }
+
+    private static String metricOf(Map<String, Object> leaf) {
+        Object left = leaf.get("left") != null ? leaf.get("left") : leaf.get("arg");
+        if (left instanceof Map<?, ?> m && m.get("metric") != null) {
+            return String.valueOf(m.get("metric"));
+        }
+        return null;
+    }
+
+    private static Object constOf(Map<String, Object> leaf) {
+        Object right = leaf.get("right");
+        if (right instanceof Map<?, ?> m && m.containsKey("const")) {
+            Object c = m.get("const");
+            if (c instanceof Number n) return n.intValue();
+            return c;
+        }
+        return right;
+    }
+
+    @Test
     void c4_andScoreAndFoir() {
         Map<String, Object> p = authoring.preview(Map.of(
                 "mode", "DESCRIBE",
