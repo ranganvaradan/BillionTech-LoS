@@ -1068,7 +1068,10 @@ public class PolicyStudioTestExperienceService {
         }
         if (key != null) {
             String k = key.toLowerCase(Locale.ROOT);
-            if (k.contains("edi") || "proposed_edi".equals(k)) {
+            // GATE2: token-safe — "credit" must not populate Proposed EDI
+            if (com.los.core.creditintelligence.policystudio.parameters.BusinessConceptMatching
+                    .isProposedEdiPhrase(k) || "proposed_edi".equals(k)
+                    || "application.proposed_edi".equals(k)) {
                 metrics.put("application.proposed_edi", value);
                 facts.put("application.proposed_edi", value);
                 params.put("PROPOSED_EDI", value);

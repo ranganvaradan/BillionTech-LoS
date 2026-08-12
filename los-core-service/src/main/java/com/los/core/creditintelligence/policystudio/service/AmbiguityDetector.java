@@ -160,7 +160,11 @@ public class AmbiguityDetector {
 
         for (CiPolicyClause c : clauses) {
             String lower = text(c).toLowerCase(Locale.ROOT);
-            if (!edi && lower.contains("edi")) {
+            // GATE2: token-safe — "credit".contains("edi") must NOT create Proposed EDI ambiguity
+            if (!edi && com.los.core.creditintelligence.policystudio.parameters.BusinessConceptMatching
+                    .isProposedEdiPhrase(lower)
+                    && !com.los.core.creditintelligence.policystudio.parameters.BusinessConceptMatching
+                    .isWriteOffPhrase(lower)) {
                 out.add(amb(c, AmbiguityType.UNKNOWN_BUSINESS_TERM, "EDI",
                         "EDI is not a guaranteed canonical term; candidate application.proposed_edi requires customer confirmation",
                         List.of(

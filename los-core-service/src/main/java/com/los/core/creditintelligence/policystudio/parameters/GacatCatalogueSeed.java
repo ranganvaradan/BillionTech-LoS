@@ -108,7 +108,8 @@ final class GacatCatalogueSeed {
                 "Account/AccountStatus|Open", List.of("account status", "open flag"),
                 "CiBureauTradeline.accountStatus", null, null, true, true, false, true, true);
         raw(p, "bureau.tradeline.write_off_amount", "Write-off amount", BR, "INR", "PER_TRADELINE",
-                "Account/WrittenOffAmount", List.of("write off", "written off"),
+                "Account/WrittenOffAmount",
+                List.of("write off", "write-off", "write offs", "write-offs", "written off", "written-off"),
                 "CiBureauTradeline.writtenOffAmount", null, null, true, true, false, true, true);
         raw(p, "bureau.tradeline.settlement_amount", "Settlement amount", BR, "INR", "PER_TRADELINE",
                 "Account/SettlementAmount", List.of("settlement"),
@@ -257,7 +258,10 @@ final class GacatCatalogueSeed {
         derived(p, "bureau.written_off_account_count", "Written-off account count", BR, "COUNT", "PIT",
                 "Count of tradelines with written-off status",
                 List.of("bureau.tradeline.write_off_amount", "bureau.tradeline.account_status"),
-                "BureauMetricService", List.of("write off count", "written off accounts"), null, null,
+                "BureauMetricService",
+                List.of("write off count", "write-off count", "written off accounts", "written-off accounts",
+                        "loan write offs", "loan write-offs"),
+                null, null,
                 prodBureau(true), true, true, true, true, true);
 
         derived(p, "bureau.cc_overdue_amount", "Credit-card overdue amount", BR, "INR", "PIT",

@@ -273,6 +273,24 @@ public class StagingDemoController {
         return proposal;
     }
 
+    /**
+     * POLICY-STUDIO-GATE2 — authoritative business-concept → parameter resolution.
+     * Optional {@code source} constrains search (source-guided override).
+     */
+    @PostMapping("/policy-studio/parameters/resolve-concept")
+    public Map<String, Object> resolveBusinessConcept(
+            @RequestHeader(value = "X-Internal-Token", required = false) String token,
+            @RequestBody Map<String, Object> body) {
+        assertInternalToken(token);
+        assertStagingDemoEnabled();
+        String concept = body == null || body.get("concept") == null
+                ? (body == null || body.get("term") == null ? "" : String.valueOf(body.get("term")))
+                : String.valueOf(body.get("concept"));
+        String source = body == null || body.get("source") == null ? null : String.valueOf(body.get("source"));
+        return com.los.core.creditintelligence.policystudio.parameters.BusinessConceptResolver
+                .resolve(concept, source);
+    }
+
     @GetMapping("/policy-studio/capabilities/scf-representability")
     public Map<String, Object> scfRepresentability(
             @RequestHeader(value = "X-Internal-Token", required = false) String token) {

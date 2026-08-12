@@ -52,8 +52,16 @@ public class CanonicalMappingService {
             }
             // phrase-level from source
             String lower = clause.getSourceText().toLowerCase(Locale.ROOT);
-            if (lower.contains("edi")) {
+            // GATE2: token-safe — do not map "credit cards" / write-offs to EDI
+            if (com.los.core.creditintelligence.policystudio.parameters.BusinessConceptMatching
+                    .isProposedEdiPhrase(lower)
+                    && !com.los.core.creditintelligence.policystudio.parameters.BusinessConceptMatching
+                    .isWriteOffPhrase(lower)) {
                 out.addAll(candidatesFor(interp.getId(), "EDI"));
+            }
+            if (com.los.core.creditintelligence.policystudio.parameters.BusinessConceptMatching
+                    .isWriteOffPhrase(lower)) {
+                out.addAll(candidatesFor(interp.getId(), "write-off"));
             }
             if (lower.contains("average daily balance") || lower.contains("adb")) {
                 out.addAll(candidatesFor(interp.getId(), "Average Daily Balance"));

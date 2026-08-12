@@ -279,10 +279,18 @@ public class CanonicalParameterRegistry {
         if (p.aliases() != null) {
             for (String a : p.aliases()) {
                 if (a == null) continue;
-                String al = a.toLowerCase(Locale.ROOT);
-                if (al.equals(q)) score = Math.max(score, 98);
-                else if (al.contains(q) || q.contains(al)) score = Math.max(score, 92);
+                // GATE2: token-safe alias match — "edi" must not hit via "credit"
+                if (BusinessConceptMatching.aliasMatches(q, a)) {
+                    String al = BusinessConceptMatching.normalize(a);
+                    score = Math.max(score, al.length() <= 3 ? 96 : 98);
+                }
             }
+        }
+        // Suppress Proposed EDI when query is a write-off / credit-card concept
+        if ("application.proposed_edi".equals(p.id())
+                && (BusinessConceptMatching.isWriteOffPhrase(q)
+                || (q.contains("credit") && !BusinessConceptMatching.isProposedEdiPhrase(q)))) {
+            return 0;
         }
         if (p.capability() != null && p.capability().providerFieldPath() != null
                 && p.capability().providerFieldPath().toLowerCase(Locale.ROOT).contains(q)) {

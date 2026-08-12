@@ -164,6 +164,18 @@ export async function proposeParameterDefinition(body: {
   return data
 }
 
+/** POLICY-STUDIO-GATE2 — authoritative business-concept resolution (optional source constraint). */
+export async function resolveBusinessConcept(body: {
+  concept: string
+  source?: string
+}): Promise<Record<string, unknown>> {
+  const { data } = await http.post<Record<string, unknown>>(
+    `${BASE}/policy-studio/parameters/resolve-concept`,
+    body,
+  )
+  return data
+}
+
 export type CatalogueCapabilityAddBody = {
   businessCapabilityId: string
   parameters?: Record<string, unknown>

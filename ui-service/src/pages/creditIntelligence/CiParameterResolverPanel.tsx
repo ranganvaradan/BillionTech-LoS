@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import {
   getParameterCatalogue,
   proposeParameterDefinition,
+  resolveBusinessConcept,
   searchCanonicalParameters,
   type ReviewRuleBody,
 } from '@/api/creditIntelligence'
@@ -51,6 +52,7 @@ export function CiParameterResolverPanel({
   const [manualActor, setManualActor] = useState('Credit Analyst')
   const [manualGuidance, setManualGuidance] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [suggestion, setSuggestion] = useState<Record<string, unknown> | null>(null)
 
   const operandKey = String(operand.operandKey ?? 'parameter')
   const term = String(operand.businessName ?? operand.label ?? operandKey)
@@ -61,6 +63,7 @@ export function CiParameterResolverPanel({
     setPreview(null)
     setProposal(null)
     setError(null)
+    setSuggestion(null)
     setManualLabel(term)
     void getParameterCatalogue()
       .then((cat) => {
@@ -68,10 +71,19 @@ export function CiParameterResolverPanel({
         setSources(srcs.length ? srcs : ['Bank Statement', 'Bureau', 'Application', 'Manual Input'])
         const preferred =
           String(operand.suggestedSource ?? '') ||
-          (operandKey.includes('edi') ? 'Application' : operandKey.includes('clean') ? 'Bureau' : 'Bank Statement')
+          (operandKey.includes('writeoff') || operandKey.includes('write_off') || /write.?off/i.test(term)
+            ? 'Bureau'
+            : operandKey.includes('edi') && !/credit/i.test(term)
+              ? 'Application'
+              : operandKey.includes('clean')
+                ? 'Bureau'
+                : 'Bank Statement')
         setSource(srcs.includes(preferred) ? preferred : srcs[0] || 'Bank Statement')
       })
       .catch(() => setSources(['Bank Statement', 'Bureau', 'Application', 'Manual Input']))
+    void resolveBusinessConcept({ concept: term })
+      .then((r) => setSuggestion(r))
+      .catch(() => setSuggestion(null))
   }, [open, operandKey, term])
 
   useEffect(() => {
@@ -216,6 +228,68 @@ export function CiParameterResolverPanel({
             <p className="rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{error}</p>
           ) : null}
 
+          {suggestion ? (
+            <div
+              className="rounded border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-950"
+              data-testid="concept-suggestion"
+            >
+              <p className="font-semibold">Suggested mapping</p>
+              <p className="text-xs mt-0.5">
+                We understood: {String(suggestion.businessConcept ?? term)}
+              </p>
+              <p className="text-xs">
+                State: {String(suggestion.resolutionState ?? '—')}
+                {suggestion.canonicalParameter
+                  ? ` · ${String(suggestion.businessName ?? suggestion.canonicalParameter)}`
+                  : ''}
+              </p>
+              {suggestion.mappedToProposedEdi === true ? (
+                <p className="text-xs text-rose-800 font-semibold">Refused Proposed EDI mapping</p>
+              ) : null}
+              {suggestion.canonicalParameter && suggestion.executable === true ? (
+                <button
+                  type="button"
+                  className="mt-2 bt-btn bt-btn-primary bt-btn-sm"
+                  data-testid="accept-suggested-parameter"
+                  disabled={busy}
+                  onClick={() =>
+                    void confirmMap({
+                      id: String(suggestion.canonicalParameter),
+                      businessName: String(suggestion.businessName ?? suggestion.canonicalParameter),
+                    })
+                  }
+                >
+                  Use suggested parameter
+                </button>
+              ) : null}
+              {asList(suggestion.candidates).length > 1 ? (
+                <ul className="mt-2 space-y-1 text-xs">
+                  {asList(suggestion.candidates)
+                    .slice(0, 5)
+                    .map((c, i) => {
+                      const row = asRecord(c)
+                      return (
+                        <li key={i}>
+                          <button
+                            type="button"
+                            className="text-sky-900 underline"
+                            onClick={() =>
+                              void confirmMap({
+                                id: String(row.parameterId ?? row.id),
+                                businessName: String(row.businessName ?? row.parameterId),
+                              })
+                            }
+                          >
+                            {String(row.businessName ?? row.parameterId)} ({String(row.evaluatedFrom ?? '')})
+                          </button>
+                        </li>
+                      )
+                    })}
+                </ul>
+              ) : null}
+            </div>
+          ) : null}
+
           {mode === 'source' ? (
             <>
               <label className="block text-sm">
@@ -223,7 +297,13 @@ export function CiParameterResolverPanel({
                 <select
                   className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
                   value={source}
-                  onChange={(e) => setSource(e.target.value)}
+                  onChange={(e) => {
+                    const next = e.target.value
+                    setSource(next)
+                    void resolveBusinessConcept({ concept: term, source: next })
+                      .then((r) => setSuggestion(r))
+                      .catch(() => null)
+                  }}
                   data-testid="resolver-source"
                 >
                   {sources.map((s) => (

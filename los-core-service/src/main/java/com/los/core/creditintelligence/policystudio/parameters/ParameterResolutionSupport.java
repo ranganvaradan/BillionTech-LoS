@@ -145,7 +145,12 @@ public final class ParameterResolutionSupport {
     public static String normalizeOperandKey(String term) {
         if (term == null) return "unknown";
         String t = term.trim().toLowerCase(Locale.ROOT);
-        if (t.contains("edi") || t.contains("equated daily") || t.contains("eligible disposable")) {
+        if (BusinessConceptMatching.isWriteOffPhrase(t)) {
+            return BusinessConceptMatching.isCreditCardExceptionPhrase(t)
+                    ? "writeoff_non_cc" : "write_off";
+        }
+        // GATE2: token-safe — "credit" must not become proposed_edi
+        if (BusinessConceptMatching.isProposedEdiPhrase(t)) {
             return "proposed_edi";
         }
         if (t.contains("clean")) {

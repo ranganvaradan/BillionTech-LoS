@@ -766,6 +766,26 @@ export function CiPolicyRulesTab({
                                         </p>
                                       </details>
                                     ) : null}
+                                    <div className="mt-2">
+                                      <button
+                                        type="button"
+                                        disabled={busy}
+                                        className="bt-btn bt-btn-secondary bt-btn-sm"
+                                        data-testid={`change-parameter-${String(op.operandKey ?? oi)}`}
+                                        onClick={() =>
+                                          setResolver({
+                                            ruleId: id,
+                                            operand: {
+                                              ...op,
+                                              unresolved: true,
+                                              suggestedSource: op.evaluatedFrom ?? op.suggestedSource,
+                                            },
+                                          })
+                                        }
+                                      >
+                                        Change parameter / source
+                                      </button>
+                                    </div>
                                   </div>
                                 )}
                               </div>

@@ -112,6 +112,24 @@ public class CmRuleAuthoringService {
                 "kind", "DERIVED",
                 "operators", CompoundExpressionAuthoringSupport.operatorsForParameter(
                         CompoundExpressionAuthoringSupport.LTV)));
+        // GATE2 — studio write-off overlays (PolicyBureauMetricService; do not mutate GACAT)
+        bySourceMut.computeIfAbsent("Bureau", k -> new ArrayList<>()).add(Map.of(
+                "parameterId", BusinessConceptResolver.WRITEOFF_NON_CC,
+                "businessName", "Non-credit-card write-off count",
+                "source", "Bureau",
+                "valueControl", AuthoringValueTypes.CONTROL_INTEGER,
+                "leftKind", "METRIC",
+                "kind", "DERIVED",
+                "howCalculated", "PolicyBureauMetricService.writeoffCounts",
+                "operators", List.of("=", "!=", ">", ">=", "<", "<=")));
+        bySourceMut.computeIfAbsent("Bureau", k -> new ArrayList<>()).add(Map.of(
+                "parameterId", BusinessConceptResolver.WRITEOFF_CC,
+                "businessName", "Credit-card write-off count",
+                "source", "Bureau",
+                "valueControl", AuthoringValueTypes.CONTROL_INTEGER,
+                "leftKind", "METRIC",
+                "kind", "DERIVED",
+                "operators", List.of("=", "!=", ">", ">=", "<", "<=")));
         out.put("authoringGrammar", Map.of(
                 "comparisons", List.of("EQ", "NE", "GT", "GTE", "LT", "LTE"),
                 "membership", List.of("IN", "NOT_IN"),
@@ -1076,6 +1094,12 @@ public class CmRuleAuthoringService {
             return d;
         }
 
+        // POLICY-STUDIO-GATE2 — write-off / known hard concepts via BusinessConceptResolver
+        if (BusinessConceptMatching.isWriteOffPhrase(d.sourceText)) {
+            Map<String, Object> concept = BusinessConceptResolver.resolve(d.sourceText);
+            return draftFromConceptResolution(d, concept, lower);
+        }
+
         List<CanonicalParameterDefinition> hits = matchParameters(lower);
         if (hits.size() > 1) {
             d.complete = false;
@@ -1087,6 +1111,12 @@ public class CmRuleAuthoringService {
             return d;
         }
         if (hits.isEmpty()) {
+            // GATE2: fail closed via concept resolver — never pick an unrelated numeric param
+            Map<String, Object> concept = BusinessConceptResolver.resolve(d.sourceText);
+            if (!BusinessConceptResolver.NEEDS_CLARIFICATION.equals(concept.get("resolutionState"))
+                    || (concept.get("candidates") instanceof List<?> c && !c.isEmpty())) {
+                return draftFromConceptResolution(d, concept, lower);
+            }
             // Known aliases not fully in registry
             if (lower.contains("vintage") || lower.contains("years in business")) {
                 CanonicalParameterRegistry.shared().findById("application.business_vintage_months").ifPresentOrElse(def -> {
@@ -1257,8 +1287,14 @@ public class CmRuleAuthoringService {
             CanonicalParameterRegistry.shared().findById("banking.avg_daily_balance_3m").ifPresent(hits::add);
             return hits;
         }
-        if (lower.contains("proposed edi") || (lower.contains("edi") && !lower.contains("credit"))) {
+        // GATE2: token-safe EDI — never match via "credit"
+        if (BusinessConceptMatching.isProposedEdiPhrase(lower)
+                && !BusinessConceptMatching.isWriteOffPhrase(lower)) {
             CanonicalParameterRegistry.shared().findById("application.proposed_edi").ifPresent(hits::add);
+            return hits;
+        }
+        if (BusinessConceptMatching.isWriteOffPhrase(lower)) {
+            // Prefer concept resolver path; do not return Proposed EDI
             return hits;
         }
         if (lower.contains("pan") && (lower.contains("verif") || lower.contains("must be"))) {
@@ -1286,7 +1322,12 @@ public class CmRuleAuthoringService {
             }
             if (def.aliases() != null) {
                 for (String a : def.aliases()) {
-                    if (a != null && lower.contains(a.toLowerCase(Locale.ROOT))) {
+                    if (a != null && BusinessConceptMatching.aliasMatches(lower, a)) {
+                        // Never attach Proposed EDI from short alias "edi" inside unrelated phrases
+                        if ("application.proposed_edi".equals(def.id())
+                                && !BusinessConceptMatching.isProposedEdiPhrase(lower)) {
+                            continue;
+                        }
                         hits.add(def);
                         break;
                     }
@@ -1294,6 +1335,72 @@ public class CmRuleAuthoringService {
             }
         }
         return hits;
+    }
+
+    @SuppressWarnings("unchecked")
+    private DraftDraft draftFromConceptResolution(DraftDraft d, Map<String, Object> concept, String lower) {
+        d.conceptResolution = concept;
+        String state = String.valueOf(concept.getOrDefault("resolutionState", ""));
+        Object paramId = concept.get("canonicalParameter");
+        if (Boolean.TRUE.equals(concept.get("mappedToProposedEdi"))) {
+            d.complete = false;
+            d.message = "Refused unrelated Proposed EDI mapping";
+            d.missing.add("parameter");
+            return d;
+        }
+        if (BusinessConceptResolver.READY_DERIVED.equals(state)
+                || BusinessConceptResolver.READY_EXISTING.equals(state)) {
+            d.parameterId = paramId == null ? null : String.valueOf(paramId);
+            d.businessName = String.valueOf(concept.getOrDefault("businessName", d.parameterId));
+            d.source = String.valueOf(concept.getOrDefault("source", "Bureau"));
+            d.availability = "DERIVABLE_FROM_AVAILABLE_DATA";
+            if (concept.get("suggestedExpression") instanceof Map<?, ?> se) {
+                Map<String, Object> exprHint = (Map<String, Object>) se;
+                String op = String.valueOf(exprHint.getOrDefault("op", "LTE")).toUpperCase(Locale.ROOT);
+                d.operator = switch (op) {
+                    case "LTE" -> "<=";
+                    case "LT" -> "<";
+                    case "GTE" -> ">=";
+                    case "GT" -> ">";
+                    case "EQ" -> "=";
+                    default -> "<=";
+                };
+                Object right = exprHint.get("right");
+                if (right instanceof Map<?, ?> rm && rm.get("const") != null) {
+                    d.value = rm.get("const");
+                } else {
+                    d.value = 0;
+                }
+            } else {
+                d.operator = "<=";
+                d.value = 0;
+            }
+            d.unit = "COUNT";
+            d.valueControl = AuthoringValueTypes.CONTROL_INTEGER;
+            d.complete = true;
+            d.message = String.valueOf(concept.getOrDefault("message", "Ready to confirm"));
+            return d;
+        }
+        d.complete = false;
+        d.message = String.valueOf(concept.getOrDefault("message",
+                "Some parts of this rule have not been mapped yet."));
+        d.missing.add("parameter");
+        if (concept.get("candidates") instanceof List<?> cand) {
+            List<Map<String, Object>> rows = new ArrayList<>();
+            for (Object o : cand) {
+                if (o instanceof Map<?, ?> m) {
+                    Map<String, Object> row = new LinkedHashMap<>((Map<String, Object>) m);
+                    row.putIfAbsent("parameterId", row.get("id"));
+                    rows.add(row);
+                }
+            }
+            d.candidates = rows;
+        }
+        d.resolutionState = state;
+        d.suggestedSource = concept.get("suggestedSource") == null
+                ? null : String.valueOf(concept.get("suggestedSource"));
+        d.needsResolver = true;
+        return d;
     }
 
     private Map<String, Object> buildExpression(DraftDraft d) {
@@ -1354,6 +1461,18 @@ public class CmRuleAuthoringService {
         out.put("failureDisplay", "If not → " + (d.treatment == null ? "Reject" : d.treatment));
         out.put("fromPlainEnglish", d.fromPlainEnglish);
         out.put("allowCanonicalAuthority", false);
+        if (d.resolutionState != null) out.put("resolutionState", d.resolutionState);
+        if (d.suggestedSource != null) out.put("suggestedSource", d.suggestedSource);
+        if (d.conceptResolution != null) {
+            out.put("conceptResolution", d.conceptResolution);
+            out.put("mappedToProposedEdi", d.conceptResolution.get("mappedToProposedEdi"));
+            out.put("weUnderstood", d.conceptResolution.get("businessConcept"));
+            out.put("provenance", d.conceptResolution.get("provenance"));
+        }
+        if (!d.complete && d.candidates != null && !d.candidates.isEmpty()) {
+            out.put("status", "NEEDS_PARAMETER_SELECTION");
+            out.put("needsClarification", true);
+        }
         return out;
     }
 
@@ -1545,6 +1664,9 @@ public class CmRuleAuthoringService {
         boolean ratioPercent;
         List<String> missing = new ArrayList<>();
         List<Map<String, Object>> candidates;
+        Map<String, Object> conceptResolution;
+        String resolutionState;
+        String suggestedSource;
     }
 
     private record TreatmentPair(String onTrue, String onFalse) {}
