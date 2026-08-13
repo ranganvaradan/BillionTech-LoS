@@ -5,6 +5,11 @@ import { xHeadersForUser } from '@/auth/sessionHeaders'
 const baseURL =
   (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') || '/los/api/v1'
 
+/** Build-time CI token — only set when the target env requires X-Internal-Token. */
+const internalToken = (
+  import.meta.env.VITE_CREDIT_INTELLIGENCE_INTERNAL_TOKEN as string | undefined
+)?.trim()
+
 export const http = axios.create({
   baseURL,
   headers: { 'Content-Type': 'application/json' },
@@ -15,6 +20,9 @@ export const http = axios.create({
 http.interceptors.request.use((config) => {
   for (const [k, v] of Object.entries(xHeadersForUser(loadSessionUser()))) {
     config.headers.set(k, v)
+  }
+  if (internalToken) {
+    config.headers.set('X-Internal-Token', internalToken)
   }
   // Default JSON content-type would break multipart; let the browser/axios set boundary for FormData.
   if (config.data instanceof FormData) {
