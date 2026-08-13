@@ -136,10 +136,16 @@ class GacatPersistence1Test {
     }
 
     @Test
-    void readinessRegression_adbEdiStillUnresolvedUntilMapped() {
-        assertThat(PolicyExecutionReadiness.operandsOf(adbEdiRule()))
-                .anyMatch(o -> "proposed_edi".equals(o.get("operandKey"))
-                        && Boolean.TRUE.equals(o.get("unresolved")));
+    void readinessRegression_adbEdiManualCatalogueIsAuthorisedNotUnresolved() {
+        // application.proposed_edi is GACAT MANUAL — must not present as unresolved / no-runtime-source
+        List<Map<String, Object>> ops = PolicyExecutionReadiness.operandsOf(adbEdiRule());
+        assertThat(ops).anyMatch(o -> "proposed_edi".equals(o.get("operandKey"))
+                && "application.proposed_edi".equals(o.get("parameterId"))
+                && !Boolean.TRUE.equals(o.get("unresolved"))
+                && ParameterResolutionSupport.STATUS_MANUAL.equals(o.get("status")));
+        assertThat(PolicyExecutionReadiness.executionBlockersForRule(adbEdiRule()))
+                .noneMatch(b -> String.valueOf(b.get("reason")).toLowerCase().contains("proposed edi")
+                        && String.valueOf(b.get("reason")).toLowerCase().contains("no runtime source"));
     }
 
     @Test

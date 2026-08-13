@@ -127,6 +127,9 @@ public final class PlainEnglishConsumptionGuard {
     private static String normalize(String text) {
         String lower = text.toLowerCase(Locale.ROOT);
         lower = lower.replace('%', ' ');
+        // Treat hyphenated compounds as space-separated so strip phrases match
+        // (write-offs ≡ write offs, co-borrower ≡ co borrower, pay-off ≡ pay off).
+        lower = lower.replace('-', ' ');
         lower = NON_ALNUM.matcher(lower).replaceAll(" ");
         return MULTI_SPACE.matcher(lower).replaceAll(" ").trim();
     }

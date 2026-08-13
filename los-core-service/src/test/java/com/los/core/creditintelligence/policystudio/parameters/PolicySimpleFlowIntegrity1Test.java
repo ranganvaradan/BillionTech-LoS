@@ -112,13 +112,15 @@ class PolicySimpleFlowIntegrity1Test {
     }
 
     @Test
-    void genuineEdiBlocker_appearsInCanonicalSet() {
+    void proposedEdiCatalogueManual_doesNotCreateRuntimeSourceBlocker() {
+        // GACAT MANUAL Proposed EDI is capture-authorised — must appear as an operand but not block
         CiPolicyRuleCandidate r = adbEdiRule(null);
-        List<Map<String, Object>> blockers = PolicyExecutionReadiness.executionBlockersForRule(r);
-        assertThat(blockers).isNotEmpty();
-        assertThat(blockers).anyMatch(b ->
-                String.valueOf(b.get("blockerKey")).contains("proposed_edi")
-                        || String.valueOf(b.get("reason")).toLowerCase().contains("edi"));
+        assertThat(PolicyExecutionReadiness.operandsOf(r))
+                .anyMatch(o -> "proposed_edi".equals(o.get("operandKey"))
+                        && ParameterResolutionSupport.STATUS_MANUAL.equals(o.get("status")));
+        assertThat(PolicyExecutionReadiness.executionBlockersForRule(r))
+                .noneMatch(b -> String.valueOf(b.get("reason")).toLowerCase().contains("no runtime source")
+                        && String.valueOf(b.get("reason")).toLowerCase().contains("edi"));
     }
 
     @Test

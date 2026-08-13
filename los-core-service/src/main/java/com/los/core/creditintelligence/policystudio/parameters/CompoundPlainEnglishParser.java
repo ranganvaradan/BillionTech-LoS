@@ -490,45 +490,155 @@ public final class CompoundPlainEnglishParser {
     }
 
     private static ParseResult parseNestedAndOr(String text) {
+        ParseResult either = parseAndEitherOr(text);
+        if (either.compound) {
+            return either;
+        }
+        // Parenthesized / bracketed OR groups joined by outer AND — before flat parseDisjunction
+        return parseAndJoinedGroupedDisjunctions(text);
+    }
+
+    /**
+     * Pattern: X and either Y or Z — right clause must start with a parameter token
+     * so "50% or below" is not treated as the OR split.
+     */
+    private static ParseResult parseAndEitherOr(String text) {
         ParseResult r = new ParseResult();
         r.sourceText = text;
-        String lower = text.toLowerCase(Locale.ROOT);
-        // Pattern: X and either Y or Z — right clause must start with a parameter token
-        // so "50% or below" is not treated as the OR split.
         Matcher m = Pattern.compile(
                 "(?i)^(.+?)\\s+and\\s+either\\s+(.+)\\s+or\\s+"
                         + "((?:foir|ltv|bureau|loan(?:\\s*-?\\s*to\\s*-?\\s*value)?|borrower|industry|"
                         + "constitution|score|cibil|obligation|collateral)\\b.+)$")
-                .matcher(text.trim());
+                .matcher(text == null ? "" : text.trim());
         if (!m.matches()) {
             return r;
         }
-        ParseResult left = parseSingleComparison(m.group(1).trim());
-        ParseResult a = parseSingleComparison(m.group(2).trim());
-        ParseResult b = parseSingleComparison(m.group(3).trim());
+        return assembleAndWithOrChild(
+                r,
+                m.group(1).trim(),
+                List.of(m.group(2).trim(), m.group(3).trim()));
+    }
+
+    /**
+     * Detect outer AND joining groups where at least one side is parenthesized/bracketed
+     * and contains clause-level OR — e.g. {@code A AND (B OR C)} or {@code (A OR B) AND (C OR D)}.
+     * Bare mixed {@code A AND B OR C} without grouping is left for later parsers (no claim).
+     */
+    private static ParseResult parseAndJoinedGroupedDisjunctions(String text) {
+        ParseResult r = new ParseResult();
+        r.sourceText = text;
+        if (text == null || text.isBlank()) {
+            return r;
+        }
+        if (!hasClauseLevelAnd(text) || !hasClauseLevelOr(text)) {
+            return r;
+        }
+        List<String> parts = splitTopLevelClauseAnd(text.trim());
+        if (parts.size() < 2) {
+            return r;
+        }
+        boolean anyGrouped = false;
+        boolean anyInnerOr = false;
+        for (String part : parts) {
+            String trimmed = part == null ? "" : part.trim();
+            if (trimmed.isBlank()) {
+                return r;
+            }
+            boolean grouped = isWrappedInGrouping(trimmed);
+            String inner = grouped ? stripOuterGrouping(trimmed) : trimmed;
+            if (grouped) {
+                anyGrouped = true;
+            }
+            if (hasClauseLevelOr(inner)) {
+                anyInnerOr = true;
+            }
+        }
+        // Require explicit grouping so we do not invent AND/OR precedence for bare mixes
+        if (!anyGrouped || !anyInnerOr) {
+            return r;
+        }
+
+        List<String> understood = new ArrayList<>();
+        List<String> unresolved = new ArrayList<>();
+        List<Map<String, Object>> rootChildren = new ArrayList<>();
+        for (String part : parts) {
+            String trimmed = part.trim();
+            boolean grouped = isWrappedInGrouping(trimmed);
+            String inner = grouped ? stripOuterGrouping(trimmed) : trimmed;
+            if (hasClauseLevelOr(inner)) {
+                ParseResult orSide = parseDisjunction(inner);
+                List<Map<String, Object>> orLeaves = leavesOf(orSide);
+                if (orLeaves.size() >= 2 && orSide.unresolved.isEmpty()) {
+                    Map<String, Object> orGroup = new LinkedHashMap<>();
+                    orGroup.put("kind", CompoundExpressionAuthoringSupport.KIND_GROUP);
+                    orGroup.put("combinator", CompoundExpressionAuthoringSupport.COMBINATOR_ANY);
+                    orGroup.put("children", orLeaves);
+                    rootChildren.add(orGroup);
+                    understood.addAll(orSide.understood);
+                } else if (!orLeaves.isEmpty() && orSide.unresolved.isEmpty()) {
+                    rootChildren.addAll(orLeaves);
+                    understood.addAll(orSide.understood);
+                } else {
+                    unresolved.add(trimmed);
+                    unresolved.addAll(orSide.unresolved);
+                }
+            } else {
+                ParseResult one = parseSingleComparison(inner);
+                List<Map<String, Object>> leaves = leavesOf(one);
+                if (leaves.isEmpty()) {
+                    unresolved.add(trimmed);
+                } else {
+                    rootChildren.addAll(leaves);
+                    understood.addAll(one.understood);
+                }
+                unresolved.addAll(one.unresolved);
+            }
+        }
+
+        r.compound = true;
+        r.understood = understood;
+        r.unresolved = unresolved;
+        if (rootChildren.size() < 2) {
+            return r; // do not claim — let later parsers try
+        }
+        if (!unresolved.isEmpty()) {
+            r.children = rootChildren;
+            return needsClarification(r, understood, unresolved);
+        }
+        return finalizeGroup(r, CompoundExpressionAuthoringSupport.COMBINATOR_ALL, rootChildren);
+    }
+
+    private static ParseResult assembleAndWithOrChild(
+            ParseResult r,
+            String leftText,
+            List<String> orSides) {
+        ParseResult left = parseSingleComparison(leftText);
         List<String> understood = new ArrayList<>();
         List<String> unresolved = new ArrayList<>();
         List<Map<String, Object>> leftChildren = leavesOf(left);
-        List<Map<String, Object>> aChildren = leavesOf(a);
-        List<Map<String, Object>> bChildren = leavesOf(b);
-        if (leftChildren.isEmpty()) unresolved.add(m.group(1).trim());
-        else understood.addAll(left.understood);
-        if (aChildren.isEmpty()) unresolved.add(m.group(2).trim());
-        else understood.addAll(a.understood);
-        if (bChildren.isEmpty()) unresolved.add(m.group(3).trim());
-        else understood.addAll(b.understood);
-
-        // Unmapped domain terms (e.g. LTV missing from catalogue) already in unresolved
+        if (leftChildren.isEmpty()) {
+            unresolved.add(leftText);
+        } else {
+            understood.addAll(left.understood);
+        }
         unresolved.addAll(left.unresolved);
-        unresolved.addAll(a.unresolved);
-        unresolved.addAll(b.unresolved);
+
+        List<Map<String, Object>> orChildren = new ArrayList<>();
+        for (String side : orSides) {
+            ParseResult one = parseSingleComparison(side);
+            List<Map<String, Object>> leaves = leavesOf(one);
+            if (leaves.isEmpty()) {
+                unresolved.add(side);
+            } else {
+                orChildren.addAll(leaves);
+                understood.addAll(one.understood);
+            }
+            unresolved.addAll(one.unresolved);
+        }
 
         Map<String, Object> orGroup = new LinkedHashMap<>();
         orGroup.put("kind", CompoundExpressionAuthoringSupport.KIND_GROUP);
         orGroup.put("combinator", CompoundExpressionAuthoringSupport.COMBINATOR_ANY);
-        List<Map<String, Object>> orChildren = new ArrayList<>();
-        orChildren.addAll(aChildren);
-        orChildren.addAll(bChildren);
         orGroup.put("children", orChildren);
 
         List<Map<String, Object>> rootChildren = new ArrayList<>(leftChildren);
@@ -542,6 +652,64 @@ public final class CompoundPlainEnglishParser {
             return needsClarification(r, understood, unresolved);
         }
         return finalizeGroup(r, CompoundExpressionAuthoringSupport.COMBINATOR_ALL, rootChildren);
+    }
+
+    /** Split on clause-level AND that is outside parentheses / brackets. */
+    private static List<String> splitTopLevelClauseAnd(String text) {
+        List<String> parts = new ArrayList<>();
+        Matcher m = CLAUSE_AND.matcher(text);
+        int depthParen = 0;
+        int depthBracket = 0;
+        int last = 0;
+        while (m.find()) {
+            for (int i = last; i < m.start(); i++) {
+                char c = text.charAt(i);
+                if (c == '(') depthParen++;
+                else if (c == ')') depthParen = Math.max(0, depthParen - 1);
+                else if (c == '[') depthBracket++;
+                else if (c == ']') depthBracket = Math.max(0, depthBracket - 1);
+            }
+            if (depthParen == 0 && depthBracket == 0) {
+                parts.add(text.substring(last, m.start()));
+                last = m.end();
+            }
+        }
+        if (parts.isEmpty()) {
+            return List.of();
+        }
+        parts.add(text.substring(last));
+        return parts;
+    }
+
+    private static boolean isWrappedInGrouping(String text) {
+        if (text == null) return false;
+        String t = text.trim();
+        return (t.startsWith("(") && t.endsWith(")") && balancedOuter(t, '(', ')'))
+                || (t.startsWith("[") && t.endsWith("]") && balancedOuter(t, '[', ']'));
+    }
+
+    private static String stripOuterGrouping(String text) {
+        String t = text.trim();
+        if (isWrappedInGrouping(t)) {
+            return t.substring(1, t.length() - 1).trim();
+        }
+        return t;
+    }
+
+    private static boolean balancedOuter(String text, char open, char close) {
+        int depth = 0;
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == open) depth++;
+            else if (c == close) {
+                depth--;
+                if (depth == 0) {
+                    return i == text.length() - 1;
+                }
+                if (depth < 0) return false;
+            }
+        }
+        return false;
     }
 
     private static ParseResult parseEnumeration(String text) {

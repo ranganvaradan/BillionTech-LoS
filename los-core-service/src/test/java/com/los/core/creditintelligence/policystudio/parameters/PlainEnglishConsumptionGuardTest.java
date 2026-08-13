@@ -42,6 +42,48 @@ class PlainEnglishConsumptionGuardTest {
     }
 
     @Test
+    void writeOffHyphenAndSpaceFormsConsumeCleanly() {
+        for (String text : new String[]{
+                "no write-offs except credit cards",
+                "no write-off except credit cards",
+                "no write offs except credit cards"
+        }) {
+            Map<String, Object> p = authoring.preview(Map.of("mode", "DESCRIBE", "text", text));
+            assertThat(p.get("complete")).as(text).isEqualTo(true);
+            assertThat(p.get("parameterId")).as(text).isEqualTo("bureau.accounts.writeoff_non_cc");
+            assertThat(PlainEnglishConsumptionGuard.hasUnconsumedSubstantiveContent(
+                    text,
+                    "bureau.accounts.writeoff_non_cc",
+                    "<=",
+                    0,
+                    "Non-credit-card write-off count")).as(text).isFalse();
+        }
+    }
+
+    @Test
+    void hyphenatedCompoundsNormalizeLikeSpaceForms() {
+        // pay-off ≡ pay off — hyphen fold must not change residual outcome vs an unrelated binding
+        boolean payHyphen = PlainEnglishConsumptionGuard.hasUnconsumedSubstantiveContent(
+                "bureau score > 700 with unpaid pay-off balance",
+                "bureau.score", ">", 700, "Bureau score");
+        boolean paySpace = PlainEnglishConsumptionGuard.hasUnconsumedSubstantiveContent(
+                "bureau score > 700 with unpaid pay off balance",
+                "bureau.score", ">", 700, "Bureau score");
+        assertThat(payHyphen).as("hyphen vs space pay-off").isEqualTo(paySpace);
+        assertThat(payHyphen).as("pay-off residual").isTrue();
+
+        // co-borrower ≡ co borrower — residual marker must survive (not only the stopword "borrower")
+        boolean coHyphen = PlainEnglishConsumptionGuard.hasUnconsumedSubstantiveContent(
+                "FOIR must be <= 50% for co-borrower applicants",
+                "obligation.ratio", "<=", 50, "Obligation ratio (FOIR)");
+        boolean coSpace = PlainEnglishConsumptionGuard.hasUnconsumedSubstantiveContent(
+                "FOIR must be <= 50% for co borrower applicants",
+                "obligation.ratio", "<=", 50, "Obligation ratio (FOIR)");
+        assertThat(coHyphen).as("hyphen vs space co-borrower").isEqualTo(coSpace);
+        assertThat(coHyphen).as("co-borrower residual").isTrue();
+    }
+
+    @Test
     void originalOrAndCasesRemainGreen() {
         Map<String, Object> or = authoring.preview(Map.of(
                 "mode", "DESCRIBE",

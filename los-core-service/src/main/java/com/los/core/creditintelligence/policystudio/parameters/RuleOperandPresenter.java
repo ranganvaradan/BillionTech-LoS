@@ -59,18 +59,19 @@ public final class RuleOperandPresenter {
                         "banking.settlement.count_monthly_avg_3m",
                         resolutions));
             }
-            operands.add(unresolvedOrMapped(
+            // GACAT seeds application.proposed_edi as MANUAL — bind like ADB (not unresolvedFace)
+            operands.add(resolvedOrRegistry(
                     "proposed_edi",
                     "Proposed EDI",
-                    resolutions,
-                    "application.proposed_edi"));
+                    "application.proposed_edi",
+                    resolutions));
         } else if (ediRule && ediFromExpression && !adbRule && !sys.contains("SETTLEMENT")) {
             // Expression references Proposed EDI without ADB/settlement left — surface EDI only
-            operands.add(unresolvedOrMapped(
+            operands.add(resolvedOrRegistry(
                     "proposed_edi",
                     "Proposed EDI",
-                    resolutions,
-                    "application.proposed_edi"));
+                    "application.proposed_edi",
+                    resolutions));
         }
 
         boolean overdueParent = sys.contains("OVERDUE_EXCEPTION_PARENT") || sys.contains("NO_OVERDUE_EXCEPT");
@@ -247,7 +248,19 @@ public final class RuleOperandPresenter {
         face.put("unit", def.unit());
         face.put("period", def.period());
         face.put("howCalculated", def.calculationSummary());
-        face.put("status", ParameterResolutionSupport.STATUS_MAPPED);
+        boolean manual = CanonicalParameterDefinition.MANUAL.equalsIgnoreCase(def.type());
+        if (manual) {
+            // Catalogue MANUAL = capture-authorised (same contract as ParameterExecutabilitySupport.MANUAL_AUTHORISED)
+            face.put("status", ParameterResolutionSupport.STATUS_MANUAL);
+            face.put("availability", ParameterResolutionSupport.AVAIL_MANUAL);
+            face.put("availabilityLabel", availabilityCmLabel(ParameterResolutionSupport.AVAIL_MANUAL));
+            face.put("evaluatedFrom", "Manual Input");
+            face.put("manualInput", true);
+            face.put("dataType", def.unit() == null ? "Money" : def.unit());
+            face.put("enteredBy", "Application / CAM capture");
+        } else {
+            face.put("status", ParameterResolutionSupport.STATUS_MAPPED);
+        }
         face.put("unresolved", false);
         face.put("unavailable", false);
         face.put("resolveAction", false);
