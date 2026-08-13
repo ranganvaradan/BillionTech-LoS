@@ -533,18 +533,12 @@ for i, case, reason in [
 ]:
     rec(i, "not-run", cat="I", case=case, reason=reason)
 
-# 60 reload/restart for data-calc — simulate-process-restart after banking if available
-if bank_doc:
-    http("POST", "/policy-studio/simulate-process-restart", {})
-    c60, g60 = get_doc(bank_doc)
-    rec(60, "pass" if c60 < 300 else "fail", cat="I", case="reload/restart (data & calc session)",
-        detail={"http": c60, "msg": g60.get("message")},
-        triage=None if c60 < 300 else "persistence")
-else:
-    rec(60, "not-run", cat="I", case="reload/restart", reason="no banking doc")
+# Item 60 (simulate-process-restart for data-calc session) is intentionally deferred
+# until AFTER Banking BRE / bureau / DOC-dependent items (61–94). Mid-pack restart
+# wiped live sessions in pack #2 and cascaded 404s — see REGRESSION_FULL_RUN_3_*.md.
 
 # ═══════════════════════════════════════════════════════════════
-# J BANKING BRE (61-70)
+# J BANKING BRE (61-70) — requires live bank_doc (before any simulate-restart)
 # ═══════════════════════════════════════════════════════════════
 if bank_doc:
     c61, g61 = get_doc(bank_doc)
@@ -747,6 +741,24 @@ rec(94, "pass" if c94 < 300 else "fail", cat="M", case="old version immutable (s
     detail={"http": c94}, triage=None if c94 < 300 else "persistence")
 
 # ═══════════════════════════════════════════════════════════════
+# I/60 — data-calc reload/restart (deferred; still recorded as item 60)
+# Approach: REORDER — run after 61–94 so banking/bureau/DOC dependents keep a live
+# session. Restart then re-opens bank_doc by documentId (durable rebound), matching
+# a CM reopening the policy after process restart. Not placed after 95–97: those
+# create DOC_P for N/98–100 and must not be wiped by this step.
+# ═══════════════════════════════════════════════════════════════
+if bank_doc:
+    http("POST", "/policy-studio/simulate-process-restart", {})
+    # Re-open by documentId the way a real user would after restart
+    c60, g60 = get_doc(bank_doc)
+    rec(60, "pass" if c60 < 300 else "fail", cat="I", case="reload/restart (data & calc session)",
+        detail={"http": c60, "msg": g60.get("message"), "ordering": "deferred-after-94",
+                "reopenByDocumentId": True},
+        triage=None if c60 < 300 else "persistence")
+else:
+    rec(60, "not-run", cat="I", case="reload/restart", reason="no banking doc")
+
+# ═══════════════════════════════════════════════════════════════
 # N PERSISTENCE (95-102)
 # ═══════════════════════════════════════════════════════════════
 code_p, DOC_P, _ = create_policy("REG PERSIST OR")
@@ -898,11 +910,22 @@ counts = {"pass": 0, "fail": 0, "not-run": 0}
 for row in final:
     counts[row["status"]] = counts.get(row["status"], 0) + 1
 
+def _pack_attempt_value(raw: str):
+    """Accept numeric attempts or free-form labels (e.g. delete-ui-fix-20260813)."""
+    s = (raw or "").strip()
+    if not s:
+        return 3
+    try:
+        return int(s)
+    except ValueError:
+        return s
+
+
 summary = {
     "actuatorSha": sha_full,
     "actuatorDirty": dirty,
     "packName": "REGRESSION_SECTION12_FULL_PACK",
-    "packAttempt": int(os.environ.get("REGRESSION_PACK_ATTEMPT", "2")),
+    "packAttempt": _pack_attempt_value(os.environ.get("REGRESSION_PACK_ATTEMPT", "3")),
     "expectedSha": os.environ.get("EXPECTED_ACTUATOR_SHA", sha_full),
 
     "counts": counts,
