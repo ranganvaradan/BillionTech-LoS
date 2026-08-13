@@ -393,12 +393,22 @@ expect_ready(31, "G", "write-offs except credit cards",
              "no write-offs except credit cards")
 # must NOT suggest EDI - check message/parameter
 c31, p31, _ = preview(DOC, "no write-offs except credit cards")
-edi_bad = "edi" in json.dumps(p31).lower() and "proposed" in json.dumps(p31).lower()
+# Contamination = bound/suggested parameter is Proposed EDI — not the phrase "not Proposed EDI" in message
+pid31 = str(p31.get("parameterId") or "").lower()
+cand31 = json.dumps(p31.get("candidates") or []).lower()
+edi_bad = (
+    pid31 in ("application.proposed_edi", "proposed.edi")
+    or "application.proposed_edi" in cand31
+    or (p31.get("mappedToProposedEdi") is True)
+)
 # already recorded via expect_ready - patch if EDI
 if results[-1]["item"] == 31 and results[-1]["status"] == "pass" and edi_bad:
     results[-1]["status"] = "fail"
     results[-1]["triage"] = "concept-resolution"
     results[-1]["detail"]["ediContamination"] = True
+elif results[-1]["item"] == 31 and results[-1].get("detail", {}).get("ediContamination"):
+    # clear stale flag if re-evaluated
+    results[-1]["detail"]["ediContamination"] = False
 
 expect_fail_closed(32, "G", '"unless"',
                    "Reject if FOIR exceeds 50% unless bureau score is at least 750",

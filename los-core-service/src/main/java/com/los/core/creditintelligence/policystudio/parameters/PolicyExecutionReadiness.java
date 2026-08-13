@@ -529,11 +529,20 @@ public final class PolicyExecutionReadiness {
 
     private static boolean isNonBlockingAmbiguityPhrase(String lower) {
         // Analyst/report-only or unused data concepts
-        return lower.contains("large credit")
+        if (lower.contains("large credit")
                 || lower.contains("intercompany")
                 || lower.contains("merchant group")
                 || lower.contains("party wise")
-                || (lower.contains("emi bounce") && !lower.contains("reject") && !lower.contains("rule"));
+                || (lower.contains("emi bounce") && !lower.contains("reject") && !lower.contains("rule"))) {
+            return true;
+        }
+        // GACAT MANUAL Proposed EDI — catalogue already authorises capture; do not re-block as OPEN term
+        if ("edi".equals(lower.trim()) || lower.contains("proposed edi")) {
+            return CanonicalParameterRegistry.shared().findById("application.proposed_edi")
+                    .map(d -> CanonicalParameterDefinition.MANUAL.equalsIgnoreCase(d.type()))
+                    .orElse(false);
+        }
+        return false;
     }
 
     private static boolean ambiguityOnlyAffectsExcluded(PolicyStudioSession session, CiPolicyAmbiguity a) {
