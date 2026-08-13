@@ -86,7 +86,31 @@ export function CiPolicyStudioPage() {
   const [tab, setTab] = useState<TabId>('scope')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+  /** Landing-row Open / Delete / Retire — scoped so other rows stay interactive. */
+  const [rowBusyId, setRowBusyId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  const formatLifecycleActionError = (e: unknown, fallback: string): string => {
+    if (!(e instanceof ApiError)) return fallback
+    const parts = [e.message.trim()]
+    if (e.reason?.trim() && !parts[0].includes(e.reason.trim())) {
+      parts.push(`(${e.reason.trim()})`)
+    }
+    const action =
+      typeof e.context?.action === 'string'
+        ? e.context.action.trim()
+        : undefined
+    // ApiError also exposes server fields via body when present
+    const body = e.body && typeof e.body === 'object' && !Array.isArray(e.body)
+      ? (e.body as Record<string, unknown>)
+      : null
+    const bodyAction = typeof body?.action === 'string' ? body.action.trim() : ''
+    const hint = action || bodyAction
+    if (hint && !parts.join(' ').includes(hint)) {
+      parts.push(hint)
+    }
+    return parts.filter(Boolean).join(' — ')
+  }
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [prospectDemoMode, setProspectDemoMode] = useState(() => {
     try {
@@ -268,7 +292,7 @@ export function CiPolicyStudioPage() {
   }
 
   const deleteDraft = async (documentId: string) => {
-    setBusy(true)
+    setRowBusyId(documentId)
     setError(null)
     try {
       await deleteDraftLifecyclePolicy(documentId, {
@@ -277,36 +301,41 @@ export function CiPolicyStudioPage() {
       setDemoMsg('Draft policy deleted.')
       void loadLanding()
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Could not delete draft policy')
+      setError(
+        formatLifecycleActionError(
+          e,
+          'Could not delete draft policy',
+        ),
+      )
     } finally {
-      setBusy(false)
+      setRowBusyId(null)
     }
   }
 
   const retirePolicy = async (documentId: string, reason: string) => {
-    setBusy(true)
+    setRowBusyId(documentId)
     setError(null)
     try {
       await retireLifecyclePolicy(documentId, { retirementReason: reason, reason })
       setDemoMsg('Policy version retired.')
       void loadLanding()
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Could not retire policy')
+      setError(formatLifecycleActionError(e, 'Could not retire policy'))
     } finally {
-      setBusy(false)
+      setRowBusyId(null)
     }
   }
 
   const openExisting = async (documentId: string) => {
-    setBusy(true)
+    setRowBusyId(documentId)
     setError(null)
     try {
       const data = await getPolicyStudioSession(documentId)
       enterSession(data, 'scope')
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Could not open policy')
+      setError(formatLifecycleActionError(e, 'Could not open policy'))
     } finally {
-      setBusy(false)
+      setRowBusyId(null)
     }
   }
 
@@ -383,7 +412,13 @@ export function CiPolicyStudioPage() {
       setScopeDirty(false)
       setSavedLabel('Saved just now')
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Could not save draft')
+      setSavedLabel(null)
+      const msg = e instanceof ApiError ? e.message : 'Could not save draft'
+      setError(
+        msg.toLowerCase().includes('save failed')
+          ? msg
+          : `Save failed — the draft was not persisted. ${msg}`,
+      )
     } finally {
       setBusy(false)
     }
@@ -450,6 +485,7 @@ export function CiPolicyStudioPage() {
         landing={landing as Record<string, unknown> | null}
         loading={loading}
         busy={busy}
+        rowBusyId={rowBusyId}
         error={error}
         demos={demos}
         onCreateScratch={(n, d) => void createScratch(n, d)}
@@ -589,7 +625,12 @@ export function CiPolicyStudioPage() {
       </div>
 
       {error ? (
-        <p className="mb-3 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800" role="alert">
+        <p
+          className="mb-3 rounded border border-rose-300 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-900"
+          role="alert"
+          data-testid="policy-studio-save-error"
+          aria-live="assertive"
+        >
           {error}
         </p>
       ) : null}

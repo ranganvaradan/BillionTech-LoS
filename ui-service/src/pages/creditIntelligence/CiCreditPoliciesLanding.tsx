@@ -14,10 +14,15 @@ type Kind = 'banking' | 'bureau' | 'kyc'
 /**
  * POLICY-CREATION-1 — Credit Policies landing (create / upload / copy / list).
  */
+/** Shown when backend omits DELETE for a draft on an activated lineage. */
+export const DELETE_UNAVAILABLE_LINEAGE_HINT =
+  'Delete unavailable — this version sits on a lineage with ACTIVE/APPROVED history. Retire the active version instead, or keep the draft.'
+
 export function CiCreditPoliciesLanding({
   landing,
   loading,
   busy,
+  rowBusyId = null,
   error,
   demos,
   onCreateScratch,
@@ -30,7 +35,10 @@ export function CiCreditPoliciesLanding({
 }: {
   landing: Record<string, unknown> | null
   loading: boolean
+  /** Page-level busy for create / upload / copy flows (not per-row lifecycle). */
   busy: boolean
+  /** Document id currently running Open / Delete / Retire — only that row disables. */
+  rowBusyId?: string | null
   error: string | null
   demos: unknown[]
   onCreateScratch: (name: string, description: string) => void
@@ -138,7 +146,11 @@ export function CiCreditPoliciesLanding({
 
       {loading ? <p className="text-sm text-slate-600">Loading policies…</p> : null}
       {error ? (
-        <p className="mb-4 rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800" role="alert">
+        <p
+          className="mb-4 rounded border border-rose-300 bg-rose-50 px-3 py-3 text-sm font-medium text-rose-900 shadow-sm"
+          role="alert"
+          data-testid="policy-landing-lifecycle-error"
+        >
           {error}
         </p>
       ) : null}
@@ -172,16 +184,18 @@ export function CiCreditPoliciesLanding({
                   const docId = String(row.documentId ?? '')
                   const status = String(row.status ?? 'DRAFT').toUpperCase()
                   const actions = asList(row.availableActions).map((a) => String(a).toUpperCase())
-                  const canDelete = actions.includes('DELETE') || status === 'DRAFT' || status === 'IN REVIEW'
-                  const canRetire =
-                    actions.includes('RETIRE') ||
-                    status === 'ACTIVE' ||
-                    status === 'SCHEDULED' ||
-                    status === 'APPROVED'
-                  const showDelete = canDelete && !canRetire && status !== 'ACTIVE' && status !== 'RETIRED' && status !== 'SUPERSEDED'
-                  const showRetire = canRetire && status !== 'DRAFT' && status !== 'IN REVIEW'
+                  // Honor backend landingActions — never offer Delete when omitted (e.g. v2 on activated lineage).
+                  const showDelete = actions.includes('DELETE') && Boolean(onDeleteDraft)
+                  const showRetire =
+                    actions.includes('RETIRE') &&
+                    Boolean(onRetire) &&
+                    status !== 'DRAFT' &&
+                    status !== 'IN REVIEW'
+                  const draftLike = status === 'DRAFT' || status === 'IN REVIEW'
+                  const deleteBlockedByLineage = draftLike && !actions.includes('DELETE')
                   const policyName = String(row.policyName ?? 'Policy')
                   const policyVersion = String(row.policyVersion ?? 'v1')
+                  const rowBusy = Boolean(docId && rowBusyId === docId)
                   return (
                     <tr key={docId || i} className="border-t border-slate-100" data-testid={`policy-row-${docId}`}>
                       <td className="px-4 py-3 font-medium text-slate-900">
@@ -206,15 +220,15 @@ export function CiCreditPoliciesLanding({
                           <button
                             type="button"
                             className="bt-btn bt-btn-primary bt-btn-sm"
-                            disabled={busy || !docId}
+                            disabled={rowBusy || !docId}
                             onClick={() => onOpen(docId)}
                           >
-                            Open
+                            {rowBusy ? 'Working…' : 'Open'}
                           </button>
                           <button
                             type="button"
                             className="bt-btn bt-btn-secondary bt-btn-sm"
-                            disabled={busy || !docId}
+                            disabled={rowBusy || !docId}
                             onClick={() => {
                               setCreateOpen(true)
                               setCreatePath('copy')
@@ -229,7 +243,7 @@ export function CiCreditPoliciesLanding({
                               <button
                                 type="button"
                                 className="bt-btn bt-btn-secondary bt-btn-sm"
-                                disabled={busy || !docId}
+                                disabled={rowBusy || !docId}
                                 data-testid={`policy-more-${docId}`}
                                 onClick={() => setMoreOpenId((id) => (id === docId ? null : docId))}
                               >
@@ -267,6 +281,15 @@ export function CiCreditPoliciesLanding({
                                 </div>
                               ) : null}
                             </div>
+                          ) : null}
+                          {deleteBlockedByLineage ? (
+                            <span
+                              className="max-w-[14rem] text-xs leading-snug text-slate-500"
+                              title={DELETE_UNAVAILABLE_LINEAGE_HINT}
+                              data-testid={`policy-delete-unavailable-${docId}`}
+                            >
+                              Delete unavailable
+                            </span>
                           ) : null}
                         </div>
                       </td>
@@ -499,7 +522,7 @@ export function CiCreditPoliciesLanding({
               <button
                 type="button"
                 className="bt-btn bt-btn-sm bg-rose-700 text-white hover:bg-rose-800"
-                disabled={busy}
+                disabled={Boolean(rowBusyId)}
                 data-testid="confirm-delete-draft-submit"
                 onClick={() => {
                   onDeleteDraft?.(
@@ -510,7 +533,7 @@ export function CiCreditPoliciesLanding({
                   setConfirmDelete(null)
                 }}
               >
-                Delete permanently
+                {rowBusyId === confirmDelete.documentId ? 'Deleting…' : 'Delete permanently'}
               </button>
             </div>
           </div>
@@ -554,7 +577,7 @@ export function CiCreditPoliciesLanding({
               <button
                 type="button"
                 className="bt-btn bt-btn-primary bt-btn-sm"
-                disabled={busy || !retireReason.trim()}
+                disabled={Boolean(rowBusyId) || !retireReason.trim()}
                 data-testid="confirm-retire-submit"
                 onClick={() => {
                   onRetire?.(
