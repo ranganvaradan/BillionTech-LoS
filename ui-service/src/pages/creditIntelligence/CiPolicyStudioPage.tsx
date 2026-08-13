@@ -18,7 +18,10 @@ import {
 } from '@/api/creditIntelligence'
 import { ApiError } from '@/api/http'
 import { CiExecutiveSummary, CiSection, CiTechnicalDetails } from '@/components/creditIntelligence/CiSection'
-import { CiCreditPoliciesLanding } from '@/pages/creditIntelligence/CiCreditPoliciesLanding'
+import {
+  CiCreditPoliciesLanding,
+  EXAMPLE_DELETE_SUCCESS_MSG,
+} from '@/pages/creditIntelligence/CiCreditPoliciesLanding'
 import { POLICY_STUDIO_PRIMARY_TAB_IDS } from '@/lib/applicationWorkbench'
 import { derivePolicyNextStep, progressStageLabels } from '@/lib/creditIntelligence/businessLexicon'
 import {
@@ -291,14 +294,16 @@ export function CiPolicyStudioPage() {
     }
   }
 
-  const deleteDraft = async (documentId: string) => {
+  const deleteDraft = async (documentId: string, opts?: { demo?: boolean }) => {
     setRowBusyId(documentId)
     setError(null)
     try {
       await deleteDraftLifecyclePolicy(documentId, {
-        reason: 'Draft deleted from Existing Policies',
+        reason: opts?.demo
+          ? 'Example session removed from Existing Policies'
+          : 'Draft deleted from Existing Policies',
       })
-      setDemoMsg('Draft policy deleted.')
+      setDemoMsg(opts?.demo ? EXAMPLE_DELETE_SUCCESS_MSG : 'Draft policy deleted.')
       void loadLanding()
     } catch (e) {
       setError(
@@ -493,7 +498,7 @@ export function CiPolicyStudioPage() {
         onCopy={(id, n) => void copyPolicy(id, n)}
         onOpen={(id) => void openExisting(id)}
         onOpenDemo={(kind) => void openDemo(kind)}
-        onDeleteDraft={(id) => void deleteDraft(id)}
+        onDeleteDraft={(id, _n, _v, opts) => void deleteDraft(id, opts)}
         onRetire={(id, _n, _v, reason) => void retirePolicy(id, reason)}
       />
     )

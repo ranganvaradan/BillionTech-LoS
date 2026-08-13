@@ -1,7 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { DELETE_UNAVAILABLE_LINEAGE_HINT } from '@/pages/creditIntelligence/CiCreditPoliciesLanding'
+import {
+  DELETE_UNAVAILABLE_LINEAGE_HINT,
+  EXAMPLE_DELETE_CONFIRM_NOTE,
+  EXAMPLE_DELETE_SUCCESS_MSG,
+} from '@/pages/creditIntelligence/CiCreditPoliciesLanding'
 
 const landingPath = join(
   __dirname,
@@ -24,13 +28,22 @@ describe('Policy landing delete actions (availableActions + row busy)', () => {
     expect(DELETE_UNAVAILABLE_LINEAGE_HINT).toMatch(/Delete unavailable/i)
   })
 
+  it('uses distinct EXAMPLE reseed messaging (not lineage denial)', () => {
+    const landing = readFileSync(landingPath, 'utf8')
+    expect(landing).toContain('EXAMPLE_DELETE_CONFIRM_NOTE')
+    expect(landing).toContain('Delete example session')
+    expect(EXAMPLE_DELETE_CONFIRM_NOTE).toMatch(/Examples & templates/i)
+    expect(EXAMPLE_DELETE_SUCCESS_MSG).toMatch(/Example session removed/i)
+    expect(EXAMPLE_DELETE_CONFIRM_NOTE).not.toMatch(/ACTIVE\/APPROVED/)
+  })
+
   it('scopes delete/retire/open busy to rowBusyId on the studio page', () => {
     const page = readFileSync(pagePath, 'utf8')
     expect(page).toContain('setRowBusyId')
     expect(page).toContain('rowBusyId={rowBusyId}')
     expect(page).toContain('formatLifecycleActionError')
     const deleteFn = page.match(
-      /const deleteDraft = async \(documentId: string\) => \{[\s\S]*?\n  \}/,
+      /const deleteDraft = async \(documentId: string, opts\?: \{ demo\?: boolean \}\) => \{[\s\S]*?\n  \}/,
     )?.[0]
     expect(deleteFn).toBeTruthy()
     expect(deleteFn).toContain('setRowBusyId(documentId)')

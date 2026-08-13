@@ -18,6 +18,16 @@ type Kind = 'banking' | 'bureau' | 'kyc'
 export const DELETE_UNAVAILABLE_LINEAGE_HINT =
   'Delete unavailable — this version sits on a lineage with ACTIVE/APPROVED history. Retire the active version instead, or keep the draft.'
 
+/** Confirm / success copy for EXAMPLE (demo) rows — deletable, but reseeds from Examples. */
+export const EXAMPLE_DELETE_MENU_HINT =
+  'Removes this example session from the list. A fresh copy can be opened again from Examples & templates.'
+
+export const EXAMPLE_DELETE_CONFIRM_NOTE =
+  'This removes the example session from your list only. It is not permanent product data — open Examples & templates anytime to load a fresh Banking BRE / Bureau / KYC sample.'
+
+export const EXAMPLE_DELETE_SUCCESS_MSG =
+  'Example session removed. Open Examples & templates to load a fresh copy.'
+
 export function CiCreditPoliciesLanding({
   landing,
   loading,
@@ -46,7 +56,12 @@ export function CiCreditPoliciesLanding({
   onCopy: (documentId: string, policyName?: string) => void
   onOpen: (documentId: string) => void
   onOpenDemo: (kind: Kind) => void
-  onDeleteDraft?: (documentId: string, policyName: string, policyVersion: string) => void
+  onDeleteDraft?: (
+    documentId: string,
+    policyName: string,
+    policyVersion: string,
+    opts?: { demo?: boolean },
+  ) => void
   onRetire?: (documentId: string, policyName: string, policyVersion: string, reason: string) => void
 }) {
   const [createOpen, setCreateOpen] = useState(false)
@@ -63,6 +78,7 @@ export function CiCreditPoliciesLanding({
     documentId: string
     policyName: string
     policyVersion: string
+    demo?: boolean
   } | null>(null)
   const [confirmRetire, setConfirmRetire] = useState<{
     documentId: string
@@ -195,6 +211,7 @@ export function CiCreditPoliciesLanding({
                   const deleteBlockedByLineage = draftLike && !actions.includes('DELETE')
                   const policyName = String(row.policyName ?? 'Policy')
                   const policyVersion = String(row.policyVersion ?? 'v1')
+                  const isExample = Boolean(row.demo)
                   const rowBusy = Boolean(docId && rowBusyId === docId)
                   return (
                     <tr key={docId || i} className="border-t border-slate-100" data-testid={`policy-row-${docId}`}>
@@ -270,12 +287,18 @@ export function CiCreditPoliciesLanding({
                                       type="button"
                                       className="block w-full rounded px-3 py-2 text-left text-sm text-rose-700 hover:bg-rose-50"
                                       data-testid={`policy-delete-${docId}`}
+                                      title={isExample ? EXAMPLE_DELETE_MENU_HINT : undefined}
                                       onClick={() => {
                                         setMoreOpenId(null)
-                                        setConfirmDelete({ documentId: docId, policyName, policyVersion })
+                                        setConfirmDelete({
+                                          documentId: docId,
+                                          policyName,
+                                          policyVersion,
+                                          demo: isExample,
+                                        })
                                       }}
                                     >
-                                      Delete…
+                                      {isExample ? 'Delete example session…' : 'Delete…'}
                                     </button>
                                   ) : null}
                                 </div>
@@ -501,15 +524,21 @@ export function CiCreditPoliciesLanding({
       {confirmDelete ? (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/40 p-4">
           <div className="w-full max-w-md rounded-xl bg-white p-4 shadow-lg" data-testid="confirm-delete-draft">
-            <h3 className="text-lg font-semibold text-rose-800">Delete draft permanently?</h3>
+            <h3 className="text-lg font-semibold text-rose-800">
+              {confirmDelete.demo ? 'Remove example session?' : 'Delete draft permanently?'}
+            </h3>
             <p className="mt-2 text-sm text-slate-700">
               <span className="font-medium">{confirmDelete.policyName}</span>
               {' · '}
               version <span className="font-medium">{confirmDelete.policyVersion}</span>
+              {confirmDelete.demo ? (
+                <span className="ml-2 text-[10px] font-semibold uppercase text-amber-700">Example</span>
+              ) : null}
             </p>
             <p className="mt-2 text-sm text-slate-600">
-              This permanently deletes this draft only. It cannot be undone. Unrelated versions, Live Rule Sets,
-              Scorecards, and Product Configuration are not affected.
+              {confirmDelete.demo
+                ? EXAMPLE_DELETE_CONFIRM_NOTE
+                : 'This permanently deletes this draft only. It cannot be undone. Unrelated versions, Live Rule Sets, Scorecards, and Product Configuration are not affected.'}
             </p>
             <div className="mt-4 flex flex-wrap justify-end gap-2">
               <button
@@ -529,11 +558,16 @@ export function CiCreditPoliciesLanding({
                     confirmDelete.documentId,
                     confirmDelete.policyName,
                     confirmDelete.policyVersion,
+                    { demo: confirmDelete.demo },
                   )
                   setConfirmDelete(null)
                 }}
               >
-                {rowBusyId === confirmDelete.documentId ? 'Deleting…' : 'Delete permanently'}
+                {rowBusyId === confirmDelete.documentId
+                  ? 'Deleting…'
+                  : confirmDelete.demo
+                    ? 'Remove example session'
+                    : 'Delete permanently'}
               </button>
             </div>
           </div>
