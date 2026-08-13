@@ -297,6 +297,7 @@ export function CiPolicyStudioPage() {
   const deleteDraft = async (documentId: string, opts?: { demo?: boolean }) => {
     setRowBusyId(documentId)
     setError(null)
+    setDemoMsg(null)
     try {
       await deleteDraftLifecyclePolicy(documentId, {
         reason: opts?.demo
@@ -492,6 +493,7 @@ export function CiPolicyStudioPage() {
         busy={busy}
         rowBusyId={rowBusyId}
         error={error}
+        successMsg={demoMsg}
         demos={demos}
         onCreateScratch={(n, d) => void createScratch(n, d)}
         onUploadFile={(f) => void processFile(f)}

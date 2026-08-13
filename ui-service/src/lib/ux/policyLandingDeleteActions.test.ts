@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   DELETE_UNAVAILABLE_LINEAGE_HINT,
+  EXAMPLE_BADGE_HINT,
   EXAMPLE_DELETE_CONFIRM_NOTE,
   EXAMPLE_DELETE_SUCCESS_MSG,
 } from '@/pages/creditIntelligence/CiCreditPoliciesLanding'
@@ -31,10 +32,21 @@ describe('Policy landing delete actions (availableActions + row busy)', () => {
   it('uses distinct EXAMPLE reseed messaging (not lineage denial)', () => {
     const landing = readFileSync(landingPath, 'utf8')
     expect(landing).toContain('EXAMPLE_DELETE_CONFIRM_NOTE')
+    expect(landing).toContain('EXAMPLE_BADGE_HINT')
+    expect(landing).toContain('policy-example-badge-')
+    expect(landing).toContain('policy-landing-success')
     expect(landing).toContain('Delete example session')
+    const page = readFileSync(pagePath, 'utf8')
+    expect(page).toContain('successMsg={demoMsg}')
+    expect(page).toContain('EXAMPLE_DELETE_SUCCESS_MSG')
+    expect(EXAMPLE_BADGE_HINT).toMatch(/Reseeded fresh/i)
     expect(EXAMPLE_DELETE_CONFIRM_NOTE).toMatch(/Examples & templates/i)
-    expect(EXAMPLE_DELETE_SUCCESS_MSG).toMatch(/Example session removed/i)
+    expect(EXAMPLE_DELETE_SUCCESS_MSG).toBe(
+      'Example session removed. Reopening it from Examples & templates will create a new draft.',
+    )
+    expect(EXAMPLE_DELETE_SUCCESS_MSG).not.toMatch(/ACTIVE\/APPROVED|Delete unavailable/)
     expect(EXAMPLE_DELETE_CONFIRM_NOTE).not.toMatch(/ACTIVE\/APPROVED/)
+    expect(DELETE_UNAVAILABLE_LINEAGE_HINT).not.toEqual(EXAMPLE_DELETE_SUCCESS_MSG)
   })
 
   it('scopes delete/retire/open busy to rowBusyId on the studio page', () => {

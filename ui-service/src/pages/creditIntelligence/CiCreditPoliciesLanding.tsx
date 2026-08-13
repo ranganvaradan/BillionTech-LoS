@@ -19,14 +19,18 @@ export const DELETE_UNAVAILABLE_LINEAGE_HINT =
   'Delete unavailable — this version sits on a lineage with ACTIVE/APPROVED history. Retire the active version instead, or keep the draft.'
 
 /** Confirm / success copy for EXAMPLE (demo) rows — deletable, but reseeds from Examples. */
+export const EXAMPLE_BADGE_HINT =
+  'Reseeded fresh each time you open it from Examples'
+
 export const EXAMPLE_DELETE_MENU_HINT =
-  'Removes this example session from the list. A fresh copy can be opened again from Examples & templates.'
+  'Removes this example session from the list. Reopening it from Examples & templates will create a new draft.'
 
 export const EXAMPLE_DELETE_CONFIRM_NOTE =
-  'This removes the example session from your list only. It is not permanent product data — open Examples & templates anytime to load a fresh Banking BRE / Bureau / KYC sample.'
+  'This removes the example session from your list only. It is not permanent product data — reopening it from Examples & templates will create a new draft.'
 
+/** Distinct from lineage-protection copy (deletable-and-reseeds vs permanently protected). */
 export const EXAMPLE_DELETE_SUCCESS_MSG =
-  'Example session removed. Open Examples & templates to load a fresh copy.'
+  'Example session removed. Reopening it from Examples & templates will create a new draft.'
 
 export function CiCreditPoliciesLanding({
   landing,
@@ -34,6 +38,7 @@ export function CiCreditPoliciesLanding({
   busy,
   rowBusyId = null,
   error,
+  successMsg = null,
   demos,
   onCreateScratch,
   onUploadFile,
@@ -50,6 +55,8 @@ export function CiCreditPoliciesLanding({
   /** Document id currently running Open / Delete / Retire — only that row disables. */
   rowBusyId?: string | null
   error: string | null
+  /** Success banner (e.g. EXAMPLE session removed) — shown on landing after delete. */
+  successMsg?: string | null
   demos: unknown[]
   onCreateScratch: (name: string, description: string) => void
   onUploadFile: (file: File | null | undefined) => void
@@ -170,6 +177,15 @@ export function CiCreditPoliciesLanding({
           {error}
         </p>
       ) : null}
+      {successMsg ? (
+        <p
+          className="mb-4 rounded border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm font-medium text-emerald-900"
+          role="status"
+          data-testid="policy-landing-success"
+        >
+          {successMsg}
+        </p>
+      ) : null}
 
       <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-100 px-4 py-3">
@@ -218,7 +234,13 @@ export function CiCreditPoliciesLanding({
                       <td className="px-4 py-3 font-medium text-slate-900">
                         {policyName}
                         {row.demo ? (
-                          <span className="ml-2 text-[10px] font-semibold uppercase text-amber-700">Example</span>
+                          <span
+                            className="ml-2 cursor-help text-[10px] font-semibold uppercase text-amber-700 underline decoration-dotted decoration-amber-400 underline-offset-2"
+                            title={EXAMPLE_BADGE_HINT}
+                            data-testid={`policy-example-badge-${docId}`}
+                          >
+                            Example
+                          </span>
                         ) : null}
                         {row.copiedFromLabel ? (
                           <div className="text-xs font-normal text-slate-500">{String(row.copiedFromLabel)}</div>
