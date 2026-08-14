@@ -147,6 +147,24 @@ public class IntegrationProperties {
         private String productCode = "CCR";
         private int connectTimeoutMs = 15000;
         private int readTimeoutMs = 60000;
+        /**
+         * BUREAU-P0-3 — explicit Equifax simulation. Default false.
+         * Missing credentials alone must NOT enable simulation.
+         */
+        private boolean simulation = false;
+
+        /** True when all SOAP credential fields required for a live call are present. */
+        public boolean isConfigured() {
+            return notBlank(customerId)
+                    && notBlank(userId)
+                    && notBlank(password)
+                    && notBlank(memberNumber)
+                    && notBlank(securityCode);
+        }
+
+        private static boolean notBlank(String s) {
+            return s != null && !s.isBlank();
+        }
     }
 
     @Data

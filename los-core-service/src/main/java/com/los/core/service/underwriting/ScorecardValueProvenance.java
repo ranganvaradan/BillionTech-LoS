@@ -14,6 +14,8 @@ public final class ScorecardValueProvenance {
     public static final String MANUAL_AUTHORISED = "MANUAL_AUTHORISED";
     public static final String DEMO_DEFAULT = "DEMO_DEFAULT";
     public static final String GAP_DEFAULT = "GAP_DEFAULT";
+    /** Explicit Equifax / bureau simulation fixture — non-authoritative. */
+    public static final String SIMULATED = "SIMULATED";
     public static final String UNKNOWN = "UNKNOWN";
     public static final String MISSING = "MISSING";
 
@@ -22,7 +24,7 @@ public final class ScorecardValueProvenance {
     public static boolean isNonAuthoritative(String provenance) {
         if (provenance == null) return false;
         String p = provenance.trim().toUpperCase(Locale.ROOT);
-        return DEMO_DEFAULT.equals(p) || GAP_DEFAULT.equals(p);
+        return DEMO_DEFAULT.equals(p) || GAP_DEFAULT.equals(p) || SIMULATED.equals(p);
     }
 
     public static boolean isAuthoritative(String provenance) {

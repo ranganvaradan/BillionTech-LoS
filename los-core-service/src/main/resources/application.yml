@@ -235,6 +235,8 @@ los:
       product-code: ${EQUIFAX_PRODUCT_CODE:CCR}
       connect-timeout-ms: ${EQUIFAX_CONNECT_TIMEOUT:15000}
       read-timeout-ms: ${EQUIFAX_READ_TIMEOUT:60000}
+      # BUREAU-P0-3: never infer simulation from missing credentials
+      simulation: ${EQUIFAX_SIMULATION:false}
 
     # Emsigner Digital Signing Provider
     emsigner:

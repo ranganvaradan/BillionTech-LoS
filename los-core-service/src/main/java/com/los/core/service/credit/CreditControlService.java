@@ -667,9 +667,11 @@ public class CreditControlService {
                         ? com.los.core.service.underwriting.ScorecardValueProvenance.CANONICAL
                         : ("DEMO_FALLBACK".equals(bureauSource)
                         ? com.los.core.service.underwriting.ScorecardValueProvenance.DEMO_DEFAULT
+                        : (SRC_SIMULATED.equals(bureauSource)
+                        ? com.los.core.service.underwriting.ScorecardValueProvenance.SIMULATED
                         : (SRC_MANUAL.equals(bureauSource)
                         ? com.los.core.service.underwriting.ScorecardValueProvenance.MANUAL_AUTHORISED
-                        : com.los.core.service.underwriting.ScorecardValueProvenance.REAL_PROVIDER)));
+                        : com.los.core.service.underwriting.ScorecardValueProvenance.REAL_PROVIDER))));
         applyProgramInputScorecardValues(app, sc, provenance);
         limitSizingService.applyComputedMetrics(app, sc);
         return new EffectiveUnderwritingContext(
@@ -1320,7 +1322,7 @@ public class CreditControlService {
             return SRC_PROVIDER;
         }
         String t = s.trim().toUpperCase();
-        if ("PROVIDER".equals(t) || "MANUAL".equals(t) || "SYSTEM".equals(t)) {
+        if ("PROVIDER".equals(t) || "MANUAL".equals(t) || "SYSTEM".equals(t) || "SIMULATED".equals(t)) {
             return t;
         }
         return SRC_PROVIDER;

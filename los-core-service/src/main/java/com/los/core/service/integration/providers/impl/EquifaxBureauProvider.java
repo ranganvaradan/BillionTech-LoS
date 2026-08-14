@@ -50,6 +50,15 @@ import java.util.*;
 @RequiredArgsConstructor
 public class EquifaxBureauProvider implements IBureauProvider {
 
+    public static final String AVAILABILITY_PROVIDER_READY = "PROVIDER_READY";
+    public static final String AVAILABILITY_PROVIDER_UNAVAILABLE = "PROVIDER_UNAVAILABLE";
+    public static final String AVAILABILITY_PROVIDER_FAILED = "PROVIDER_FAILED";
+    public static final String AVAILABILITY_EXPLICIT_SIMULATION = "EXPLICIT_SIMULATION";
+    public static final String PROVENANCE_PROVIDER = "PROVIDER";
+    public static final String PROVENANCE_SIMULATED = "SIMULATED";
+    public static final String ERR_PROVIDER_UNAVAILABLE =
+            "PROVIDER_UNAVAILABLE: Equifax credentials not configured";
+
     private final IntegrationProperties integrationProperties;
     private final ApiAuditLogRepository apiAuditLogRepository;
     private final ObjectMapper objectMapper;
@@ -57,6 +66,25 @@ public class EquifaxBureauProvider implements IBureauProvider {
 
     /** Equifax SOAP namespace used in response XPath queries */
     private static final String EQUIFAX_NS = "http://services.equifax.com/eport/ws/schemas/1.0";
+
+    /** Overridable for unit tests (timeout / HTTP error goldens). */
+    private EquifaxHttpTransport httpTransport = EquifaxHttpTransport.DEFAULT;
+
+    void setHttpTransportForTests(EquifaxHttpTransport httpTransport) {
+        this.httpTransport = httpTransport != null ? httpTransport : EquifaxHttpTransport.DEFAULT;
+    }
+
+    @FunctionalInterface
+    interface EquifaxHttpTransport {
+        HttpResponse<String> send(HttpRequest request, IntegrationProperties.EquifaxProperties config) throws Exception;
+
+        EquifaxHttpTransport DEFAULT = (request, config) -> {
+            HttpClient client = HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofMillis(config.getConnectTimeoutMs()))
+                    .build();
+            return client.send(request, HttpResponse.BodyHandlers.ofString());
+        };
+    }
 
     @Override
     public String getProviderName() {
@@ -70,11 +98,30 @@ public class EquifaxBureauProvider implements IBureauProvider {
         IntegrationProperties.EquifaxProperties config = integrationProperties.getEquifax();
         String transactionId = "EQX-" + UUID.randomUUID().toString().substring(0, 8);
 
-        if (config.getCustomerId() == null || config.getCustomerId().isBlank()) {
-            log.warn("[Equifax] Credentials not configured — returning simulated response");
+        // BUREAU-P0-3 availability contract — never infer simulation from missing credentials.
+        if (config.isConfigured()) {
+            return pullLive(borrowerInfo, config, transactionId);
+        }
+        if (config.isSimulation()) {
+            log.info("[Equifax] Explicit simulation enabled — returning SIMULATED fixture (not PROVIDER)");
             return simulatedFallback(borrowerInfo, transactionId);
         }
+        log.warn("[Equifax] Credentials not configured and simulation disabled — PROVIDER_UNAVAILABLE");
+        return providerUnavailable(transactionId);
+    }
 
+    private static BureauPullResult providerUnavailable(String transactionId) {
+        Map<String, Object> reportData = new LinkedHashMap<>();
+        reportData.put("providerAvailability", AVAILABILITY_PROVIDER_UNAVAILABLE);
+        reportData.put("dataProvenance", AVAILABILITY_PROVIDER_UNAVAILABLE);
+        reportData.put("simulated", false);
+        return new BureauPullResult(false, 0, reportData, transactionId, ERR_PROVIDER_UNAVAILABLE);
+    }
+
+    private BureauPullResult pullLive(
+            Map<String, Object> borrowerInfo,
+            IntegrationProperties.EquifaxProperties config,
+            String transactionId) {
         String pan = (String) borrowerInfo.getOrDefault("panNumber", "");
         if (pan.isEmpty()) {
             return new BureauPullResult(false, 0, null, transactionId, "PAN number is required for bureau pull");
@@ -85,10 +132,6 @@ public class EquifaxBureauProvider implements IBureauProvider {
         Instant requestTime = Instant.now();
 
         try {
-            HttpClient client = HttpClient.newBuilder()
-                    .connectTimeout(Duration.ofMillis(config.getConnectTimeoutMs()))
-                    .build();
-
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(config.getUrl()))
                     .timeout(Duration.ofMillis(config.getReadTimeoutMs()))
@@ -96,7 +139,7 @@ public class EquifaxBureauProvider implements IBureauProvider {
                     .POST(HttpRequest.BodyPublishers.ofString(requestXml))
                     .build();
 
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = httpTransport.send(request, config);
             Instant responseTime = Instant.now();
             long durationMs = Duration.between(requestTime, responseTime).toMillis();
 
@@ -111,20 +154,40 @@ public class EquifaxBureauProvider implements IBureauProvider {
                     response.statusCode(), null, transactionId, requestTime, responseTime, durationMs);
 
             if (response.statusCode() == 200) {
-                return parseEquifaxResponse(response.body(), transactionId);
-            } else {
-                return new BureauPullResult(false, 0, null, transactionId,
-                        "Equifax API returned HTTP " + response.statusCode());
+                BureauPullResult parsed = parseEquifaxResponse(response.body(), transactionId);
+                return stampProviderProvenance(parsed);
             }
+            return providerFailed(transactionId,
+                    "Equifax API returned HTTP " + response.statusCode());
 
         } catch (Exception e) {
             log.error("[Equifax] API call failed: {}", e.getMessage(), e);
             saveAuditLog("EQUIFAX", "EQUIFAX_RETAIL_INQUIRY", requestXml,
                     null, "ERROR", null, e.getMessage(), transactionId,
                     requestTime, Instant.now(), null);
-            return new BureauPullResult(false, 0, null, transactionId,
-                    "Equifax API error: " + e.getMessage());
+            return providerFailed(transactionId, "Equifax API error: " + e.getMessage());
         }
+    }
+
+    private static BureauPullResult providerFailed(String transactionId, String message) {
+        Map<String, Object> reportData = new LinkedHashMap<>();
+        reportData.put("providerAvailability", AVAILABILITY_PROVIDER_FAILED);
+        reportData.put("dataProvenance", AVAILABILITY_PROVIDER_FAILED);
+        reportData.put("simulated", false);
+        return new BureauPullResult(false, 0, reportData, transactionId, message);
+    }
+
+    private static BureauPullResult stampProviderProvenance(BureauPullResult parsed) {
+        if (parsed.reportData() == null) {
+            return parsed;
+        }
+        Map<String, Object> reportData = new LinkedHashMap<>(parsed.reportData());
+        reportData.putIfAbsent("providerAvailability",
+                parsed.success() ? AVAILABILITY_PROVIDER_READY : AVAILABILITY_PROVIDER_FAILED);
+        reportData.put("dataProvenance", PROVENANCE_PROVIDER);
+        reportData.put("simulated", false);
+        return new BureauPullResult(
+                parsed.success(), parsed.creditScore(), reportData, parsed.transactionId(), parsed.errorMessage());
     }
 
     /**
@@ -195,8 +258,9 @@ public class EquifaxBureauProvider implements IBureauProvider {
 
     /**
      * Parse Equifax XML response using XPath — adapted from legacy EquifaxServiceFacadeImpl.extractReport()
+     * Package-visible for P0-3 goldens.
      */
-    private BureauPullResult parseEquifaxResponse(String responseXml, String transactionId) {
+    BureauPullResult parseEquifaxResponse(String responseXml, String transactionId) {
         try {
             DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
             dbf.setNamespaceAware(true);
@@ -367,7 +431,7 @@ public class EquifaxBureauProvider implements IBureauProvider {
         }
     }
 
-    /** Simulated fallback when credentials are not configured */
+    /** Simulated fallback — only when {@code los.integration.equifax.simulation=true}. */
     private BureauPullResult simulatedFallback(Map<String, Object> borrowerInfo, String transactionId) {
         String pan = (String) borrowerInfo.getOrDefault("panNumber", "");
         if (pan.isEmpty()) {
@@ -378,9 +442,7 @@ public class EquifaxBureauProvider implements IBureauProvider {
         if (sampleXml != null && !sampleXml.isBlank()) {
             BureauPullResult parsed = parseEquifaxResponse(sampleXml, transactionId);
             if (parsed.success() && parsed.reportData() != null) {
-                Map<String, Object> reportData = new LinkedHashMap<>(parsed.reportData());
-                reportData.put("simulated", true);
-                reportData.put("simulatedSource", "simulated/equifax-sample-inquiry-response.xml");
+                Map<String, Object> reportData = stampSimulatedProvenance(parsed.reportData());
                 attachSimulatedBureauReport(borrowerInfo);
                 log.info("[Equifax] Simulated pull using sample XML — score={}, accounts={}, status={}",
                         parsed.creditScore(),
@@ -393,8 +455,7 @@ public class EquifaxBureauProvider implements IBureauProvider {
         }
 
         int creditScore = 720;
-        Map<String, Object> reportData = new LinkedHashMap<>();
-        reportData.put("simulated", true);
+        Map<String, Object> reportData = stampSimulatedProvenance(new LinkedHashMap<>());
         reportData.put("creditScore", creditScore);
         reportData.put("scoreVersion", "ERS 3.0");
         reportData.put("totalAccounts", 5);
@@ -414,6 +475,15 @@ public class EquifaxBureauProvider implements IBureauProvider {
         attachSimulatedBureauReport(borrowerInfo);
 
         return new BureauPullResult(true, creditScore, reportData, transactionId, null);
+    }
+
+    private static Map<String, Object> stampSimulatedProvenance(Map<String, Object> source) {
+        Map<String, Object> reportData = new LinkedHashMap<>(source != null ? source : Map.of());
+        reportData.put("simulated", true);
+        reportData.put("providerAvailability", AVAILABILITY_EXPLICIT_SIMULATION);
+        reportData.put("dataProvenance", PROVENANCE_SIMULATED);
+        reportData.put("simulatedSource", "simulated/equifax-sample-inquiry-response.xml");
+        return reportData;
     }
 
     private String loadSimulatedEquifaxXml() {

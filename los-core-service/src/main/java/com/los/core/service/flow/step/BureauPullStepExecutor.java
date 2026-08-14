@@ -9,6 +9,7 @@ import com.los.core.model.enums.StepOutcome;
 import com.los.core.repository.KycStepResultRepository;
 import com.los.core.repository.LoanApplicationRepository;
 import com.los.core.service.audit.AuditService;
+import com.los.core.service.credit.CreditControlKeys;
 import com.los.core.service.credit.CreditControlService;
 import com.los.core.service.credit.EffectiveUnderwritingContext;
 import com.los.core.service.integration.IIntegrationRouterService;
@@ -21,6 +22,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -132,6 +134,12 @@ public class BureauPullStepExecutor implements IStepExecutor {
 
         if (bureauResult.success()) {
             app.setBureauScore(bureauResult.creditScore());
+            // BUREAU-P0-3: simulated pulls must not masquerade as PROVIDER in CreditControl.
+            if (isSimulatedBureauResult(bureauResult.reportData())) {
+                stampBureauScoreSource(app, CreditControlKeys.SRC_SIMULATED);
+            } else {
+                stampBureauScoreSource(app, CreditControlKeys.SRC_PROVIDER);
+            }
             applicationRepository.save(app);
             // Phase C1: canonical bureau ingestion (never fail the pull)
             try {
@@ -163,5 +171,33 @@ public class BureauPullStepExecutor implements IStepExecutor {
                 "reportData", bureauResult.reportData() != null ? bureauResult.reportData() : Map.of()
         );
         return StepResult.ok(out);
+    }
+
+    private static boolean isSimulatedBureauResult(Map<String, Object> reportData) {
+        if (reportData == null) {
+            return false;
+        }
+        if (Boolean.TRUE.equals(reportData.get("simulated"))) {
+            return true;
+        }
+        Object prov = reportData.get("dataProvenance");
+        return prov != null && "SIMULATED".equalsIgnoreCase(String.valueOf(prov));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void stampBureauScoreSource(LoanApplication app, String source) {
+        Map<String, Object> fi = app.getFinancialInfo() != null
+                ? new LinkedHashMap<>(app.getFinancialInfo())
+                : new LinkedHashMap<>();
+        Map<String, Object> cc = fi.get(CreditControlKeys.ROOT) instanceof Map<?, ?> raw
+                ? new LinkedHashMap<>((Map<String, Object>) raw)
+                : new LinkedHashMap<>();
+        Map<String, Object> ds = cc.get(CreditControlKeys.DECISION_SOURCES) instanceof Map<?, ?> rawDs
+                ? new LinkedHashMap<>((Map<String, Object>) rawDs)
+                : new LinkedHashMap<>();
+        ds.put("bureauScoreSource", source);
+        cc.put(CreditControlKeys.DECISION_SOURCES, ds);
+        fi.put(CreditControlKeys.ROOT, cc);
+        app.setFinancialInfo(fi);
     }
 }

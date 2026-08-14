@@ -10,6 +10,8 @@ public final class CreditControlKeys {
     public static final String SRC_PROVIDER = "PROVIDER";
     public static final String SRC_MANUAL = "MANUAL";
     public static final String SRC_SYSTEM = "SYSTEM";
+    /** Explicit Equifax simulation / fixture — never equivalent to PROVIDER. */
+    public static final String SRC_SIMULATED = "SIMULATED";
 
     private CreditControlKeys() {
     }
