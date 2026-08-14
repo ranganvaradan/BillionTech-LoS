@@ -44,10 +44,6 @@ los:
       allow-non-production-demo-scoring: true
   demo:
     enabled: true
-  integration:
-    equifax:
-      # BUREAU-P0-3: staging has no Equifax secrets by default → PROVIDER_UNAVAILABLE (not silent simulation)
-      simulation: ${EQUIFAX_SIMULATION:false}
   plp:
     # Default off for safety; enable staging integration via LOS_PLP_ENABLED=true
     enabled: ${LOS_PLP_ENABLED:false}
@@ -62,6 +58,9 @@ los:
     root: ${LOS_FILE_STORAGE_ROOT:/app/uploads}
   # Disable external payment/sanction side effects where properties exist
   integration:
+    equifax:
+      # BUREAU-P0-3: staging has no Equifax secrets by default → PROVIDER_UNAVAILABLE (not silent simulation)
+      simulation: ${EQUIFAX_SIMULATION:false}
     ai-los:
       # do not call production AI-LOS; leave blank or stub
       ingest-url: ""
