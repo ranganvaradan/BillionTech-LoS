@@ -28,6 +28,7 @@ public class CustomerCategoryController {
 
     private final CustomerCategoryService categoryService;
     private final CustomerCategorySeedService seedService;
+    private final CustomerCategoryDay1SeedService day1SeedService;
 
     @GetMapping
     @Operation(summary = "List Customer Categories")
@@ -99,13 +100,40 @@ public class CustomerCategoryController {
     }
 
     @PostMapping("/seed/apply")
-    @Operation(summary = "Apply seed as DRAFT only (idempotent; never ACTIVE)")
+    @Operation(summary = "Apply raw rule-set seed as DRAFT only (idempotent; never ACTIVE)")
     public ResponseEntity<SeedApplyResponse> seedApply(
             @RequestHeader(value = "X-User-Id", required = false) String userId,
             @RequestHeader(value = "X-User-Role", required = false) String role,
             @RequestHeader(value = "X-User-Name", required = false) String userName) {
         withAudit(userId, role);
         return ResponseEntity.ok(seedService.applyDrafts(actor(userId, userName, role)));
+    }
+
+    @PostMapping("/seed/day1/validate")
+    @Operation(summary = "Validate approved Day-1 15×12 matrix against live refs (no writes)")
+    public ResponseEntity<Map<String, Object>> day1Validate() {
+        day1SeedService.validateAllOrThrow();
+        return ResponseEntity.ok(Map.of(
+                "ok", true,
+                "policySets", Day1ApprovedSeedCatalog.POLICY_SETS.size(),
+                "categories", Day1ApprovedSeedCatalog.CATEGORIES.size(),
+                "note", "Validation only — nothing persisted"));
+    }
+
+    @PostMapping("/seed/day1/apply")
+    @Operation(summary = "Apply approved Day-1 seed as DRAFT only (15 categories, 12 Policy Sets)")
+    public ResponseEntity<CustomerCategoryDay1SeedService.Day1ApplyResult> day1Apply(
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
+            @RequestHeader(value = "X-User-Role", required = false) String role,
+            @RequestHeader(value = "X-User-Name", required = false) String userName) {
+        withAudit(userId, role);
+        return ResponseEntity.ok(day1SeedService.applyDrafts(actor(userId, userName, role)));
+    }
+
+    @GetMapping("/seed/day1/readback")
+    @Operation(summary = "Read back persisted Day-1 DRAFT seed rows")
+    public ResponseEntity<CustomerCategoryDay1SeedService.Day1ApplyResult> day1Readback() {
+        return ResponseEntity.ok(day1SeedService.readBack(0, 0, 0));
     }
 
     private static Actor actor(String userId, String userName, String role) {
