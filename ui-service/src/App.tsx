@@ -47,6 +47,8 @@ import { RepaymentDefaultsPage } from '@/pages/RepaymentDefaultsPage'
 import { PgSettlementsPage } from '@/pages/PgSettlementsPage'
 import { AnchorRatingTemplatesPage } from '@/pages/AnchorRatingTemplatesPage'
 import { ScorecardsPage } from '@/pages/ScorecardsPage'
+import { CustomerCategoriesPage } from '@/pages/CustomerCategoriesPage'
+import { PolicySetsPage } from '@/pages/PolicySetsPage'
 import { AssignmentRulesPage } from '@/pages/AssignmentRulesPage'
 import { UserRoleMappingsPage } from '@/pages/UserRoleMappingsPage'
 import { UsersPage } from '@/pages/UsersPage'
@@ -257,6 +259,22 @@ export default function App() {
           element={
             <AdminConfigGate>
               <ScorecardsPage />
+            </AdminConfigGate>
+          }
+        />
+        <Route
+          path="customer-categories"
+          element={
+            <AdminConfigGate>
+              <CustomerCategoriesPage />
+            </AdminConfigGate>
+          }
+        />
+        <Route
+          path="policy-sets"
+          element={
+            <AdminConfigGate>
+              <PolicySetsPage />
             </AdminConfigGate>
           }
         />

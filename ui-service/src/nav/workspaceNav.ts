@@ -52,6 +52,8 @@ export function isAdministrationWorkspacePath(pathname: string): boolean {
     pathStartsWith(pathname, '/integrations') ||
     pathStartsWith(pathname, '/underwriting-rules') ||
     pathStartsWith(pathname, '/underwriting-scorecards') ||
+    pathStartsWith(pathname, '/customer-categories') ||
+    pathStartsWith(pathname, '/policy-sets') ||
     pathStartsWith(pathname, '/repayment-config') ||
     pathStartsWith(pathname, '/anchor-rating-templates') ||
     pathStartsWith(pathname, '/assignment-rules') ||
@@ -111,6 +113,8 @@ export const ADMINISTRATION_NAV_GROUPS: AdminNavGroup[] = [
     items: [
       { to: '/underwriting-rules', label: 'Live Underwriting Rules' },
       { to: '/underwriting-scorecards', label: 'Live Scorecards' },
+      { to: '/customer-categories', label: 'Customer Categories' },
+      { to: '/policy-sets', label: 'Policy Sets' },
       { to: '/product-configuration', label: 'Product Configuration' },
     ],
   },

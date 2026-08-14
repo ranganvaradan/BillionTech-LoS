@@ -1,0 +1,186 @@
+import { http } from './http'
+
+export type LifecycleStatus = 'DRAFT' | 'IN_REVIEW' | 'APPROVED' | 'ACTIVE' | 'RETIRED'
+
+export type LifecycleAction =
+  | 'EDIT'
+  | 'DELETE'
+  | 'SUBMIT'
+  | 'APPROVE'
+  | 'RETURN'
+  | 'ACTIVATE'
+  | 'RETIRE'
+  | 'COPY'
+
+export interface LifecycleActionRequest {
+  remarks?: string | null
+  reason?: string | null
+}
+
+export interface ActivationCheck {
+  code: string
+  label: string
+  ok: boolean
+  detail: string | null
+}
+
+export interface ActivationReadiness {
+  id: string
+  objectType: string
+  status: string
+  ready: boolean
+  checks: ActivationCheck[]
+  overlapWarnings: Record<string, unknown>[]
+}
+
+export interface CustomerCategory {
+  id: string
+  code: string
+  versionNo: number
+  name: string
+  description: string | null
+  status: LifecycleStatus
+  borrowerType: string
+  loanProduct: string
+  intakeSegment: string
+  minAmount: number | null
+  maxAmount: number | null
+  policySetId: string
+  seedSourceRuleSetId?: string | null
+  reviewStatus?: string | null
+  inferenceNotes?: Record<string, unknown>
+  effectiveFrom: string | null
+  effectiveUntil: string | null
+  createdAt?: string | null
+  updatedAt?: string | null
+  createdBy?: string | null
+  updatedBy?: string | null
+  submittedBy?: string | null
+  submittedAt?: string | null
+  approvedBy?: string | null
+  approvedAt?: string | null
+  activatedBy?: string | null
+  activatedAt?: string | null
+  retiredBy?: string | null
+  retiredAt?: string | null
+  retirementReason?: string | null
+  reasonForChange?: string | null
+  replacesCategoryId?: string | null
+  overlapWarnings?: Record<string, unknown>[]
+  allowedActions?: LifecycleAction[]
+  history?: Record<string, unknown>[]
+}
+
+export interface CategoryRequest {
+  code: string
+  name: string
+  description?: string | null
+  borrowerType: string
+  loanProduct: string
+  intakeSegment: string
+  minAmount?: number | null
+  maxAmount?: number | null
+  policySetId: string
+  effectiveFrom?: string | null
+  effectiveUntil?: string | null
+  reasonForChange?: string | null
+}
+
+export interface EligibleRuleSet {
+  id: string
+  name: string
+  borrowerType: string
+  loanProduct: string
+  minAmount: number | null
+  maxAmount: number | null
+  priority: number
+  active: boolean
+}
+
+export interface EligibleScorecard {
+  id: string
+  name: string
+  borrowerType: string
+  loanProduct: string
+  minAmount: number | null
+  maxAmount: number | null
+  priority: number
+  status: string
+  active: boolean
+}
+
+export function listCustomerCategories() {
+  return http.get<CustomerCategory[]>('/customer-categories').then((r) => r.data)
+}
+
+export function getCustomerCategory(id: string) {
+  return http.get<CustomerCategory>(`/customer-categories/${id}`).then((r) => r.data)
+}
+
+export function createCustomerCategory(body: CategoryRequest) {
+  return http.post<CustomerCategory>('/customer-categories', body).then((r) => r.data)
+}
+
+export function updateCustomerCategory(id: string, body: CategoryRequest) {
+  return http.put<CustomerCategory>(`/customer-categories/${id}`, body).then((r) => r.data)
+}
+
+export function deleteCustomerCategory(id: string) {
+  return http.delete(`/customer-categories/${id}`)
+}
+
+export function submitCustomerCategory(id: string, body?: LifecycleActionRequest) {
+  return http.post<CustomerCategory>(`/customer-categories/${id}/submit`, body ?? {}).then((r) => r.data)
+}
+
+export function approveCustomerCategory(id: string, body?: LifecycleActionRequest) {
+  return http.post<CustomerCategory>(`/customer-categories/${id}/approve`, body ?? {}).then((r) => r.data)
+}
+
+export function returnCustomerCategory(id: string, body?: LifecycleActionRequest) {
+  return http.post<CustomerCategory>(`/customer-categories/${id}/return`, body ?? {}).then((r) => r.data)
+}
+
+export function activateCustomerCategory(id: string) {
+  return http.post<CustomerCategory>(`/customer-categories/${id}/activate`).then((r) => r.data)
+}
+
+export function retireCustomerCategory(id: string, body: LifecycleActionRequest) {
+  return http.post<CustomerCategory>(`/customer-categories/${id}/retire`, body).then((r) => r.data)
+}
+
+export function copyCustomerCategory(id: string, body?: LifecycleActionRequest) {
+  return http.post<CustomerCategory>(`/customer-categories/${id}/copy`, body ?? {}).then((r) => r.data)
+}
+
+export function customerCategoryHistory(id: string) {
+  return http.get<Record<string, unknown>[]>(`/customer-categories/${id}/history`).then((r) => r.data)
+}
+
+export function customerCategoryActivationReadiness(id: string) {
+  return http.get<ActivationReadiness>(`/customer-categories/${id}/activation-readiness`).then((r) => r.data)
+}
+
+export function listCategoryOverlaps() {
+  return http.get<Record<string, unknown>[]>('/customer-categories/meta/overlaps').then((r) => r.data)
+}
+
+export function listEligibleRuleSets(params?: {
+  borrowerType?: string
+  loanProduct?: string
+  amount?: number
+}) {
+  return http
+    .get<EligibleRuleSet[]>('/customer-categories/meta/eligible-rule-sets', { params })
+    .then((r) => r.data)
+}
+
+export function listEligibleScorecards(params?: {
+  borrowerType?: string
+  loanProduct?: string
+  amount?: number
+}) {
+  return http
+    .get<EligibleScorecard[]>('/customer-categories/meta/eligible-scorecards', { params })
+    .then((r) => r.data)
+}

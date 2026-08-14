@@ -29,6 +29,15 @@ const REASON_MESSAGES: Record<string, string> = {
   EMAIL_REQUIRED: 'Email is required.',
   EMAIL_INVALID: 'Please enter a valid email address.',
   STATUS_TERMINAL: 'This application can no longer be edited.',
+  SELF_APPROVAL_FORBIDDEN: 'You cannot approve a configuration you submitted. Another reviewer must approve.',
+  MULTI_RULE_SET_NOT_ENABLED: 'Phase 1 Policy Sets allow exactly one underwriting rule set. Remove additional rule sets.',
+  CONFIGURATION_CONFLICT: 'This configuration conflicts with an existing record. Review codes and versions.',
+  POLICY_SET_NOT_READY: 'The linked Policy Set must be ACTIVE before this category can be activated.',
+  CATEGORY_NOT_APPROVED: 'Only an APPROVED category can be activated.',
+  POLICY_SET_NOT_APPROVED: 'Only an APPROVED Policy Set can be activated.',
+  RETIREMENT_REASON_REQUIRED: 'A retirement reason is required.',
+  CATEGORY_NOT_EDITABLE: 'Only DRAFT categories can be edited.',
+  POLICY_SET_NOT_EDITABLE: 'Only DRAFT Policy Sets can be edited.',
 }
 
 const HTTP_FALLBACK: Record<number, string> = {

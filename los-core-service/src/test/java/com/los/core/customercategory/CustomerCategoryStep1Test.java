@@ -54,7 +54,7 @@ class CustomerCategoryStep1Test {
     @BeforeEach
     void setUp() {
         validator = new CustomerCategoryValidator(ruleSetRepository, scorecardRepository);
-        policySetService = new PolicySetService(policySetRepository, validator, auditSupport);
+        policySetService = new PolicySetService(policySetRepository, categoryRepository, validator, auditSupport);
         categoryService = new CustomerCategoryService(
                 categoryRepository, policySetRepository, validator, auditSupport);
         seedService = new CustomerCategorySeedService(

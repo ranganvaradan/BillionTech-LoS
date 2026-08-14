@@ -55,6 +55,18 @@ const ADMIN_CATEGORIES: AdminCategoryMeta[] = [
         icon: ScorecardsIcon,
       },
       {
+        to: '/customer-categories',
+        label: 'Customer Categories',
+        description: 'Lender matching criteria → Policy Set (not live routing yet)',
+        icon: UnderwritingIcon,
+      },
+      {
+        to: '/policy-sets',
+        label: 'Policy Sets',
+        description: 'Compose one underwriting rule set + scorecard for categories',
+        icon: RulesIcon,
+      },
+      {
         to: '/product-configuration',
         label: 'Product Configuration',
         description: 'Compose Product → Workflow → Live Rules → Scorecard and check readiness',

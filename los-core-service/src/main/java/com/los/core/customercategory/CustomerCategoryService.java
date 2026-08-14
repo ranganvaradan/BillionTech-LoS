@@ -3,6 +3,8 @@ package com.los.core.customercategory;
 import com.los.core.audit.AdminConfigAuditSupport;
 import com.los.core.exception.BusinessRuleException;
 import com.los.core.exception.ResourceNotFoundException;
+import com.los.core.customercategory.CustomerCategoryDtos.ActivationCheck;
+import com.los.core.customercategory.CustomerCategoryDtos.ActivationReadinessResponse;
 import com.los.core.customercategory.CustomerCategoryDtos.Actor;
 import com.los.core.customercategory.CustomerCategoryDtos.CategoryRequest;
 import com.los.core.customercategory.CustomerCategoryDtos.CategoryResponse;
@@ -48,6 +50,71 @@ public class CustomerCategoryService {
     @Transactional(readOnly = true)
     public List<Map<String, Object>> history(UUID id) {
         return ConfigGovernanceHistory.historyView(load(id).getGovernanceJson());
+    }
+
+    /**
+     * Non-mutating activation readiness — reuses activate validators; does not change status.
+     */
+    @Transactional(readOnly = true)
+    public ActivationReadinessResponse activationReadiness(UUID id) {
+        CustomerCategoryEntity e = load(id);
+        List<ActivationCheck> checks = new ArrayList<>();
+        List<OverlapWarning> overlaps = detectOverlapsAmong(relevantForOverlap());
+        List<Map<String, Object>> mine = overlaps.stream()
+                .filter(o -> {
+                    String key = e.getCode() + "@v" + e.getVersionNo();
+                    return key.equals(o.leftIdOrCode()) || key.equals(o.rightIdOrCode());
+                })
+                .map(this::overlapToMap)
+                .toList();
+
+        boolean approved = e.getStatus() == ConfigLifecycleStatus.APPROVED;
+        checks.add(new ActivationCheck(
+                "STATUS_APPROVED",
+                "Category is APPROVED",
+                approved,
+                approved ? "APPROVED" : "Current status: " + e.getStatus().name()));
+
+        PolicySetEntity ps = policySetRepository.findById(e.getPolicySetId()).orElse(null);
+        boolean psOk = ps != null && ps.getStatus() == ConfigLifecycleStatus.ACTIVE;
+        checks.add(new ActivationCheck(
+                "POLICY_SET_ACTIVE",
+                "Linked Policy Set is ACTIVE",
+                psOk,
+                ps == null ? "Policy Set missing"
+                        : "Policy Set status: " + ps.getStatus().name()));
+
+        if (ps != null) {
+            checks.add(runCheck("RULE_SET_READY", "Primary rule set executable",
+                    () -> validator.requireLiveReadyRuleSet(ps.getPrimaryRuleSetId())));
+            checks.add(runCheck("SINGLE_RULE_SET", "Phase-1 single rule set",
+                    () -> validator.requireSingleRuleSetComposition(ps.getAdditionalRuleSetIds())));
+            checks.add(runCheck("SCORECARD_READY", "Scorecard executable",
+                    () -> validator.requireExecutableScorecard(ps.getScorecardId())));
+        }
+
+        checks.add(runCheck("MATCH_DIMENSIONS", "Borrower / product / intake / amount valid",
+                () -> validator.validateMatchDimensions(
+                        e.getBorrowerType(), e.getLoanProduct(), e.getIntakeSegment(),
+                        e.getMinAmount(), e.getMaxAmount())));
+        checks.add(runCheck("EFFECTIVE_DATES", "Effective dates valid",
+                () -> validator.validateEffectiveDates(e.getEffectiveFrom(), e.getEffectiveUntil())));
+
+        boolean ready = checks.stream().allMatch(ActivationCheck::ok);
+        return new ActivationReadinessResponse(
+                e.getId(), "CUSTOMER_CATEGORY", e.getStatus().name(), ready, checks, mine);
+    }
+
+    private static ActivationCheck runCheck(String code, String label, Runnable action) {
+        try {
+            action.run();
+            return new ActivationCheck(code, label, true, "OK");
+        } catch (BusinessRuleException ex) {
+            return new ActivationCheck(code, label, false,
+                    ex.getMessage() == null ? ex.getReason() : ex.getMessage());
+        } catch (RuntimeException ex) {
+            return new ActivationCheck(code, label, false, ex.getMessage());
+        }
     }
 
     @Transactional
@@ -447,6 +514,8 @@ public class CustomerCategoryService {
                 e.getInferenceNotes() == null ? Map.of() : Map.copyOf(e.getInferenceNotes()),
                 e.getEffectiveFrom(),
                 e.getEffectiveUntil(),
+                e.getCreatedAt(),
+                e.getUpdatedAt(),
                 e.getCreatedBy(),
                 e.getUpdatedBy(),
                 e.getSubmittedBy(),
@@ -461,6 +530,7 @@ public class CustomerCategoryService {
                 e.getReasonForChange(),
                 e.getReplacesCategoryId(),
                 mine,
+                ConfigLifecycleActions.forStatus(e.getStatus()),
                 ConfigGovernanceHistory.historyView(e.getGovernanceJson()));
     }
 

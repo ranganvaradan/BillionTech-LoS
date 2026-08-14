@@ -5,6 +5,8 @@ import com.los.core.exception.BusinessRuleException;
 import com.los.core.exception.ResourceNotFoundException;
 import com.los.core.model.entity.UnderwritingRuleSet;
 import com.los.core.model.entity.UnderwritingScorecard;
+import com.los.core.customercategory.CustomerCategoryDtos.ActivationCheck;
+import com.los.core.customercategory.CustomerCategoryDtos.ActivationReadinessResponse;
 import com.los.core.customercategory.CustomerCategoryDtos.Actor;
 import com.los.core.customercategory.CustomerCategoryDtos.LifecycleActionRequest;
 import com.los.core.customercategory.CustomerCategoryDtos.PolicySetRequest;
@@ -31,22 +33,68 @@ import java.util.UUID;
 public class PolicySetService {
 
     private final PolicySetRepository repository;
+    private final CustomerCategoryRepository categoryRepository;
     private final CustomerCategoryValidator validator;
     private final AdminConfigAuditSupport auditSupport;
 
     @Transactional(readOnly = true)
     public List<PolicySetResponse> list() {
-        return repository.findAllByOrderByCodeAscVersionNoDesc().stream().map(this::toResponse).toList();
+        Map<UUID, Long> usage = categoryUsageCounts();
+        return repository.findAllByOrderByCodeAscVersionNoDesc().stream()
+                .map(e -> toResponse(e, usage.getOrDefault(e.getId(), 0L).intValue()))
+                .toList();
     }
 
     @Transactional(readOnly = true)
     public PolicySetResponse get(UUID id) {
-        return toResponse(load(id));
+        PolicySetEntity e = load(id);
+        return toResponse(e, countUsedBy(e.getId()));
     }
 
     @Transactional(readOnly = true)
     public List<Map<String, Object>> history(UUID id) {
         return ConfigGovernanceHistory.historyView(load(id).getGovernanceJson());
+    }
+
+    @Transactional(readOnly = true)
+    public ActivationReadinessResponse activationReadiness(UUID id) {
+        PolicySetEntity e = load(id);
+        List<ActivationCheck> checks = new ArrayList<>();
+        boolean approved = e.getStatus() == ConfigLifecycleStatus.APPROVED;
+        checks.add(new ActivationCheck(
+                "STATUS_APPROVED",
+                "Policy Set is APPROVED",
+                approved,
+                approved ? "APPROVED" : "Current status: " + e.getStatus().name()));
+        checks.add(runCheck("RULE_SET_READY", "Primary rule set ACTIVE and executable",
+                () -> validator.requireLiveReadyRuleSet(e.getPrimaryRuleSetId())));
+        checks.add(runCheck("SINGLE_RULE_SET", "Phase-1 single rule set (no additional)",
+                () -> validator.requireSingleRuleSetComposition(e.getAdditionalRuleSetIds())));
+        checks.add(runCheck("SCORECARD_READY", "Scorecard ACTIVE and executable",
+                () -> validator.requireExecutableScorecard(e.getScorecardId())));
+        checks.add(runCheck("COMPATIBILITY", "Rule set / scorecard compatibility",
+                () -> {
+                    UnderwritingRuleSet rs = validator.requireLiveReadyRuleSet(e.getPrimaryRuleSetId());
+                    UnderwritingScorecard sc = validator.requireExecutableScorecard(e.getScorecardId());
+                    validator.assertCompatibility(rs, sc);
+                }));
+        checks.add(runCheck("EFFECTIVE_DATES", "Effective dates valid",
+                () -> validator.validateEffectiveDates(e.getEffectiveFrom(), e.getEffectiveUntil())));
+        boolean ready = checks.stream().allMatch(ActivationCheck::ok);
+        return new ActivationReadinessResponse(
+                e.getId(), "POLICY_SET", e.getStatus().name(), ready, checks, List.of());
+    }
+
+    private static ActivationCheck runCheck(String code, String label, Runnable action) {
+        try {
+            action.run();
+            return new ActivationCheck(code, label, true, "OK");
+        } catch (BusinessRuleException ex) {
+            return new ActivationCheck(code, label, false,
+                    ex.getMessage() == null ? ex.getReason() : ex.getMessage());
+        } catch (RuntimeException ex) {
+            return new ActivationCheck(code, label, false, ex.getMessage());
+        }
     }
 
     @Transactional
@@ -91,7 +139,7 @@ public class PolicySetService {
         ConfigGovernanceHistory.append(e.getGovernanceJson(), "CREATED", actor, req.reasonForChange());
         repository.save(e);
         auditSupport.captureCreate("POLICY_SET", e.getId().toString(), snapshot(e), "Create DRAFT Policy Set");
-        return toResponse(e);
+        return toResponse(e, countUsedBy(e.getId()));
     }
 
     @Transactional
@@ -145,7 +193,7 @@ public class PolicySetService {
         repository.save(e);
         auditSupport.captureUpdate("POLICY_SET", e.getId().toString(), before, snapshot(e),
                 "Update DRAFT Policy Set");
-        return toResponse(e);
+        return toResponse(e, countUsedBy(e.getId()));
     }
 
     @Transactional
@@ -169,7 +217,7 @@ public class PolicySetService {
         repository.save(e);
         auditSupport.captureAction("POLICY_SET", e.getId().toString(), "SUBMIT", before, snapshot(e),
                 "Submit Policy Set for review");
-        return toResponse(e);
+        return toResponse(e, countUsedBy(e.getId()));
     }
 
     @Transactional
@@ -197,7 +245,7 @@ public class PolicySetService {
         repository.save(e);
         auditSupport.captureAction("POLICY_SET", e.getId().toString(), "APPROVE", before, snapshot(e),
                 "Approve Policy Set");
-        return toResponse(e);
+        return toResponse(e, countUsedBy(e.getId()));
     }
 
     @Transactional
@@ -217,7 +265,7 @@ public class PolicySetService {
         repository.save(e);
         auditSupport.captureAction("POLICY_SET", e.getId().toString(), "RETURN", before, snapshot(e),
                 "Return Policy Set to DRAFT");
-        return toResponse(e);
+        return toResponse(e, countUsedBy(e.getId()));
     }
 
     @Transactional
@@ -244,7 +292,7 @@ public class PolicySetService {
         repository.save(e);
         auditSupport.captureAction("POLICY_SET", e.getId().toString(), "ACTIVATE", before, snapshot(e),
                 "Activate Policy Set");
-        return toResponse(e);
+        return toResponse(e, countUsedBy(e.getId()));
     }
 
     @Transactional
@@ -252,7 +300,7 @@ public class PolicySetService {
         ConfigGovernanceRoles.requireActivator(actor);
         PolicySetEntity e = load(id);
         if (e.getStatus() == ConfigLifecycleStatus.RETIRED) {
-            return toResponse(e);
+            return toResponse(e, countUsedBy(e.getId()));
         }
         if (e.getStatus() != ConfigLifecycleStatus.ACTIVE && e.getStatus() != ConfigLifecycleStatus.APPROVED) {
             throw CustomerCategoryValidator.biz("Only ACTIVE or APPROVED Policy Set can be retired",
@@ -272,7 +320,7 @@ public class PolicySetService {
         repository.save(e);
         auditSupport.captureAction("POLICY_SET", e.getId().toString(), "RETIRE", before, snapshot(e),
                 "Retire Policy Set");
-        return toResponse(e);
+        return toResponse(e, countUsedBy(e.getId()));
     }
 
     @Transactional
@@ -312,7 +360,7 @@ public class PolicySetService {
         repository.save(e);
         auditSupport.captureCreate("POLICY_SET", e.getId().toString(), snapshot(e),
                 "Copy Policy Set to new DRAFT version");
-        return toResponse(e);
+        return toResponse(e, countUsedBy(e.getId()));
     }
 
     PolicySetEntity load(UUID id) {
@@ -320,7 +368,7 @@ public class PolicySetService {
                 .orElseThrow(() -> new ResourceNotFoundException("Policy Set not found: " + id));
     }
 
-    PolicySetResponse toResponse(PolicySetEntity e) {
+    PolicySetResponse toResponse(PolicySetEntity e, int usedByCategoryCount) {
         return new PolicySetResponse(
                 e.getId(),
                 e.getCode(),
@@ -334,6 +382,8 @@ public class PolicySetService {
                 e.getSeedSourceRuleSetId(),
                 e.getEffectiveFrom(),
                 e.getEffectiveUntil(),
+                e.getCreatedAt(),
+                e.getUpdatedAt(),
                 e.getCreatedBy(),
                 e.getUpdatedBy(),
                 e.getSubmittedBy(),
@@ -347,7 +397,25 @@ public class PolicySetService {
                 e.getRetirementReason(),
                 e.getReasonForChange(),
                 e.getReplacesPolicySetId(),
+                usedByCategoryCount,
+                ConfigLifecycleActions.forStatus(e.getStatus()),
                 ConfigGovernanceHistory.historyView(e.getGovernanceJson()));
+    }
+
+    private int countUsedBy(UUID policySetId) {
+        return (int) categoryRepository.findAll().stream()
+                .filter(c -> policySetId.equals(c.getPolicySetId()))
+                .count();
+    }
+
+    private Map<UUID, Long> categoryUsageCounts() {
+        Map<UUID, Long> counts = new LinkedHashMap<>();
+        for (CustomerCategoryEntity c : categoryRepository.findAll()) {
+            if (c.getPolicySetId() != null) {
+                counts.merge(c.getPolicySetId(), 1L, Long::sum);
+            }
+        }
+        return counts;
     }
 
     static Map<String, Object> snapshot(PolicySetEntity e) {

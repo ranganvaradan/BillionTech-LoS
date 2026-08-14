@@ -51,6 +51,13 @@ public class CustomerCategoryController {
         return ResponseEntity.ok(categoryService.history(id));
     }
 
+    @GetMapping("/{id}/activation-readiness")
+    @Operation(summary = "Non-mutating activation readiness checks for admin UI")
+    public ResponseEntity<CustomerCategoryDtos.ActivationReadinessResponse> categoryActivationReadiness(
+            @PathVariable UUID id) {
+        return ResponseEntity.ok(categoryService.activationReadiness(id));
+    }
+
     @PostMapping
     public ResponseEntity<CategoryResponse> createCategory(
             @RequestBody CategoryRequest request,

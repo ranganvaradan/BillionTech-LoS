@@ -39,6 +39,13 @@ public class PolicySetController {
         return ResponseEntity.ok(policySetService.history(id));
     }
 
+    @GetMapping("/{id}/activation-readiness")
+    @Operation(summary = "Non-mutating activation readiness checks for admin UI")
+    public ResponseEntity<CustomerCategoryDtos.ActivationReadinessResponse> activationReadiness(
+            @PathVariable UUID id) {
+        return ResponseEntity.ok(policySetService.activationReadiness(id));
+    }
+
     @PostMapping
     public ResponseEntity<PolicySetResponse> create(
             @RequestBody PolicySetRequest request,

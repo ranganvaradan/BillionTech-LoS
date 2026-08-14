@@ -49,6 +49,8 @@ public final class CustomerCategoryDtos {
             UUID seedSourceRuleSetId,
             Instant effectiveFrom,
             Instant effectiveUntil,
+            Instant createdAt,
+            Instant updatedAt,
             String createdBy,
             String updatedBy,
             String submittedBy,
@@ -62,6 +64,8 @@ public final class CustomerCategoryDtos {
             String retirementReason,
             String reasonForChange,
             UUID replacesPolicySetId,
+            int usedByCategoryCount,
+            List<String> allowedActions,
             List<Map<String, Object>> history
     ) {}
 
@@ -98,6 +102,8 @@ public final class CustomerCategoryDtos {
             Map<String, Object> inferenceNotes,
             Instant effectiveFrom,
             Instant effectiveUntil,
+            Instant createdAt,
+            Instant updatedAt,
             String createdBy,
             String updatedBy,
             String submittedBy,
@@ -112,7 +118,19 @@ public final class CustomerCategoryDtos {
             String reasonForChange,
             UUID replacesCategoryId,
             List<Map<String, Object>> overlapWarnings,
+            List<String> allowedActions,
             List<Map<String, Object>> history
+    ) {}
+
+    public record ActivationCheck(String code, String label, boolean ok, String detail) {}
+
+    public record ActivationReadinessResponse(
+            UUID id,
+            String objectType,
+            String status,
+            boolean ready,
+            List<ActivationCheck> checks,
+            List<Map<String, Object>> overlapWarnings
     ) {}
 
     public record EligibleRuleSetView(
