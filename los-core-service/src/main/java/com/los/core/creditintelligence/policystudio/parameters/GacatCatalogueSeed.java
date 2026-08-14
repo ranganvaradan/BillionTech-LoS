@@ -206,14 +206,21 @@ final class GacatCatalogueSeed {
                 "Count of bureau enquiries whose date falls in the current evaluation month",
                 List.of("bureau.inquiry", "bureau.inquiry.date"),
                 "PolicyBureauMetricService.inquiriesCurrentMonth",
-                List.of("enquiries", "inquiries", "bureau enquiry"), null, null,
+                List.of("enquiries", "inquiries", "bureau enquiry", "current month enquiries"), null, null,
+                studioImpl(), true, true, true, true, false);
+
+        derived(p, "bureau.inquiries.last_3m", "Bureau enquiries (last 3 calendar months)", BR, "COUNT", "TRAILING_3M",
+                "Count of bureau enquiries in the trailing 3 calendar months (distinct from current month and from 90 days)",
+                List.of("bureau.inquiry", "bureau.inquiry.date"),
+                "PolicyBureauMetricService.inquiriesLast3Months",
+                List.of("enquiries last 3 months", "inquiries 3 months"), null, null,
                 studioImpl(), true, true, true, true, false);
 
         derived(p, "bureau.recent_inquiries_90d", "Bureau enquiries (90 days)", BR, "COUNT", "TRAILING_90D",
                 "Count of individual enquiries in trailing 90 days; summary-only reports may be data-insufficient",
                 List.of("bureau.inquiry"),
-                "BureauMetricService recent inquiries 90d",
-                List.of("enquiries 90d", "inquiries 90 days"), null, null,
+                "BureauMetricService.computeInquiries90d",
+                List.of("enquiries 90d", "inquiries 90 days", "last 90 days"), null, null,
                 prodBureau(true), true, true, true, true, true);
 
         derived(p, "bureau.live_unsecured_loan_count", "Live unsecured loans", BR, "COUNT", "PIT",
@@ -348,10 +355,10 @@ final class GacatCatalogueSeed {
                 List.of("bureau.score"), List.of("ntc", "thin file"));
         // Gate-3: authored Fact id used by PolicyDsl compounds — Policy-Test ready; Live scorecard uses NTC_FLAG.
         derived(p, "bureau.status_ntc", "Bureau NTC / thin-file status", BR, "BOOLEAN", "PIT",
-                "True when bureau report is NTC / thin-file (PolicyBureauMetricService.consumerNtc); "
-                        + "Live scorecard maps NTC_FLAG (do not invent false when missing)",
+                "True when bureau report is NTC / thin-file (BureauMetricService.computeStatusNtc / evaluateStatusNtc); "
+                        + "Live scorecard maps NTC_FLAG (do not invent false when missing; do not infer NTC from -1 alone)",
                 List.of("bureau.score"),
-                "PolicyBureauMetricService.consumerNtc / Scorecard NTC_FLAG",
+                "BureauMetricService.computeStatusNtc",
                 List.of("ntc", "status ntc", "thin file", "new to credit"),
                 null, "NTC_FLAG",
                 studioImpl(), true, true, true, true, false);

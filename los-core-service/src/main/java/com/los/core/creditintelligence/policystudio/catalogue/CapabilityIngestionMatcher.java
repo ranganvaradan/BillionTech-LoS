@@ -131,13 +131,23 @@ public class CapabilityIngestionMatcher {
             if (max == null) {
                 max = extractWordNumber(lower, "(?i)(?:more\\s+than|not\\s+exceed|maximum|max|upto|up\\s+to)\\s+(one|two|three|four|five|six|seven|eight|nine|ten)");
             }
-            Long window = extractWindowMonths(text, lower);
+            // "more than three" → threshold 3 for GT semantics (golden / catalogue use GT)
+            if (max == null && lower.contains("more than")) {
+                max = extractWordNumber(lower, "(?i)more\\s+than\\s+(one|two|three|four|five|six|seven|eight|nine|ten)");
+            }
+            EnquiryWindowSpec window = extractEnquiryWindow(text, lower);
             Map<String, Object> p = new LinkedHashMap<>();
             if (max != null) p.put("maximumCount", max);
-            p.put("windowMonths", window != null ? window : 3L);
+            if (window != null) {
+                p.put("windowKind", window.kind());
+                if (window.months() != null) p.put("windowMonths", window.months());
+                if (window.days() != null) p.put("windowDays", window.days());
+            }
+            boolean needs = max == null || window == null;
+            String label = window != null ? window.displayLabel() : "window?";
             return Optional.of(capabilityMatch("BUREAU.ENQUIRIES_MAX", p,
-                    "Bureau enquiries (" + p.get("windowMonths") + "M) ≤ " + (max != null ? max : "?"),
-                    max == null));
+                    "Bureau enquiries (" + label + ") ≤ " + (max != null ? max : "?"),
+                    needs));
         }
 
         // Inward return branched BRE — do NOT map to BANK.CHEQUE_BOUNCE_MAX.
@@ -572,12 +582,64 @@ public class CapabilityIngestionMatcher {
     }
 
     private static Long extractWindowMonths(String text, String lower) {
+        EnquiryWindowSpec spec = extractEnquiryWindow(text, lower);
+        if (spec == null) {
+            return null;
+        }
+        if (spec.months() != null) {
+            return spec.months();
+        }
+        // Days-based windows are not month counts — callers must use extractEnquiryWindow.
+        return null;
+    }
+
+    /**
+     * Exact enquiry window extraction. Never defaults current-month → 3 months or 90 days → 3 months.
+     */
+    public static EnquiryWindowSpec extractEnquiryWindow(String text, String lower) {
+        if (lower == null) {
+            return null;
+        }
+        // Current calendar month (evaluation clock) — not a trailing multi-month window
+        if (lower.contains("current month") || lower.contains("this month")
+                || lower.contains("in the month") || lower.matches(".*\\bcurrent\\s+calendar\\s+month\\b.*")) {
+            return EnquiryWindowSpec.currentMonth();
+        }
+        // Trailing day windows (distinct from calendar months)
+        if (lower.contains("90 day") || lower.contains("ninety day") || lower.contains("last 90")
+                || lower.contains("past 90") || lower.contains("preceding 90")
+                || lower.contains("trailing 90")) {
+            return EnquiryWindowSpec.lastDays(90);
+        }
+        if (lower.contains("30 day") || lower.contains("thirty day") || lower.contains("last 30")
+                || lower.contains("past 30") || lower.contains("preceding 30")
+                || lower.contains("trailing 30")) {
+            return EnquiryWindowSpec.lastDays(30);
+        }
+        Matcher dayNum = Pattern.compile("(?i)(?:last|past|prior|previous|preceding|trailing)\\s*(\\d+)\\s*days?")
+                .matcher(text == null ? "" : text);
+        if (dayNum.find()) {
+            try {
+                return EnquiryWindowSpec.lastDays(Long.parseLong(dayNum.group(1)));
+            } catch (Exception ignored) {
+            }
+        }
+        // Calendar month windows
+        if (lower.contains("twelve month") || lower.contains("12 month") || lower.contains("one year")
+                || lower.contains("last year") || lower.contains("past year")) {
+            return EnquiryWindowSpec.lastMonths(12);
+        }
+        if (lower.contains("six month") || lower.contains("6 month")) {
+            return EnquiryWindowSpec.lastMonths(6);
+        }
+        if (lower.contains("three month") || lower.contains("3 month")) {
+            return EnquiryWindowSpec.lastMonths(3);
+        }
         Long m = extractNumber(text, "(?i)(?:preceding|last|past|prior|previous)\\s*(\\d+)\\s*months?",
                 "(?i)(\\d+)\\s*months?");
-        if (m != null) return m;
-        if (lower.contains("three month") || lower.contains("3 month")) return 3L;
-        if (lower.contains("twelve month") || lower.contains("12 month") || lower.contains("one year")) return 12L;
-        if (lower.contains("six month") || lower.contains("6 month")) return 6L;
+        if (m != null) {
+            return EnquiryWindowSpec.lastMonths(m);
+        }
         return null;
     }
 

@@ -285,16 +285,44 @@ public class DeterministicGoldenInterpretationProvider implements PolicyInterpre
             return interpretOverdueChild(clause, lower, r);
         }
 
-        if (lower.contains("bureau score") || (lower.contains("score") && lower.contains("650"))) {
-            r.meaning = "Score allowed only if -1 OR NTC OR score >= 650 (not simply >=650)";
-            r.expression = PolicyDsl.or(
-                    PolicyDsl.eq(PolicyDsl.metric("bureau.score"), -1),
-                    PolicyDsl.eq(PolicyDsl.fact("bureau.status_ntc"), true),
-                    PolicyDsl.gte(PolicyDsl.metric("bureau.score"), 650));
-            r.inputs.addAll(List.of("bureau.score", "bureau.status_ntc"));
-            r.thresholds.put("minScore", 650);
-            r.thresholds.put("specialScores", List.of(-1, "NTC"));
-            return r;
+        if (lower.contains("bureau score") || (lower.contains("score") && (lower.contains("650")
+                || lower.contains("minimum") || lower.contains("at least")))) {
+            boolean compoundException = lower.contains("-1")
+                    || lower.contains("ntc")
+                    || lower.contains("thin file")
+                    || lower.contains("thin-file")
+                    || lower.contains("new to credit");
+            if (compoundException) {
+                r.meaning = "Score allowed only if -1 OR NTC OR score >= 650 (not simply >=650)";
+                r.expression = PolicyDsl.or(
+                        PolicyDsl.eq(PolicyDsl.metric("bureau.score"), -1),
+                        PolicyDsl.eq(PolicyDsl.fact("bureau.status_ntc"), true),
+                        PolicyDsl.gte(PolicyDsl.metric("bureau.score"), 650));
+                r.inputs.addAll(List.of("bureau.score", "bureau.status_ntc"));
+                r.thresholds.put("minScore", 650);
+                r.thresholds.put("specialScores", List.of(-1, "NTC"));
+                return r;
+            }
+            Long min = null;
+            try {
+                java.util.regex.Matcher m = java.util.regex.Pattern
+                        .compile("(?i)(?:at\\s+least|minimum|min(?:imum)?\\s*(?:of)?|>=|≥)\\s*(\\d{3})")
+                        .matcher(text);
+                if (m.find()) {
+                    min = Long.parseLong(m.group(1));
+                }
+            } catch (Exception ignored) {
+            }
+            if (min == null && lower.contains("650")) {
+                min = 650L;
+            }
+            if (min != null) {
+                r.meaning = "Bureau score must be >= " + min;
+                r.expression = PolicyDsl.gte(PolicyDsl.metric("bureau.score"), min);
+                r.inputs.add("bureau.score");
+                r.thresholds.put("minScore", min);
+                return r;
+            }
         }
 
         if (lower.contains("write-off") || lower.contains("write off")) {

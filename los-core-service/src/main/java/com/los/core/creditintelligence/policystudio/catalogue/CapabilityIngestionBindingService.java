@@ -7,6 +7,7 @@ import com.los.core.creditintelligence.policystudio.domain.CiPolicyDocument;
 import com.los.core.creditintelligence.policystudio.domain.CiPolicyRuleCandidate;
 import com.los.core.creditintelligence.policystudio.domain.ClauseType;
 import com.los.core.creditintelligence.policystudio.domain.ReviewState;
+import com.los.core.creditintelligence.policystudio.dsl.PolicyDslSemanticEquivalence;
 import com.los.core.creditintelligence.policystudio.model.PolicyStudioSession;
 import org.springframework.stereotype.Service;
 
@@ -238,6 +239,10 @@ public class CapabilityIngestionBindingService {
                 meta.put("productionReferenceParameters", match.catalogueDefaultParameters());
                 meta.put("uploadedPolicyParameters", params);
             }
+            if (Boolean.TRUE.equals(built.needsDerivation())) {
+                meta.put("NEEDS_DERIVATION", true);
+                meta.put("derivationNote", built.derivationNote());
+            }
             meta.put(DecisionPolicyRuleMetadata.KEY_DOMAIN, domainFor(cap).name());
 
             // Months vintage note
@@ -250,6 +255,50 @@ public class CapabilityIngestionBindingService {
 
             Map<String, Object> scope = new LinkedHashMap<>();
             scope.put(DecisionPolicyRuleMetadata.KEY_DOMAIN, domainFor(cap).name());
+
+            // P0-A: catalogue may bind metadata / template only when semantically identical to authored AST.
+            if (existing != null
+                    && PolicyDslSemanticEquivalence.isExecutableAst(existing.getExpression())
+                    && !PolicyDslSemanticEquivalence.equivalent(
+                    existing.getExpression(), existing.getOnTrue(), existing.getOnFalse(),
+                    built.expression(), built.onTrue(), built.onFalse())) {
+                meta.put("catalogueAstSuppressed", true);
+                meta.put("catalogueAstSuppressedReason", "SEMANTIC_NOT_EQUIVALENT");
+                meta.put("catalogueCandidateSystemRuleId", built.systemRuleId());
+                meta.put("catalogueCandidateExpression", built.expression());
+                meta.put("source", "AUTHORED_AST_PRESERVED");
+                meta.put("capabilityBadge", "Policy rule · catalogue mapped (AST preserved)");
+                stampGoldenBusinessTitle(existing, meta, clause);
+                Map<String, Object> keepMeta = existing.getMetadata() == null
+                        ? new LinkedHashMap<>()
+                        : new LinkedHashMap<>(existing.getMetadata());
+                keepMeta.putAll(meta);
+                // Preserve golden provider provenance when AST retained
+                if (existing.getMetadata() != null && existing.getMetadata().get("provider") != null) {
+                    keepMeta.putIfAbsent("provider", existing.getMetadata().get("provider"));
+                }
+                keepMeta.put("activationIncluded", true);
+                keepMeta.put("excludedFromActivation", false);
+                keepMeta.put("NEEDS_INPUT", false);
+                keepMeta.remove("blockedReason");
+                return CiPolicyRuleCandidate.builder()
+                        .id(ruleId)
+                        .clauseId(clauseId)
+                        .systemRuleId(existing.getSystemRuleId())
+                        .ruleVersion(existing.getRuleVersion() != null ? existing.getRuleVersion() : "DRAFT")
+                        .ruleType(existing.getRuleType() != null ? existing.getRuleType() : "HARD")
+                        .scope(existing.getScope() != null ? existing.getScope() : scope)
+                        .expression(existing.getExpression())
+                        .onTrue(existing.getOnTrue())
+                        .onFalse(existing.getOnFalse())
+                        .onMissing(existing.getOnMissing() != null ? existing.getOnMissing() : built.onMissing())
+                        .confidence(existing.getConfidence() != null
+                                ? existing.getConfidence() : confidenceScore(match.confidence()))
+                        .reviewStatus(ReviewState.AI_DRAFTED.name())
+                        .lineage(lineage)
+                        .metadata(keepMeta)
+                        .build();
+            }
 
             return CiPolicyRuleCandidate.builder()
                     .id(ruleId)

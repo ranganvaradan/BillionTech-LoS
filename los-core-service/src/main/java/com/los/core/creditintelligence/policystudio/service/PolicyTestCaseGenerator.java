@@ -25,6 +25,9 @@ public class PolicyTestCaseGenerator {
 
     private List<CiPolicyTestCase> forRule(CiPolicyRuleCandidate rule) {
         String id = rule.getSystemRuleId();
+        if ("CATALOGUE_BUREAU_ENQUIRIES_MAX".equals(id) && usesMetric(rule, "bureau.inquiries.current_month")) {
+            return inquiryCases(rule);
+        }
         return switch (id) {
             case "BUREAU_DPD_LAST_6M" -> dpdCases(rule);
             case "BUREAU_INQUIRIES_CURRENT_MONTH" -> inquiryCases(rule);
@@ -37,6 +40,10 @@ public class PolicyTestCaseGenerator {
             case "BUREAU_SCORE_OR_NTC_OR_GTE_650" -> scoreCases(rule);
             default -> genericThresholdCases(rule);
         };
+    }
+
+    private static boolean usesMetric(CiPolicyRuleCandidate rule, String metric) {
+        return rule.getExpression() != null && String.valueOf(rule.getExpression()).contains(metric);
     }
 
     private List<CiPolicyTestCase> dpdCases(CiPolicyRuleCandidate rule) {

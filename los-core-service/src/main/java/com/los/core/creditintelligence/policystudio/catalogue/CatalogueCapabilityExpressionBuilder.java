@@ -25,8 +25,23 @@ public final class CatalogueCapabilityExpressionBuilder {
             String systemRuleId,
             String businessSummary,
             List<String> dataUsed,
-            String metricPath
-    ) {}
+            String metricPath,
+            Boolean needsDerivation,
+            String derivationNote
+    ) {
+        public BuiltRule(
+                Map<String, Object> expression,
+                String onTrue,
+                String onFalse,
+                String onMissing,
+                String systemRuleId,
+                String businessSummary,
+                List<String> dataUsed,
+                String metricPath) {
+            this(expression, onTrue, onFalse, onMissing, systemRuleId, businessSummary, dataUsed, metricPath,
+                    false, null);
+        }
+    }
 
     public static BuiltRule build(BusinessCapability cap, Map<String, Object> parameters, String treatment) {
         Map<String, Object> params = parameters == null ? Map.of() : parameters;
@@ -56,15 +71,16 @@ public final class CatalogueCapabilityExpressionBuilder {
             }
             case "BUREAU.ENQUIRIES_MAX" -> {
                 long max = longParam(params, "maximumCount", 21);
-                long window = longParam(params, "windowMonths", 3);
-                String metric = window <= 1 ? "bureau.inquiries.current_month" : "bureau.inquiries.last_3m";
+                EnquiryMetric em = resolveEnquiryMetric(params);
                 yield built(
-                        PolicyDsl.gt(PolicyDsl.metric(metric), max),
+                        PolicyDsl.gt(PolicyDsl.metric(em.metricPath()), max),
                         failOutcome, "PASS",
                         "CATALOGUE_BUREAU_ENQUIRIES_MAX",
-                        "Bureau enquiries (" + window + "M) ≤ " + max,
-                        List.of(metric),
-                        metric);
+                        "Bureau enquiries (" + em.label() + ") ≤ " + max,
+                        List.of(em.metricPath()),
+                        em.metricPath(),
+                        em.needsDerivation(),
+                        em.derivationNote());
             }
             case "BUREAU.MAX_DPD" -> {
                 long max = longParam(params, "maximumDays", 30);
@@ -415,7 +431,75 @@ public final class CatalogueCapabilityExpressionBuilder {
             List<String> dataUsed,
             String metricPath) {
         return new BuiltRule(expression, onTrue, onFalse, "DATA_INSUFFICIENT",
-                systemRuleId, summary, dataUsed, metricPath);
+                systemRuleId, summary, dataUsed, metricPath, false, null);
+    }
+
+    private static BuiltRule built(
+            Map<String, Object> expression,
+            String onTrue,
+            String onFalse,
+            String systemRuleId,
+            String summary,
+            List<String> dataUsed,
+            String metricPath,
+            boolean needsDerivation,
+            String derivationNote) {
+        return new BuiltRule(expression, onTrue, onFalse, "DATA_INSUFFICIENT",
+                systemRuleId, summary, dataUsed, metricPath, needsDerivation, derivationNote);
+    }
+
+    private record EnquiryMetric(String metricPath, String label, boolean needsDerivation, String derivationNote) {}
+
+    /**
+     * Maps windowKind / months / days to canonical enquiry metrics.
+     * Never collapses current-month into 3-month or 90-day into calendar months.
+     */
+    private static EnquiryMetric resolveEnquiryMetric(Map<String, Object> params) {
+        String kind = stringParam(params, "windowKind", null);
+        Long days = params.get("windowDays") instanceof Number n ? n.longValue() : null;
+        Long months = params.get("windowMonths") instanceof Number n ? n.longValue() : null;
+        if (kind == null || kind.isBlank()) {
+            if (days != null && days == 90) {
+                kind = EnquiryWindowSpec.LAST_90_DAYS;
+            } else if (days != null && days == 30) {
+                kind = EnquiryWindowSpec.LAST_30_DAYS;
+            } else if (months != null && months == 0) {
+                kind = EnquiryWindowSpec.CURRENT_MONTH;
+            } else if (months != null && months == 3) {
+                kind = EnquiryWindowSpec.LAST_3_MONTHS;
+            } else if (months != null && months == 6) {
+                kind = EnquiryWindowSpec.LAST_6_MONTHS;
+            } else if (months != null && months == 12) {
+                kind = EnquiryWindowSpec.LAST_12_MONTHS;
+            }
+        }
+        if (kind == null) {
+            return new EnquiryMetric(
+                    "bureau.inquiries.current_month",
+                    "window unspecified",
+                    true,
+                    "NEEDS_DERIVATION: enquiry window not specified — do not assume 3 months");
+        }
+        return switch (kind) {
+            case EnquiryWindowSpec.CURRENT_MONTH -> new EnquiryMetric(
+                    "bureau.inquiries.current_month", "current month", false, null);
+            case EnquiryWindowSpec.LAST_90_DAYS -> new EnquiryMetric(
+                    "bureau.recent_inquiries_90d", "last 90 days", false, null);
+            case EnquiryWindowSpec.LAST_3_MONTHS -> new EnquiryMetric(
+                    "bureau.inquiries.last_3m", "last 3 months", false, null);
+            case EnquiryWindowSpec.LAST_30_DAYS -> new EnquiryMetric(
+                    "bureau.inquiries.last_30d", "last 30 days", true,
+                    "NEEDS_DERIVATION: last-30-day enquiry count not production-backed");
+            case EnquiryWindowSpec.LAST_6_MONTHS -> new EnquiryMetric(
+                    "bureau.inquiries.last_6m", "last 6 months", true,
+                    "NEEDS_DERIVATION: last-6-month enquiry count not production-backed");
+            case EnquiryWindowSpec.LAST_12_MONTHS -> new EnquiryMetric(
+                    "bureau.inquiries.last_12m", "last 12 months", true,
+                    "NEEDS_DERIVATION: last-12-month enquiry count not production-backed");
+            default -> new EnquiryMetric(
+                    "bureau.inquiries.current_month", kind, true,
+                    "NEEDS_DERIVATION: unsupported enquiry window " + kind);
+        };
     }
 
     private static long longParam(Map<String, Object> params, String key, long def) {

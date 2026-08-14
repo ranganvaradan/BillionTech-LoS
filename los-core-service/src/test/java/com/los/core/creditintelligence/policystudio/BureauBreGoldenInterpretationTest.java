@@ -45,6 +45,7 @@ class BureauBreGoldenInterpretationTest {
         assertThat(score.getExpression().toString()).contains("-1");
         assertThat(score.getExpression().toString()).contains("650");
         assertThat(score.getExpression().toString()).containsIgnoringCase("ntc");
+        assertThat(score.getMetadata()).containsEntry("catalogueAstSuppressed", true);
     }
 
     @Test
@@ -76,15 +77,18 @@ class BureauBreGoldenInterpretationTest {
         assertThat(session.getRuleCandidates()).extracting(r -> r.getSystemRuleId())
                 .contains(
                         "BUREAU_DPD_LAST_6M",
-                        "BUREAU_INQUIRIES_CURRENT_MONTH",
                         "BUREAU_CC_OVERDUE_GT_5000",
                         "BUREAU_SETTLED_OR_RESTRUCTURED",
                         "BUREAU_LEGAL_SUIT",
                         "BUREAU_DBT_PWOS_LSS",
                         "BUREAU_MULTIPLE_PAN",
                         "BUREAU_ACCOUNT_SOLD",
-                        "BUREAU_NO_WRITEOFF_EXCEPT_CC"
+                        "BUREAU_NO_WRITEOFF_EXCEPT_CC",
+                        "BUREAU_SCORE_OR_NTC_OR_GTE_650"
                 );
+        assertThat(session.getRuleCandidates()).anyMatch(r ->
+                r.getExpression() != null
+                        && String.valueOf(r.getExpression()).contains("bureau.inquiries.current_month"));
     }
 
     @Test

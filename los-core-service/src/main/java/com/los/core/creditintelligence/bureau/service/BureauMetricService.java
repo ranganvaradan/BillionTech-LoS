@@ -416,41 +416,107 @@ public class BureauMetricService {
      * <p>
      * Equifax no-hit: {@code creditScore=-1} and/or {@code noRecordFound=true} → NTC true.
      * Positive score → NTC false. Does not invent NTC from missing/malformed score alone.
+     * Single authority — studio {@code PolicyBureauMetricService.consumerNtc} delegates here.
      */
     public CiMetricResult computeStatusNtc(CiBureauReport report, Map<String, Object> reportData) {
-        Map<String, Object> evidence = baseEvidence(report);
-        boolean noRecord = reportData != null && Boolean.TRUE.equals(reportData.get("noRecordFound"));
-        Integer score = report.getScore();
-        if (reportData != null && reportData.get("statusNtc") instanceof Boolean explicit) {
-            evidence.put("source", "EXPLICIT_STATUS_NTC");
-            evidence.put("noRecordFound", noRecord);
-            evidence.put("score", score);
-            return result(report, STATUS_NTC, BureauMetricOutcome.PASS.name(),
-                    valueOf(explicit ? 1 : 0), "OK", List.of(), List.of(), 0, evidence);
+        Boolean explicit = null;
+        if (reportData != null && reportData.get("statusNtc") instanceof Boolean b) {
+            explicit = b;
         }
-        if (noRecord) {
+        boolean noRecord = reportData != null && Boolean.TRUE.equals(reportData.get("noRecordFound"));
+        StatusNtcEvaluation eval = evaluateStatusNtc(report.getScore(), explicit, noRecord, null);
+        Map<String, Object> evidence = baseEvidence(report);
+        evidence.putAll(eval.evidence());
+        if (BureauMetricOutcome.DATA_INSUFFICIENT.name().equals(eval.outcome())) {
+            return insufficient(report, STATUS_NTC, eval.quality());
+        }
+        return result(report, STATUS_NTC, eval.outcome(),
+                valueOf(eval.value01()), eval.quality(), List.of(), List.of(), 0, evidence);
+    }
+
+    /**
+     * Shared NTC decision — only implementation of bureau.status_ntc business rules.
+     *
+     * @param statusRaw optional provider status string; normalized NTC/NO_HIT counts as explicit evidence
+     *                  (not an inference from score alone).
+     */
+    public StatusNtcEvaluation evaluateStatusNtc(
+            Integer score,
+            Boolean explicitStatusNtc,
+            Boolean noRecordFound,
+            String statusRaw) {
+        Map<String, Object> evidence = new LinkedHashMap<>();
+        evidence.put("score", score);
+        evidence.put("noRecordFound", Boolean.TRUE.equals(noRecordFound));
+
+        Boolean explicit = explicitStatusNtc;
+        if (explicit == null && statusRaw != null && !statusRaw.isBlank()) {
+            BureauStatusNormalizer.CanonicalStatus st = statusNormalizer.normalize(statusRaw);
+            if (st == BureauStatusNormalizer.CanonicalStatus.NTC) {
+                explicit = true;
+                evidence.put("statusRaw", statusRaw);
+                evidence.put("source", "NORMALIZED_STATUS_NTC");
+            } else if (st != BureauStatusNormalizer.CanonicalStatus.UNKNOWN) {
+                explicit = false;
+                evidence.put("statusRaw", statusRaw);
+                evidence.put("source", "NORMALIZED_STATUS_NON_NTC");
+            } else {
+                evidence.put("statusRaw", statusRaw);
+            }
+        }
+
+        if (explicit != null) {
+            evidence.putIfAbsent("source", "EXPLICIT_STATUS_NTC");
+            return new StatusNtcEvaluation(
+                    BureauMetricOutcome.PASS.name(),
+                    explicit ? 1 : 0,
+                    "OK",
+                    evidence);
+        }
+        if (Boolean.TRUE.equals(noRecordFound)) {
             evidence.put("source", "EQUIFAX_NO_RECORD");
-            evidence.put("noRecordFound", true);
-            evidence.put("score", score);
-            return result(report, STATUS_NTC, BureauMetricOutcome.PASS.name(),
-                    valueOf(1), "OK", List.of(), List.of(), 0, evidence);
+            return new StatusNtcEvaluation(BureauMetricOutcome.PASS.name(), 1, "OK", evidence);
         }
         // Equifax pairs -1 with noRecordFound; if -1 alone without no-record flag, do not invent NTC
         if (score != null && score == -1) {
             evidence.put("source", "SCORE_SENTINEL_WITHOUT_NO_RECORD_FLAG");
-            evidence.put("score", score);
-            return result(report, STATUS_NTC, BureauMetricOutcome.PASS.name(),
-                    valueOf(0), "OK", List.of(), List.of(), 0, evidence);
+            return new StatusNtcEvaluation(BureauMetricOutcome.PASS.name(), 0, "OK", evidence);
         }
         if (score != null && score > 0) {
             evidence.put("source", "POSITIVE_SCORE");
-            evidence.put("score", score);
-            return result(report, STATUS_NTC, BureauMetricOutcome.PASS.name(),
-                    valueOf(0), "OK", List.of(), List.of(), 0, evidence);
+            return new StatusNtcEvaluation(BureauMetricOutcome.PASS.name(), 0, "OK", evidence);
         }
         evidence.put("reason", "SCORE_MISSING_OR_UNKNOWN");
-        evidence.put("score", score);
-        return insufficient(report, STATUS_NTC, "SCORE_MISSING_OR_UNKNOWN");
+        return new StatusNtcEvaluation(
+                BureauMetricOutcome.DATA_INSUFFICIENT.name(),
+                null,
+                "SCORE_MISSING_OR_UNKNOWN",
+                evidence);
+    }
+
+    public record StatusNtcEvaluation(
+            String outcome,
+            Integer value01,
+            String quality,
+            Map<String, Object> evidence) {
+
+        /** Studio Policy Test map shape (outcome / value / quality). */
+        public Map<String, Object> toStudioMap() {
+            Map<String, Object> m = new LinkedHashMap<>();
+            if (BureauMetricOutcome.DATA_INSUFFICIENT.name().equals(outcome)) {
+                m.put("outcome", "DATA_INSUFFICIENT");
+                m.put("value", null);
+                m.put("quality", quality);
+            } else {
+                m.put("outcome", "PASS");
+                m.put("value", value01 != null && value01 != 0);
+                m.put("quality", quality);
+            }
+            if (evidence != null) {
+                m.put("evidence", evidence);
+            }
+            return m;
+        }
     }
 
     public List<CiMetricResult> findForReport(UUID reportId) {

@@ -93,6 +93,28 @@ public class PolicyBureauMetricService {
         return r;
     }
 
+    /** Trailing 3 calendar months (distinct from current month and from trailing 90 days). */
+    public Map<String, Object> inquiriesLast3Months(List<InquiryInput> inquiries, EvaluationClock clock) {
+        EvaluationClock c = clock != null ? clock
+                : new FixedEvaluationClock(Instant.parse("2024-06-15T00:00:00Z"), ZoneId.of("Asia/Kolkata"));
+        LocalDate today = c.today();
+        LocalDate start = today.minusMonths(3).withDayOfMonth(1);
+        if (inquiries == null) {
+            return di("Inquiries missing");
+        }
+        int count = 0;
+        for (InquiryInput i : inquiries) {
+            if (i.date() != null && !i.date().isBefore(start) && !i.date().isAfter(today)) {
+                count++;
+            }
+        }
+        Map<String, Object> r = pass(count);
+        r.put("asOf", today.toString());
+        r.put("windowStart", start.toString());
+        r.put("clockZone", c.zone().getId());
+        return r;
+    }
+
     public Map<String, Object> consumerScore(Integer score) {
         if (score == null) {
             return di("Score missing");
@@ -101,13 +123,19 @@ public class PolicyBureauMetricService {
     }
 
     public Map<String, Object> consumerNtc(String statusRaw, Boolean explicitNtc) {
-        if (explicitNtc != null) {
-            return pass(explicitNtc);
-        }
-        if (statusRaw == null) {
-            return di("NTC status unknown");
-        }
-        return pass(statusNormalizer.normalize(statusRaw) == CanonicalStatus.NTC);
+        return consumerNtc(null, statusRaw, explicitNtc, null);
+    }
+
+    /**
+     * Studio NTC — delegates to {@link BureauMetricService#evaluateStatusNtc} (single authority).
+     */
+    public Map<String, Object> consumerNtc(
+            Integer score,
+            String statusRaw,
+            Boolean explicitNtc,
+            Boolean noRecordFound) {
+        BureauMetricService shared = new BureauMetricService(null, null);
+        return shared.evaluateStatusNtc(score, explicitNtc, noRecordFound, statusRaw).toStudioMap();
     }
 
     public Map<String, Object> writeoffCounts(List<TradelineInput> tradelines) {

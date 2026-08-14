@@ -196,7 +196,11 @@ public class RuleCandidateFactory {
                 return "BUREAU_OVERDUE_CHILD_" + clause.getClauseNumber();
             }
             if (lower.contains("score")) {
-                return "BUREAU_SCORE_OR_NTC_OR_GTE_650";
+                if (lower.contains("-1") || lower.contains("ntc") || lower.contains("thin file")
+                        || lower.contains("thin-file") || lower.contains("new to credit")) {
+                    return "BUREAU_SCORE_OR_NTC_OR_GTE_650";
+                }
+                return "BUREAU_MIN_SCORE";
             }
             if (lower.contains("write-off") || lower.contains("write off")) {
                 return "BUREAU_NO_WRITEOFF_EXCEPT_CC";
