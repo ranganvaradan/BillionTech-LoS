@@ -445,6 +445,43 @@ public class PolicyLifecycleService {
     /** Landing-row actions for Existing Policies (Open/Copy always; Delete/Retire context-valid). */
     public List<String> landingActions(PolicyStudioSession session) {
         Map<String, Object> life = ensureLifecycle(session);
+        return resolveLandingActions(session, life);
+    }
+
+    /**
+     * Same landing action matrix for catalogue-backed rows (no in-memory session).
+     * Catalogue governance rows carry durableApplicabilityId → DELETE never exposed.
+     */
+    public List<String> landingActionsForCatalogueRow(Map<String, Object> catalogueRow) {
+        Map<String, Object> life = new LinkedHashMap<>();
+        Object status = catalogueRow == null ? null : catalogueRow.get("status");
+        if (status == null && catalogueRow != null) {
+            status = catalogueRow.get("businessStatus");
+        }
+        life.put("businessStatus", status != null ? status : PolicyBusinessLifecycleStatus.DRAFT);
+        if (catalogueRow != null) {
+            if (catalogueRow.get("contentImmutable") != null) {
+                life.put("contentImmutable", catalogueRow.get("contentImmutable"));
+            }
+            Object applicabilityId = catalogueRow.get("applicabilityId");
+            if (applicabilityId != null && !String.valueOf(applicabilityId).isBlank()) {
+                life.put("durableApplicabilityId", applicabilityId);
+            }
+            if (catalogueRow.get("approvedAt") != null) {
+                life.put("approvedAt", catalogueRow.get("approvedAt"));
+            }
+            if (catalogueRow.get("scheduledAt") != null) {
+                life.put("scheduledAt", catalogueRow.get("scheduledAt"));
+            }
+            if (catalogueRow.get("retiredAt") != null) {
+                life.put("retiredAt", catalogueRow.get("retiredAt"));
+            }
+        }
+        return resolveLandingActions(null, life);
+    }
+
+    /** Single resolver used by session and catalogue landing paths. */
+    List<String> resolveLandingActions(PolicyStudioSession session, Map<String, Object> life) {
         String status = PolicyBusinessLifecycleStatus.fromStored(
                 str(life, "businessStatus", PolicyBusinessLifecycleStatus.DRAFT));
         List<String> actions = new ArrayList<>();
@@ -477,6 +514,10 @@ public class PolicyLifecycleService {
         }
         if (life.get("durableApplicabilityId") != null) {
             return "Policy is registered in the durable governance catalogue. Hard delete is not allowed.";
+        }
+        // Catalogue / status-only landing path — never invent DELETE without session evidence.
+        if (session == null || session.documentId() == null) {
+            return "Hard delete requires an editable studio session; catalogue-backed rows cannot authorize DELETE.";
         }
         String lineage = str(life, "lineageId", session.documentId().toString());
         UUID key;

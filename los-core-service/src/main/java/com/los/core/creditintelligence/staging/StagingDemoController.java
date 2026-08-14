@@ -42,6 +42,7 @@ public class StagingDemoController {
     private final StagingProspectApprovalService prospectApprovalService;
     private final PolicyCatalogueFacade policyCatalogueFacade;
     private final CreditCapabilityCatalogueService creditCapabilityCatalogueService;
+    private final com.los.core.creditintelligence.policystudio.lifecycle.PolicyLifecycleService policyLifecycleService;
     private final com.los.core.creditintelligence.decisionpolicy.kyc.shadow.ShadowKycApplicationEvaluationFacade shadowKycFacade;
     private final com.los.core.creditintelligence.decisionpolicy.kyc.shadow.ShadowKycPolicyEvaluationService shadowKycEvaluationService;
     private final com.los.core.creditintelligence.decisionpolicy.sim.DecisionPolicyEndToEndSimulationService decisionPolicyE2eSimulationService;
@@ -135,6 +136,8 @@ public class StagingDemoController {
                 row.put("kind", "catalogue");
                 row.put("underwritingRuleCount", c.get("underwritingRuleCount"));
                 row.put("needsInputCount", c.get("needsInputCount"));
+                // Same lifecycle action matrix as session-backed rows (no hardcoded second matrix).
+                row.put("availableActions", policyLifecycleService.landingActionsForCatalogueRow(c));
                 existing.add(row);
                 if (docId != null) seen.add(docId);
             }
