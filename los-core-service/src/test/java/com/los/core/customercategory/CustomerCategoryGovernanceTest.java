@@ -1,6 +1,10 @@
 package com.los.core.customercategory;
 
 import com.los.core.audit.AdminConfigAuditSupport;
+import com.los.core.creditintelligence.config.CreditIntelligenceProperties;
+import com.los.core.creditintelligence.policystudio.lifecycle.PolicyCatalogueService;
+import com.los.core.creditintelligence.policystudio.lifecycle.domain.CiPolicyApplicability;
+import com.los.core.creditintelligence.policystudio.lifecycle.repository.CiPolicyApplicabilityRepository;
 import com.los.core.exception.BusinessRuleException;
 import com.los.core.exception.ForbiddenException;
 import com.los.core.model.entity.UnderwritingRuleSet;
@@ -36,7 +40,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 /**
- * CUSTOMER-CATEGORY-GOVERNANCE-IMPLEMENTATION-1 mandatory coverage.
+ * CUSTOMER-CATEGORY-GOVERNANCE-IMPLEMENTATION-1 + STEP-2 Policy bind coverage.
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -47,10 +51,14 @@ class CustomerCategoryGovernanceTest {
     @Mock PolicySetRepository policySetRepository;
     @Mock CustomerCategoryRepository categoryRepository;
     @Mock AdminConfigAuditSupport auditSupport;
+    @Mock CiPolicyApplicabilityRepository applicabilityRepository;
+    @Mock PolicyCatalogueService policyCatalogueService;
+    @Mock CreditIntelligenceProperties creditIntelligenceProperties;
 
     CustomerCategoryValidator validator;
     PolicySetService policySetService;
     CustomerCategoryService categoryService;
+    CategoryPolicyBindService policyBindService;
     EligibleComponentCatalogueService catalogue;
 
     Actor maker = new Actor("maker-1", "Maker One", "CREDIT_MANAGER");
@@ -64,21 +72,31 @@ class CustomerCategoryGovernanceTest {
 
     UUID rsId;
     UUID scId;
+    UUID policyAppId;
+    UUID policyDocId;
+    UUID tenant = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
     @BeforeEach
     void setUp() {
+        when(creditIntelligenceProperties.getDefaultTenantId()).thenReturn(tenant);
         validator = new CustomerCategoryValidator(ruleSetRepository, scorecardRepository);
         policySetService = new PolicySetService(policySetRepository, categoryRepository, validator, auditSupport);
+        policyBindService = new CategoryPolicyBindService(
+                applicabilityRepository, policyCatalogueService, creditIntelligenceProperties);
         categoryService = new CustomerCategoryService(
-                categoryRepository, policySetRepository, validator, auditSupport);
+                categoryRepository, policySetRepository, validator, auditSupport,
+                policyBindService, applicabilityRepository);
         catalogue = new EligibleComponentCatalogueService(ruleSetRepository, scorecardRepository);
 
         rsId = UUID.randomUUID();
         scId = UUID.randomUUID();
+        policyAppId = UUID.randomUUID();
+        policyDocId = UUID.randomUUID();
         when(ruleSetRepository.findById(rsId)).thenReturn(Optional.of(rs(rsId, "INDIVIDUAL", "TERM_LOAN")));
         when(scorecardRepository.findById(scId)).thenReturn(Optional.of(sc(scId, "INDIVIDUAL", "TERM_LOAN")));
         when(ruleSetRepository.findAll()).thenReturn(List.of(rs(rsId, "INDIVIDUAL", "TERM_LOAN")));
         when(scorecardRepository.findAll()).thenReturn(List.of(sc(scId, "INDIVIDUAL", "TERM_LOAN")));
+        when(applicabilityRepository.findById(policyAppId)).thenReturn(Optional.of(approvedPolicy()));
 
         when(policySetRepository.findByCodeAndVersionNo(any(), anyInt())).thenAnswer(inv -> {
             PolicySetEntity e = psByCode.get(inv.getArgument(0) + "@" + inv.getArgument(1));
@@ -116,12 +134,27 @@ class CustomerCategoryGovernanceTest {
         doNothing().when(categoryRepository).delete(any());
     }
 
+    private CiPolicyApplicability approvedPolicy() {
+        return CiPolicyApplicability.builder()
+                .id(policyAppId)
+                .tenantId(tenant)
+                .policyDocumentId(policyDocId)
+                .policyName("Gov Test Policy")
+                .policyVersionLabel("v1")
+                .businessStatus("APPROVED")
+                .dataReadinessStatus("PASSED")
+                .products(List.of("TERM_LOAN"))
+                .borrowerTypes(List.of("INDIVIDUAL"))
+                .build();
+    }
+
     @Test
-    void categoryCreateEditSubmitSelfApproveBlockedApproveActivateRequiresActivePs() {
+    void categoryCreateEditSubmitSelfApproveBlockedApproveActivateUsesPolicyNotPolicySet() {
         Actor adminMaker = new Actor("admin-1", "Admin Maker", "ADMINISTRATOR");
         PolicySetResponse ps = policySetService.createDraft(psReq("PS_G1"), adminMaker);
         CategoryResponse cat = categoryService.createDraft(catReq("CC_G1", ps.id()), adminMaker);
         assertEquals("DRAFT", cat.status());
+        assertEquals("LINKED", cat.policyLinkageStatus());
 
         cat = categoryService.update(cat.id(), catReq("CC_G1", ps.id()), adminMaker);
         assertEquals("DRAFT", cat.status());
@@ -138,19 +171,10 @@ class CustomerCategoryGovernanceTest {
         assertEquals("APPROVED", approved.status());
         UUID approvedId = approved.id();
 
-        BusinessRuleException notActivePs = assertThrows(BusinessRuleException.class,
-                () -> categoryService.activate(approvedId, activator));
-        assertEquals("POLICY_SET_NOT_READY", notActivePs.getReason());
-
-        // activate PS path
-        PolicySetResponse psInReview = policySetService.submit(ps.id(), new LifecycleActionRequest("s", null), adminMaker);
-        PolicySetResponse psApproved = policySetService.approve(psInReview.id(), new LifecycleActionRequest("a", null), checker);
-        PolicySetResponse psActive = policySetService.activate(psApproved.id(), activator);
-        assertEquals("ACTIVE", psActive.status());
-
+        // Policy Set still DRAFT — Category activation uses Policy Version, not Policy Set
         CategoryResponse active = categoryService.activate(approvedId, activator);
         assertEquals("ACTIVE", active.status());
-        assertFalse(active.overlapWarnings() == null);
+        assertEquals("LINKED", active.policyLinkageStatus());
     }
 
     @Test
@@ -161,7 +185,8 @@ class CustomerCategoryGovernanceTest {
         BusinessRuleException ex = assertThrows(BusinessRuleException.class,
                 () -> categoryService.update(cat.id(),
                         new CategoryRequest("CC_G2", "x", null, "COMPANY", "TERM_LOAN", "BORROWER",
-                                new BigDecimal("1"), new BigDecimal("2"), ps.id(), null, null, null), maker));
+                                new BigDecimal("1"), new BigDecimal("2"), ps.id(), null, null, null,
+                                null, null, policyAppId, policyDocId, "v1"), maker));
         assertEquals("ACTIVE_CATEGORY_IMMUTABLE", ex.getReason());
 
         CategoryResponse copy = categoryService.copyVersion(cat.id(),
@@ -169,6 +194,7 @@ class CustomerCategoryGovernanceTest {
         assertEquals("DRAFT", copy.status());
         assertEquals(2, copy.versionNo());
         assertEquals(cat.id(), copy.replacesCategoryId());
+        assertEquals(policyAppId, copy.policyApplicabilityId());
 
         CategoryResponse retired = categoryService.retire(cat.id(),
                 new LifecycleActionRequest(null, "superseded"), activator);
@@ -279,7 +305,8 @@ class CustomerCategoryGovernanceTest {
         return new CategoryRequest(code, code + " name", null,
                 "INDIVIDUAL", "TERM_LOAN", "BORROWER",
                 new BigDecimal("50000"), new BigDecimal("50000000"),
-                psId, null, null, null);
+                psId, null, null, null,
+                null, null, policyAppId, policyDocId, "v1");
     }
 
     private static UnderwritingRuleSet rs(UUID id, String bt, String lp) {

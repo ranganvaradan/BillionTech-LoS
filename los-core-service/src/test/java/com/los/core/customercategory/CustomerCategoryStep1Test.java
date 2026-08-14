@@ -1,6 +1,10 @@
 package com.los.core.customercategory;
 
 import com.los.core.audit.AdminConfigAuditSupport;
+import com.los.core.creditintelligence.config.CreditIntelligenceProperties;
+import com.los.core.creditintelligence.policystudio.lifecycle.PolicyCatalogueService;
+import com.los.core.creditintelligence.policystudio.lifecycle.domain.CiPolicyApplicability;
+import com.los.core.creditintelligence.policystudio.lifecycle.repository.CiPolicyApplicabilityRepository;
 import com.los.core.exception.BusinessRuleException;
 import com.los.core.model.entity.UnderwritingRuleSet;
 import com.los.core.repository.UnderwritingRuleSetRepository;
@@ -43,23 +47,40 @@ class CustomerCategoryStep1Test {
     @Mock PolicySetRepository policySetRepository;
     @Mock CustomerCategoryRepository categoryRepository;
     @Mock AdminConfigAuditSupport auditSupport;
+    @Mock CiPolicyApplicabilityRepository applicabilityRepository;
+    @Mock PolicyCatalogueService policyCatalogueService;
+    @Mock CreditIntelligenceProperties creditIntelligenceProperties;
 
     CustomerCategoryValidator validator;
     PolicySetService policySetService;
     CustomerCategoryService categoryService;
     CustomerCategorySeedService seedService;
+    CategoryPolicyBindService policyBindService;
 
     Actor actor;
+    UUID policyAppId = UUID.randomUUID();
+    UUID policyDocId = UUID.randomUUID();
+    UUID tenant = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
     @BeforeEach
     void setUp() {
+        lenient().when(creditIntelligenceProperties.getDefaultTenantId()).thenReturn(tenant);
         validator = new CustomerCategoryValidator(ruleSetRepository, scorecardRepository);
         policySetService = new PolicySetService(policySetRepository, categoryRepository, validator, auditSupport);
+        policyBindService = new CategoryPolicyBindService(
+                applicabilityRepository, policyCatalogueService, creditIntelligenceProperties);
         categoryService = new CustomerCategoryService(
-                categoryRepository, policySetRepository, validator, auditSupport);
+                categoryRepository, policySetRepository, validator, auditSupport,
+                policyBindService, applicabilityRepository);
         seedService = new CustomerCategorySeedService(
                 ruleSetRepository, scorecardRepository, policySetRepository, categoryRepository, auditSupport);
         actor = new Actor("jwt-user-42", "CM Reviewer", "CREDIT_MANAGER");
+        lenient().when(applicabilityRepository.findById(policyAppId)).thenReturn(Optional.of(
+                CiPolicyApplicability.builder()
+                        .id(policyAppId).tenantId(tenant).policyDocumentId(policyDocId)
+                        .policyName("Step1 Policy").policyVersionLabel("v1")
+                        .businessStatus("APPROVED").dataReadinessStatus("PASSED")
+                        .products(List.of()).borrowerTypes(List.of()).build()));
     }
 
     // --- 1 create valid DRAFT ---
@@ -153,15 +174,17 @@ class CustomerCategoryStep1Test {
         assertEquals("INVALID_AMOUNT_RANGE", ex.getReason());
     }
 
-    // --- 11 exactly one Policy Set ---
+    // --- 11 Policy Set no longer required for Category composition ---
     @Test
-    void categoryRequiresExactlyOnePolicySet() {
+    void categoryDoesNotRequirePolicySet() {
         when(categoryRepository.findByCodeAndVersionNo(any(), eq(1))).thenReturn(Optional.empty());
-        BusinessRuleException ex = assertThrows(BusinessRuleException.class,
-                () -> categoryService.createDraft(new CategoryRequest(
-                        "CC_NO_PS", "No PS", null, "INDIVIDUAL", "PL", "BORROWER",
-                        null, null, null, null, null, null), actor));
-        assertEquals("POLICY_SET_REQUIRED", ex.getReason());
+        when(categoryRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        CategoryResponse res = categoryService.createDraft(new CategoryRequest(
+                "CC_NO_PS", "No PS", null, "INDIVIDUAL", "PL", "BORROWER",
+                null, null, null, null, null, null), actor);
+        assertEquals("DRAFT", res.status());
+        assertNull(res.policySetId());
+        assertEquals(CategoryPolicyBindService.LINKAGE_REQUIRED, res.policyLinkageStatus());
     }
 
     // --- 12–13 Policy Set live rule set refs ---
@@ -356,33 +379,19 @@ class CustomerCategoryStep1Test {
     void activateDoesNotBlockOnOverlapWarning() {
         UUID catId = UUID.randomUUID();
         UUID psId = UUID.randomUUID();
-        UUID rsId = UUID.randomUUID();
-        UUID scId = UUID.randomUUID();
-        PolicySetEntity ps = PolicySetEntity.builder()
-                .id(psId).code("PS").versionNo(1).name("PS")
-                .status(ConfigLifecycleStatus.ACTIVE)
-                .primaryRuleSetId(rsId)
-                .scorecardId(scId)
-                .additionalRuleSetIds(List.of())
-                .build();
         CustomerCategoryEntity approved = CustomerCategoryEntity.builder()
                 .id(catId).code("CC1").versionNo(1).name("C1")
                 .status(ConfigLifecycleStatus.APPROVED)
                 .borrowerType("ANY").loanProduct("ANY").intakeSegment("ANY")
                 .policySetId(psId)
+                .policyApplicabilityId(policyAppId)
+                .policyDocumentId(policyDocId)
+                .policyVersionLabel("v1")
                 .governanceJson(new java.util.LinkedHashMap<>())
                 .build();
         when(categoryRepository.findById(catId)).thenReturn(Optional.of(approved));
-        when(policySetRepository.findById(psId)).thenReturn(Optional.of(ps));
-        when(ruleSetRepository.findById(rsId)).thenReturn(Optional.of(activeRuleSet(rsId, "INDIVIDUAL", "PL")));
-        when(scorecardRepository.findById(scId)).thenReturn(Optional.of(
-                com.los.core.model.entity.UnderwritingScorecard.builder()
-                        .id(scId).name("SC").borrowerType("INDIVIDUAL").loanProduct("PL")
-                        .active(true).status("ACTIVE").priority(100)
-                        .scorecardJson(java.util.Map.of()).thresholdsJson(java.util.Map.of())
-                        .hardRulesJson(java.util.Map.of()).safetyJson(java.util.Map.of())
-                        .governanceJson(java.util.Map.of()).build()));
         when(categoryRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        // overlap warning only — findAll drives overlapReport; Policy readiness uses setUp stub
         when(categoryRepository.findAll()).thenReturn(List.of(approved));
 
         CategoryResponse res = categoryService.activate(catId, actor);

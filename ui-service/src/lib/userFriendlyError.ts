@@ -38,6 +38,10 @@ const REASON_MESSAGES: Record<string, string> = {
   RETIREMENT_REASON_REQUIRED: 'A retirement reason is required.',
   CATEGORY_NOT_EDITABLE: 'Only DRAFT categories can be edited.',
   POLICY_SET_NOT_EDITABLE: 'Only DRAFT Policy Sets can be edited.',
+  POLICY_LINKAGE_REQUIRED:
+    'Policy linkage required — select a Policy Studio Policy Version for this Category.',
+  POLICY_NOT_FOUND: 'The selected Policy Version was not found in Policy Studio.',
+  POLICY_VERSION_INVALID: 'The selected Policy Version reference is invalid.',
   TERMINOLOGY_CONFLICT_CUSTOMER_ROLE:
     'Customer Role and Intake Segment disagree. Send one value, or matching aliases.',
   TERMINOLOGY_CONFLICT_ENTITY_TYPE:

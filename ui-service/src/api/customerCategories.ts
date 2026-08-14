@@ -51,7 +51,8 @@ export interface CustomerCategory {
   customerRole?: string
   minAmount: number | null
   maxAmount: number | null
-  policySetId: string
+  /** Transitional internal package id — optional; not required for new Categories. */
+  policySetId?: string | null
   seedSourceRuleSetId?: string | null
   reviewStatus?: string | null
   inferenceNotes?: Record<string, unknown>
@@ -75,6 +76,15 @@ export interface CustomerCategory {
   overlapWarnings?: Record<string, unknown>[]
   allowedActions?: LifecycleAction[]
   history?: Record<string, unknown>[]
+  /** Principal Policy Studio catalogue id (exact Policy Version). */
+  policyApplicabilityId?: string | null
+  policyDocumentId?: string | null
+  policyVersionLabel?: string | null
+  policyLineageId?: string | null
+  policyName?: string | null
+  policyBusinessStatus?: string | null
+  /** LINKED | POLICY_LINKAGE_REQUIRED */
+  policyLinkageStatus?: string | null
 }
 
 /**
@@ -82,6 +92,7 @@ export interface CustomerCategory {
  * Precedence: when both canonical and transitional fields are present they must agree
  * (case-insensitive). Disagreement → TERMINOLOGY_CONFLICT_* (fail closed).
  * Prefer sending {@code entityType}/{@code customerRole}; transitional aliases remain accepted.
+ * Policy bind: prefer {@code policyApplicabilityId}; {@code policySetId} is transitional/optional.
  */
 export interface CategoryRequest {
   code: string
@@ -94,10 +105,40 @@ export interface CategoryRequest {
   customerRole?: string
   minAmount?: number | null
   maxAmount?: number | null
-  policySetId: string
+  /** Transitional — optional; not required for new Categories. */
+  policySetId?: string | null
+  policyApplicabilityId?: string | null
+  policyDocumentId?: string | null
+  policyVersionLabel?: string | null
   effectiveFrom?: string | null
   effectiveUntil?: string | null
   reasonForChange?: string | null
+}
+
+/** Policy Studio catalogue picker row for Category admin. */
+export interface EligiblePolicy {
+  policyApplicabilityId: string
+  policyDocumentId: string | null
+  policyName: string
+  policyVersionLabel: string
+  enginePolicyVersionId?: string | null
+  businessStatus: string | null
+  effectiveFrom?: string | null
+  effectiveUntil?: string | null
+  products?: string[]
+  entityTypes?: string[]
+  customerRoleApplicability?: string | null
+  minLoanAmount?: number | null
+  maxLoanAmount?: number | null
+  dataReadinessStatus?: string | null
+  testsStatus?: string | null
+  simulationReviewStatus?: string | null
+  shadowEligibility?: string | null
+  shadowRoutable?: boolean | null
+  productionAuthority?: string | null
+  allowCanonicalAuthority?: boolean | null
+  compatibleWithCategory: boolean
+  compatibilityNotes?: string[]
 }
 
 export interface EligibleRuleSet {
@@ -177,6 +218,20 @@ export function customerCategoryActivationReadiness(id: string) {
 
 export function listCategoryOverlaps() {
   return http.get<Record<string, unknown>[]>('/customer-categories/meta/overlaps').then((r) => r.data)
+}
+
+export function listEligiblePolicies(params?: {
+  entityType?: string
+  borrowerType?: string
+  loanProduct?: string
+  customerRole?: string
+  intakeSegment?: string
+  minAmount?: number
+  maxAmount?: number
+}) {
+  return http
+    .get<EligiblePolicy[]>('/customer-categories/meta/eligible-policies', { params })
+    .then((r) => r.data)
 }
 
 export function listEligibleRuleSets(params?: {

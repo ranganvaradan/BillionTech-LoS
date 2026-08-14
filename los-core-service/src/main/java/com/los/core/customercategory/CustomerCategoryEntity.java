@@ -55,9 +55,28 @@ public class CustomerCategoryEntity {
     @Column(name = "max_amount", precision = 15, scale = 2)
     private BigDecimal maxAmount;
 
-    /** Exactly one Policy Set (no separate link table). */
-    @Column(name = "policy_set_id", nullable = false)
+    /**
+     * Transitional / internal Policy Set package. Nullable after STEP-2.
+     * Not the lender-facing principal underwriting relation.
+     */
+    @Column(name = "policy_set_id")
     private UUID policySetId;
+
+    /** Principal bind: Policy Studio catalogue row (exact Policy Version). */
+    @Column(name = "policy_applicability_id")
+    private UUID policyApplicabilityId;
+
+    /** Policy Studio document identity for the bound version. */
+    @Column(name = "policy_document_id")
+    private UUID policyDocumentId;
+
+    /** Exact Policy Version label pinned at bind time. */
+    @Column(name = "policy_version_label", length = 40)
+    private String policyVersionLabel;
+
+    /** Stable Policy lineage handle across versions (optional). */
+    @Column(name = "policy_lineage_id")
+    private UUID policyLineageId;
 
     @Column(name = "seed_source_rule_set_id")
     private UUID seedSourceRuleSetId;

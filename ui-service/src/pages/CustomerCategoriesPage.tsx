@@ -7,6 +7,7 @@ import {
   customerCategoryActivationReadiness,
   deleteCustomerCategory,
   listCustomerCategories,
+  listEligiblePolicies,
   retireCustomerCategory,
   returnCustomerCategory,
   submitCustomerCategory,
@@ -14,9 +15,9 @@ import {
   type ActivationReadiness,
   type CategoryRequest,
   type CustomerCategory,
+  type EligiblePolicy,
   type LifecycleAction,
 } from '@/api/customerCategories'
-import { listPolicySets, type PolicySet } from '@/api/policySets'
 import { ApiError } from '@/api/http'
 import { ErrorState } from '@/components/ErrorState'
 import { LoadingState } from '@/components/LoadingState'
@@ -78,9 +79,19 @@ function fromLocalInput(v: string): string | null {
   return Number.isNaN(d.getTime()) ? t : d.toISOString()
 }
 
-function policySetLabel(ps: PolicySet | undefined): string {
-  if (!ps) return 'Policy Set (unresolved)'
-  return `${ps.name} · ${ps.code} · ${statusLabel(ps.status)}`
+function policyPickerLabel(p: EligiblePolicy): string {
+  const base = `${p.policyName} · ${p.policyVersionLabel}`
+  const status = p.businessStatus ? ` · ${p.businessStatus}` : ''
+  const compat = p.compatibleWithCategory ? '' : ' (scope mismatch)'
+  return `${base}${status}${compat}`
+}
+
+function listPolicyTag(r: CustomerCategory): string {
+  if (r.policyLinkageStatus === 'POLICY_LINKAGE_REQUIRED') return 'POLICY LINKAGE REQUIRED'
+  if (r.policyName) {
+    return r.policyVersionLabel ? `${r.policyName} · ${r.policyVersionLabel}` : r.policyName
+  }
+  return 'POLICY LINKAGE REQUIRED'
 }
 
 function auditLine(label: string, by: string | null | undefined, at: string | null | undefined) {
@@ -94,7 +105,7 @@ function auditLine(label: string, by: string | null | undefined, at: string | nu
 
 export function CustomerCategoriesPage() {
   const [rows, setRows] = useState<CustomerCategory[] | null>(null)
-  const [policySets, setPolicySets] = useState<PolicySet[]>([])
+  const [eligiblePolicies, setEligiblePolicies] = useState<EligiblePolicy[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<CustomerCategory | null>(null)
@@ -113,38 +124,79 @@ export function CustomerCategoriesPage() {
   const [intakeSegment, setIntakeSegment] = useState(ANY_TOKEN)
   const [minAmount, setMinAmount] = useState('')
   const [maxAmount, setMaxAmount] = useState('')
-  const [policySetId, setPolicySetId] = useState('')
+  /** Transitional — retained only when already present on selected category. */
+  const [policySetId, setPolicySetId] = useState<string | null>(null)
+  const [policyApplicabilityId, setPolicyApplicabilityId] = useState('')
+  const [policyDocumentId, setPolicyDocumentId] = useState<string | null>(null)
+  const [policyVersionLabel, setPolicyVersionLabel] = useState<string | null>(null)
   const [effectiveFrom, setEffectiveFrom] = useState('')
   const [effectiveUntil, setEffectiveUntil] = useState('')
   const [reasonForChange, setReasonForChange] = useState('')
 
-  const psById = useMemo(() => new Map(policySets.map((p) => [p.id, p])), [policySets])
+  const loadEligible = useCallback(async (opts?: {
+    entityType?: string
+    loanProduct?: string
+    customerRole?: string
+    minAmount?: number | null
+    maxAmount?: number | null
+  }) => {
+    try {
+      const params: Parameters<typeof listEligiblePolicies>[0] = {}
+      if (opts?.entityType && opts.entityType !== ANY_TOKEN) params.entityType = opts.entityType
+      if (opts?.loanProduct && opts.loanProduct !== ANY_TOKEN) params.loanProduct = opts.loanProduct
+      if (opts?.customerRole && opts.customerRole !== ANY_TOKEN) params.customerRole = opts.customerRole
+      if (opts?.minAmount != null) params.minAmount = opts.minAmount
+      if (opts?.maxAmount != null) params.maxAmount = opts.maxAmount
+      const policies = await listEligiblePolicies(params)
+      setEligiblePolicies(policies)
+    } catch {
+      setEligiblePolicies([])
+    }
+  }, [])
 
   const load = useCallback(async () => {
     setLoadError(null)
     setLoading(true)
     try {
-      const [cats, ps] = await Promise.all([listCustomerCategories(), listPolicySets()])
+      const [cats] = await Promise.all([listCustomerCategories(), loadEligible()])
       setRows(cats)
-      setPolicySets(ps)
     } catch (e) {
       setRows(null)
       setLoadError(userFriendlyMessage(e, 'Failed to load Customer Categories'))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [loadEligible])
 
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    if (!isCreating && !selected) return
+    void loadEligible({
+      entityType: toApiMatchValue(borrowerType),
+      loanProduct: toApiMatchValue(loanProduct),
+      customerRole: toApiMatchValue(intakeSegment),
+      minAmount: parseOptionalAmount(minAmount),
+      maxAmount: parseOptionalAmount(maxAmount),
+    })
+  }, [
+    isCreating,
+    selected,
+    borrowerType,
+    loanProduct,
+    intakeSegment,
+    minAmount,
+    maxAmount,
+    loadEligible,
+  ])
 
   const filtered = useMemo(() => {
     const items = rows ?? []
     const q = listSearch.trim().toLowerCase()
     if (!q) return items
     return items.filter((r) => {
-      const ps = psById.get(r.policySetId)
       const hay = [
         r.code,
         r.name,
@@ -154,15 +206,29 @@ export function CustomerCategoriesPage() {
         displayLoanProduct(r.loanProduct),
         displayIntake(r.intakeSegment),
         displayAmountRange(r.minAmount, r.maxAmount),
-        ps?.name,
-        ps?.code,
+        r.policyName,
+        r.policyVersionLabel,
+        r.policyLinkageStatus,
+        listPolicyTag(r),
       ]
         .filter(Boolean)
         .join(' ')
         .toLowerCase()
       return hay.includes(q)
     })
-  }, [rows, listSearch, psById])
+  }, [rows, listSearch])
+
+  function selectPolicy(applicabilityId: string) {
+    setPolicyApplicabilityId(applicabilityId)
+    const hit = eligiblePolicies.find((p) => p.policyApplicabilityId === applicabilityId)
+    if (hit) {
+      setPolicyDocumentId(hit.policyDocumentId)
+      setPolicyVersionLabel(hit.policyVersionLabel)
+    } else {
+      setPolicyDocumentId(null)
+      setPolicyVersionLabel(null)
+    }
+  }
 
   function apply(r: CustomerCategory) {
     setSelected(r)
@@ -175,7 +241,10 @@ export function CustomerCategoriesPage() {
     setIntakeSegment(r.customerRole || r.intakeSegment || ANY_TOKEN)
     setMinAmount(r.minAmount != null ? String(r.minAmount) : '')
     setMaxAmount(r.maxAmount != null ? String(r.maxAmount) : '')
-    setPolicySetId(r.policySetId)
+    setPolicySetId(r.policySetId ?? null)
+    setPolicyApplicabilityId(r.policyApplicabilityId ?? '')
+    setPolicyDocumentId(r.policyDocumentId ?? null)
+    setPolicyVersionLabel(r.policyVersionLabel ?? null)
     setEffectiveFrom(toLocalInput(r.effectiveFrom))
     setEffectiveUntil(toLocalInput(r.effectiveUntil))
     setReasonForChange(r.reasonForChange ?? '')
@@ -195,7 +264,10 @@ export function CustomerCategoriesPage() {
     setIntakeSegment(ANY_TOKEN)
     setMinAmount('')
     setMaxAmount('')
-    setPolicySetId(policySets[0]?.id ?? '')
+    setPolicySetId(null)
+    setPolicyApplicabilityId('')
+    setPolicyDocumentId(null)
+    setPolicyVersionLabel(null)
     setEffectiveFrom('')
     setEffectiveUntil('')
     setReasonForChange('')
@@ -207,7 +279,7 @@ export function CustomerCategoriesPage() {
   function toBody(): CategoryRequest {
     const entityType = toApiMatchValue(borrowerType)
     const customerRole = toApiMatchValue(intakeSegment)
-    return {
+    const body: CategoryRequest = {
       code: code.trim().toUpperCase(),
       name: name.trim(),
       description: description.trim() || null,
@@ -219,17 +291,32 @@ export function CustomerCategoriesPage() {
       intakeSegment: customerRole,
       minAmount: parseOptionalAmount(minAmount),
       maxAmount: parseOptionalAmount(maxAmount),
-      policySetId,
       effectiveFrom: fromLocalInput(effectiveFrom),
       effectiveUntil: fromLocalInput(effectiveUntil),
       reasonForChange: reasonForChange.trim() || null,
     }
+    if (policyApplicabilityId) {
+      body.policyApplicabilityId = policyApplicabilityId
+      body.policyDocumentId = policyDocumentId
+      body.policyVersionLabel = policyVersionLabel
+    }
+    // Transitional: only round-trip policySetId when already present on selected.
+    if (policySetId) {
+      body.policySetId = policySetId
+    }
+    return body
   }
 
   async function refreshSelected(id: string) {
-    const [cats, ps] = await Promise.all([listCustomerCategories(), listPolicySets()])
+    const cats = await listCustomerCategories()
     setRows(cats)
-    setPolicySets(ps)
+    await loadEligible({
+      entityType: toApiMatchValue(borrowerType),
+      loanProduct: toApiMatchValue(loanProduct),
+      customerRole: toApiMatchValue(intakeSegment),
+      minAmount: parseOptionalAmount(minAmount),
+      maxAmount: parseOptionalAmount(maxAmount),
+    })
     const found = cats.find((c) => c.id === id)
     if (found) apply(found)
   }
@@ -258,10 +345,6 @@ export function CustomerCategoriesPage() {
     try {
       if (!name.trim()) {
         setActionError('Name is required')
-        return
-      }
-      if (!policySetId) {
-        setActionError('Select a Policy Set')
         return
       }
       setSaving(true)
@@ -321,6 +404,16 @@ export function CustomerCategoriesPage() {
   const status = (selected?.status ?? 'DRAFT').toUpperCase()
   const editable = isCreating || (selected != null && isEditableStatus(status) && hasAction(selected.allowedActions, 'EDIT'))
   const allowed = selected?.allowedActions ?? []
+  const linkageRequired =
+    selected?.policyLinkageStatus === 'POLICY_LINKAGE_REQUIRED' || !policyApplicabilityId
+  const linkedPolicyName =
+    selected?.policyName ||
+    eligiblePolicies.find((p) => p.policyApplicabilityId === policyApplicabilityId)?.policyName
+  const linkedPolicyVersion =
+    policyVersionLabel ||
+    selected?.policyVersionLabel ||
+    eligiblePolicies.find((p) => p.policyApplicabilityId === policyApplicabilityId)?.policyVersionLabel
+  const selectedPolicyInList = eligiblePolicies.some((p) => p.policyApplicabilityId === policyApplicabilityId)
 
   function can(action: LifecycleAction) {
     return !isCreating && selected != null && hasAction(allowed, action)
@@ -330,7 +423,7 @@ export function CustomerCategoriesPage() {
     <div>
       <PageHeader
         title="Customer Categories"
-        description="Govern matching scope and Policy Set binding. Categories do not contain underwriting rules."
+        description="Govern matching scope and Policy Version binding. Categories do not contain underwriting rules."
       />
       <AdministrationWorkspaceNav />
 
@@ -368,8 +461,9 @@ export function CustomerCategoriesPage() {
             }
           >
             {filtered.map((r) => {
-              const ps = psById.get(r.policySetId)
               const overlaps = r.overlapWarnings?.length ?? 0
+              const policyTag = listPolicyTag(r)
+              const linkageBadge = r.policyLinkageStatus === 'POLICY_LINKAGE_REQUIRED'
               return (
                 <MasterListItem
                   key={r.id}
@@ -381,6 +475,9 @@ export function CustomerCategoriesPage() {
                   meta={
                     <span className="flex flex-wrap items-center gap-1">
                       {statusBadge(r.status)}
+                      {linkageBadge ? (
+                        <span className="bt-badge bt-badge-amber">POLICY LINKAGE REQUIRED</span>
+                      ) : null}
                       {overlaps > 0 ? <span className="bt-badge bt-badge-amber">Overlap</span> : null}
                     </span>
                   }
@@ -389,7 +486,7 @@ export function CustomerCategoriesPage() {
                       <span className="bt-tag">{displayBorrowerType(r.borrowerType)}</span>
                       <span className="bt-tag">{displayLoanProduct(r.loanProduct)}</span>
                       <span className="bt-tag">{displayIntake(r.intakeSegment)}</span>
-                      <span className="bt-tag">{ps?.name ?? 'Policy Set?'}</span>
+                      <span className={`bt-tag${linkageBadge ? ' text-amber-800' : ''}`}>{policyTag}</span>
                       <span className="bt-tag text-slate-500">{formatInstant(r.updatedAt)}</span>
                     </>
                   }
@@ -502,9 +599,22 @@ export function CustomerCategoriesPage() {
                 {actionError ? <BtAlert tone="error">{actionError}</BtAlert> : null}
 
                 <BtAlert tone="info">
-                  Composition: Category → Policy Set → Rule Set → Scorecard. The category binds a Policy Set; it does not
-                  contain underwriting rules.
+                  Composition: Category → Policy Version. The category binds an exact Policy Studio Policy Version; it does
+                  not contain underwriting rules.
                 </BtAlert>
+
+                {linkageRequired ? (
+                  <BtAlert tone="warning">
+                    <strong>POLICY LINKAGE REQUIRED</strong> — select a Policy Studio Policy Version for this Category.
+                    Activation cannot proceed until a Policy is linked.
+                  </BtAlert>
+                ) : linkedPolicyName ? (
+                  <BtAlert tone="success">
+                    Linked Policy: {linkedPolicyName}
+                    {linkedPolicyVersion ? ` · ${linkedPolicyVersion}` : ''}
+                    {selected?.policyBusinessStatus ? ` · ${selected.policyBusinessStatus}` : ''}
+                  </BtAlert>
+                ) : null}
 
                 {!editable && !isCreating ? (
                   <BtAlert tone="warning">
@@ -603,17 +713,27 @@ export function CustomerCategoriesPage() {
                         placeholder="Unbounded"
                       />
                     </FormField>
-                    <FormField label="Policy Set" className="sm:col-span-2">
+                    <FormField
+                      label="Policy / Policy Version"
+                      className="sm:col-span-2"
+                      hint="Exact Policy Studio catalogue version. Required for activation."
+                    >
                       <select
                         className="bt-input"
-                        value={policySetId}
-                        onChange={(e) => setPolicySetId(e.target.value)}
+                        value={policyApplicabilityId}
+                        onChange={(e) => selectPolicy(e.target.value)}
                         disabled={!editable}
                       >
-                        <option value="">Select Policy Set…</option>
-                        {policySets.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {policySetLabel(p)}
+                        <option value="">Select Policy Version…</option>
+                        {policyApplicabilityId && !selectedPolicyInList ? (
+                          <option value={policyApplicabilityId}>
+                            {linkedPolicyName || 'Linked Policy'}
+                            {linkedPolicyVersion ? ` · ${linkedPolicyVersion}` : ''} (current)
+                          </option>
+                        ) : null}
+                        {eligiblePolicies.map((p) => (
+                          <option key={p.policyApplicabilityId} value={p.policyApplicabilityId}>
+                            {policyPickerLabel(p)}
                           </option>
                         ))}
                       </select>
@@ -657,17 +777,22 @@ export function CustomerCategoriesPage() {
                 </DetailSection>
 
                 {!isCreating && selected ? (
-                  <DetailSection title="Overlap warnings" description="WARNING only — does not block activation by itself.">
+                  <DetailSection
+                    title="Also eligible propositions"
+                    description="Informational only — other Categories that may also match the same scope. Does not block activation by itself."
+                  >
                     {(selected.overlapWarnings?.length ?? 0) === 0 ? (
-                      <p className="text-sm text-slate-500">No overlap warnings for this category.</p>
+                      <p className="text-sm text-slate-500">No other eligible propositions for this category.</p>
                     ) : (
                       <ul className="space-y-2 text-sm">
                         {selected.overlapWarnings!.map((w, i) => {
                           const selfKey = `${selected.code}@v${selected.versionNo}`
                           const reasons = Array.isArray(w.reasons) ? (w.reasons as unknown[]).map(String).join('; ') : ''
+                          const sectionLabel =
+                            typeof w.label === 'string' && w.label.trim() ? w.label : 'Also eligible propositions'
                           return (
                             <li key={i} className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-amber-950">
-                              <strong>WARNING</strong> vs {overlapPeerName(w, selfKey)}
+                              <strong>{sectionLabel}</strong> vs {overlapPeerName(w, selfKey)}
                               {reasons ? <span className="block text-xs mt-1">{reasons}</span> : null}
                             </li>
                           )
@@ -728,7 +853,7 @@ export function CustomerCategoriesPage() {
       <EditorModal
         open={readinessOpen && readiness != null}
         title="Activation readiness"
-        description="Review checks before activating. Overlaps are warnings only."
+        description="Review checks before activating. Also eligible propositions are informational only."
         onClose={() => setReadinessOpen(false)}
       >
         {readiness ? (
@@ -749,7 +874,7 @@ export function CustomerCategoriesPage() {
             </ul>
             {(readiness.overlapWarnings?.length ?? 0) > 0 ? (
               <div>
-                <div className="text-sm font-semibold text-amber-900">Overlap warnings</div>
+                <div className="text-sm font-semibold text-amber-900">Also eligible propositions</div>
                 <ul className="mt-1 space-y-1 text-xs text-amber-900">
                   {readiness.overlapWarnings.map((w, i) => (
                     <li key={i}>{overlapPeerName(w, selected ? `${selected.code}@v${selected.versionNo}` : '')}</li>

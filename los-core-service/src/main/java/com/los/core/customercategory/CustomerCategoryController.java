@@ -34,6 +34,7 @@ public class CustomerCategoryController {
     private final CustomerCategorySeedService seedService;
     private final CustomerCategoryDay1SeedService day1SeedService;
     private final EligibleComponentCatalogueService catalogueService;
+    private final CategoryPolicyBindService policyBindService;
 
     @GetMapping
     @Operation(summary = "List Customer Categories")
@@ -163,8 +164,24 @@ public class CustomerCategoryController {
         return ResponseEntity.ok(categoryService.overlapReport());
     }
 
+    @GetMapping("/meta/eligible-policies")
+    @Operation(summary = "List Policy Studio policies eligible for Category binding (config only; not live UW)")
+    public ResponseEntity<List<CustomerCategoryDtos.EligiblePolicyView>> eligiblePolicies(
+            @RequestParam(required = false) String entityType,
+            @RequestParam(required = false) String borrowerType,
+            @RequestParam(required = false) String loanProduct,
+            @RequestParam(required = false) String customerRole,
+            @RequestParam(required = false) String intakeSegment,
+            @RequestParam(required = false) BigDecimal minAmount,
+            @RequestParam(required = false) BigDecimal maxAmount) {
+        String et = entityType != null ? entityType : borrowerType;
+        String role = customerRole != null ? customerRole : intakeSegment;
+        return ResponseEntity.ok(policyBindService.listEligiblePolicies(
+                et, loanProduct, role, minAmount, maxAmount));
+    }
+
     @GetMapping("/meta/eligible-rule-sets")
-    @Operation(summary = "List ACTIVE underwriting rule sets eligible for Policy Set selection")
+    @Operation(summary = "List ACTIVE underwriting rule sets (transitional Policy Set composition)")
     public ResponseEntity<List<EligibleRuleSetView>> eligibleRuleSets(
             @RequestParam(required = false) String borrowerType,
             @RequestParam(required = false) String loanProduct,

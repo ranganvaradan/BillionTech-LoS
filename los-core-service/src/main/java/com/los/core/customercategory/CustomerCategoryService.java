@@ -25,7 +25,8 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Customer Category governance — routing criteria only; not wired to live UW.
+ * Customer Category governance — lending proposition config; not wired to live UW.
+ * STEP-2: principal underwriting relation = Policy Studio Policy Version (config only).
  */
 @Service
 @RequiredArgsConstructor
@@ -35,6 +36,9 @@ public class CustomerCategoryService {
     private final PolicySetRepository policySetRepository;
     private final CustomerCategoryValidator validator;
     private final AdminConfigAuditSupport auditSupport;
+    private final CategoryPolicyBindService policyBindService;
+    private final com.los.core.creditintelligence.policystudio.lifecycle.repository.CiPolicyApplicabilityRepository
+            applicabilityRepository;
 
     @Transactional(readOnly = true)
     public List<CategoryResponse> list() {
@@ -76,32 +80,44 @@ public class CustomerCategoryService {
                 approved,
                 approved ? "APPROVED" : "Current status: " + e.getStatus().name()));
 
-        PolicySetEntity ps = policySetRepository.findById(e.getPolicySetId()).orElse(null);
-        boolean psOk = ps != null && ps.getStatus() == ConfigLifecycleStatus.ACTIVE;
-        checks.add(new ActivationCheck(
-                "POLICY_SET_ACTIVE",
-                "Linked Policy Set is ACTIVE",
-                psOk,
-                ps == null ? "Policy Set missing"
-                        : "Policy Set status: " + ps.getStatus().name()));
+        // Principal underwriting relation — Policy Studio Policy Version
+        checks.addAll(policyBindService.policyActivationChecks(e));
 
-        if (ps != null) {
-            checks.add(runCheck("RULE_SET_READY", "Primary rule set executable",
-                    () -> validator.requireLiveReadyRuleSet(ps.getPrimaryRuleSetId())));
-            checks.add(runCheck("SINGLE_RULE_SET", "Phase-1 single rule set",
-                    () -> validator.requireSingleRuleSetComposition(ps.getAdditionalRuleSetIds())));
-            checks.add(runCheck("SCORECARD_READY", "Scorecard executable",
-                    () -> validator.requireExecutableScorecard(ps.getScorecardId())));
+        // Transitional Policy Set package — informational when present; not required for new Categories
+        if (e.getPolicySetId() != null) {
+            PolicySetEntity ps = policySetRepository.findById(e.getPolicySetId()).orElse(null);
+            boolean psOk = ps != null && ps.getStatus() == ConfigLifecycleStatus.ACTIVE;
+            checks.add(new ActivationCheck(
+                    "POLICY_SET_TRANSITIONAL",
+                    "Transitional Policy Set package (internal; not lender-facing principal)",
+                    psOk || ps == null,
+                    ps == null ? "policy_set_id set but row missing"
+                            : "Policy Set status: " + ps.getStatus().name()
+                            + " — Category activation principal check is Policy Version, not Policy Set"));
+            if (ps != null) {
+                checks.add(runCheck("RULE_SET_READY_TRANSITIONAL", "Transitional primary rule set executable",
+                        () -> validator.requireLiveReadyRuleSet(ps.getPrimaryRuleSetId())));
+            }
+        } else {
+            checks.add(new ActivationCheck(
+                    "POLICY_SET_NOT_REQUIRED",
+                    "Policy Set not required for Category composition",
+                    true,
+                    "OK — Policy Set demoted; Policy Version is principal"));
         }
 
-        checks.add(runCheck("MATCH_DIMENSIONS", "Borrower / product / intake / amount valid",
+        checks.add(runCheck("MATCH_DIMENSIONS", "Entity Type / product / Customer Role / amount valid",
                 () -> validator.validateMatchDimensions(
                         e.getBorrowerType(), e.getLoanProduct(), e.getIntakeSegment(),
                         e.getMinAmount(), e.getMaxAmount())));
         checks.add(runCheck("EFFECTIVE_DATES", "Effective dates valid",
                 () -> validator.validateEffectiveDates(e.getEffectiveFrom(), e.getEffectiveUntil())));
 
-        boolean ready = checks.stream().allMatch(ActivationCheck::ok);
+        // Ready for future activation only when Policy link + lifecycle OK (Policy Set no longer required)
+        boolean ready = checks.stream()
+                .filter(c -> !"POLICY_SET_TRANSITIONAL".equals(c.code())
+                        && !"RULE_SET_READY_TRANSITIONAL".equals(c.code()))
+                .allMatch(ActivationCheck::ok);
         return new ActivationReadinessResponse(
                 e.getId(), "CUSTOMER_CATEGORY", e.getStatus().name(), ready, checks, mine);
     }
@@ -136,13 +152,20 @@ public class CustomerCategoryService {
                 CreditTerminologyCompatibility.resolveCustomerRoleForStorage(req.customerRole(), req.intakeSegment()));
         validator.validateAmountRange(req.minAmount(), req.maxAmount());
         validator.validateEffectiveDates(req.effectiveFrom(), req.effectiveUntil());
-        if (req.policySetId() == null) {
-            throw CustomerCategoryValidator.biz("policySetId required (exactly one Policy Set)",
-                    "POLICY_SET_REQUIRED", Map.of());
+
+        CategoryPolicyBindService.ResolvedPolicyBind policyBind = null;
+        if (req.policyApplicabilityId() != null) {
+            policyBind = policyBindService.resolveBind(
+                    req.policyApplicabilityId(), req.policyDocumentId(), req.policyVersionLabel());
         }
-        PolicySetEntity ps = policySetRepository.findById(req.policySetId())
-                .orElseThrow(() -> CustomerCategoryValidator.biz("Policy Set not found",
-                        "POLICY_SET_NOT_FOUND", Map.of("policySetId", req.policySetId().toString())));
+
+        UUID transitionalPsId = null;
+        if (req.policySetId() != null) {
+            PolicySetEntity ps = policySetRepository.findById(req.policySetId())
+                    .orElseThrow(() -> CustomerCategoryValidator.biz("Policy Set not found",
+                            "POLICY_SET_NOT_FOUND", Map.of("policySetId", req.policySetId().toString())));
+            transitionalPsId = ps.getId();
+        }
 
         CustomerCategoryEntity e = CustomerCategoryEntity.builder()
                 .id(UUID.randomUUID())
@@ -156,7 +179,7 @@ public class CustomerCategoryService {
                 .intakeSegment(intake)
                 .minAmount(req.minAmount())
                 .maxAmount(req.maxAmount())
-                .policySetId(ps.getId())
+                .policySetId(transitionalPsId)
                 .effectiveFrom(req.effectiveFrom())
                 .effectiveUntil(req.effectiveUntil())
                 .reasonForChange(req.reasonForChange())
@@ -167,6 +190,9 @@ public class CustomerCategoryService {
                 .createdBy(actor.identity())
                 .updatedBy(actor.identity())
                 .build();
+        if (policyBind != null) {
+            policyBindService.applyBind(e, policyBind);
+        }
         ConfigGovernanceHistory.append(e.getGovernanceJson(), "CREATED", actor, req.reasonForChange());
         repository.save(e);
         auditSupport.captureCreate("CUSTOMER_CATEGORY", e.getId().toString(), snapshot(e),
@@ -232,11 +258,15 @@ public class CustomerCategoryService {
         e.setMaxAmount(req.maxAmount());
         validator.validateAmountRange(e.getMinAmount(), e.getMaxAmount());
         if (req.policySetId() != null) {
-            if (!policySetRepository.existsById(req.policySetId())) {
-                throw CustomerCategoryValidator.biz("Policy Set not found",
-                        "POLICY_SET_NOT_FOUND", Map.of("policySetId", req.policySetId().toString()));
-            }
-            e.setPolicySetId(req.policySetId());
+            PolicySetEntity ps = policySetRepository.findById(req.policySetId())
+                    .orElseThrow(() -> CustomerCategoryValidator.biz("Policy Set not found",
+                            "POLICY_SET_NOT_FOUND", Map.of("policySetId", req.policySetId().toString())));
+            e.setPolicySetId(ps.getId());
+        }
+        if (req.policyApplicabilityId() != null) {
+            CategoryPolicyBindService.ResolvedPolicyBind bind = policyBindService.resolveBind(
+                    req.policyApplicabilityId(), req.policyDocumentId(), req.policyVersionLabel());
+            policyBindService.applyBind(e, bind);
         }
         Instant from = req.effectiveFrom() != null ? req.effectiveFrom() : e.getEffectiveFrom();
         Instant until = req.effectiveUntil() != null ? req.effectiveUntil() : e.getEffectiveUntil();
@@ -270,9 +300,14 @@ public class CustomerCategoryService {
                 e.getBorrowerType(), e.getLoanProduct(), e.getIntakeSegment(),
                 e.getMinAmount(), e.getMaxAmount());
         validator.validateEffectiveDates(e.getEffectiveFrom(), e.getEffectiveUntil());
-        if (!policySetRepository.existsById(e.getPolicySetId())) {
-            throw CustomerCategoryValidator.biz("Policy Set missing", "POLICY_SET_NOT_FOUND", Map.of());
+        if (!"LINKED".equals(CategoryPolicyBindService.linkageStatus(e))) {
+            throw CustomerCategoryValidator.biz(
+                    "POLICY LINKAGE REQUIRED — select a Policy Studio Policy Version before submit",
+                    CategoryPolicyBindService.LINKAGE_REQUIRED,
+                    Map.of("id", e.getId().toString(), "code", e.getCode()));
         }
+        // Re-validate catalogue row still exists
+        policyBindService.requireApplicability(e.getPolicyApplicabilityId());
         Map<String, Object> before = snapshot(e);
         e.setStatus(ConfigLifecycleStatus.IN_REVIEW);
         e.setReviewStatus("IN_REVIEW");
@@ -347,16 +382,19 @@ public class CustomerCategoryService {
                     "Only APPROVED category can be activated (DRAFT→ACTIVE not allowed)",
                     "CATEGORY_NOT_APPROVED", Map.of("status", e.getStatus().name()));
         }
-        PolicySetEntity ps = policySetRepository.findById(e.getPolicySetId())
-                .orElseThrow(() -> CustomerCategoryValidator.biz("Policy Set missing",
-                        "POLICY_SET_NOT_FOUND", Map.of()));
-        if (ps.getStatus() != ConfigLifecycleStatus.ACTIVE) {
-            throw CustomerCategoryValidator.biz("Policy Set must be ACTIVE before category activation",
-                    "POLICY_SET_NOT_READY", Map.of("policySetStatus", ps.getStatus().name()));
+        if (!"LINKED".equals(CategoryPolicyBindService.linkageStatus(e))) {
+            throw CustomerCategoryValidator.biz(
+                    "POLICY LINKAGE REQUIRED before activation",
+                    CategoryPolicyBindService.LINKAGE_REQUIRED, Map.of("id", id.toString()));
         }
-        validator.requireLiveReadyRuleSet(ps.getPrimaryRuleSetId());
-        validator.requireSingleRuleSetComposition(ps.getAdditionalRuleSetIds());
-        validator.requireExecutableScorecard(ps.getScorecardId());
+        for (ActivationCheck c : policyBindService.policyActivationChecks(e)) {
+            if (!c.ok() && List.of("POLICY_SELECTED", "POLICY_VERSION_RESOLVABLE",
+                    "POLICY_LIFECYCLE_OK", "POLICY_NOT_DEPRECATED", "POLICY_READINESS_OK").contains(c.code())) {
+                throw CustomerCategoryValidator.biz(c.detail() == null ? c.label() : c.detail(),
+                        c.code(), Map.of("id", id.toString()));
+            }
+        }
+        // Category activation does NOT make Policy live / production-authoritative.
         validator.validateMatchDimensions(
                 e.getBorrowerType(), e.getLoanProduct(), e.getIntakeSegment(),
                 e.getMinAmount(), e.getMaxAmount());
@@ -430,6 +468,10 @@ public class CustomerCategoryService {
                 .minAmount(src.getMinAmount())
                 .maxAmount(src.getMaxAmount())
                 .policySetId(src.getPolicySetId())
+                .policyApplicabilityId(src.getPolicyApplicabilityId())
+                .policyDocumentId(src.getPolicyDocumentId())
+                .policyVersionLabel(src.getPolicyVersionLabel())
+                .policyLineageId(src.getPolicyLineageId())
                 .seedSourceRuleSetId(src.getSeedSourceRuleSetId())
                 .effectiveFrom(src.getEffectiveFrom())
                 .effectiveUntil(src.getEffectiveUntil())
@@ -540,12 +582,39 @@ public class CustomerCategoryService {
                 ConfigLifecycleActions.forStatus(e.getStatus()),
                 ConfigGovernanceHistory.historyView(e.getGovernanceJson()),
                 CreditTerminologyCompatibility.toEntityTypeAlias(e.getBorrowerType()),
-                CreditTerminologyCompatibility.toCustomerRoleAlias(e.getIntakeSegment()));
+                CreditTerminologyCompatibility.toCustomerRoleAlias(e.getIntakeSegment()),
+                e.getPolicyApplicabilityId(),
+                e.getPolicyDocumentId(),
+                e.getPolicyVersionLabel(),
+                e.getPolicyLineageId(),
+                policyDisplayName(e),
+                policyBusinessStatus(e),
+                CategoryPolicyBindService.linkageStatus(e));
+    }
+
+    private String policyDisplayName(CustomerCategoryEntity e) {
+        if (e.getPolicyApplicabilityId() == null) {
+            return null;
+        }
+        return applicabilityRepository.findById(e.getPolicyApplicabilityId())
+                .map(a -> a.getPolicyName())
+                .orElse(null);
+    }
+
+    private String policyBusinessStatus(CustomerCategoryEntity e) {
+        if (e.getPolicyApplicabilityId() == null) {
+            return null;
+        }
+        return applicabilityRepository.findById(e.getPolicyApplicabilityId())
+                .map(a -> a.getBusinessStatus())
+                .orElse(null);
     }
 
     private Map<String, Object> overlapToMap(OverlapWarning o) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("severity", "WARNING");
+        m.put("kind", "ALSO_ELIGIBLE_PROPOSITIONS");
+        m.put("label", "Also eligible propositions");
         m.put("left", o.leftIdOrCode());
         m.put("right", o.rightIdOrCode());
         m.put("leftName", o.leftName());
@@ -567,7 +636,12 @@ public class CustomerCategoryService {
         m.put("intakeSegment", e.getIntakeSegment());
         m.put("minAmount", e.getMinAmount());
         m.put("maxAmount", e.getMaxAmount());
-        m.put("policySetId", e.getPolicySetId().toString());
+        m.put("policySetId", e.getPolicySetId() == null ? null : e.getPolicySetId().toString());
+        m.put("policyApplicabilityId",
+                e.getPolicyApplicabilityId() == null ? null : e.getPolicyApplicabilityId().toString());
+        m.put("policyDocumentId", e.getPolicyDocumentId() == null ? null : e.getPolicyDocumentId().toString());
+        m.put("policyVersionLabel", e.getPolicyVersionLabel());
+        m.put("policyLinkageStatus", CategoryPolicyBindService.linkageStatus(e));
         m.put("active", e.getStatus() == ConfigLifecycleStatus.ACTIVE);
         return m;
     }
@@ -602,7 +676,25 @@ public class CustomerCategoryService {
     }
 
     private static boolean policyChanged(CustomerCategoryEntity e, CategoryRequest req) {
-        return req != null && req.policySetId() != null && !req.policySetId().equals(e.getPolicySetId());
+        if (req == null) {
+            return false;
+        }
+        if (req.policySetId() != null && !req.policySetId().equals(e.getPolicySetId())) {
+            return true;
+        }
+        if (req.policyApplicabilityId() != null
+                && !req.policyApplicabilityId().equals(e.getPolicyApplicabilityId())) {
+            return true;
+        }
+        if (req.policyDocumentId() != null && !req.policyDocumentId().equals(e.getPolicyDocumentId())) {
+            return true;
+        }
+        if (req.policyVersionLabel() != null && !req.policyVersionLabel().isBlank()
+                && !req.policyVersionLabel().trim().equalsIgnoreCase(
+                e.getPolicyVersionLabel() == null ? "" : e.getPolicyVersionLabel().trim())) {
+            return true;
+        }
+        return false;
     }
 
     private static boolean effectiveChanged(CustomerCategoryEntity e, CategoryRequest req) {
