@@ -570,7 +570,11 @@ export function CiPolicyStudioPage() {
               More ▾
             </button>
             {moreOpen ? (
-              <div className="absolute right-0 z-20 mt-1 w-56 rounded-lg border border-slate-200 bg-white py-1 shadow-lg">
+              <div
+                className="absolute right-0 z-50 mt-1 w-56 rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+                data-testid="policy-more-menu-dropdown"
+                role="menu"
+              >
                 <button
                   type="button"
                   className="block w-full px-3 py-2 text-left text-sm text-slate-800 hover:bg-slate-50"

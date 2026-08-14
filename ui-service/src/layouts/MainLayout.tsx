@@ -21,6 +21,7 @@ import {
   showStagingDemoNav,
 } from '@/nav/workspaceNav'
 import { formatRoleLabel } from '@/lib/ux/presentationProfile'
+import { stagingEnvironmentLabel } from '@/lib/runtimeEnv'
 
 function userInitials(name: string) {
   const p = name.trim().split(/\s+/)
@@ -109,13 +110,28 @@ export function MainLayout() {
   const showAdmin = user ? canAccessAdminConfigNav(user.role) : false
   const institutionLabel = user?.institution?.trim() || 'Institution'
   const showStagingBadge = showStagingDemoNav()
+  const envLabel = stagingEnvironmentLabel()
 
   return (
     <div className="bt-app-canvas bt-app-shell">
-      <aside className="bt-sidebar-wide">
+      {envLabel ? (
+        <div
+          className="fixed left-0 right-0 top-0 z-[60] border-b border-amber-700/40 bg-amber-600 px-3 py-1 text-center text-xs font-semibold tracking-wide text-white"
+          data-testid="staging-env-banner"
+          role="status"
+        >
+          {envLabel}
+        </div>
+      ) : null}
+      <aside className={`bt-sidebar-wide${envLabel ? ' pt-7' : ''}`}>
         <div className="bt-sidebar-wide-header">
           <BrandLogo variant="billiontech" tone="dark" height={26} />
           <p className="bt-sidebar-wide-subtitle">Loan operations</p>
+          {envLabel ? (
+            <p className="mt-1 text-[10px] font-semibold uppercase tracking-wide text-amber-200" data-testid="staging-env-sidebar">
+              {envLabel}
+            </p>
+          ) : null}
         </div>
         <nav className="bt-sidebar-wide-nav" aria-label="Main">
           {NAV_GROUPS.map((group) => {
@@ -166,14 +182,22 @@ export function MainLayout() {
         </nav>
       </aside>
       <div className="bt-app-main">
-        <header className="bt-app-header sticky top-0 z-30 shrink-0 bg-white/95 shadow-sm backdrop-blur">
+        <header className={`bt-app-header sticky z-30 shrink-0 bg-white/95 shadow-sm backdrop-blur ${envLabel ? 'top-7' : 'top-0'}`}>
           <div className="flex min-h-14 w-full flex-wrap items-center justify-between gap-3 px-6 py-2">
             <div className="min-w-0 flex-1">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <p className="truncate text-sm font-semibold text-[var(--bt-gray-900)]" title={institutionLabel}>
                   {institutionLabel}
                 </p>
-                {showStagingBadge ? (
+                {envLabel ? (
+                  <span
+                    className="shrink-0 rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900"
+                    title={envLabel}
+                    data-testid="staging-env-header-badge"
+                  >
+                    {envLabel}
+                  </span>
+                ) : showStagingBadge ? (
                   <span
                     className="shrink-0 rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-900"
                     title="Staging / demo build"

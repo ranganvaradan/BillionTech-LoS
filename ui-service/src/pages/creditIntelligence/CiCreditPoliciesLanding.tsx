@@ -196,7 +196,7 @@ export function CiCreditPoliciesLanding({
             No policies yet. Use <strong>+ Create Policy</strong> to start from scratch, upload, or copy.
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto overflow-y-visible">
             <table className="min-w-full text-left text-sm" data-testid="existing-policies-table">
               <thead className="bg-slate-50 text-xs uppercase text-slate-500">
                 <tr>
@@ -255,7 +255,7 @@ export function CiCreditPoliciesLanding({
                       </td>
                       <td className="px-4 py-3">{row.effectiveFrom ? String(row.effectiveFrom) : '—'}</td>
                       <td className="px-4 py-3">
-                        <div className="relative flex flex-wrap items-center gap-2">
+                        <div className="relative flex flex-wrap items-center gap-2 overflow-visible">
                           <button
                             type="button"
                             className="bt-btn bt-btn-primary bt-btn-sm"
@@ -278,18 +278,26 @@ export function CiCreditPoliciesLanding({
                             Copy
                           </button>
                           {(showDelete || showRetire) && (onDeleteDraft || onRetire) ? (
-                            <div className="relative">
+                            <div className="relative z-30 overflow-visible">
                               <button
                                 type="button"
                                 className="bt-btn bt-btn-secondary bt-btn-sm"
                                 disabled={rowBusy || !docId}
                                 data-testid={`policy-more-${docId}`}
-                                onClick={() => setMoreOpenId((id) => (id === docId ? null : docId))}
+                                aria-expanded={moreOpenId === docId}
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setMoreOpenId((id) => (id === docId ? null : docId))
+                                }}
                               >
                                 More ▾
                               </button>
                               {moreOpenId === docId ? (
-                                <div className="absolute right-0 z-20 mt-1 min-w-[10rem] rounded border border-slate-200 bg-white p-1 shadow-md">
+                                <div
+                                  className="absolute right-0 z-50 mt-1 min-w-[12rem] rounded border border-slate-200 bg-white p-1 shadow-lg"
+                                  data-testid={`policy-more-menu-${docId}`}
+                                  role="menu"
+                                >
                                   {showRetire && onRetire ? (
                                     <button
                                       type="button"

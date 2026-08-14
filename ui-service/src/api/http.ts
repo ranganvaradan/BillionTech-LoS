@@ -1,14 +1,12 @@
 import axios, { type AxiosError } from 'axios'
 import { loadSessionUser } from '@/auth/types'
 import { xHeadersForUser } from '@/auth/sessionHeaders'
+import { runtimeInternalToken } from '@/lib/runtimeEnv'
 
 const baseURL =
   (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') || '/los/api/v1'
 
-/** Build-time CI token — only set when the target env requires X-Internal-Token. */
-const internalToken = (
-  import.meta.env.VITE_CREDIT_INTELLIGENCE_INTERNAL_TOKEN as string | undefined
-)?.trim()
+export const SERVICE_UNAVAILABLE_MESSAGE = 'Service temporarily unavailable. Please try again.'
 
 export const http = axios.create({
   baseURL,
@@ -21,6 +19,7 @@ http.interceptors.request.use((config) => {
   for (const [k, v] of Object.entries(xHeadersForUser(loadSessionUser()))) {
     config.headers.set(k, v)
   }
+  const internalToken = runtimeInternalToken()
   if (internalToken) {
     config.headers.set('X-Internal-Token', internalToken)
   }
@@ -35,6 +34,40 @@ function isRecord(x: unknown): x is Record<string, unknown> {
   return x !== null && typeof x === 'object' && !Array.isArray(x)
 }
 
+/** Nginx / proxy HTML bodies must never become user-facing copy. */
+export function looksLikeHtmlErrorBody(data: unknown): boolean {
+  if (typeof data !== 'string') return false
+  const t = data.trim().toLowerCase()
+  if (!t) return false
+  return (
+    t.startsWith('<!doctype') ||
+    t.startsWith('<html') ||
+    t.includes('<head>') ||
+    t.includes('502 bad gateway') ||
+    t.includes('503 service') ||
+    t.includes('504 gateway') ||
+    t.includes('nginx/')
+  )
+}
+
+export function isTransportUnavailable(status: number | undefined, err: AxiosError<unknown>): boolean {
+  if (status === 502 || status === 503 || status === 504) return true
+  if (looksLikeHtmlErrorBody(err.response?.data)) return true
+  if (!err.response) {
+    const code = (err.code || '').toUpperCase()
+    if (
+      code === 'ERR_NETWORK' ||
+      code === 'ECONNABORTED' ||
+      code === 'ECONNRESET' ||
+      code === 'ETIMEDOUT' ||
+      /network error/i.test(err.message || '')
+    ) {
+      return true
+    }
+  }
+  return false
+}
+
 /**
  * Shape used by {@code GlobalExceptionHandler} (BusinessRuleException):
  * message, reason, action, context.
@@ -47,6 +80,7 @@ export function parseApiErrorResponse(data: unknown): {
   context?: Record<string, unknown>
 } {
   if (data == null) return { message: '' }
+  if (looksLikeHtmlErrorBody(data)) return { message: '' }
   if (typeof data === 'string' && data.trim().length) return { message: data.trim() }
   if (!isRecord(data)) return { message: String(data) }
 
@@ -147,24 +181,31 @@ export class ApiError extends Error {
   }
 }
 
+export function mapAxiosErrorToApiError(err: AxiosError<unknown>): ApiError {
+  const status = err.response?.status
+  const body = err.response?.data
+  if (isTransportUnavailable(status, err)) {
+    return new ApiError(SERVICE_UNAVAILABLE_MESSAGE, status, body, {
+      reason: 'SERVICE_UNAVAILABLE',
+      serverMessage: SERVICE_UNAVAILABLE_MESSAGE,
+    })
+  }
+  const parsed = parseApiErrorResponse(body)
+  const msg = primaryErrorMessage(parsed, err)
+  const serverLine = (() => {
+    const t = parsed.message.trim()
+    if (t && t !== 'Request failed') return t
+    return msg
+  })()
+  return new ApiError(msg, status, body, {
+    reason: parsed.reason,
+    context: parsed.context,
+    serverMessage: serverLine,
+  })
+}
+
 http.interceptors.response.use(
   (r) => r,
-  (err: AxiosError<unknown>) => {
-    const status = err.response?.status
-    const body = err.response?.data
-    const parsed = parseApiErrorResponse(body)
-    const msg = primaryErrorMessage(parsed, err)
-    const serverLine = (() => {
-      const t = parsed.message.trim()
-      if (t && t !== 'Request failed') return t
-      return msg
-    })()
-    return Promise.reject(
-      new ApiError(msg, status, body, {
-        reason: parsed.reason,
-        context: parsed.context,
-        serverMessage: serverLine,
-      }),
-    )
-  },
+  (err: AxiosError<unknown>) => Promise.reject(mapAxiosErrorToApiError(err)),
 )
+
