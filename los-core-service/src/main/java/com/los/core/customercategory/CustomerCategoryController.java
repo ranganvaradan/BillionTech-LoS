@@ -17,6 +17,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -173,11 +174,19 @@ public class CustomerCategoryController {
             @RequestParam(required = false) String customerRole,
             @RequestParam(required = false) String intakeSegment,
             @RequestParam(required = false) BigDecimal minAmount,
-            @RequestParam(required = false) BigDecimal maxAmount) {
+            @RequestParam(required = false) BigDecimal maxAmount,
+            @RequestParam(required = false) Instant effectiveFrom,
+            @RequestParam(required = false) Instant effectiveUntil) {
         String et = entityType != null ? entityType : borrowerType;
         String role = customerRole != null ? customerRole : intakeSegment;
         return ResponseEntity.ok(policyBindService.listEligiblePolicies(
-                et, loanProduct, role, minAmount, maxAmount));
+                et, loanProduct, role, minAmount, maxAmount, effectiveFrom, effectiveUntil));
+    }
+
+    @GetMapping("/meta/policy-scope-compatibility-report")
+    @Operation(summary = "Read-only Category↔Policy scope compatibility counts (no auto-link; no mutation)")
+    public ResponseEntity<List<CustomerCategoryDtos.CategoryPolicyCompatibilityReportRow>> compatibilityReport() {
+        return ResponseEntity.ok(policyBindService.compatibilityReport(categoryService.listEntitiesForCompatibilityScan()));
     }
 
     @GetMapping("/meta/eligible-rule-sets")

@@ -137,8 +137,23 @@ export interface EligiblePolicy {
   shadowRoutable?: boolean | null
   productionAuthority?: string | null
   allowCanonicalAuthority?: boolean | null
+  /** True only when compatibilityStatus === COMPATIBLE */
   compatibleWithCategory: boolean
+  /** COMPATIBLE | INCOMPATIBLE | NEEDS_ADDITIONAL_SCOPE_CONTEXT */
+  compatibilityStatus?: string | null
+  compatibilityReasons?: string[]
   compatibilityNotes?: string[]
+  /** Business-facing scope summary */
+  scopeSummary?: string | null
+}
+
+export interface CategoryPolicyCompatibilityReportRow {
+  categoryCode: string
+  categoryName: string
+  status: string
+  compatiblePolicyVersionCount: number
+  incompatibleCount: number
+  needsContextCount: number
 }
 
 export interface EligibleRuleSet {
@@ -228,9 +243,19 @@ export function listEligiblePolicies(params?: {
   intakeSegment?: string
   minAmount?: number
   maxAmount?: number
+  effectiveFrom?: string
+  effectiveUntil?: string
 }) {
   return http
     .get<EligiblePolicy[]>('/customer-categories/meta/eligible-policies', { params })
+    .then((r) => r.data)
+}
+
+export function fetchPolicyScopeCompatibilityReport() {
+  return http
+    .get<CategoryPolicyCompatibilityReportRow[]>(
+      '/customer-categories/meta/policy-scope-compatibility-report',
+    )
     .then((r) => r.data)
 }
 

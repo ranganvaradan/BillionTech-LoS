@@ -82,8 +82,25 @@ function fromLocalInput(v: string): string | null {
 function policyPickerLabel(p: EligiblePolicy): string {
   const base = `${p.policyName} · ${p.policyVersionLabel}`
   const status = p.businessStatus ? ` · ${p.businessStatus}` : ''
-  const compat = p.compatibleWithCategory ? '' : ' (scope mismatch)'
+  const compat =
+    p.compatibilityStatus === 'COMPATIBLE'
+      ? ' · COMPATIBLE'
+      : p.compatibilityStatus === 'NEEDS_ADDITIONAL_SCOPE_CONTEXT'
+        ? ' · NEEDS CONTEXT'
+        : ' · INCOMPATIBLE'
   return `${base}${status}${compat}`
+}
+
+function formatScopeLine(p: EligiblePolicy): string {
+  if (p.scopeSummary?.trim()) return p.scopeSummary
+  const products = p.products?.length ? p.products.join(', ') : 'ANY product'
+  const entities = p.entityTypes?.length ? p.entityTypes.join(', ') : 'ANY entity'
+  const amt =
+    p.minLoanAmount != null || p.maxLoanAmount != null
+      ? `${p.minLoanAmount ?? 'open'} – ${p.maxLoanAmount ?? 'open'}`
+      : 'amount open'
+  const eff = `${p.effectiveFrom ?? 'open'} → ${p.effectiveUntil ?? 'open'}`
+  return `${entities} · ${products} · ${amt} · ${eff}`
 }
 
 function listPolicyTag(r: CustomerCategory): string {
@@ -133,12 +150,16 @@ export function CustomerCategoriesPage() {
   const [effectiveUntil, setEffectiveUntil] = useState('')
   const [reasonForChange, setReasonForChange] = useState('')
 
+  const [showIncompatiblePolicies, setShowIncompatiblePolicies] = useState(false)
+
   const loadEligible = useCallback(async (opts?: {
     entityType?: string
     loanProduct?: string
     customerRole?: string
     minAmount?: number | null
     maxAmount?: number | null
+    effectiveFrom?: string
+    effectiveUntil?: string
   }) => {
     try {
       const params: Parameters<typeof listEligiblePolicies>[0] = {}
@@ -147,6 +168,8 @@ export function CustomerCategoriesPage() {
       if (opts?.customerRole && opts.customerRole !== ANY_TOKEN) params.customerRole = opts.customerRole
       if (opts?.minAmount != null) params.minAmount = opts.minAmount
       if (opts?.maxAmount != null) params.maxAmount = opts.maxAmount
+      if (opts?.effectiveFrom) params.effectiveFrom = fromLocalInput(opts.effectiveFrom) ?? undefined
+      if (opts?.effectiveUntil) params.effectiveUntil = fromLocalInput(opts.effectiveUntil) ?? undefined
       const policies = await listEligiblePolicies(params)
       setEligiblePolicies(policies)
     } catch {
@@ -180,6 +203,8 @@ export function CustomerCategoriesPage() {
       customerRole: toApiMatchValue(intakeSegment),
       minAmount: parseOptionalAmount(minAmount),
       maxAmount: parseOptionalAmount(maxAmount),
+      effectiveFrom,
+      effectiveUntil,
     })
   }, [
     isCreating,
@@ -189,6 +214,8 @@ export function CustomerCategoriesPage() {
     intakeSegment,
     minAmount,
     maxAmount,
+    effectiveFrom,
+    effectiveUntil,
     loadEligible,
   ])
 
@@ -414,6 +441,15 @@ export function CustomerCategoriesPage() {
     selected?.policyVersionLabel ||
     eligiblePolicies.find((p) => p.policyApplicabilityId === policyApplicabilityId)?.policyVersionLabel
   const selectedPolicyInList = eligiblePolicies.some((p) => p.policyApplicabilityId === policyApplicabilityId)
+  const selectedEligiblePolicy = eligiblePolicies.find((p) => p.policyApplicabilityId === policyApplicabilityId)
+  const pickerPolicies = showIncompatiblePolicies
+    ? eligiblePolicies
+    : eligiblePolicies.filter(
+        (p) =>
+          p.compatibleWithCategory ||
+          p.policyApplicabilityId === policyApplicabilityId ||
+          p.compatibilityStatus === 'COMPATIBLE',
+      )
 
   function can(action: LifecycleAction) {
     return !isCreating && selected != null && hasAction(allowed, action)
@@ -716,27 +752,72 @@ export function CustomerCategoriesPage() {
                     <FormField
                       label="Policy / Policy Version"
                       className="sm:col-span-2"
-                      hint="Exact Policy Studio catalogue version. Required for activation."
+                      hint="Exact Policy Studio catalogue version. Required for activation. Scope must fully cover this Category."
                     >
-                      <select
-                        className="bt-input"
-                        value={policyApplicabilityId}
-                        onChange={(e) => selectPolicy(e.target.value)}
-                        disabled={!editable}
-                      >
-                        <option value="">Select Policy Version…</option>
-                        {policyApplicabilityId && !selectedPolicyInList ? (
-                          <option value={policyApplicabilityId}>
-                            {linkedPolicyName || 'Linked Policy'}
-                            {linkedPolicyVersion ? ` · ${linkedPolicyVersion}` : ''} (current)
-                          </option>
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-2 text-xs text-slate-600">
+                          <input
+                            type="checkbox"
+                            checked={showIncompatiblePolicies}
+                            onChange={(e) => setShowIncompatiblePolicies(e.target.checked)}
+                            disabled={!editable}
+                          />
+                          Show incompatible / needs-context Policies (diagnostic)
+                        </label>
+                        <select
+                          className="bt-input"
+                          value={policyApplicabilityId}
+                          onChange={(e) => selectPolicy(e.target.value)}
+                          disabled={!editable}
+                        >
+                          <option value="">Select Policy Version…</option>
+                          {policyApplicabilityId && !selectedPolicyInList ? (
+                            <option value={policyApplicabilityId}>
+                              {linkedPolicyName || 'Linked Policy'}
+                              {linkedPolicyVersion ? ` · ${linkedPolicyVersion}` : ''} (current)
+                            </option>
+                          ) : null}
+                          {pickerPolicies.map((p) => (
+                            <option key={p.policyApplicabilityId} value={p.policyApplicabilityId}>
+                              {policyPickerLabel(p)}
+                            </option>
+                          ))}
+                        </select>
+                        {selectedEligiblePolicy ? (
+                          <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 space-y-1">
+                            <div>
+                              <span className="font-semibold">Status:</span>{' '}
+                              {selectedEligiblePolicy.businessStatus || '—'}
+                            </div>
+                            <div>
+                              <span className="font-semibold">Scope:</span>{' '}
+                              {formatScopeLine(selectedEligiblePolicy)}
+                            </div>
+                            <div>
+                              <span className="font-semibold">Effective:</span>{' '}
+                              {selectedEligiblePolicy.effectiveFrom ?? 'open'} →{' '}
+                              {selectedEligiblePolicy.effectiveUntil ?? 'open'}
+                            </div>
+                            <div>
+                              <span className="font-semibold">Compatibility:</span>{' '}
+                              {selectedEligiblePolicy.compatibilityStatus ||
+                                (selectedEligiblePolicy.compatibleWithCategory
+                                  ? 'COMPATIBLE'
+                                  : 'INCOMPATIBLE')}
+                            </div>
+                            {!selectedEligiblePolicy.compatibleWithCategory &&
+                            (selectedEligiblePolicy.compatibilityNotes?.length ||
+                              selectedEligiblePolicy.compatibilityReasons?.length) ? (
+                              <div className="text-amber-900">
+                                <span className="font-semibold">Reason:</span>{' '}
+                                {(selectedEligiblePolicy.compatibilityNotes &&
+                                  selectedEligiblePolicy.compatibilityNotes.join('; ')) ||
+                                  selectedEligiblePolicy.compatibilityReasons?.join(', ')}
+                              </div>
+                            ) : null}
+                          </div>
                         ) : null}
-                        {eligiblePolicies.map((p) => (
-                          <option key={p.policyApplicabilityId} value={p.policyApplicabilityId}>
-                            {policyPickerLabel(p)}
-                          </option>
-                        ))}
-                      </select>
+                      </div>
                     </FormField>
                     <FormField label="Effective from">
                       <input

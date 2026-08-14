@@ -188,7 +188,7 @@ public final class CustomerCategoryDtos {
 
     /**
      * Policy Studio catalogue picker row for Category admin.
-     * Incompatible Policies are still returned with {@code compatible=false} + notes.
+     * Incompatible / needs-context Policies are still returned (not hidden).
      */
     public record EligiblePolicyView(
             UUID policyApplicabilityId,
@@ -211,8 +211,24 @@ public final class CustomerCategoryDtos {
             Boolean shadowRoutable,
             String productionAuthority,
             Boolean allowCanonicalAuthority,
+            /** True only when {@link #compatibilityStatus} is COMPATIBLE. */
             boolean compatibleWithCategory,
-            List<String> compatibilityNotes
+            /** COMPATIBLE | INCOMPATIBLE | NEEDS_ADDITIONAL_SCOPE_CONTEXT */
+            String compatibilityStatus,
+            List<String> compatibilityReasons,
+            List<String> compatibilityNotes,
+            /** Business-facing scope summary (not raw JSON). */
+            String scopeSummary
+    ) {}
+
+    /** Read-only scan of DRAFT Categories vs catalogue (no data mutation). */
+    public record CategoryPolicyCompatibilityReportRow(
+            String categoryCode,
+            String categoryName,
+            String status,
+            int compatiblePolicyVersionCount,
+            int incompatibleCount,
+            int needsContextCount
     ) {}
 
     public record ActivationCheck(String code, String label, boolean ok, String detail) {}

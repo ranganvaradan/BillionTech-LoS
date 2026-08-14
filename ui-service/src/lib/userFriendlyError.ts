@@ -42,6 +42,10 @@ const REASON_MESSAGES: Record<string, string> = {
     'Policy linkage required — select a Policy Studio Policy Version for this Category.',
   POLICY_NOT_FOUND: 'The selected Policy Version was not found in Policy Studio.',
   POLICY_VERSION_INVALID: 'The selected Policy Version reference is invalid.',
+  POLICY_SCOPE_INCOMPATIBLE:
+    'This Policy Version’s scope does not fully cover the Category. Choose a compatible Policy or adjust Category dimensions.',
+  POLICY_SCOPE_COMPATIBLE:
+    'Policy Scope does not fully cover this Customer Category.',
   TERMINOLOGY_CONFLICT_CUSTOMER_ROLE:
     'Customer Role and Intake Segment disagree. Send one value, or matching aliases.',
   TERMINOLOGY_CONFLICT_ENTITY_TYPE:

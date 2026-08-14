@@ -81,6 +81,26 @@ class CategoryPolicyVersionBindTest {
     }
 
     @Test
+    void incompatiblePolicySaveBlockedWithTypedError() {
+        CiPolicyApplicability bad = approvedPolicy();
+        bad.setBorrowerTypes(List.of("COMPANY"));
+        when(applicabilityRepository.findById(appId)).thenReturn(Optional.of(bad));
+        when(categoryRepository.findByCodeAndVersionNo(any(), eq(1))).thenReturn(Optional.empty());
+
+        BusinessRuleException ex = assertThrows(BusinessRuleException.class,
+                () -> categoryService.createDraft(new CategoryRequest(
+                        "CC_BAD", "Bad", null,
+                        "INDIVIDUAL", "BUSINESS_TERM_LOAN", "BORROWER",
+                        new BigDecimal("20000"), new BigDecimal("500000"),
+                        null, null, null, null,
+                        null, null, appId, docId, "v1"), actor));
+        assertEquals(CustomerCategoryPolicyScopeCompatibility.POLICY_SCOPE_INCOMPATIBLE, ex.getReason());
+        assertNotNull(ex.getContext());
+        assertTrue(String.valueOf(ex.getContext().get("reasons")).contains(
+                CustomerCategoryPolicyScopeCompatibility.ENTITY_TYPE_NOT_COVERED));
+    }
+
+    @Test
     void draftCategoryCanReferencePolicy() {
         when(applicabilityRepository.findById(appId)).thenReturn(Optional.of(approvedPolicy()));
         when(categoryRepository.findByCodeAndVersionNo("CC_POL", 1)).thenReturn(Optional.empty());

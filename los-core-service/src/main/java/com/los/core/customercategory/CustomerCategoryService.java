@@ -41,6 +41,11 @@ public class CustomerCategoryService {
             applicabilityRepository;
 
     @Transactional(readOnly = true)
+    public List<CustomerCategoryEntity> listEntitiesForCompatibilityScan() {
+        return repository.findAllByOrderByCodeAscVersionNoDesc();
+    }
+
+    @Transactional(readOnly = true)
     public List<CategoryResponse> list() {
         List<CustomerCategoryEntity> all = repository.findAllByOrderByCodeAscVersionNoDesc();
         List<OverlapWarning> overlaps = detectOverlapsAmong(relevantForOverlap());
@@ -157,6 +162,11 @@ public class CustomerCategoryService {
         if (req.policyApplicabilityId() != null) {
             policyBind = policyBindService.resolveBind(
                     req.policyApplicabilityId(), req.policyDocumentId(), req.policyVersionLabel());
+            policyBindService.requireScopeCompatible(
+                    new CustomerCategoryPolicyScopeCompatibility.CategoryScope(
+                            intake, borrower, product, req.minAmount(), req.maxAmount(),
+                            req.effectiveFrom(), req.effectiveUntil()),
+                    req.policyApplicabilityId());
         }
 
         UUID transitionalPsId = null;
@@ -266,6 +276,13 @@ public class CustomerCategoryService {
         if (req.policyApplicabilityId() != null) {
             CategoryPolicyBindService.ResolvedPolicyBind bind = policyBindService.resolveBind(
                     req.policyApplicabilityId(), req.policyDocumentId(), req.policyVersionLabel());
+            Instant from = req.effectiveFrom() != null ? req.effectiveFrom() : e.getEffectiveFrom();
+            Instant until = req.effectiveUntil() != null ? req.effectiveUntil() : e.getEffectiveUntil();
+            policyBindService.requireScopeCompatible(
+                    new CustomerCategoryPolicyScopeCompatibility.CategoryScope(
+                            e.getIntakeSegment(), e.getBorrowerType(), e.getLoanProduct(),
+                            e.getMinAmount(), e.getMaxAmount(), from, until),
+                    req.policyApplicabilityId());
             policyBindService.applyBind(e, bind);
         }
         Instant from = req.effectiveFrom() != null ? req.effectiveFrom() : e.getEffectiveFrom();
@@ -306,8 +323,11 @@ public class CustomerCategoryService {
                     CategoryPolicyBindService.LINKAGE_REQUIRED,
                     Map.of("id", e.getId().toString(), "code", e.getCode()));
         }
-        // Re-validate catalogue row still exists
+        // Re-validate catalogue row still exists + scope still covers Category
         policyBindService.requireApplicability(e.getPolicyApplicabilityId());
+        policyBindService.requireScopeCompatible(
+                CustomerCategoryPolicyScopeCompatibility.CategoryScope.fromEntity(e),
+                e.getPolicyApplicabilityId());
         Map<String, Object> before = snapshot(e);
         e.setStatus(ConfigLifecycleStatus.IN_REVIEW);
         e.setReviewStatus("IN_REVIEW");
@@ -389,7 +409,8 @@ public class CustomerCategoryService {
         }
         for (ActivationCheck c : policyBindService.policyActivationChecks(e)) {
             if (!c.ok() && List.of("POLICY_SELECTED", "POLICY_VERSION_RESOLVABLE",
-                    "POLICY_LIFECYCLE_OK", "POLICY_NOT_DEPRECATED", "POLICY_READINESS_OK").contains(c.code())) {
+                    "POLICY_LIFECYCLE_OK", "POLICY_NOT_DEPRECATED", "POLICY_READINESS_OK",
+                    "POLICY_SCOPE_COMPATIBLE").contains(c.code())) {
                 throw CustomerCategoryValidator.biz(c.detail() == null ? c.label() : c.detail(),
                         c.code(), Map.of("id", id.toString()));
             }

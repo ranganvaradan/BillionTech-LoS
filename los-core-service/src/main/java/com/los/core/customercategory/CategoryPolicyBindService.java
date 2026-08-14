@@ -121,7 +121,7 @@ public class CategoryPolicyBindService {
 
     /**
      * Lender-facing Policy picker — Policy Studio catalogue authority.
-     * Does not silently hide incompatible rows; attaches compatibility notes.
+     * Does not silently hide incompatible rows; uses {@link CustomerCategoryPolicyScopeCompatibility}.
      */
     @Transactional(readOnly = true)
     public List<CustomerCategoryDtos.EligiblePolicyView> listEligiblePolicies(
@@ -129,75 +129,57 @@ public class CategoryPolicyBindService {
             String loanProduct,
             String customerRole,
             BigDecimal minAmount,
-            BigDecimal maxAmount) {
+            BigDecimal maxAmount,
+            java.time.Instant effectiveFrom,
+            java.time.Instant effectiveUntil) {
         UUID tenant = defaultTenantId();
         List<Map<String, Object>> rows = policyCatalogueService.listCatalogue(tenant);
+        var catScope = new CustomerCategoryPolicyScopeCompatibility.CategoryScope(
+                customerRole, entityType, loanProduct, minAmount, maxAmount, effectiveFrom, effectiveUntil);
         List<CustomerCategoryDtos.EligiblePolicyView> out = new ArrayList<>();
         for (Map<String, Object> row : rows) {
-            out.add(toPickerView(row, entityType, loanProduct, customerRole, minAmount, maxAmount));
+            out.add(toPickerView(row, catScope));
         }
         return out;
     }
 
-    private CustomerCategoryDtos.EligiblePolicyView toPickerView(
-            Map<String, Object> row,
+    /** Backward-compatible overload (no effective dates). */
+    @Transactional(readOnly = true)
+    public List<CustomerCategoryDtos.EligiblePolicyView> listEligiblePolicies(
             String entityType,
             String loanProduct,
             String customerRole,
             BigDecimal minAmount,
             BigDecimal maxAmount) {
-        List<String> notes = new ArrayList<>();
-        boolean compatible = true;
+        return listEligiblePolicies(entityType, loanProduct, customerRole, minAmount, maxAmount, null, null);
+    }
+
+    private CustomerCategoryDtos.EligiblePolicyView toPickerView(
+            Map<String, Object> row,
+            CustomerCategoryPolicyScopeCompatibility.CategoryScope catScope) {
+        CustomerCategoryPolicyScopeCompatibility.Result compat =
+                CustomerCategoryPolicyScopeCompatibility.evaluateFromCatalogueRow(catScope, row);
 
         @SuppressWarnings("unchecked")
         List<String> products = row.get("products") instanceof List<?> list
                 ? list.stream().map(String::valueOf).toList()
                 : List.of();
-        if (loanProduct != null && !loanProduct.isBlank() && !MatchWildcard.isAny(loanProduct)
-                && !products.isEmpty()
-                && products.stream().noneMatch(p -> p.equalsIgnoreCase(loanProduct.trim()))) {
-            compatible = false;
-            notes.add("Loan Product not in Policy product scope: " + products);
-        }
-
         @SuppressWarnings("unchecked")
         List<String> borrowerTypes = row.get("borrowerTypes") instanceof List<?> list
                 ? list.stream().map(String::valueOf).toList()
                 : List.of();
         String legacyBt = row.get("borrowerType") == null ? null : String.valueOf(row.get("borrowerType"));
-        if (entityType != null && !entityType.isBlank() && !MatchWildcard.isAny(entityType)) {
-            boolean anyBt = borrowerTypes.isEmpty()
-                    && (legacyBt == null || legacyBt.isBlank() || "ALL".equalsIgnoreCase(legacyBt));
-            if (!anyBt) {
-                boolean hit = borrowerTypes.stream().anyMatch(b -> b.equalsIgnoreCase(entityType.trim()))
-                        || (legacyBt != null && legacyBt.equalsIgnoreCase(entityType.trim()));
-                if (!hit) {
-                    compatible = false;
-                    notes.add("Entity Type not in Policy borrowerTypes scope");
-                }
+        List<String> entityTypes = borrowerTypes.isEmpty() && legacyBt != null && !legacyBt.isBlank()
+                ? List.of(legacyBt) : borrowerTypes;
+
+        List<String> notes = new ArrayList<>();
+        for (var check : compat.checks()) {
+            if (!check.ok()) {
+                notes.add(check.label() + ": " + check.detail());
             }
         }
-        if (customerRole != null && !customerRole.isBlank() && !MatchWildcard.isAny(customerRole)) {
-            // Customer Role is not yet a first-class Policy Studio applicability column.
-            notes.add("Customer Role applicability not modelled on Policy Studio catalogue (informational)");
-        }
-
-        BigDecimal pMin = asDecimal(row.get("minLoanAmount"));
-        BigDecimal pMax = asDecimal(row.get("maxLoanAmount"));
-        if (minAmount != null && pMax != null && minAmount.compareTo(pMax) > 0) {
-            compatible = false;
-            notes.add("Category min amount above Policy max");
-        }
-        if (maxAmount != null && pMin != null && maxAmount.compareTo(pMin) < 0) {
-            compatible = false;
-            notes.add("Category max amount below Policy min");
-        }
-
-        String status = str(row.get("status"));
-        boolean governedOk = status != null && List.of("DRAFT", "IN REVIEW", "APPROVED", "SCHEDULED", "ACTIVE",
-                "SUPERSEDED", "RETIRED").stream().anyMatch(s -> s.equalsIgnoreCase(status));
-        if (!governedOk && status != null) {
-            notes.add("Unrecognised Policy business status: " + status);
+        if (compat.compatible()) {
+            notes.add(0, "Scope compatible — Policy fully covers Category dimensions");
         }
 
         return new CustomerCategoryDtos.EligiblePolicyView(
@@ -206,14 +188,14 @@ public class CategoryPolicyBindService {
                 str(row.get("policyName")),
                 str(row.get("policyVersion")),
                 parseUuid(row.get("policyVersionId")),
-                status,
+                str(row.get("status")),
                 str(row.get("effectiveFrom")),
                 str(row.get("effectiveUntil")),
                 products,
-                borrowerTypes.isEmpty() && legacyBt != null ? List.of(legacyBt) : borrowerTypes,
+                entityTypes,
                 null,
-                pMin,
-                pMax,
+                asDecimal(row.get("minLoanAmount")),
+                asDecimal(row.get("maxLoanAmount")),
                 str(row.get("dataReadinessStatus")),
                 str(row.get("testsStatus")),
                 str(row.get("simulationReviewStatus")),
@@ -221,8 +203,65 @@ public class CategoryPolicyBindService {
                 Boolean.TRUE.equals(row.get("shadowRoutable")),
                 "DISABLED",
                 false,
-                compatible,
-                notes);
+                compat.compatible(),
+                compat.status(),
+                compat.reasons(),
+                notes,
+                compat.scopeSummary());
+    }
+
+    /**
+     * Fail-closed typed validation for Category→Policy bind on save / submit / activate.
+     */
+    @Transactional(readOnly = true)
+    public CustomerCategoryPolicyScopeCompatibility.Result requireScopeCompatible(
+            CustomerCategoryPolicyScopeCompatibility.CategoryScope categoryScope,
+            UUID policyApplicabilityId) {
+        CiPolicyApplicability a = requireApplicability(policyApplicabilityId);
+        CustomerCategoryPolicyScopeCompatibility.Result r =
+                CustomerCategoryPolicyScopeCompatibility.evaluate(categoryScope, a);
+        if (!r.compatible()) {
+            Map<String, Object> ctx = new LinkedHashMap<>();
+            ctx.put("status", r.status());
+            ctx.put("reasons", r.reasons());
+            ctx.put("checks", r.checks().stream()
+                    .map(c -> Map.of("code", c.code(), "ok", c.ok(), "detail", c.detail() == null ? "" : c.detail()))
+                    .toList());
+            ctx.put("evidence", r.evidence());
+            ctx.put("policyApplicabilityId", policyApplicabilityId.toString());
+            throw CustomerCategoryValidator.biz(
+                    "Policy Scope is not compatible with Customer Category: " + String.join(", ", r.reasons()),
+                    CustomerCategoryPolicyScopeCompatibility.POLICY_SCOPE_INCOMPATIBLE,
+                    ctx);
+        }
+        return r;
+    }
+
+    /** Non-mutating compatibility scan for current Categories vs catalogue. */
+    @Transactional(readOnly = true)
+    public List<CustomerCategoryDtos.CategoryPolicyCompatibilityReportRow> compatibilityReport(
+            List<CustomerCategoryEntity> categories) {
+        UUID tenant = defaultTenantId();
+        List<Map<String, Object>> rows = policyCatalogueService.listCatalogue(tenant);
+        List<CustomerCategoryDtos.CategoryPolicyCompatibilityReportRow> out = new ArrayList<>();
+        for (CustomerCategoryEntity e : categories) {
+            var scope = CustomerCategoryPolicyScopeCompatibility.CategoryScope.fromEntity(e);
+            int ok = 0;
+            int bad = 0;
+            int needs = 0;
+            for (Map<String, Object> row : rows) {
+                var r = CustomerCategoryPolicyScopeCompatibility.evaluateFromCatalogueRow(scope, row);
+                switch (r.status()) {
+                    case CustomerCategoryPolicyScopeCompatibility.STATUS_COMPATIBLE -> ok++;
+                    case CustomerCategoryPolicyScopeCompatibility.STATUS_NEEDS_CONTEXT -> needs++;
+                    default -> bad++;
+                }
+            }
+            out.add(new CustomerCategoryDtos.CategoryPolicyCompatibilityReportRow(
+                    e.getCode(), e.getName(), e.getStatus() == null ? null : e.getStatus().name(),
+                    ok, bad, needs));
+        }
+        return out;
     }
 
     /** Activation / submit readiness checks for Policy bind (typed). */
@@ -310,6 +349,16 @@ public class CategoryPolicyBindService {
                         + ", tests=" + a.getTestsStatus()
                         + ", simulation=" + a.getSimulationReviewStatus()
                         + ", productionAuthority=DISABLED (Category bind does not enable live Policy)"));
+
+        CustomerCategoryPolicyScopeCompatibility.Result scope =
+                CustomerCategoryPolicyScopeCompatibility.evaluate(e, a);
+        checks.add(new CustomerCategoryDtos.ActivationCheck(
+                "POLICY_SCOPE_COMPATIBLE",
+                "Policy Scope fully covers Customer Category",
+                scope.compatible(),
+                scope.compatible()
+                        ? scope.scopeSummary()
+                        : scope.status() + ": " + String.join(", ", scope.reasons())));
 
         return checks;
     }
