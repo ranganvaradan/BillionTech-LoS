@@ -12,8 +12,12 @@ public interface PolicySetRepository extends JpaRepository<PolicySetEntity, UUID
 
     Optional<PolicySetEntity> findByCodeAndVersionNo(String code, int versionNo);
 
+    Optional<PolicySetEntity> findFirstByCodeOrderByVersionNoDesc(String code);
+
     Optional<PolicySetEntity> findFirstBySeedSourceRuleSetIdAndStatusOrderByVersionNoDesc(
             UUID seedSourceRuleSetId, ConfigLifecycleStatus status);
 
     List<PolicySetEntity> findByStatus(ConfigLifecycleStatus status);
+
+    List<PolicySetEntity> findByCodeOrderByVersionNoDesc(String code);
 }

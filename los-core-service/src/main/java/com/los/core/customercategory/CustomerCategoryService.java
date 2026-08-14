@@ -6,6 +6,7 @@ import com.los.core.exception.ResourceNotFoundException;
 import com.los.core.customercategory.CustomerCategoryDtos.Actor;
 import com.los.core.customercategory.CustomerCategoryDtos.CategoryRequest;
 import com.los.core.customercategory.CustomerCategoryDtos.CategoryResponse;
+import com.los.core.customercategory.CustomerCategoryDtos.LifecycleActionRequest;
 import com.los.core.customercategory.CustomerCategoryOverlapDetector.CategoryCriteria;
 import com.los.core.customercategory.CustomerCategoryOverlapDetector.OverlapWarning;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +21,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * Customer Category governance — routing criteria only; not wired to live UW.
+ */
 @Service
 @RequiredArgsConstructor
 public class CustomerCategoryService {
@@ -32,26 +36,23 @@ public class CustomerCategoryService {
     @Transactional(readOnly = true)
     public List<CategoryResponse> list() {
         List<CustomerCategoryEntity> all = repository.findAllByOrderByCodeAscVersionNoDesc();
-        List<OverlapWarning> overlaps = detectOverlapsAmong(all.stream()
-                .filter(c -> c.getStatus() == ConfigLifecycleStatus.ACTIVE
-                        || c.getStatus() == ConfigLifecycleStatus.DRAFT)
-                .toList());
+        List<OverlapWarning> overlaps = detectOverlapsAmong(relevantForOverlap());
         return all.stream().map(c -> toResponse(c, overlaps)).toList();
     }
 
     @Transactional(readOnly = true)
     public CategoryResponse get(UUID id) {
-        CustomerCategoryEntity e = load(id);
-        List<OverlapWarning> overlaps = detectOverlapsAmong(repository.findAll().stream()
-                .filter(c -> c.getStatus() == ConfigLifecycleStatus.ACTIVE
-                        || c.getStatus() == ConfigLifecycleStatus.DRAFT)
-                .toList());
-        return toResponse(e, overlaps);
+        return toResponse(load(id), detectOverlapsAmong(relevantForOverlap()));
+    }
+
+    @Transactional(readOnly = true)
+    public List<Map<String, Object>> history(UUID id) {
+        return ConfigGovernanceHistory.historyView(load(id).getGovernanceJson());
     }
 
     @Transactional
     public CategoryResponse createDraft(CategoryRequest req, Actor actor) {
-        requireActor(actor);
+        ConfigGovernanceRoles.requireMaker(actor);
         if (req == null || req.code() == null || req.code().isBlank()) {
             throw CustomerCategoryValidator.biz("code required", "CATEGORY_CODE_REQUIRED", Map.of());
         }
@@ -64,6 +65,7 @@ public class CustomerCategoryService {
         String product = validator.normalizeLoanProduct(req.loanProduct());
         String intake = validator.normalizeIntakeSegment(req.intakeSegment());
         validator.validateAmountRange(req.minAmount(), req.maxAmount());
+        validator.validateEffectiveDates(req.effectiveFrom(), req.effectiveUntil());
         if (req.policySetId() == null) {
             throw CustomerCategoryValidator.biz("policySetId required (exactly one Policy Set)",
                     "POLICY_SET_REQUIRED", Map.of());
@@ -85,52 +87,60 @@ public class CustomerCategoryService {
                 .minAmount(req.minAmount())
                 .maxAmount(req.maxAmount())
                 .policySetId(ps.getId())
-                .reviewStatus("READY")
+                .effectiveFrom(req.effectiveFrom())
+                .effectiveUntil(req.effectiveUntil())
+                .reasonForChange(req.reasonForChange())
+                .reviewStatus("DRAFT")
                 .inferenceNotes(new LinkedHashMap<>())
+                .governanceJson(new LinkedHashMap<>())
                 .createdAt(Instant.now())
                 .createdBy(actor.identity())
                 .updatedBy(actor.identity())
                 .build();
+        ConfigGovernanceHistory.append(e.getGovernanceJson(), "CREATED", actor, req.reasonForChange());
         repository.save(e);
         auditSupport.captureCreate("CUSTOMER_CATEGORY", e.getId().toString(), snapshot(e),
                 "Create DRAFT Customer Category");
-        return toResponse(e, detectOverlapsAmong(List.of(e)));
+        return toResponse(e, detectOverlapsAmong(relevantForOverlap()));
     }
 
-    /**
-     * ACTIVE matching criteria cannot be mutated in place.
-     * DRAFT may update matching fields; ACTIVE may only update name/description (non-matching).
-     */
     @Transactional
     public CategoryResponse update(UUID id, CategoryRequest req, Actor actor) {
-        requireActor(actor);
+        ConfigGovernanceRoles.requireMaker(actor);
         CustomerCategoryEntity e = load(id);
         Map<String, Object> before = snapshot(e);
         if (e.getStatus() == ConfigLifecycleStatus.RETIRED) {
             throw CustomerCategoryValidator.biz("RETIRED category cannot be edited",
                     "CATEGORY_RETIRED", Map.of("id", id.toString()));
         }
-        if (e.getStatus() == ConfigLifecycleStatus.ACTIVE) {
-            boolean matchingChanged = matchingChanged(e, req);
-            if (matchingChanged) {
+        if (e.getStatus() == ConfigLifecycleStatus.ACTIVE
+                || e.getStatus() == ConfigLifecycleStatus.IN_REVIEW
+                || e.getStatus() == ConfigLifecycleStatus.APPROVED) {
+            if (matchingChanged(e, req) || effectiveChanged(e, req) || policyChanged(e, req)) {
                 throw CustomerCategoryValidator.biz(
-                        "ACTIVE category matching criteria cannot be mutated in place; create a new version",
+                        "Matching criteria cannot be mutated in place for " + e.getStatus()
+                                + "; create a new version",
                         "ACTIVE_CATEGORY_IMMUTABLE",
-                        Map.of("id", id.toString(), "code", e.getCode()));
+                        Map.of("id", id.toString(), "code", e.getCode(), "status", e.getStatus().name()));
             }
-            if (req.name() != null && !req.name().isBlank()) {
-                e.setName(req.name().trim());
+            // non-matching cosmetic only for ACTIVE
+            if (e.getStatus() == ConfigLifecycleStatus.ACTIVE) {
+                if (req.name() != null && !req.name().isBlank()) {
+                    e.setName(req.name().trim());
+                }
+                if (req.description() != null) {
+                    e.setDescription(req.description());
+                }
+                e.setUpdatedBy(actor.identity());
+                repository.save(e);
+                auditSupport.captureUpdate("CUSTOMER_CATEGORY", e.getId().toString(), before, snapshot(e),
+                        "Update ACTIVE category non-matching fields");
+                return get(e.getId());
             }
-            if (req.description() != null) {
-                e.setDescription(req.description());
-            }
-            e.setUpdatedBy(actor.identity());
-            repository.save(e);
-            auditSupport.captureUpdate("CUSTOMER_CATEGORY", e.getId().toString(), before, snapshot(e),
-                    "Update ACTIVE category non-matching fields");
-            return get(e.getId());
+            throw CustomerCategoryValidator.biz("Only DRAFT category matching fields can be edited",
+                    "CATEGORY_NOT_DRAFT", Map.of("status", e.getStatus().name()));
         }
-        // DRAFT — full update allowed
+        // DRAFT
         e.setName(requireName(req.name() != null ? req.name() : e.getName()));
         if (req.description() != null) {
             e.setDescription(req.description());
@@ -144,11 +154,6 @@ public class CustomerCategoryService {
         if (req.intakeSegment() != null) {
             e.setIntakeSegment(validator.normalizeIntakeSegment(req.intakeSegment()));
         }
-        if (req.minAmount() != null || req.maxAmount() != null
-                || (req.minAmount() == null && req.maxAmount() == null && matchingAmountClear(req))) {
-            // only update amounts when request explicitly carries them via dedicated path —
-            // for simplicity Step 1: always set from request when provided fields present
-        }
         e.setMinAmount(req.minAmount());
         e.setMaxAmount(req.maxAmount());
         validator.validateAmountRange(e.getMinAmount(), e.getMaxAmount());
@@ -159,7 +164,20 @@ public class CustomerCategoryService {
             }
             e.setPolicySetId(req.policySetId());
         }
+        Instant from = req.effectiveFrom() != null ? req.effectiveFrom() : e.getEffectiveFrom();
+        Instant until = req.effectiveUntil() != null ? req.effectiveUntil() : e.getEffectiveUntil();
+        validator.validateEffectiveDates(from, until);
+        if (req.effectiveFrom() != null) {
+            e.setEffectiveFrom(req.effectiveFrom());
+        }
+        if (req.effectiveUntil() != null) {
+            e.setEffectiveUntil(req.effectiveUntil());
+        }
+        if (req.reasonForChange() != null) {
+            e.setReasonForChange(req.reasonForChange());
+        }
         e.setUpdatedBy(actor.identity());
+        ConfigGovernanceHistory.append(e.getGovernanceJson(), "UPDATED", actor, req.reasonForChange());
         repository.save(e);
         auditSupport.captureUpdate("CUSTOMER_CATEGORY", e.getId().toString(), before, snapshot(e),
                 "Update DRAFT Customer Category");
@@ -167,12 +185,93 @@ public class CustomerCategoryService {
     }
 
     @Transactional
-    public CategoryResponse activate(UUID id, Actor actor) {
-        requireActor(actor);
+    public CategoryResponse submit(UUID id, LifecycleActionRequest body, Actor actor) {
+        ConfigGovernanceRoles.requireMaker(actor);
         CustomerCategoryEntity e = load(id);
         if (e.getStatus() != ConfigLifecycleStatus.DRAFT) {
-            throw CustomerCategoryValidator.biz("Only DRAFT category can be activated",
+            throw CustomerCategoryValidator.biz("Only DRAFT category can be submitted",
                     "CATEGORY_NOT_DRAFT", Map.of("status", e.getStatus().name()));
+        }
+        validator.validateMatchDimensions(
+                e.getBorrowerType(), e.getLoanProduct(), e.getIntakeSegment(),
+                e.getMinAmount(), e.getMaxAmount());
+        validator.validateEffectiveDates(e.getEffectiveFrom(), e.getEffectiveUntil());
+        if (!policySetRepository.existsById(e.getPolicySetId())) {
+            throw CustomerCategoryValidator.biz("Policy Set missing", "POLICY_SET_NOT_FOUND", Map.of());
+        }
+        Map<String, Object> before = snapshot(e);
+        e.setStatus(ConfigLifecycleStatus.IN_REVIEW);
+        e.setReviewStatus("IN_REVIEW");
+        e.setSubmittedBy(actor.identity());
+        e.setSubmittedAt(Instant.now());
+        e.setUpdatedBy(actor.identity());
+        e.getGovernanceJson().put("submittedByUserId", actor.userId());
+        e.getGovernanceJson().put("overlapAtSubmit", overlapReport());
+        ConfigGovernanceHistory.append(e.getGovernanceJson(), "SUBMITTED", actor,
+                body == null ? null : body.remarks());
+        repository.save(e);
+        auditSupport.captureAction("CUSTOMER_CATEGORY", e.getId().toString(), "SUBMIT", before, snapshot(e),
+                "Submit Customer Category for review");
+        return get(e.getId());
+    }
+
+    @Transactional
+    public CategoryResponse approve(UUID id, LifecycleActionRequest body, Actor actor) {
+        ConfigGovernanceRoles.requireChecker(actor);
+        CustomerCategoryEntity e = load(id);
+        if (e.getStatus() != ConfigLifecycleStatus.IN_REVIEW) {
+            throw CustomerCategoryValidator.biz("Only IN_REVIEW category can be approved",
+                    "CATEGORY_NOT_IN_REVIEW", Map.of("status", e.getStatus().name()));
+        }
+        Actor submitter = new Actor(
+                str(e.getGovernanceJson().get("submittedByUserId")),
+                e.getSubmittedBy(),
+                null);
+        ConfigGovernanceRoles.forbidSelfApproval(submitter, actor);
+        Map<String, Object> before = snapshot(e);
+        e.setStatus(ConfigLifecycleStatus.APPROVED);
+        e.setReviewStatus("APPROVED");
+        e.setApprovedBy(actor.identity());
+        e.setApprovedAt(Instant.now());
+        e.setUpdatedBy(actor.identity());
+        e.getGovernanceJson().put("overlapAtApprove", overlapReport());
+        ConfigGovernanceHistory.append(e.getGovernanceJson(), "APPROVED", actor,
+                body == null ? null : body.remarks());
+        repository.save(e);
+        auditSupport.captureAction("CUSTOMER_CATEGORY", e.getId().toString(), "APPROVE", before, snapshot(e),
+                "Approve Customer Category");
+        return get(e.getId());
+    }
+
+    @Transactional
+    public CategoryResponse returnToDraft(UUID id, LifecycleActionRequest body, Actor actor) {
+        ConfigGovernanceRoles.requireChecker(actor);
+        CustomerCategoryEntity e = load(id);
+        if (e.getStatus() != ConfigLifecycleStatus.IN_REVIEW
+                && e.getStatus() != ConfigLifecycleStatus.APPROVED) {
+            throw CustomerCategoryValidator.biz("Only IN_REVIEW or APPROVED category can be returned",
+                    "CATEGORY_NOT_RETURNABLE", Map.of("status", e.getStatus().name()));
+        }
+        Map<String, Object> before = snapshot(e);
+        e.setStatus(ConfigLifecycleStatus.DRAFT);
+        e.setReviewStatus("DRAFT");
+        e.setUpdatedBy(actor.identity());
+        ConfigGovernanceHistory.append(e.getGovernanceJson(), "RETURNED", actor,
+                body == null ? null : body.remarks());
+        repository.save(e);
+        auditSupport.captureAction("CUSTOMER_CATEGORY", e.getId().toString(), "RETURN", before, snapshot(e),
+                "Return Customer Category to DRAFT");
+        return get(e.getId());
+    }
+
+    @Transactional
+    public CategoryResponse activate(UUID id, Actor actor) {
+        ConfigGovernanceRoles.requireActivator(actor);
+        CustomerCategoryEntity e = load(id);
+        if (e.getStatus() != ConfigLifecycleStatus.APPROVED) {
+            throw CustomerCategoryValidator.biz(
+                    "Only APPROVED category can be activated (DRAFT→ACTIVE not allowed)",
+                    "CATEGORY_NOT_APPROVED", Map.of("status", e.getStatus().name()));
         }
         PolicySetEntity ps = policySetRepository.findById(e.getPolicySetId())
                 .orElseThrow(() -> CustomerCategoryValidator.biz("Policy Set missing",
@@ -181,14 +280,22 @@ public class CustomerCategoryService {
             throw CustomerCategoryValidator.biz("Policy Set must be ACTIVE before category activation",
                     "POLICY_SET_NOT_READY", Map.of("policySetStatus", ps.getStatus().name()));
         }
+        validator.requireLiveReadyRuleSet(ps.getPrimaryRuleSetId());
+        validator.requireSingleRuleSetComposition(ps.getAdditionalRuleSetIds());
+        validator.requireExecutableScorecard(ps.getScorecardId());
         validator.validateMatchDimensions(
                 e.getBorrowerType(), e.getLoanProduct(), e.getIntakeSegment(),
                 e.getMinAmount(), e.getMaxAmount());
+        validator.validateEffectiveDates(e.getEffectiveFrom(), e.getEffectiveUntil());
+
         Map<String, Object> before = snapshot(e);
         e.setStatus(ConfigLifecycleStatus.ACTIVE);
+        e.setReviewStatus("ACTIVE");
         e.setActivatedAt(Instant.now());
         e.setActivatedBy(actor.identity());
         e.setUpdatedBy(actor.identity());
+        e.getGovernanceJson().put("overlapAtActivate", overlapReport());
+        ConfigGovernanceHistory.append(e.getGovernanceJson(), "ACTIVATED", actor, null);
         repository.save(e);
         auditSupport.captureAction("CUSTOMER_CATEGORY", e.getId().toString(), "ACTIVATE",
                 before, snapshot(e), "Activate Customer Category (overlaps are WARNING only)");
@@ -196,30 +303,104 @@ public class CustomerCategoryService {
     }
 
     @Transactional
-    public CategoryResponse retire(UUID id, Actor actor) {
-        requireActor(actor);
+    public CategoryResponse retire(UUID id, LifecycleActionRequest body, Actor actor) {
+        ConfigGovernanceRoles.requireActivator(actor);
         CustomerCategoryEntity e = load(id);
         if (e.getStatus() == ConfigLifecycleStatus.RETIRED) {
             return get(id);
         }
+        if (e.getStatus() != ConfigLifecycleStatus.ACTIVE && e.getStatus() != ConfigLifecycleStatus.APPROVED) {
+            throw CustomerCategoryValidator.biz("Only ACTIVE or APPROVED category can be retired",
+                    "CATEGORY_NOT_RETIRABLE", Map.of("status", e.getStatus().name()));
+        }
+        String reason = body == null ? null : (body.reason() != null ? body.reason() : body.remarks());
+        if (reason == null || reason.isBlank()) {
+            throw CustomerCategoryValidator.biz("retirement reason required", "RETIREMENT_REASON_REQUIRED", Map.of());
+        }
         Map<String, Object> before = snapshot(e);
         e.setStatus(ConfigLifecycleStatus.RETIRED);
+        e.setReviewStatus("RETIRED");
         e.setRetiredAt(Instant.now());
         e.setRetiredBy(actor.identity());
+        e.setRetirementReason(reason.trim());
         e.setUpdatedBy(actor.identity());
+        ConfigGovernanceHistory.append(e.getGovernanceJson(), "RETIRED", actor, reason);
         repository.save(e);
         auditSupport.captureAction("CUSTOMER_CATEGORY", e.getId().toString(), "RETIRE",
                 before, snapshot(e), "Retire Customer Category");
         return get(e.getId());
     }
 
+    @Transactional
+    public CategoryResponse copyVersion(UUID id, LifecycleActionRequest body, Actor actor) {
+        ConfigGovernanceRoles.requireMaker(actor);
+        CustomerCategoryEntity src = load(id);
+        if (src.getStatus() != ConfigLifecycleStatus.ACTIVE
+                && src.getStatus() != ConfigLifecycleStatus.RETIRED
+                && src.getStatus() != ConfigLifecycleStatus.APPROVED) {
+            throw CustomerCategoryValidator.biz("Copy/version allowed from ACTIVE, APPROVED, or RETIRED",
+                    "CATEGORY_COPY_SOURCE_INVALID", Map.of("status", src.getStatus().name()));
+        }
+        int next = repository.findFirstByCodeOrderByVersionNoDesc(src.getCode())
+                .map(c -> c.getVersionNo() + 1).orElse(1);
+        CustomerCategoryEntity e = CustomerCategoryEntity.builder()
+                .id(UUID.randomUUID())
+                .code(src.getCode())
+                .versionNo(next)
+                .name(src.getName())
+                .description(src.getDescription())
+                .status(ConfigLifecycleStatus.DRAFT)
+                .borrowerType(src.getBorrowerType())
+                .loanProduct(src.getLoanProduct())
+                .intakeSegment(src.getIntakeSegment())
+                .minAmount(src.getMinAmount())
+                .maxAmount(src.getMaxAmount())
+                .policySetId(src.getPolicySetId())
+                .seedSourceRuleSetId(src.getSeedSourceRuleSetId())
+                .effectiveFrom(src.getEffectiveFrom())
+                .effectiveUntil(src.getEffectiveUntil())
+                .replacesCategoryId(src.getId())
+                .reasonForChange(body == null ? null : body.reason())
+                .reviewStatus("DRAFT")
+                .inferenceNotes(new LinkedHashMap<>())
+                .governanceJson(new LinkedHashMap<>())
+                .createdAt(Instant.now())
+                .createdBy(actor.identity())
+                .updatedBy(actor.identity())
+                .build();
+        ConfigGovernanceHistory.append(e.getGovernanceJson(), "COPIED", actor,
+                "Copied from " + src.getId() + " v" + src.getVersionNo());
+        repository.save(e);
+        auditSupport.captureCreate("CUSTOMER_CATEGORY", e.getId().toString(), snapshot(e),
+                "Copy Customer Category to new DRAFT version");
+        return get(e.getId());
+    }
+
+    @Transactional
+    public void deleteDraft(UUID id, Actor actor) {
+        ConfigGovernanceRoles.requireMaker(actor);
+        CustomerCategoryEntity e = load(id);
+        if (e.getStatus() != ConfigLifecycleStatus.DRAFT) {
+            throw CustomerCategoryValidator.biz("Only DRAFT category can be deleted",
+                    "CATEGORY_NOT_DRAFT", Map.of("status", e.getStatus().name()));
+        }
+        Map<String, Object> before = snapshot(e);
+        repository.delete(e);
+        auditSupport.captureDelete("CUSTOMER_CATEGORY", id.toString(), before, "Delete DRAFT Customer Category");
+    }
+
     @Transactional(readOnly = true)
     public List<Map<String, Object>> overlapReport() {
-        List<CustomerCategoryEntity> relevant = repository.findAll().stream()
+        return detectOverlapsAmong(relevantForOverlap()).stream().map(this::overlapToMap).toList();
+    }
+
+    private List<CustomerCategoryEntity> relevantForOverlap() {
+        return repository.findAll().stream()
                 .filter(c -> c.getStatus() == ConfigLifecycleStatus.ACTIVE
-                        || c.getStatus() == ConfigLifecycleStatus.DRAFT)
+                        || c.getStatus() == ConfigLifecycleStatus.DRAFT
+                        || c.getStatus() == ConfigLifecycleStatus.IN_REVIEW
+                        || c.getStatus() == ConfigLifecycleStatus.APPROVED)
                 .toList();
-        return detectOverlapsAmong(relevant).stream().map(this::overlapToMap).toList();
     }
 
     List<OverlapWarning> detectOverlapsAmong(List<CustomerCategoryEntity> entities) {
@@ -264,9 +445,23 @@ public class CustomerCategoryService {
                 e.getSeedSourceRuleSetId(),
                 e.getReviewStatus(),
                 e.getInferenceNotes() == null ? Map.of() : Map.copyOf(e.getInferenceNotes()),
+                e.getEffectiveFrom(),
+                e.getEffectiveUntil(),
                 e.getCreatedBy(),
                 e.getUpdatedBy(),
-                mine);
+                e.getSubmittedBy(),
+                e.getSubmittedAt(),
+                e.getApprovedBy(),
+                e.getApprovedAt(),
+                e.getActivatedBy(),
+                e.getActivatedAt(),
+                e.getRetiredBy(),
+                e.getRetiredAt(),
+                e.getRetirementReason(),
+                e.getReasonForChange(),
+                e.getReplacesCategoryId(),
+                mine,
+                ConfigGovernanceHistory.historyView(e.getGovernanceJson()));
     }
 
     private Map<String, Object> overlapToMap(OverlapWarning o) {
@@ -312,24 +507,29 @@ public class CustomerCategoryService {
         if (req.intakeSegment() != null && !req.intakeSegment().equalsIgnoreCase(e.getIntakeSegment())) {
             return true;
         }
-        if (req.policySetId() != null && !req.policySetId().equals(e.getPolicySetId())) {
+        if (req.minAmount() != null
+                && (e.getMinAmount() == null || req.minAmount().compareTo(e.getMinAmount()) != 0)) {
             return true;
         }
-        if (req.minAmount() != null || req.maxAmount() != null) {
-            if (req.minAmount() != null
-                    && (e.getMinAmount() == null || req.minAmount().compareTo(e.getMinAmount()) != 0)) {
-                return true;
-            }
-            if (req.maxAmount() != null
-                    && (e.getMaxAmount() == null || req.maxAmount().compareTo(e.getMaxAmount()) != 0)) {
-                return true;
-            }
+        if (req.maxAmount() != null
+                && (e.getMaxAmount() == null || req.maxAmount().compareTo(e.getMaxAmount()) != 0)) {
+            return true;
         }
         return false;
     }
 
-    private static boolean matchingAmountClear(CategoryRequest req) {
-        return false;
+    private static boolean policyChanged(CustomerCategoryEntity e, CategoryRequest req) {
+        return req != null && req.policySetId() != null && !req.policySetId().equals(e.getPolicySetId());
+    }
+
+    private static boolean effectiveChanged(CustomerCategoryEntity e, CategoryRequest req) {
+        if (req == null) {
+            return false;
+        }
+        if (req.effectiveFrom() != null && !req.effectiveFrom().equals(e.getEffectiveFrom())) {
+            return true;
+        }
+        return req.effectiveUntil() != null && !req.effectiveUntil().equals(e.getEffectiveUntil());
     }
 
     private static String requireName(String name) {
@@ -339,10 +539,7 @@ public class CustomerCategoryService {
         return name.trim();
     }
 
-    private static void requireActor(Actor actor) {
-        if (actor == null || actor.identity() == null || actor.identity().isBlank()) {
-            throw new BusinessRuleException("Authenticated actor required", "ACTOR_REQUIRED",
-                    "PROVIDE_AUTH", Map.of());
-        }
+    private static String str(Object o) {
+        return o == null ? null : String.valueOf(o);
     }
 }

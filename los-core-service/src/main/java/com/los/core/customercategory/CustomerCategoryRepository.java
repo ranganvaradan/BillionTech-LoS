@@ -12,10 +12,14 @@ public interface CustomerCategoryRepository extends JpaRepository<CustomerCatego
 
     Optional<CustomerCategoryEntity> findByCodeAndVersionNo(String code, int versionNo);
 
+    Optional<CustomerCategoryEntity> findFirstByCodeOrderByVersionNoDesc(String code);
+
     Optional<CustomerCategoryEntity> findFirstBySeedSourceRuleSetIdAndStatusOrderByVersionNoDesc(
             UUID seedSourceRuleSetId, ConfigLifecycleStatus status);
 
     List<CustomerCategoryEntity> findByStatus(ConfigLifecycleStatus status);
 
     List<CustomerCategoryEntity> findByStatusOrderByCodeAsc(ConfigLifecycleStatus status);
+
+    List<CustomerCategoryEntity> findByCodeOrderByVersionNoDesc(String code);
 }

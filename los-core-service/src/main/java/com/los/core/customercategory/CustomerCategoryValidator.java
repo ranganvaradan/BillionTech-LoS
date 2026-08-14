@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -104,28 +105,69 @@ public class CustomerCategoryValidator {
         return rs;
     }
 
+    /**
+     * Phase-1 Policy Set composition: exactly one primary rule set.
+     * additional_rule_set_ids must be empty — live engine multi-match aggregation is global
+     * (all ACTIVE matching RS), not Policy-Set-scoped; do not leave ambiguous semantics.
+     */
+    public void requireSingleRuleSetComposition(List<UUID> additionalRuleSetIds) {
+        if (additionalRuleSetIds != null && !additionalRuleSetIds.isEmpty()) {
+            throw biz(
+                    "Phase-1 Policy Set allows exactly one underwriting rule set; additionalRuleSetIds must be empty",
+                    "MULTI_RULE_SET_NOT_ENABLED",
+                    Map.of("additionalCount", additionalRuleSetIds.size()));
+        }
+    }
+
     public void requireLiveReadyAdditionalRuleSets(List<UUID> ids) {
-        if (ids == null || ids.isEmpty()) {
-            return;
-        }
-        for (UUID id : ids) {
-            requireLiveReadyRuleSet(id);
-        }
+        requireSingleRuleSetComposition(ids);
     }
 
     public UnderwritingScorecard requireLiveReadyScorecardIfPresent(UUID id) {
         if (id == null) {
             return null;
         }
+        return requireExecutableScorecard(id);
+    }
+
+    public UnderwritingScorecard requireExecutableScorecard(UUID id) {
+        if (id == null) {
+            throw biz("scorecardId required for Policy Set activation", "SCORECARD_REQUIRED", Map.of());
+        }
         UnderwritingScorecard sc = scorecardRepository.findById(id)
                 .orElseThrow(() -> biz("Scorecard not found: " + id, "SCORECARD_NOT_FOUND",
                         Map.of("scorecardId", id.toString())));
-        if (!sc.isActive()) {
-            throw biz("Referenced scorecard is not ACTIVE/live-ready: " + id,
+        if (!sc.isExecutionActive() || !"ACTIVE".equalsIgnoreCase(sc.getStatus())) {
+            throw biz("Referenced scorecard is not ACTIVE/executable: " + id,
                     "SCORECARD_NOT_LIVE_READY",
-                    Map.of("scorecardId", id.toString(), "active", false, "status", sc.getStatus()));
+                    Map.of("scorecardId", id.toString(), "active", sc.isActive(), "status", sc.getStatus()));
         }
         return sc;
+    }
+
+    public void validateEffectiveDates(Instant from, Instant until) {
+        if (from != null && until != null && from.isAfter(until)) {
+            throw biz("effectiveFrom must be <= effectiveUntil", "INVALID_EFFECTIVE_DATES",
+                    Map.of("effectiveFrom", from.toString(), "effectiveUntil", until.toString()));
+        }
+    }
+
+    public void assertCompatibility(UnderwritingRuleSet rs, UnderwritingScorecard sc) {
+        if (rs == null || sc == null) {
+            return;
+        }
+        if (!rs.getBorrowerType().equalsIgnoreCase(sc.getBorrowerType())
+                || !rs.getLoanProduct().equals(sc.getLoanProduct())) {
+            throw biz("Rule set and scorecard borrower/product dimensions do not match",
+                    "COMPONENT_DIMENSION_MISMATCH",
+                    Map.of(
+                            "ruleSetId", rs.getId().toString(),
+                            "scorecardId", sc.getId().toString(),
+                            "ruleSetBorrower", rs.getBorrowerType(),
+                            "scorecardBorrower", sc.getBorrowerType(),
+                            "ruleSetProduct", rs.getLoanProduct(),
+                            "scorecardProduct", sc.getLoanProduct()));
+        }
     }
 
     public String normalizeBorrowerType(String raw) {

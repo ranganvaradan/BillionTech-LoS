@@ -70,6 +70,12 @@ public class CustomerCategoryEntity {
     @Builder.Default
     private Map<String, Object> inferenceNotes = new LinkedHashMap<>();
 
+    @Column(name = "effective_from")
+    private Instant effectiveFrom;
+
+    @Column(name = "effective_until")
+    private Instant effectiveUntil;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -83,6 +89,18 @@ public class CustomerCategoryEntity {
     @Column(name = "updated_by", length = 120)
     private String updatedBy;
 
+    @Column(name = "submitted_by", length = 120)
+    private String submittedBy;
+
+    @Column(name = "submitted_at")
+    private Instant submittedAt;
+
+    @Column(name = "approved_by", length = 120)
+    private String approvedBy;
+
+    @Column(name = "approved_at")
+    private Instant approvedAt;
+
     @Column(name = "activated_at")
     private Instant activatedAt;
 
@@ -95,6 +113,20 @@ public class CustomerCategoryEntity {
     @Column(name = "retired_by", length = 120)
     private String retiredBy;
 
+    @Column(name = "retirement_reason", columnDefinition = "TEXT")
+    private String retirementReason;
+
+    @Column(name = "reason_for_change", columnDefinition = "TEXT")
+    private String reasonForChange;
+
+    @Column(name = "replaces_category_id")
+    private UUID replacesCategoryId;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "governance_json", nullable = false, columnDefinition = "jsonb")
+    @Builder.Default
+    private Map<String, Object> governanceJson = new LinkedHashMap<>();
+
     @PrePersist
     void prePersist() {
         if (id == null) {
@@ -105,6 +137,9 @@ public class CustomerCategoryEntity {
         }
         if (inferenceNotes == null) {
             inferenceNotes = new LinkedHashMap<>();
+        }
+        if (governanceJson == null) {
+            governanceJson = new LinkedHashMap<>();
         }
     }
 }

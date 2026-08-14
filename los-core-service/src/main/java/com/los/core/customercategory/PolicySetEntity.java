@@ -8,7 +8,9 @@ import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Entity
@@ -42,6 +44,9 @@ public class PolicySetEntity {
     @Column(name = "primary_rule_set_id", nullable = false)
     private UUID primaryRuleSetId;
 
+    /**
+     * Reserved. Phase-1 governance enforces empty — exactly one primary rule set.
+     */
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "additional_rule_set_ids", nullable = false, columnDefinition = "jsonb")
     @Builder.Default
@@ -52,6 +57,12 @@ public class PolicySetEntity {
 
     @Column(name = "seed_source_rule_set_id")
     private UUID seedSourceRuleSetId;
+
+    @Column(name = "effective_from")
+    private Instant effectiveFrom;
+
+    @Column(name = "effective_until")
+    private Instant effectiveUntil;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -66,6 +77,18 @@ public class PolicySetEntity {
     @Column(name = "updated_by", length = 120)
     private String updatedBy;
 
+    @Column(name = "submitted_by", length = 120)
+    private String submittedBy;
+
+    @Column(name = "submitted_at")
+    private Instant submittedAt;
+
+    @Column(name = "approved_by", length = 120)
+    private String approvedBy;
+
+    @Column(name = "approved_at")
+    private Instant approvedAt;
+
     @Column(name = "activated_at")
     private Instant activatedAt;
 
@@ -78,6 +101,20 @@ public class PolicySetEntity {
     @Column(name = "retired_by", length = 120)
     private String retiredBy;
 
+    @Column(name = "retirement_reason", columnDefinition = "TEXT")
+    private String retirementReason;
+
+    @Column(name = "reason_for_change", columnDefinition = "TEXT")
+    private String reasonForChange;
+
+    @Column(name = "replaces_policy_set_id")
+    private UUID replacesPolicySetId;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "governance_json", nullable = false, columnDefinition = "jsonb")
+    @Builder.Default
+    private Map<String, Object> governanceJson = new LinkedHashMap<>();
+
     @PrePersist
     void prePersist() {
         if (id == null) {
@@ -88,6 +125,9 @@ public class PolicySetEntity {
         }
         if (additionalRuleSetIds == null) {
             additionalRuleSetIds = new ArrayList<>();
+        }
+        if (governanceJson == null) {
+            governanceJson = new LinkedHashMap<>();
         }
     }
 }

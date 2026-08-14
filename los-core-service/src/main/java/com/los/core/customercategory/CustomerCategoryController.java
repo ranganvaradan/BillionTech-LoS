@@ -4,6 +4,9 @@ import com.los.core.audit.AdminAuditContext;
 import com.los.core.customercategory.CustomerCategoryDtos.Actor;
 import com.los.core.customercategory.CustomerCategoryDtos.CategoryRequest;
 import com.los.core.customercategory.CustomerCategoryDtos.CategoryResponse;
+import com.los.core.customercategory.CustomerCategoryDtos.EligibleRuleSetView;
+import com.los.core.customercategory.CustomerCategoryDtos.EligibleScorecardView;
+import com.los.core.customercategory.CustomerCategoryDtos.LifecycleActionRequest;
 import com.los.core.customercategory.CustomerCategoryDtos.SeedApplyResponse;
 import com.los.core.customercategory.CustomerCategoryDtos.SeedPreviewResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -13,22 +16,24 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 /**
- * Step-1 admin/read APIs. Does not affect live underwriting routing.
+ * Customer Category governance APIs. Does not affect live underwriting routing.
  */
 @RestController
 @RequestMapping("/api/v1/customer-categories")
 @RequiredArgsConstructor
-@Tag(name = "Customer categories", description = "Phase-1 configuration (not wired to live UW yet)")
+@Tag(name = "Customer categories", description = "Governance configuration (not wired to live UW)")
 public class CustomerCategoryController {
 
     private final CustomerCategoryService categoryService;
     private final CustomerCategorySeedService seedService;
     private final CustomerCategoryDay1SeedService day1SeedService;
+    private final EligibleComponentCatalogueService catalogueService;
 
     @GetMapping
     @Operation(summary = "List Customer Categories")
@@ -37,13 +42,16 @@ public class CustomerCategoryController {
     }
 
     @GetMapping("/{id}")
-    @Operation(summary = "Get Customer Category by id")
     public ResponseEntity<CategoryResponse> getCategory(@PathVariable UUID id) {
         return ResponseEntity.ok(categoryService.get(id));
     }
 
+    @GetMapping("/{id}/history")
+    public ResponseEntity<List<Map<String, Object>>> history(@PathVariable UUID id) {
+        return ResponseEntity.ok(categoryService.history(id));
+    }
+
     @PostMapping
-    @Operation(summary = "Create DRAFT Customer Category")
     public ResponseEntity<CategoryResponse> createCategory(
             @RequestBody CategoryRequest request,
             @RequestHeader(value = "X-User-Id", required = false) String userId,
@@ -55,7 +63,6 @@ public class CustomerCategoryController {
     }
 
     @PutMapping("/{id}")
-    @Operation(summary = "Update category (ACTIVE matching fields blocked)")
     public ResponseEntity<CategoryResponse> updateCategory(
             @PathVariable UUID id,
             @RequestBody CategoryRequest request,
@@ -66,8 +73,52 @@ public class CustomerCategoryController {
         return ResponseEntity.ok(categoryService.update(id, request, actor(userId, userName, role)));
     }
 
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteDraft(
+            @PathVariable UUID id,
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
+            @RequestHeader(value = "X-User-Role", required = false) String role,
+            @RequestHeader(value = "X-User-Name", required = false) String userName) {
+        withAudit(userId, role);
+        categoryService.deleteDraft(id, actor(userId, userName, role));
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/submit")
+    public ResponseEntity<CategoryResponse> submit(
+            @PathVariable UUID id,
+            @RequestBody(required = false) LifecycleActionRequest body,
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
+            @RequestHeader(value = "X-User-Role", required = false) String role,
+            @RequestHeader(value = "X-User-Name", required = false) String userName) {
+        withAudit(userId, role);
+        return ResponseEntity.ok(categoryService.submit(id, body, actor(userId, userName, role)));
+    }
+
+    @PostMapping("/{id}/approve")
+    public ResponseEntity<CategoryResponse> approve(
+            @PathVariable UUID id,
+            @RequestBody(required = false) LifecycleActionRequest body,
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
+            @RequestHeader(value = "X-User-Role", required = false) String role,
+            @RequestHeader(value = "X-User-Name", required = false) String userName) {
+        withAudit(userId, role);
+        return ResponseEntity.ok(categoryService.approve(id, body, actor(userId, userName, role)));
+    }
+
+    @PostMapping("/{id}/return")
+    public ResponseEntity<CategoryResponse> returnToDraft(
+            @PathVariable UUID id,
+            @RequestBody(required = false) LifecycleActionRequest body,
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
+            @RequestHeader(value = "X-User-Role", required = false) String role,
+            @RequestHeader(value = "X-User-Name", required = false) String userName) {
+        withAudit(userId, role);
+        return ResponseEntity.ok(categoryService.returnToDraft(id, body, actor(userId, userName, role)));
+    }
+
     @PostMapping("/{id}/activate")
-    @Operation(summary = "Activate DRAFT category (overlap = WARNING only)")
+    @Operation(summary = "Activate APPROVED category only (never DRAFT→ACTIVE)")
     public ResponseEntity<CategoryResponse> activate(
             @PathVariable UUID id,
             @RequestHeader(value = "X-User-Id", required = false) String userId,
@@ -80,27 +131,55 @@ public class CustomerCategoryController {
     @PostMapping("/{id}/retire")
     public ResponseEntity<CategoryResponse> retire(
             @PathVariable UUID id,
+            @RequestBody(required = false) LifecycleActionRequest body,
             @RequestHeader(value = "X-User-Id", required = false) String userId,
             @RequestHeader(value = "X-User-Role", required = false) String role,
             @RequestHeader(value = "X-User-Name", required = false) String userName) {
         withAudit(userId, role);
-        return ResponseEntity.ok(categoryService.retire(id, actor(userId, userName, role)));
+        return ResponseEntity.ok(categoryService.retire(id, body, actor(userId, userName, role)));
+    }
+
+    @PostMapping("/{id}/copy")
+    public ResponseEntity<CategoryResponse> copyVersion(
+            @PathVariable UUID id,
+            @RequestBody(required = false) LifecycleActionRequest body,
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
+            @RequestHeader(value = "X-User-Role", required = false) String role,
+            @RequestHeader(value = "X-User-Name", required = false) String userName) {
+        withAudit(userId, role);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(categoryService.copyVersion(id, body, actor(userId, userName, role)));
     }
 
     @GetMapping("/meta/overlaps")
-    @Operation(summary = "Overlap WARNING report for DRAFT+ACTIVE categories")
     public ResponseEntity<List<Map<String, Object>>> overlaps() {
         return ResponseEntity.ok(categoryService.overlapReport());
     }
 
+    @GetMapping("/meta/eligible-rule-sets")
+    @Operation(summary = "List ACTIVE underwriting rule sets eligible for Policy Set selection")
+    public ResponseEntity<List<EligibleRuleSetView>> eligibleRuleSets(
+            @RequestParam(required = false) String borrowerType,
+            @RequestParam(required = false) String loanProduct,
+            @RequestParam(required = false) BigDecimal amount) {
+        return ResponseEntity.ok(catalogueService.eligibleRuleSets(borrowerType, loanProduct, amount));
+    }
+
+    @GetMapping("/meta/eligible-scorecards")
+    @Operation(summary = "List ACTIVE scorecards eligible for Policy Set selection")
+    public ResponseEntity<List<EligibleScorecardView>> eligibleScorecards(
+            @RequestParam(required = false) String borrowerType,
+            @RequestParam(required = false) String loanProduct,
+            @RequestParam(required = false) BigDecimal amount) {
+        return ResponseEntity.ok(catalogueService.eligibleScorecards(borrowerType, loanProduct, amount));
+    }
+
     @PostMapping("/seed/preview")
-    @Operation(summary = "Preview seed candidates from live underwriting_rule_sets (no writes)")
     public ResponseEntity<SeedPreviewResponse> seedPreview() {
         return ResponseEntity.ok(seedService.preview());
     }
 
     @PostMapping("/seed/apply")
-    @Operation(summary = "Apply raw rule-set seed as DRAFT only (idempotent; never ACTIVE)")
     public ResponseEntity<SeedApplyResponse> seedApply(
             @RequestHeader(value = "X-User-Id", required = false) String userId,
             @RequestHeader(value = "X-User-Role", required = false) String role,
@@ -110,7 +189,6 @@ public class CustomerCategoryController {
     }
 
     @PostMapping("/seed/day1/validate")
-    @Operation(summary = "Validate approved Day-1 15×12 matrix against live refs (no writes)")
     public ResponseEntity<Map<String, Object>> day1Validate() {
         day1SeedService.validateAllOrThrow();
         return ResponseEntity.ok(Map.of(
@@ -121,7 +199,6 @@ public class CustomerCategoryController {
     }
 
     @PostMapping("/seed/day1/apply")
-    @Operation(summary = "Apply approved Day-1 seed as DRAFT only (15 categories, 12 Policy Sets)")
     public ResponseEntity<CustomerCategoryDay1SeedService.Day1ApplyResult> day1Apply(
             @RequestHeader(value = "X-User-Id", required = false) String userId,
             @RequestHeader(value = "X-User-Role", required = false) String role,
@@ -131,7 +208,6 @@ public class CustomerCategoryController {
     }
 
     @GetMapping("/seed/day1/readback")
-    @Operation(summary = "Read back persisted Day-1 DRAFT seed rows")
     public ResponseEntity<CustomerCategoryDay1SeedService.Day1ApplyResult> day1Readback() {
         return ResponseEntity.ok(day1SeedService.readBack(0, 0, 0));
     }

@@ -1,6 +1,7 @@
 package com.los.core.customercategory;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -21,13 +22,18 @@ public final class CustomerCategoryDtos {
         }
     }
 
+    public record LifecycleActionRequest(String remarks, String reason) {}
+
     public record PolicySetRequest(
             String code,
             String name,
             String description,
             UUID primaryRuleSetId,
             List<UUID> additionalRuleSetIds,
-            UUID scorecardId
+            UUID scorecardId,
+            Instant effectiveFrom,
+            Instant effectiveUntil,
+            String reasonForChange
     ) {}
 
     public record PolicySetResponse(
@@ -41,8 +47,22 @@ public final class CustomerCategoryDtos {
             List<UUID> additionalRuleSetIds,
             UUID scorecardId,
             UUID seedSourceRuleSetId,
+            Instant effectiveFrom,
+            Instant effectiveUntil,
             String createdBy,
-            String updatedBy
+            String updatedBy,
+            String submittedBy,
+            Instant submittedAt,
+            String approvedBy,
+            Instant approvedAt,
+            String activatedBy,
+            Instant activatedAt,
+            String retiredBy,
+            Instant retiredAt,
+            String retirementReason,
+            String reasonForChange,
+            UUID replacesPolicySetId,
+            List<Map<String, Object>> history
     ) {}
 
     public record CategoryRequest(
@@ -54,7 +74,10 @@ public final class CustomerCategoryDtos {
             String intakeSegment,
             BigDecimal minAmount,
             BigDecimal maxAmount,
-            UUID policySetId
+            UUID policySetId,
+            Instant effectiveFrom,
+            Instant effectiveUntil,
+            String reasonForChange
     ) {}
 
     public record CategoryResponse(
@@ -73,9 +96,46 @@ public final class CustomerCategoryDtos {
             UUID seedSourceRuleSetId,
             String reviewStatus,
             Map<String, Object> inferenceNotes,
+            Instant effectiveFrom,
+            Instant effectiveUntil,
             String createdBy,
             String updatedBy,
-            List<Map<String, Object>> overlapWarnings
+            String submittedBy,
+            Instant submittedAt,
+            String approvedBy,
+            Instant approvedAt,
+            String activatedBy,
+            Instant activatedAt,
+            String retiredBy,
+            Instant retiredAt,
+            String retirementReason,
+            String reasonForChange,
+            UUID replacesCategoryId,
+            List<Map<String, Object>> overlapWarnings,
+            List<Map<String, Object>> history
+    ) {}
+
+    public record EligibleRuleSetView(
+            UUID id,
+            String name,
+            String borrowerType,
+            String loanProduct,
+            BigDecimal minAmount,
+            BigDecimal maxAmount,
+            int priority,
+            boolean active
+    ) {}
+
+    public record EligibleScorecardView(
+            UUID id,
+            String name,
+            String borrowerType,
+            String loanProduct,
+            BigDecimal minAmount,
+            BigDecimal maxAmount,
+            int priority,
+            String status,
+            boolean active
     ) {}
 
     public record SeedCandidateView(

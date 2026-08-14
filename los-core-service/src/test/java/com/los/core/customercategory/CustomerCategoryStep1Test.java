@@ -8,6 +8,7 @@ import com.los.core.repository.UnderwritingScorecardRepository;
 import com.los.core.customercategory.CustomerCategoryDtos.Actor;
 import com.los.core.customercategory.CustomerCategoryDtos.CategoryRequest;
 import com.los.core.customercategory.CustomerCategoryDtos.CategoryResponse;
+import com.los.core.customercategory.CustomerCategoryDtos.LifecycleActionRequest;
 import com.los.core.customercategory.CustomerCategoryDtos.PolicySetRequest;
 import com.los.core.customercategory.CustomerCategoryDtos.SeedApplyResponse;
 import com.los.core.customercategory.CustomerCategoryDtos.SeedPreviewResponse;
@@ -72,7 +73,7 @@ class CustomerCategoryStep1Test {
         CategoryResponse res = categoryService.createDraft(new CategoryRequest(
                 "CC_TEST", "Test Cat", "desc",
                 "INDIVIDUAL", "PERSONAL_LOAN", "BORROWER",
-                new BigDecimal("1000"), new BigDecimal("50000"), psId), actor);
+                new BigDecimal("1000"), new BigDecimal("50000"), psId, null, null, null), actor);
 
         assertEquals("DRAFT", res.status());
         assertEquals("INDIVIDUAL", res.borrowerType());
@@ -89,7 +90,7 @@ class CustomerCategoryStep1Test {
         when(categoryRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         CategoryResponse res = categoryService.createDraft(new CategoryRequest(
                 "CC_ANY_B", "Any B", null, "ANY", "PERSONAL_LOAN", "BORROWER",
-                null, null, psId), actor);
+                null, null, psId, null, null, null), actor);
         assertEquals(MatchWildcard.ANY, res.borrowerType());
     }
 
@@ -100,7 +101,7 @@ class CustomerCategoryStep1Test {
         when(categoryRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         CategoryResponse res = categoryService.createDraft(new CategoryRequest(
                 "CC_ANY_P", "Any P", null, "COMPANY", "ANY", "ANCHOR",
-                null, null, psId), actor);
+                null, null, psId, null, null, null), actor);
         assertEquals(MatchWildcard.ANY, res.loanProduct());
     }
 
@@ -111,7 +112,7 @@ class CustomerCategoryStep1Test {
         when(categoryRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         CategoryResponse res = categoryService.createDraft(new CategoryRequest(
                 "CC_ANY_I", "Any I", null, "COMPANY", "TERM_LOAN", "ANY",
-                null, null, psId), actor);
+                null, null, psId, null, null, null), actor);
         assertEquals(MatchWildcard.ANY, res.intakeSegment());
     }
 
@@ -159,7 +160,7 @@ class CustomerCategoryStep1Test {
         BusinessRuleException ex = assertThrows(BusinessRuleException.class,
                 () -> categoryService.createDraft(new CategoryRequest(
                         "CC_NO_PS", "No PS", null, "INDIVIDUAL", "PL", "BORROWER",
-                        null, null, null), actor));
+                        null, null, null, null, null, null), actor));
         assertEquals("POLICY_SET_REQUIRED", ex.getReason());
     }
 
@@ -171,8 +172,7 @@ class CustomerCategoryStep1Test {
         when(policySetRepository.findByCodeAndVersionNo("PS1", 1)).thenReturn(Optional.empty());
         when(policySetRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        var res = policySetService.createDraft(new PolicySetRequest(
-                "PS1", "PS One", null, rsId, List.of(), null), actor);
+        var res = policySetService.createDraft(new PolicySetRequest("PS1", "PS One", null, rsId, List.of(), null, null, null, null), actor);
         assertEquals("DRAFT", res.status());
         assertEquals(rsId, res.primaryRuleSetId());
     }
@@ -182,8 +182,7 @@ class CustomerCategoryStep1Test {
         UUID missing = UUID.randomUUID();
         when(ruleSetRepository.findById(missing)).thenReturn(Optional.empty());
         BusinessRuleException ex = assertThrows(BusinessRuleException.class,
-                () -> policySetService.createDraft(new PolicySetRequest(
-                        "PS_BAD", "Bad", null, missing, List.of(), null), actor));
+                () -> policySetService.createDraft(new PolicySetRequest("PS_BAD", "Bad", null, missing, List.of(), null, null, null, null), actor));
         assertEquals("RULE_SET_NOT_FOUND", ex.getReason());
     }
 
@@ -194,8 +193,7 @@ class CustomerCategoryStep1Test {
         inactive.setActive(false);
         when(ruleSetRepository.findById(rsId)).thenReturn(Optional.of(inactive));
         BusinessRuleException ex = assertThrows(BusinessRuleException.class,
-                () -> policySetService.createDraft(new PolicySetRequest(
-                        "PS_INACTIVE", "Bad", null, rsId, List.of(), null), actor));
+                () -> policySetService.createDraft(new PolicySetRequest("PS_INACTIVE", "Bad", null, rsId, List.of(), null, null, null, null), actor));
         assertEquals("RULE_SET_NOT_LIVE_READY", ex.getReason());
     }
 
@@ -313,7 +311,7 @@ class CustomerCategoryStep1Test {
         BusinessRuleException ex = assertThrows(BusinessRuleException.class,
                 () -> categoryService.update(id, new CategoryRequest(
                         "CC_ACT", "Live Cat", null, "COMPANY", "PL", "BORROWER",
-                        new BigDecimal("1000"), new BigDecimal("10000"), psId), actor));
+                        new BigDecimal("1000"), new BigDecimal("10000"), psId, null, null, null), actor));
         assertEquals("ACTIVE_CATEGORY_IMMUTABLE", ex.getReason());
     }
 
@@ -332,10 +330,10 @@ class CustomerCategoryStep1Test {
         BusinessRuleException ex = assertThrows(BusinessRuleException.class,
                 () -> categoryService.update(id, new CategoryRequest(
                         "CC_RET", "Old2", null, "INDIVIDUAL", "PL", "ANY", null, null,
-                        retired.getPolicySetId()), actor));
+                        retired.getPolicySetId(), null, null, null), actor));
         assertEquals("CATEGORY_RETIRED", ex.getReason());
 
-        CategoryResponse again = categoryService.retire(id, actor);
+        CategoryResponse again = categoryService.retire(id, new LifecycleActionRequest(null, "retired"), actor);
         assertEquals("RETIRED", again.status());
     }
 
@@ -349,7 +347,7 @@ class CustomerCategoryStep1Test {
         when(policySetRepository.save(cap.capture())).thenAnswer(inv -> inv.getArgument(0));
 
         Actor fromJwt = new Actor("auth-sub-99", "Verified User", "ADMIN");
-        policySetService.createDraft(new PolicySetRequest("PS_AUD", "Aud", null, rsId, List.of(), null), fromJwt);
+        policySetService.createDraft(new PolicySetRequest("PS_AUD", "Aud", null, rsId, List.of(), null, null, null, null), fromJwt);
         assertEquals("Verified User", cap.getValue().getCreatedBy());
         verify(auditSupport).captureCreate(eq("POLICY_SET"), any(), any(), any());
     }
@@ -358,19 +356,34 @@ class CustomerCategoryStep1Test {
     void activateDoesNotBlockOnOverlapWarning() {
         UUID catId = UUID.randomUUID();
         UUID psId = UUID.randomUUID();
+        UUID rsId = UUID.randomUUID();
+        UUID scId = UUID.randomUUID();
         PolicySetEntity ps = PolicySetEntity.builder()
                 .id(psId).code("PS").versionNo(1).name("PS")
                 .status(ConfigLifecycleStatus.ACTIVE)
-                .primaryRuleSetId(UUID.randomUUID()).build();
-        CustomerCategoryEntity draft = CustomerCategoryEntity.builder()
+                .primaryRuleSetId(rsId)
+                .scorecardId(scId)
+                .additionalRuleSetIds(List.of())
+                .build();
+        CustomerCategoryEntity approved = CustomerCategoryEntity.builder()
                 .id(catId).code("CC1").versionNo(1).name("C1")
-                .status(ConfigLifecycleStatus.DRAFT)
+                .status(ConfigLifecycleStatus.APPROVED)
                 .borrowerType("ANY").loanProduct("ANY").intakeSegment("ANY")
-                .policySetId(psId).build();
-        when(categoryRepository.findById(catId)).thenReturn(Optional.of(draft));
+                .policySetId(psId)
+                .governanceJson(new java.util.LinkedHashMap<>())
+                .build();
+        when(categoryRepository.findById(catId)).thenReturn(Optional.of(approved));
         when(policySetRepository.findById(psId)).thenReturn(Optional.of(ps));
+        when(ruleSetRepository.findById(rsId)).thenReturn(Optional.of(activeRuleSet(rsId, "INDIVIDUAL", "PL")));
+        when(scorecardRepository.findById(scId)).thenReturn(Optional.of(
+                com.los.core.model.entity.UnderwritingScorecard.builder()
+                        .id(scId).name("SC").borrowerType("INDIVIDUAL").loanProduct("PL")
+                        .active(true).status("ACTIVE").priority(100)
+                        .scorecardJson(java.util.Map.of()).thresholdsJson(java.util.Map.of())
+                        .hardRulesJson(java.util.Map.of()).safetyJson(java.util.Map.of())
+                        .governanceJson(java.util.Map.of()).build()));
         when(categoryRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        when(categoryRepository.findAll()).thenReturn(List.of(draft));
+        when(categoryRepository.findAll()).thenReturn(List.of(approved));
 
         CategoryResponse res = categoryService.activate(catId, actor);
         assertEquals("ACTIVE", res.status());
