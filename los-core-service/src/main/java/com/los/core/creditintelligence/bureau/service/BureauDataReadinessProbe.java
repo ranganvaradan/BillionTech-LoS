@@ -35,7 +35,7 @@ public class BureauDataReadinessProbe {
             Map.entry("bureau.emi.monthly", BureauMetricService.TOTAL_MONTHLY_OBLIGATION),
             Map.entry("bureau.written_off_account_count", BureauMetricService.WRITTEN_OFF_ACCOUNT_COUNT),
             Map.entry("bureau.settled_account_count", BureauMetricService.SETTLED_ACCOUNT_COUNT),
-            Map.entry("bureau.status_ntc", "__REPORT_SCORE__")
+            Map.entry("bureau.status_ntc", BureauMetricService.STATUS_NTC)
     );
 
     private final CiBureauReportRepository reportRepository;
@@ -61,10 +61,9 @@ public class BureauDataReadinessProbe {
         }
         String metricCode = PATH_TO_METRIC.get(path);
         if ("__REPORT_SCORE__".equals(metricCode)) {
-            if ("bureau.status_ntc".equals(path)) {
-                return BureauReadiness.READY;
-            }
-            return report.getScore() != null && report.getScore() > 0
+            // Positive scores and Equifax sentinel -1 are ready; 0/null are incomplete (not NTC).
+            Integer score = report.getScore();
+            return score != null && (score > 0 || score == -1)
                     ? BureauReadiness.READY
                     : BureauReadiness.INGEST_INCOMPLETE;
         }

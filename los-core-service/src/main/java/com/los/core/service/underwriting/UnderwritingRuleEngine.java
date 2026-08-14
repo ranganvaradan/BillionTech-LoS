@@ -387,7 +387,8 @@ public class UnderwritingRuleEngine {
         if (app.getManualBureauScore() != null && app.getManualBureauScore() > 0) {
             return app.getManualBureauScore();
         }
-        if (app.getBureauScore() != null && app.getBureauScore() > 0) {
+        if (app.getBureauScore() != null
+                && (app.getBureauScore() > 0 || app.getBureauScore() == -1)) {
             return app.getBureauScore();
         }
         return 0;

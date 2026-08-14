@@ -134,6 +134,16 @@ public class BureauNormalizationService {
         if (data.get("enquiryAge30Days") != null) {
             reportMeta.put("enquiryAge30Days", data.get("enquiryAge30Days"));
         }
+        // Preserve Equifax no-hit / NTC signals for canonical metric writer (do not invent).
+        if (Boolean.TRUE.equals(data.get("noRecordFound"))) {
+            reportMeta.put("noRecordFound", true);
+        }
+        if (score != null && score == -1) {
+            reportMeta.put("scoreSentinel", -1);
+        }
+        if (data.get("statusNtc") instanceof Boolean statusNtc) {
+            reportMeta.put("statusNtc", statusNtc);
+        }
         reportMeta.put("checksum", checksum);
 
         CiBureauReport report = reportRepository.save(CiBureauReport.builder()

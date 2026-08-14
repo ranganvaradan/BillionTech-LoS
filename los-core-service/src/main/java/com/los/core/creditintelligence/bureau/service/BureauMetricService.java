@@ -41,6 +41,8 @@ public class BureauMetricService {
     public static final String RECENT_INQUIRIES_90D = "bureau.recent_inquiries_90d";
     public static final String SETTLED_ACCOUNT_COUNT = "bureau.settled_account_count";
     public static final String WRITTEN_OFF_ACCOUNT_COUNT = "bureau.written_off_account_count";
+    /** Canonical NTC / no-hit flag (0/1). Distinct from bureau.score sentinel -1. */
+    public static final String STATUS_NTC = "bureau.status_ntc";
 
     private final CiMetricResultRepository metricResultRepository;
     private final CiBureauPaymentHistoryRepository paymentHistoryRepository;
@@ -51,6 +53,7 @@ public class BureauMetricService {
             List<CiBureauTradeline> tradelines,
             Map<String, Object> reportData) {
         List<CiMetricResult> results = new ArrayList<>();
+        results.add(persist(computeStatusNtc(report, reportData)));
         results.add(persist(computeLiveUnsecured(report, tradelines)));
         results.add(persist(computeExposure(report, tradelines, TOTAL_LIVE_EXPOSURE, null)));
         results.add(persist(computeExposure(report, tradelines, SECURED_LIVE_EXPOSURE, true)));
@@ -63,6 +66,48 @@ public class BureauMetricService {
         results.add(persist(computeStatusCount(report, tradelines, SETTLED_ACCOUNT_COUNT, true, false)));
         results.add(persist(computeStatusCount(report, tradelines, WRITTEN_OFF_ACCOUNT_COUNT, false, true)));
         return results;
+    }
+
+    /**
+     * Canonical writer for {@code bureau.status_ntc}.
+     * <p>
+     * Equifax no-hit: {@code creditScore=-1} and/or {@code noRecordFound=true} → NTC true.
+     * Positive score → NTC false. Does not invent NTC from missing/malformed score alone.
+     */
+    public CiMetricResult computeStatusNtc(CiBureauReport report, Map<String, Object> reportData) {
+        Map<String, Object> evidence = baseEvidence(report);
+        boolean noRecord = reportData != null && Boolean.TRUE.equals(reportData.get("noRecordFound"));
+        Integer score = report.getScore();
+        if (reportData != null && reportData.get("statusNtc") instanceof Boolean explicit) {
+            evidence.put("source", "EXPLICIT_STATUS_NTC");
+            evidence.put("noRecordFound", noRecord);
+            evidence.put("score", score);
+            return result(report, STATUS_NTC, BureauMetricOutcome.PASS.name(),
+                    valueOf(explicit ? 1 : 0), "OK", List.of(), List.of(), 0, evidence);
+        }
+        if (noRecord) {
+            evidence.put("source", "EQUIFAX_NO_RECORD");
+            evidence.put("noRecordFound", true);
+            evidence.put("score", score);
+            return result(report, STATUS_NTC, BureauMetricOutcome.PASS.name(),
+                    valueOf(1), "OK", List.of(), List.of(), 0, evidence);
+        }
+        // Equifax pairs -1 with noRecordFound; if -1 alone without no-record flag, do not invent NTC
+        if (score != null && score == -1) {
+            evidence.put("source", "SCORE_SENTINEL_WITHOUT_NO_RECORD_FLAG");
+            evidence.put("score", score);
+            return result(report, STATUS_NTC, BureauMetricOutcome.PASS.name(),
+                    valueOf(0), "OK", List.of(), List.of(), 0, evidence);
+        }
+        if (score != null && score > 0) {
+            evidence.put("source", "POSITIVE_SCORE");
+            evidence.put("score", score);
+            return result(report, STATUS_NTC, BureauMetricOutcome.PASS.name(),
+                    valueOf(0), "OK", List.of(), List.of(), 0, evidence);
+        }
+        evidence.put("reason", "SCORE_MISSING_OR_UNKNOWN");
+        evidence.put("score", score);
+        return insufficient(report, STATUS_NTC, "SCORE_MISSING_OR_UNKNOWN");
     }
 
     public List<CiMetricResult> findForReport(UUID reportId) {

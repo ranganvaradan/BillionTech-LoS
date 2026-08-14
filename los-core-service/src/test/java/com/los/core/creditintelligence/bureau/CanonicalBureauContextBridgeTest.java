@@ -56,6 +56,9 @@ class CanonicalBureauContextBridgeTest {
                 eq(reportId), eq(BureauMetricService.LIVE_UNSECURED)))
                 .thenReturn(Optional.of(metric(BureauMetricService.LIVE_UNSECURED, 3)));
         when(metricResultRepository.findFirstByBureauReportIdAndMetricCodeOrderByCreatedAtDesc(
+                eq(reportId), eq(BureauMetricService.STATUS_NTC)))
+                .thenReturn(Optional.of(metric(BureauMetricService.STATUS_NTC, 0)));
+        when(metricResultRepository.findFirstByBureauReportIdAndMetricCodeOrderByCreatedAtDesc(
                 eq(reportId), eq(BureauMetricService.MAX_DPD_6M)))
                 .thenReturn(Optional.of(metric(BureauMetricService.MAX_DPD_6M, 71)));
         when(metricResultRepository.findFirstByBureauReportIdAndMetricCodeOrderByCreatedAtDesc(
@@ -72,6 +75,7 @@ class CanonicalBureauContextBridgeTest {
 
         assertThat(result.bureauScore()).isEqualTo(758);
         assertThat(result.scorecard().get("BUREAU_SCORE")).isEqualByComparingTo("758");
+        assertThat(result.scorecard().get("NTC_FLAG")).isEqualByComparingTo("0");
         assertThat(result.scorecard().get("LIVE_UNSECURED_LOAN_COUNT")).isEqualByComparingTo("3");
         assertThat(result.scorecard().get("MAX_DPD_6M")).isEqualByComparingTo("71");
         assertThat(result.provenance().get("LIVE_UNSECURED_LOAN_COUNT"))
@@ -89,6 +93,21 @@ class CanonicalBureauContextBridgeTest {
         when(metricResultRepository.findFirstByBureauReportIdAndMetricCodeOrderByCreatedAtDesc(
                 eq(reportId), eq(BureauMetricService.LIVE_UNSECURED)))
                 .thenReturn(Optional.of(insufficient));
+        when(metricResultRepository.findFirstByBureauReportIdAndMetricCodeOrderByCreatedAtDesc(
+                eq(reportId), eq(BureauMetricService.STATUS_NTC)))
+                .thenReturn(Optional.of(metric(BureauMetricService.STATUS_NTC, 0)));
+        when(metricResultRepository.findFirstByBureauReportIdAndMetricCodeOrderByCreatedAtDesc(
+                eq(reportId), eq(BureauMetricService.MAX_DPD_6M)))
+                .thenReturn(Optional.empty());
+        when(metricResultRepository.findFirstByBureauReportIdAndMetricCodeOrderByCreatedAtDesc(
+                eq(reportId), eq(BureauMetricService.MAX_DPD_12M)))
+                .thenReturn(Optional.empty());
+        when(metricResultRepository.findFirstByBureauReportIdAndMetricCodeOrderByCreatedAtDesc(
+                eq(reportId), eq(BureauMetricService.RECENT_INQUIRIES_90D)))
+                .thenReturn(Optional.empty());
+        when(metricResultRepository.findFirstByBureauReportIdAndMetricCodeOrderByCreatedAtDesc(
+                eq(reportId), eq(BureauMetricService.TOTAL_MONTHLY_OBLIGATION)))
+                .thenReturn(Optional.empty());
 
         var result = bridge.overlay(app).orElseThrow();
 

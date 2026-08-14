@@ -791,7 +791,9 @@ public class CreditControlService {
             }
             return 0;
         }
-        if (app.getBureauScore() != null && app.getBureauScore() > 0) {
+        // Allow Equifax sentinel -1 (no-hit) through; do not accept other non-positive values.
+        if (app.getBureauScore() != null
+                && (app.getBureauScore() > 0 || app.getBureauScore() == -1)) {
             return app.getBureauScore();
         }
         if (app.getManualBureauScore() != null && app.getManualBureauScore() > 0) {

@@ -93,10 +93,15 @@ public class CanonicalBureauContextBridge {
         Set<String> canonicalKeys = new LinkedHashSet<>();
         Integer bureauScore = null;
 
-        if (report.getScore() != null && report.getScore() > 0) {
+        // bureau.score: allow positive scores and Equifax sentinel -1 only (not other negatives).
+        if (report.getScore() != null && isAllowedBureauScore(report.getScore())) {
             bureauScore = report.getScore();
             put(scorecard, provenance, canonicalKeys, "BUREAU_SCORE", BigDecimal.valueOf(bureauScore));
         }
+
+        // bureau.status_ntc → legacy NTC_FLAG (compatibility alias only; no decision logic here).
+        applyMetric(app.getId(), report.getId(), BureauMetricService.STATUS_NTC,
+                "NTC_FLAG", scorecard, provenance, canonicalKeys);
 
         applyMetric(app.getId(), report.getId(), BureauMetricService.LIVE_UNSECURED,
                 "LIVE_UNSECURED_LOAN_COUNT", scorecard, provenance, canonicalKeys);
@@ -173,5 +178,10 @@ public class CanonicalBureauContextBridge {
         String status = report.getTradelineExtractionStatus() != null
                 ? report.getTradelineExtractionStatus().toUpperCase(Locale.ROOT) : "";
         return "MISSING".equals(status) || "FAILED".equals(status) || "ABSENT".equals(status);
+    }
+
+    /** Positive bureau scores, or Equifax no-hit sentinel -1 only. */
+    static boolean isAllowedBureauScore(int score) {
+        return score > 0 || score == -1;
     }
 }
