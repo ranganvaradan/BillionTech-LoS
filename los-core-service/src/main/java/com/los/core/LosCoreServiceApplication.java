@@ -10,6 +10,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @SpringBootApplication(scanBasePackages = {"com.los.core", "com.los.lms", "com.los.plp", "com.los.encore.client"})
 @EntityScan(basePackages = {
         "com.los.core.model.entity",
+        "com.los.core.customercategory",
         "com.los.core.payment.model",
         "com.los.core.creditintelligence.domain",
         "com.los.core.creditintelligence.core.domain",
@@ -30,6 +31,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
         "com.los.plp.model.entity"})
 @EnableJpaRepositories(basePackages = {
         "com.los.core.repository",
+        "com.los.core.customercategory",
         "com.los.core.payment.repository",
         "com.los.core.creditintelligence.repository",
         "com.los.core.creditintelligence.core.repository",
