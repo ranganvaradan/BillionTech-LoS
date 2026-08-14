@@ -30,12 +30,13 @@ class PolicyStudioGate3ExecutabilityTest {
     }
 
     @Test
-    void writeoffNonCc_policyTestOnly_notProduction() {
+    void writeoffNonCc_runtimeReady_notProduction() {
         Map<String, Object> e = ParameterExecutabilitySupport.evaluate("bureau.accounts.writeoff_non_cc");
         assertEquals(true, e.get("policyTestReady"));
-        assertEquals(false, e.get("runtimeReady"));
+        assertEquals(true, e.get("runtimeReady"));
         assertEquals(false, e.get("productionReady"));
-        assertEquals(ParameterExecutabilitySupport.POLICY_TEST_READY, e.get("executionState"));
+        assertEquals(ParameterExecutabilitySupport.RUNTIME_READY_NONPROD, e.get("executionState"));
+        assertEquals("BureauMetricService.computeWriteoffCounts", e.get("calculatorBinding"));
     }
 
     @Test
@@ -45,6 +46,7 @@ class PolicyStudioGate3ExecutabilityTest {
         assertEquals(BusinessConceptResolver.READY_DERIVED, r.get("resolutionState"));
         assertEquals(false, r.get("mappedToProposedEdi"));
         assertEquals(true, r.get("policyTestReady"));
+        assertEquals(true, r.get("runtimeReady"));
         assertEquals(false, r.get("productionReady"));
         assertEquals("bureau.accounts.writeoff_non_cc", r.get("canonicalParameter"));
     }

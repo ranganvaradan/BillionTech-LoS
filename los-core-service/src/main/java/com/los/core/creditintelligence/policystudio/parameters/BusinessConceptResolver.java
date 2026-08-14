@@ -161,7 +161,7 @@ public final class BusinessConceptResolver {
                 WRITEOFF_NON_CC,
                 "Non-credit-card write-off count",
                 "Bureau",
-                "Count of written-off tradelines excluding credit cards (PolicyBureauMetricService.writeoffCounts)",
+                "Count of written-off tradelines excluding credit cards (BureauMetricService.computeWriteoffCounts)",
                 List.of("bureau.tradeline.write_off_amount", "bureau.tradeline.account_status"),
                 true);
         Map<String, Object> allWo = fromRegistry(WRITEOFF_COUNT_GACAT);
@@ -194,18 +194,18 @@ public final class BusinessConceptResolver {
             out.put("provenance", Map.of(
                     "parameterId", WRITEOFF_NON_CC,
                     "evaluatedFrom", "Bureau",
-                    "calculator", "PolicyBureauMetricService.writeoffCounts",
+                    "calculator", "BureauMetricService.computeWriteoffCounts",
                     "rawIngredients", List.of(
                             "bureau.tradeline.write_off_amount",
                             "bureau.tradeline.account_status",
-                            "tradeline.creditCard flag")));
+                            "tradeline.productCategory / creditCard")));
             out.put("message", "Mapped to Bureau non-credit-card write-off count (not Proposed EDI)");
             out.put("mappedToProposedEdi", false);
             ParameterExecutabilitySupport.stampOnto(out,
                     ParameterExecutabilitySupport.evaluate(WRITEOFF_NON_CC));
-            // Gate-3 honesty: READY_DERIVED here means Policy-Test-ready, not production.
+            // Gate-3 honesty: runtime calculator exists; productionReady remains false until Equifax certification.
             out.put("policyTestReady", true);
-            out.put("runtimeReady", false);
+            out.put("runtimeReady", true);
             out.put("productionReady", false);
             return out;
         }
@@ -361,7 +361,7 @@ public final class BusinessConceptResolver {
         m.put("authoringOverlay", true);
         m.put("calculator", "PolicyBureauMetricService");
         Map<String, Object> exec = ParameterExecutabilitySupport.studioOverlay(
-                id, "PolicyBureauMetricService.writeoffCounts", ingredients);
+                id, "BureauMetricService.computeWriteoffCounts", ingredients);
         ParameterExecutabilitySupport.stampOnto(m, exec);
         return m;
     }

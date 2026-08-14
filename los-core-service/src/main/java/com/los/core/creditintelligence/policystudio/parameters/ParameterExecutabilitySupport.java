@@ -42,6 +42,7 @@ public final class ParameterExecutabilitySupport {
                     "MONTHLY_OBLIGATION", "EMI_OBLIGATION", "compat.MONTHLY_OBLIGATION");
             case "bureau.status_ntc" -> List.of("NTC_FLAG", "bureau.thin_file_indicator");
             case "bureau.written_off_account_count" -> List.of("bureau.accounts.written_off_count");
+            case "bureau.accounts.writeoff_non_cc" -> List.of("WRITEOFF_NON_CC", "compat.WRITEOFF_NON_CC");
             case "banking.avg_daily_balance_3m" -> List.of("banking.balance.average_3m", "banking.average_balance");
             case "banking.emi_bounce_count_3m" -> List.of("banking.bounce.emi_count_3m");
             case "gst.turnover.trailing_12m" -> List.of("gst.turnover.trailing_12m");
@@ -60,7 +61,7 @@ public final class ParameterExecutabilitySupport {
             if (BusinessConceptResolver.WRITEOFF_NON_CC.equals(parameterId)
                     || BusinessConceptResolver.WRITEOFF_CC.equals(parameterId)) {
                 return studioOverlay(parameterId,
-                        "PolicyBureauMetricService.writeoffCounts",
+                        "BureauMetricService.computeWriteoffCounts",
                         List.of("bureau.tradeline.write_off_amount", "bureau.tradeline.account_status"));
             }
             return unavailable(parameterId, "Not in GACAT / CanonicalParameterRegistry");
@@ -211,7 +212,9 @@ public final class ParameterExecutabilitySupport {
                 || x.startsWith("bureau.overdue.")
                 || x.startsWith("bureau.credit_after_overdue")
                 || x.startsWith("bureau.inquiries.current_month")
-                || x.equals("bureau.status_ntc");
+                || x.equals("bureau.status_ntc")
+                || x.equals("bureau.accounts.writeoff_non_cc")
+                || x.equals("bureau.accounts.cc_writeoff");
     }
 
     private static String provenanceModelFor(

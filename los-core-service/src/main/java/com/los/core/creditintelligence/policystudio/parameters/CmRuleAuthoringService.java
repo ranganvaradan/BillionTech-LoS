@@ -120,7 +120,7 @@ public class CmRuleAuthoringService {
                 "valueControl", AuthoringValueTypes.CONTROL_INTEGER,
                 "leftKind", "METRIC",
                 "kind", "DERIVED",
-                "howCalculated", "PolicyBureauMetricService.writeoffCounts",
+                "howCalculated", "BureauMetricService.computeWriteoffCounts",
                 "operators", List.of("=", "!=", ">", ">=", "<", "<=")));
         bySourceMut.computeIfAbsent("Bureau", k -> new ArrayList<>()).add(Map.of(
                 "parameterId", BusinessConceptResolver.WRITEOFF_CC,

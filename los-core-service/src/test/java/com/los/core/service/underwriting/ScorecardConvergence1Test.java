@@ -123,8 +123,10 @@ class ScorecardConvergence1Test {
         assertEquals(ScorecardCanonicalFactorMapper.AMBIGUOUS, by.get("PAT"));
         assertEquals(ScorecardCanonicalFactorMapper.AMBIGUOUS, by.get("DSCR"));
         assertEquals(ScorecardCanonicalFactorMapper.AMBIGUOUS, by.get("EBITDA_PROXY"));
+        // LIVE_UNSECURED is bound via liveRuleParameter only (inventory still NO_MATCH).
+        // NTC_FLAG is intentional EXACT via liveScorecardParameter after P0-1 bridge.
         assertEquals(ScorecardCanonicalFactorMapper.NO_MATCH, by.get("LIVE_UNSECURED_LOAN_COUNT"));
-        assertEquals(ScorecardCanonicalFactorMapper.NO_MATCH, by.get("NTC_FLAG"));
+        assertEquals(ScorecardCanonicalFactorMapper.EXACT, by.get("NTC_FLAG"));
         assertEquals(ScorecardCanonicalFactorMapper.NO_MATCH, by.get("LEVERAGE_RATIO"));
         assertEquals(ScorecardCanonicalFactorMapper.NO_MATCH, by.get("LTV"));
         assertEquals(ScorecardCanonicalFactorMapper.NO_MATCH, by.get("PROPERTY_VALUE"));

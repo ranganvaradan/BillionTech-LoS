@@ -189,18 +189,27 @@ public final class PlainEnglishConsumptionGuard {
             r = stripPhrase(r, "new to credit");
         }
         if (id.contains("writeoff") || id.contains("write_off") || id.contains("written_off")) {
+            // Longest phrases first so short tokens do not leave residual "loan".
+            r = stripPhrase(r, "no loan write offs are allowed except for credit cards");
+            r = stripPhrase(r, "no loan write offs are allowed");
+            r = stripPhrase(r, "loan write offs are allowed");
+            r = stripPhrase(r, "loan write offs");
+            r = stripPhrase(r, "loan write off");
             r = stripPhrase(r, "write offs");
             r = stripPhrase(r, "write off");
             r = stripPhrase(r, "writeoffs");
             r = stripPhrase(r, "written off");
-            r = stripPhrase(r, "loan write offs");
-            r = stripPhrase(r, "no loan write offs are allowed");
             if (id.contains("non_cc") || id.contains("writeoff_non_cc")) {
                 r = stripPhrase(r, "except for credit cards");
                 r = stripPhrase(r, "except credit cards");
                 r = stripPhrase(r, "excluding credit cards");
                 r = stripPhrase(r, "credit cards");
                 r = stripPhrase(r, "credit card");
+                // Residual "loan" from "No Loan Write-Offs…" is non-substantive once write-off bound.
+                r = stripPhrase(r, "loan");
+                r = stripPhrase(r, "loans");
+                r = stripPhrase(r, "allowed");
+                r = stripPhrase(r, "are");
             }
         }
         return r;

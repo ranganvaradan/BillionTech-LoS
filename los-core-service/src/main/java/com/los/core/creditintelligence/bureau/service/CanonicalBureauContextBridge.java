@@ -115,6 +115,9 @@ public class CanonicalBureauContextBridge {
                 "MONTHLY_OBLIGATION", scorecard, provenance, canonicalKeys);
         applyMetric(app.getId(), report.getId(), BureauMetricService.TOTAL_MONTHLY_OBLIGATION,
                 "EMI_OBLIGATION", scorecard, provenance, canonicalKeys);
+        // Canonical write-off non-CC → legacy scorecard key (compatibility only; no calculation here).
+        applyMetric(app.getId(), report.getId(), BureauMetricService.WRITEOFF_NON_CC,
+                "WRITEOFF_NON_CC", scorecard, provenance, canonicalKeys);
 
         if (scorecard.isEmpty() && bureauScore == null) {
             return Optional.empty();

@@ -41,11 +41,18 @@ public class BureauMetricService {
     public static final String RECENT_INQUIRIES_90D = "bureau.recent_inquiries_90d";
     public static final String SETTLED_ACCOUNT_COUNT = "bureau.settled_account_count";
     public static final String WRITTEN_OFF_ACCOUNT_COUNT = "bureau.written_off_account_count";
+    /** Non-credit-card write-off count — shared Policy Test + live UW authority. */
+    public static final String WRITEOFF_NON_CC = "bureau.accounts.writeoff_non_cc";
+    /** Credit-card write-off count — sibling of {@link #WRITEOFF_NON_CC}. */
+    public static final String WRITEOFF_CC = "bureau.accounts.cc_writeoff";
     /** Canonical NTC / no-hit flag (0/1). Distinct from bureau.score sentinel -1. */
     public static final String STATUS_NTC = "bureau.status_ntc";
 
+    public static final String WRITEOFF_CALCULATOR = "BureauMetricService.computeWriteoffCounts";
+
     private final CiMetricResultRepository metricResultRepository;
     private final CiBureauPaymentHistoryRepository paymentHistoryRepository;
+    private final BureauStatusNormalizer statusNormalizer = new BureauStatusNormalizer();
 
     @Transactional
     public List<CiMetricResult> computeAndPersist(
@@ -65,7 +72,343 @@ public class BureauMetricService {
         results.add(persist(computeInquiries90d(report, reportData)));
         results.add(persist(computeStatusCount(report, tradelines, SETTLED_ACCOUNT_COUNT, true, false)));
         results.add(persist(computeStatusCount(report, tradelines, WRITTEN_OFF_ACCOUNT_COUNT, false, true)));
+        results.addAll(persistWriteoffPair(report, computeWriteoffCounts(report, tradelines, reportData)));
         return results;
+    }
+
+    public enum WriteOffSignal { YES, NO, UNKNOWN }
+    public enum CcClass { CREDIT_CARD, NON_CREDIT_CARD, UNKNOWN }
+
+    /**
+     * Normalised account view for the shared write-off calculator (live tradeline or studio fixture).
+     */
+    public record WriteoffAccountInput(
+            String ref,
+            String accountStatusRaw,
+            BigDecimal writeOffAmount,
+            boolean writtenOffFlag,
+            String productCategory,
+            Boolean creditCardExplicit) {
+
+        public static WriteoffAccountInput fromTradeline(CiBureauTradeline t) {
+            return new WriteoffAccountInput(
+                    refOf(t),
+                    t.getAccountStatus(),
+                    t.getWrittenOffAmount(),
+                    t.isWrittenOff(),
+                    t.getProductCategory(),
+                    null);
+        }
+
+        /** Studio fixture: explicit CC flag; null productCategory / null creditCard when unknown. */
+        public static WriteoffAccountInput fromStudio(
+                String ref,
+                String statusRaw,
+                BigDecimal writeOffAmount,
+                String productCategory,
+                Boolean creditCard) {
+            boolean flag = writeOffAmount != null && writeOffAmount.compareTo(BigDecimal.ZERO) > 0;
+            return new WriteoffAccountInput(ref, statusRaw, writeOffAmount, flag, productCategory, creditCard);
+        }
+    }
+
+    public record WriteoffCountResult(
+            String outcome,
+            Integer nonCcCount,
+            Integer ccCount,
+            String dataQualityStatus,
+            String reason,
+            List<Object> included,
+            List<Object> excluded,
+            int unknownCount,
+            Map<String, Object> evidence) {
+
+        static WriteoffCountResult pass(
+                int nonCc, int cc, List<Object> included, List<Object> excluded, int unknown,
+                Map<String, Object> evidence) {
+            return new WriteoffCountResult(
+                    BureauMetricOutcome.PASS.name(), nonCc, cc, "OK", "COUNTED",
+                    included, excluded, unknown, evidence);
+        }
+
+        static WriteoffCountResult insufficient(String reason, Map<String, Object> evidence) {
+            Map<String, Object> e = evidence != null ? new LinkedHashMap<>(evidence) : new LinkedHashMap<>();
+            e.put("reason", reason);
+            return new WriteoffCountResult(
+                    BureauMetricOutcome.DATA_INSUFFICIENT.name(), null, null,
+                    "DATA_INSUFFICIENT", reason, List.of(), List.of(), 0, e);
+        }
+
+        WriteoffCountResult withRefs(List<Object> included, List<Object> excluded, int unknown) {
+            return new WriteoffCountResult(
+                    outcome, nonCcCount, ccCount, dataQualityStatus, reason,
+                    included, excluded, unknown, evidence);
+        }
+
+        /** Studio / Policy Test map shape (outcome, v, dataQualityStatus, evidence). */
+        public Map<String, Object> toStudioMap(String canonicalId, Integer count) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            if (BureauMetricOutcome.PASS.name().equals(outcome)) {
+                m.put("outcome", "PASS");
+                m.put("v", count);
+                m.put("dataQualityStatus", "OK");
+            } else {
+                m.put("outcome", "DATA_INSUFFICIENT");
+                m.put("v", null);
+                m.put("dataQualityStatus", "DATA_INSUFFICIENT");
+                m.put("reason", reason);
+            }
+            m.put("canonicalParameterId", canonicalId);
+            m.put("calculator", WRITEOFF_CALCULATOR);
+            m.put("evidence", evidence);
+            m.put("includedReferences", included);
+            m.put("excludedReferences", excluded);
+            m.put("unknownCount", unknownCount);
+            return m;
+        }
+    }
+
+    /**
+     * Shared write-off split (non-CC / CC). Single business calculation for Policy Test and live UW.
+     * Distinguishes REAL ZERO from UNKNOWN/MISSING; unknown account type on a write-off fails closed.
+     */
+    public WriteoffCountResult computeWriteoffCounts(
+            CiBureauReport report,
+            List<CiBureauTradeline> tradelines,
+            Map<String, Object> reportData) {
+        Map<String, Object> evidence = baseEvidence(report);
+        evidence.put("calculator", WRITEOFF_CALCULATOR);
+        evidence.put("metricVersion", METRIC_VERSION);
+        evidence.put("asOf", java.time.Instant.now().toString());
+
+        boolean noRecord = reportData != null && Boolean.TRUE.equals(reportData.get("noRecordFound"));
+        Integer score = report != null ? report.getScore() : null;
+        boolean ntc = noRecord
+                || (reportData != null && Boolean.TRUE.equals(reportData.get("statusNtc")))
+                || (score != null && score == -1 && noRecord);
+
+        if (report == null) {
+            return WriteoffCountResult.insufficient("REPORT_MISSING", evidence);
+        }
+        if (ntc && (!report.isTradelinesPresent()
+                || "EMPTY".equalsIgnoreCase(nullToEmpty(report.getTradelineExtractionStatus()))
+                || safe(tradelines).isEmpty())) {
+            evidence.put("reason", "NTC_NO_HIT");
+            evidence.put("noRecordFound", noRecord);
+            evidence.put("score", score);
+            // Do not invent a clean zero write-off book for NTC/no-hit.
+            return WriteoffCountResult.insufficient("NTC_NO_HIT", evidence);
+        }
+        if (!report.isTradelinesPresent() || isExtractionInsufficient(report)) {
+            evidence.put("reason", "TRADELINES_NOT_AVAILABLE");
+            evidence.put("extractionStatus", report.getTradelineExtractionStatus());
+            return WriteoffCountResult.insufficient("PROVIDER_OR_EXTRACTION_UNAVAILABLE", evidence);
+        }
+        String status = nullToEmpty(report.getTradelineExtractionStatus()).toUpperCase(Locale.ROOT);
+        if ("EMPTY".equals(status)) {
+            evidence.put("reason", "VALID_ZERO_EMPTY_TRADELINES");
+            return WriteoffCountResult.pass(0, 0, List.of(), List.of(), 0, evidence);
+        }
+        if (tradelines == null || tradelines.isEmpty()) {
+            evidence.put("reason", "TRADELINE_LIST_EMPTY_WITHOUT_EMPTY_STATUS");
+            return WriteoffCountResult.insufficient("TRADELINES_MISSING", evidence);
+        }
+
+        List<WriteoffAccountInput> inputs = new ArrayList<>();
+        for (CiBureauTradeline t : tradelines) {
+            if (t.getDuplicateOfTradelineId() != null) {
+                continue;
+            }
+            inputs.add(WriteoffAccountInput.fromTradeline(t));
+        }
+        return evaluateWriteoffInputs(inputs, evidence);
+    }
+
+    /**
+     * Pure shared evaluator used by live {@link #computeWriteoffCounts} and Policy Studio fixtures.
+     */
+    public WriteoffCountResult evaluateWriteoffInputs(
+            List<WriteoffAccountInput> inputs,
+            Map<String, Object> baseEvidence) {
+        Map<String, Object> evidence = baseEvidence != null ? new LinkedHashMap<>(baseEvidence) : new LinkedHashMap<>();
+        evidence.putIfAbsent("calculator", WRITEOFF_CALCULATOR);
+        evidence.putIfAbsent("metricVersion", METRIC_VERSION);
+
+        if (inputs == null) {
+            return WriteoffCountResult.insufficient("NO_TRADELINES", evidence);
+        }
+
+        int nonCc = 0;
+        int cc = 0;
+        List<Object> included = new ArrayList<>();
+        List<Object> excluded = new ArrayList<>();
+        int unknownCount = 0;
+        List<String> blockers = new ArrayList<>();
+
+        for (WriteoffAccountInput a : inputs) {
+            WriteOffSignal wo = classifyWriteOff(a);
+            CcClass ccClass = classifyCc(a);
+            String ref = a.ref() != null ? a.ref() : "unknown";
+
+            if (wo == WriteOffSignal.UNKNOWN) {
+                unknownCount++;
+                blockers.add("WRITEOFF_STATUS_UNKNOWN:" + ref);
+                        excluded.add(evidenceRow(
+                                "ref", ref,
+                                "reason", "WRITEOFF_DATA_MISSING",
+                                "accountStatus", a.accountStatusRaw(),
+                                "writeOffAmount", a.writeOffAmount()));
+                continue;
+            }
+            if (wo == WriteOffSignal.NO) {
+                excluded.add(evidenceRow(
+                        "ref", ref,
+                        "reason", "NOT_WRITTEN_OFF",
+                        "productCategory", a.productCategory(),
+                        "ccClass", ccClass.name()));
+                continue;
+            }
+            // Write-off YES
+            if (ccClass == CcClass.UNKNOWN) {
+                unknownCount++;
+                blockers.add("ACCOUNT_TYPE_UNKNOWN_ON_WRITEOFF:" + ref);
+                excluded.add(evidenceRow(
+                        "ref", ref,
+                        "reason", "UNKNOWN_ACCOUNT_TYPE_CANNOT_EXCLUDE_CC",
+                        "productCategory", a.productCategory(),
+                        "writeOff", "YES",
+                        "accountStatus", a.accountStatusRaw(),
+                        "writeOffAmount", a.writeOffAmount()));
+                continue;
+            }
+            if (ccClass == CcClass.CREDIT_CARD) {
+                cc++;
+                excluded.add(evidenceRow(
+                        "ref", ref,
+                        "reason", "CREDIT_CARD_WRITEOFF_EXCLUDED_FROM_NON_CC",
+                        "productCategory", a.productCategory(),
+                        "writeOff", "YES",
+                        "accountStatus", a.accountStatusRaw(),
+                        "writeOffAmount", a.writeOffAmount()));
+                included.add(evidenceRow(
+                        "ref", ref,
+                        "bucket", "CC_WRITEOFF",
+                        "productCategory", a.productCategory(),
+                        "writeOff", "YES",
+                        "accountStatus", a.accountStatusRaw(),
+                        "writeOffAmount", a.writeOffAmount()));
+            } else {
+                nonCc++;
+                included.add(evidenceRow(
+                        "ref", ref,
+                        "bucket", "NON_CC_WRITEOFF",
+                        "productCategory", a.productCategory(),
+                        "writeOff", "YES",
+                        "accountStatus", a.accountStatusRaw(),
+                        "writeOffAmount", a.writeOffAmount()));
+            }
+        }
+
+        evidence.put("nonCcCount", nonCc);
+        evidence.put("ccCount", cc);
+        evidence.put("blockers", blockers);
+        if (!blockers.isEmpty()) {
+            evidence.put("reason", "PARTIAL_OR_UNKNOWN_WRITEOFF_INPUTS");
+            return WriteoffCountResult.insufficient("WRITEOFF_OR_ACCOUNT_TYPE_UNKNOWN", evidence)
+                    .withRefs(included, excluded, unknownCount);
+        }
+        evidence.put("reason", "COUNTED");
+        return WriteoffCountResult.pass(nonCc, cc, included, excluded, unknownCount, evidence);
+    }
+
+    private WriteOffSignal classifyWriteOff(WriteoffAccountInput a) {
+        if (a == null) {
+            return WriteOffSignal.UNKNOWN;
+        }
+        BigDecimal amt = a.writeOffAmount();
+        if (amt != null && amt.compareTo(BigDecimal.ZERO) > 0) {
+            return WriteOffSignal.YES;
+        }
+        if (a.writtenOffFlag()) {
+            return WriteOffSignal.YES;
+        }
+        BureauStatusNormalizer.CanonicalStatus st = statusNormalizer.normalize(a.accountStatusRaw());
+        if (st == BureauStatusNormalizer.CanonicalStatus.LSS
+                || st == BureauStatusNormalizer.CanonicalStatus.PWOS) {
+            return WriteOffSignal.YES;
+        }
+        // Explicit zero amount is positive "no write-off amount" evidence when status is not write-off.
+        if (amt != null && amt.compareTo(BigDecimal.ZERO) == 0
+                && st != BureauStatusNormalizer.CanonicalStatus.UNKNOWN) {
+            return WriteOffSignal.NO;
+        }
+        if (a.accountStatusRaw() != null && !a.accountStatusRaw().isBlank()
+                && st != BureauStatusNormalizer.CanonicalStatus.UNKNOWN) {
+            // Known non-write-off status with no positive write-off signal.
+            return WriteOffSignal.NO;
+        }
+        // Missing status and missing/null amount with writtenOff=false → unknown (do not invent zero).
+        if ((a.accountStatusRaw() == null || a.accountStatusRaw().isBlank()) && amt == null) {
+            return WriteOffSignal.UNKNOWN;
+        }
+        if (st == BureauStatusNormalizer.CanonicalStatus.UNKNOWN && amt == null && !a.writtenOffFlag()) {
+            return WriteOffSignal.UNKNOWN;
+        }
+        return WriteOffSignal.NO;
+    }
+
+    private static CcClass classifyCc(WriteoffAccountInput a) {
+        if (a == null) {
+            return CcClass.UNKNOWN;
+        }
+        if (a.creditCardExplicit() != null) {
+            return Boolean.TRUE.equals(a.creditCardExplicit()) ? CcClass.CREDIT_CARD : CcClass.NON_CREDIT_CARD;
+        }
+        String cat = a.productCategory() == null ? "" : a.productCategory().trim().toUpperCase(Locale.ROOT);
+        if (cat.isEmpty() || BureauProductCategory.UNKNOWN.name().equals(cat)) {
+            return CcClass.UNKNOWN;
+        }
+        if (BureauProductCategory.CREDIT_CARD.name().equals(cat)) {
+            return CcClass.CREDIT_CARD;
+        }
+        return CcClass.NON_CREDIT_CARD;
+    }
+
+    private List<CiMetricResult> persistWriteoffPair(CiBureauReport report, WriteoffCountResult pair) {
+        List<CiMetricResult> out = new ArrayList<>();
+        out.add(persist(toWriteoffMetric(report, WRITEOFF_NON_CC, pair, pair.nonCcCount())));
+        out.add(persist(toWriteoffMetric(report, WRITEOFF_CC, pair, pair.ccCount())));
+        return out;
+    }
+
+    private static CiMetricResult toWriteoffMetric(
+            CiBureauReport report, String code, WriteoffCountResult pair, Integer count) {
+        Map<String, Object> evidence = pair.evidence() != null
+                ? new LinkedHashMap<>(pair.evidence()) : baseEvidence(report);
+        evidence.put("canonicalParameterId", code);
+        evidence.put("calculator", WRITEOFF_CALCULATOR);
+        return result(
+                report,
+                code,
+                pair.outcome(),
+                count == null ? null : valueOf(count),
+                pair.dataQualityStatus(),
+                pair.included() != null ? pair.included() : List.of(),
+                pair.excluded() != null ? pair.excluded() : List.of(),
+                pair.unknownCount(),
+                evidence);
+    }
+
+    private static Map<String, Object> evidenceRow(Object... kv) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        for (int i = 0; i + 1 < kv.length; i += 2) {
+            m.put(String.valueOf(kv[i]), kv[i + 1]);
+        }
+        return m;
+    }
+
+    private static String nullToEmpty(String s) {
+        return s == null ? "" : s;
     }
 
     /**

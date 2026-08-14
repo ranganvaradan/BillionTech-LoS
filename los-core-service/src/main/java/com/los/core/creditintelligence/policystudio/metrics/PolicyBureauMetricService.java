@@ -1,5 +1,6 @@
 package com.los.core.creditintelligence.policystudio.metrics;
 
+import com.los.core.creditintelligence.bureau.service.BureauMetricService;
 import com.los.core.creditintelligence.bureau.service.BureauStatusNormalizer;
 import com.los.core.creditintelligence.bureau.service.BureauStatusNormalizer.CanonicalStatus;
 import com.los.core.creditintelligence.core.clock.EvaluationClock;
@@ -110,27 +111,40 @@ public class PolicyBureauMetricService {
     }
 
     public Map<String, Object> writeoffCounts(List<TradelineInput> tradelines) {
+        // Delegate to shared BureauMetricService calculator (single business implementation).
+        BureauMetricService shared = new BureauMetricService(null, null);
         if (tradelines == null) {
+            BureauMetricService.WriteoffCountResult di =
+                    shared.evaluateWriteoffInputs(null, new LinkedHashMap<>());
             return Map.of(
-                    "bureau.accounts.writeoff_non_cc", di("No tradelines"),
-                    "bureau.accounts.cc_writeoff", di("No tradelines"));
+                    BureauMetricService.WRITEOFF_NON_CC,
+                    di.toStudioMap(BureauMetricService.WRITEOFF_NON_CC, null),
+                    BureauMetricService.WRITEOFF_CC,
+                    di.toStudioMap(BureauMetricService.WRITEOFF_CC, null));
         }
-        int nonCc = 0, cc = 0;
+        List<BureauMetricService.WriteoffAccountInput> inputs = new ArrayList<>();
+        int i = 0;
         for (TradelineInput t : tradelines) {
-            CanonicalStatus st = statusNormalizer.normalize(t.statusRaw());
-            boolean wo = st == CanonicalStatus.LSS || st == CanonicalStatus.PWOS
-                    || (t.writeOffAmount() != null && t.writeOffAmount().compareTo(BigDecimal.ZERO) > 0);
-            if (wo) {
-                if (t.creditCard()) {
-                    cc++;
-                } else {
-                    nonCc++;
-                }
+            String cat = t.productCategory();
+            Boolean ccExplicit = t.creditCard();
+            // Unknown product category must not silently count as non-CC when write-off is present.
+            if (cat != null && "UNKNOWN".equalsIgnoreCase(cat.trim())) {
+                ccExplicit = null;
             }
+            inputs.add(BureauMetricService.WriteoffAccountInput.fromStudio(
+                    "studio-" + (i++),
+                    t.statusRaw(),
+                    t.writeOffAmount(),
+                    cat,
+                    ccExplicit));
         }
+        BureauMetricService.WriteoffCountResult r =
+                shared.evaluateWriteoffInputs(inputs, new LinkedHashMap<>());
         return Map.of(
-                "bureau.accounts.writeoff_non_cc", pass(nonCc),
-                "bureau.accounts.cc_writeoff", pass(cc));
+                BureauMetricService.WRITEOFF_NON_CC,
+                r.toStudioMap(BureauMetricService.WRITEOFF_NON_CC, r.nonCcCount()),
+                BureauMetricService.WRITEOFF_CC,
+                r.toStudioMap(BureauMetricService.WRITEOFF_CC, r.ccCount()));
     }
 
     public Map<String, Object> overdueMetrics(List<TradelineInput> tradelines) {

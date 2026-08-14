@@ -264,18 +264,18 @@ final class GacatCatalogueSeed {
                 null, null,
                 prodBureau(true), true, true, true, true, true);
 
-        // Gate-3: non-CC / CC write-off splits are Policy-Test / studio calculators — NOT production UW.
+        // Gate-3 / P0-4: non-CC write-off uses shared BureauMetricService; runtime ready, not production-certified.
         derived(p, "bureau.accounts.writeoff_non_cc", "Non-credit-card write-off count", BR, "COUNT", "PIT",
-                "Count of written-off tradelines excluding credit cards (PolicyBureauMetricService.writeoffCounts)",
+                "Count of written-off tradelines excluding credit cards (BureauMetricService.computeWriteoffCounts)",
                 List.of("bureau.tradeline.write_off_amount", "bureau.tradeline.account_status"),
-                "PolicyBureauMetricService.writeoffCounts",
+                "BureauMetricService.computeWriteoffCounts",
                 List.of("non cc write off", "write-off except credit card", "loan write-offs except credit cards"),
-                null, null,
+                "WRITEOFF_NON_CC", null,
                 studioImpl(), true, true, true, true, false);
         derived(p, "bureau.accounts.cc_writeoff", "Credit-card write-off count", BR, "COUNT", "PIT",
-                "Count of written-off credit-card tradelines",
+                "Count of written-off credit-card tradelines (BureauMetricService.computeWriteoffCounts)",
                 List.of("bureau.tradeline.write_off_amount", "bureau.tradeline.account_status"),
-                "PolicyBureauMetricService.writeoffCounts",
+                "BureauMetricService.computeWriteoffCounts",
                 List.of("credit card write off", "cc write-off"),
                 null, null,
                 studioImpl(), true, true, true, true, false);

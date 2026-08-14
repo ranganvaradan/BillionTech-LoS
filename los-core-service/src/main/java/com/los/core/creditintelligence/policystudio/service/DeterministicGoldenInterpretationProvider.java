@@ -298,11 +298,11 @@ public class DeterministicGoldenInterpretationProvider implements PolicyInterpre
         }
 
         if (lower.contains("write-off") || lower.contains("write off")) {
-            r.meaning = "No loan write-offs except credit cards";
-            r.expression = PolicyDsl.and(
-                    PolicyDsl.exists(PolicyDsl.fact("bureau.write_off")),
-                    Map.of("op", "NE", "left", Map.of("fact", "bureau.tradeline.product"), "right", "CREDIT_CARD"));
-            r.inputs.add("bureau.write_off");
+            r.meaning = "No loan write-offs except credit cards (non-CC write-off count must be zero)";
+            // Violation form matches default HARD wiring (onTrue=FAIL, onFalse=PASS, onMissing=DI).
+            // Missing writeoff_non_cc → DATA_INSUFFICIENT (not EXISTS→false→PASS).
+            r.expression = PolicyDsl.gt(PolicyDsl.metric("bureau.accounts.writeoff_non_cc"), 0);
+            r.inputs.add("bureau.accounts.writeoff_non_cc");
             return r;
         }
 

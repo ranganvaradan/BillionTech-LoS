@@ -848,6 +848,8 @@ public class UnderwritingFactSnapshotBuilder {
             case BureauMetricService.RECENT_INQUIRIES_90D -> "bureau.inquiries.count_90d";
             case BureauMetricService.SETTLED_ACCOUNT_COUNT -> "bureau.accounts.settled_count";
             case BureauMetricService.WRITTEN_OFF_ACCOUNT_COUNT -> "bureau.accounts.written_off_count";
+            case BureauMetricService.WRITEOFF_NON_CC -> "bureau.accounts.writeoff_non_cc";
+            case BureauMetricService.WRITEOFF_CC -> "bureau.accounts.cc_writeoff";
             default -> metricCode;
         };
     }
