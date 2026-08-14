@@ -15,9 +15,14 @@ ui-dist*.tar.gz
 # Secrets (keep examples)
 .env
 .env.*
-!.env.example
 !**/.env.example
 !**/.env.staging.example
+# Bare compose env file (team drop used infra/los/env — never commit)
+infra/los/env
+**/infra/los/env
+env.prod
+.env.prod
+.env.staging
 
 # Borrower documents / uploads
 **/data/documents/
