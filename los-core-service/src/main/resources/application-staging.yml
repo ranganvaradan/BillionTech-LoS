@@ -35,10 +35,11 @@ los:
       mode: ${LOS_TENANCY_MODE:OFF}
       deployment-tenant-id: ${LOS_DEPLOYMENT_TENANT_ID:00000000-0000-0000-0000-000000000001}
   underwriting:
-    # Staging retains gap defaults for existing demos; production must keep false
+    # Staging may invent bank/GST/ITR demo fills; Bureau decision keys are fail-closed in code (P0-2).
     provider-gap-defaults-enabled: true
     scorecard:
       # Gap/demo values may score on staging only when explicitly marked DEMO_NON_PRODUCTION
+      # Bureau GAP_DEFAULT inputs are stripped regardless (CreditControlService).
       block-non-authoritative-defaults: true
       allow-non-production-demo-scoring: true
   demo:

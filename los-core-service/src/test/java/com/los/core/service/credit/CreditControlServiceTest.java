@@ -189,6 +189,10 @@ class CreditControlServiceTest {
         assertThat(ctx.scorecard().get("PROVIDER_GAP_DEFAULT_ACTIVE").intValue()).isEqualTo(1);
         assertThat(ctx.scorecard().get("MONTHLY_INCOME").intValue()).isEqualTo(85000);
         assertThat(ctx.scorecard().get("AVERAGE_BANK_BALANCE").intValue()).isEqualTo(120000);
+        // BUREAU-P0-2: gap flag must not invent Bureau decision inputs
+        assertThat(ctx.scorecard()).doesNotContainKey("LIVE_UNSECURED_LOAN_COUNT");
+        assertThat(ctx.scorecard()).doesNotContainKey("BUREAU_ENQUIRIES_3M");
+        assertThat(ctx.scorecard()).doesNotContainKey("NTC_FLAG");
     }
 
     @Test

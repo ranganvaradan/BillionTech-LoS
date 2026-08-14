@@ -48,6 +48,20 @@ public class CreditControlService {
     private static final BigDecimal GAP_DEFAULT_DTI_RATIO = new BigDecimal("18");
     private static final BigDecimal GAP_DEFAULT_BANK_METRIC = new BigDecimal("50000");
     private static final BigDecimal GAP_DEFAULT_BANK_COUNT = new BigDecimal("120");
+    /**
+     * BUREAU-P0-2 — decision-critical Bureau scorecard keys. Never receive GAP_DEFAULT,
+     * even when {@code provider-gap-defaults-enabled=true} for bank/GST/ITR demos.
+     */
+    public static final Set<String> BUREAU_DECISION_SCORECARD_KEYS = Set.of(
+            "BUREAU_SCORE",
+            "LIVE_UNSECURED_LOAN_COUNT",
+            "BUREAU_ENQUIRIES_3M",
+            "NTC_FLAG",
+            "MAX_DPD_6M",
+            "MAX_DPD_12M",
+            "MAX_DPD_24M",
+            "CC_UTILISATION_PCT"
+    );
     private static final BigDecimal SCF_MIN_ANNUAL_GST_TURNOVER = new BigDecimal("50000000");
     private static final BigDecimal SCF_GAP_ANNUAL_GST_TURNOVER = new BigDecimal("52000000");
     private static final BigDecimal SCF_GAP_ANNUAL_BANKING_TURNOVER = new BigDecimal("41000000");
@@ -460,7 +474,8 @@ public class CreditControlService {
         BigDecimal obl = resolveObligation(fi, manual, incomeSource);
         boolean safeDemoFallback = shouldApplySafeFallback(app, fi, cc, inc, obl);
         if (safeDemoFallback) {
-            if (effBureau <= 0) {
+            // Missing score only (0). Equifax sentinel -1 is a real no-hit, not a gap to invent.
+            if (effBureau == 0) {
                 effBureau = DEMO_DEFAULT_BUREAU_SCORE;
                 bureauSource = "DEMO_FALLBACK";
             }
@@ -603,6 +618,7 @@ public class CreditControlService {
             obl = sc.get("MONTHLY_OBLIGATION");
         }
         applyMissingScorecardDefaults(app, sc, provenance, inc, obl);
+        stripIllegalBureauGapDefaults(sc, provenance);
         if (inc == null && sc.get("MONTHLY_INCOME") != null) {
             inc = sc.get("MONTHLY_INCOME");
         }
@@ -842,6 +858,8 @@ public class CreditControlService {
      * Fills scorecard parameters that normally depend on bank-statement extraction when no verified value exists.
      * Never overwrites keys already present in the effective scorecard map.
      * Banking/GST/ITR/SCF invent fills require {@code los.underwriting.provider-gap-defaults-enabled=true}.
+     * <p>
+     * BUREAU-P0-2: Bureau decision keys are never invent-filled here (fail closed), regardless of the flag.
      */
     private void applyMissingScorecardDefaults(
             LoanApplication app,
@@ -949,12 +967,9 @@ public class CreditControlService {
         applied |= putScfGapDefault(sc, provenance, "DEBT_SERVICE", SCF_GAP_DEBT_SERVICE, new BigDecimal("1000"));
         applied |= putBankGapDefault(sc, provenance, "TOL", new BigDecimal("3500000"));
         applied |= putBankGapDefault(sc, provenance, "TNW", new BigDecimal("5000000"));
-        applied |= putBankGapDefault(sc, provenance, "LIVE_UNSECURED_LOAN_COUNT", new BigDecimal("2"));
-        applied |= putBankGapDefault(sc, provenance, "BUREAU_ENQUIRIES_3M", new BigDecimal("5"));
-        applied |= putBankGapDefault(sc, provenance, "NTC_FLAG", BigDecimal.ZERO);
+        // BUREAU-P0-2: intentionally do NOT invent LIVE_UNSECURED / BUREAU_ENQUIRIES / NTC_FLAG / DPD / CC util.
         applied |= putBankGapDefault(sc, provenance, "BANKING_TURNOVER_PCT_GST", new BigDecimal("80"));
         applied |= putBankGapDefault(sc, provenance, "ABB_OBLIGATION_MULTIPLE", new BigDecimal("1.2"));
-        applied |= putBankGapDefault(sc, provenance, "CC_UTILISATION_PCT", new BigDecimal("70"));
         applied |= putBankGapDefault(sc, provenance, "CHEQUE_BOUNCES_12M", new BigDecimal("2"));
         applied |= putBankGapDefault(sc, provenance, "CHEQUE_BOUNCES_3M", BigDecimal.ZERO);
         applied |= putBankGapDefault(sc, provenance, "EXISTING_FB_LIMITS", new BigDecimal("1000000"));
@@ -967,6 +982,26 @@ public class CreditControlService {
         if (applied) {
             sc.put("PROVIDER_GAP_DEFAULT_ACTIVE", BigDecimal.ONE);
         }
+    }
+
+    /** Remove any Bureau decision key that illegally carries GAP_DEFAULT provenance. */
+    public static void stripIllegalBureauGapDefaults(Map<String, BigDecimal> sc, Map<String, String> provenance) {
+        if (sc == null) {
+            return;
+        }
+        for (String key : BUREAU_DECISION_SCORECARD_KEYS) {
+            String prov = provenance != null ? provenance.get(key) : null;
+            if (com.los.core.service.underwriting.ScorecardValueProvenance.GAP_DEFAULT.equals(prov)) {
+                sc.remove(key);
+                if (provenance != null) {
+                    provenance.remove(key);
+                }
+            }
+        }
+    }
+
+    static boolean isBureauDecisionScorecardKey(String key) {
+        return key != null && BUREAU_DECISION_SCORECARD_KEYS.contains(key);
     }
 
     /**
@@ -1175,6 +1210,16 @@ public class CreditControlService {
 
     private static boolean putBankGapDefault(
             Map<String, BigDecimal> sc, Map<String, String> provenance, String key, BigDecimal fallback) {
+        // BUREAU-P0-2 authority boundary: never invent Bureau decision inputs.
+        if (isBureauDecisionScorecardKey(key)) {
+            return false;
+        }
+        // Do not overwrite authoritative real zeros (PROVIDER/CANONICAL/MANUAL).
+        if (provenance != null
+                && com.los.core.service.underwriting.ScorecardValueProvenance.isAuthoritative(provenance.get(key))
+                && sc.containsKey(key)) {
+            return false;
+        }
         if (!sc.containsKey(key) || isZeroOrMissing(sc.get(key))) {
             sc.put(key, fallback);
             if (provenance != null) {
