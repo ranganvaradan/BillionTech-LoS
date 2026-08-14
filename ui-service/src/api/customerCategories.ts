@@ -40,9 +40,15 @@ export interface CustomerCategory {
   name: string
   description: string | null
   status: LifecycleStatus
+  /** Transitional alias — same value as {@link entityType}. */
   borrowerType: string
   loanProduct: string
+  /** Transitional alias — same value as {@link customerRole}. */
   intakeSegment: string
+  /** Canonical Entity Type (design lock); mirrors borrowerType during compatibility. */
+  entityType?: string
+  /** Canonical Customer Role (design lock); mirrors intakeSegment during compatibility. */
+  customerRole?: string
   minAmount: number | null
   maxAmount: number | null
   policySetId: string
@@ -71,13 +77,21 @@ export interface CustomerCategory {
   history?: Record<string, unknown>[]
 }
 
+/**
+ * Category create/update body.
+ * Precedence: when both canonical and transitional fields are present they must agree
+ * (case-insensitive). Disagreement → TERMINOLOGY_CONFLICT_* (fail closed).
+ * Prefer sending {@code entityType}/{@code customerRole}; transitional aliases remain accepted.
+ */
 export interface CategoryRequest {
   code: string
   name: string
   description?: string | null
-  borrowerType: string
+  borrowerType?: string
   loanProduct: string
-  intakeSegment: string
+  intakeSegment?: string
+  entityType?: string
+  customerRole?: string
   minAmount?: number | null
   maxAmount?: number | null
   policySetId: string

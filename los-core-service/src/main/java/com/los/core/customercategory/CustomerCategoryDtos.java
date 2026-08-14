@@ -81,8 +81,31 @@ public final class CustomerCategoryDtos {
             UUID policySetId,
             Instant effectiveFrom,
             Instant effectiveUntil,
-            String reasonForChange
-    ) {}
+            String reasonForChange,
+            /** Canonical alias for {@code borrowerType}; optional during compatibility. */
+            String entityType,
+            /** Canonical alias for {@code intakeSegment}; optional during compatibility. */
+            String customerRole
+    ) {
+        /** Transitional 12-arg constructor — aliases null. */
+        public CategoryRequest(
+                String code,
+                String name,
+                String description,
+                String borrowerType,
+                String loanProduct,
+                String intakeSegment,
+                BigDecimal minAmount,
+                BigDecimal maxAmount,
+                UUID policySetId,
+                Instant effectiveFrom,
+                Instant effectiveUntil,
+                String reasonForChange) {
+            this(code, name, description, borrowerType, loanProduct, intakeSegment,
+                    minAmount, maxAmount, policySetId, effectiveFrom, effectiveUntil, reasonForChange,
+                    null, null);
+        }
+    }
 
     public record CategoryResponse(
             UUID id,
@@ -119,7 +142,11 @@ public final class CustomerCategoryDtos {
             UUID replacesCategoryId,
             List<Map<String, Object>> overlapWarnings,
             List<String> allowedActions,
-            List<Map<String, Object>> history
+            List<Map<String, Object>> history,
+            /** Canonical alias — same storage value as {@code borrowerType}. */
+            String entityType,
+            /** Canonical alias — same storage value as {@code intakeSegment}. */
+            String customerRole
     ) {}
 
     public record ActivationCheck(String code, String label, boolean ok, String detail) {}

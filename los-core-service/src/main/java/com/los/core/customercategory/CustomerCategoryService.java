@@ -11,6 +11,7 @@ import com.los.core.customercategory.CustomerCategoryDtos.CategoryResponse;
 import com.los.core.customercategory.CustomerCategoryDtos.LifecycleActionRequest;
 import com.los.core.customercategory.CustomerCategoryOverlapDetector.CategoryCriteria;
 import com.los.core.customercategory.CustomerCategoryOverlapDetector.OverlapWarning;
+import com.los.core.domain.CreditTerminologyCompatibility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -128,9 +129,11 @@ public class CustomerCategoryService {
             throw CustomerCategoryValidator.biz("Category code already exists at version 1: " + code,
                     "CATEGORY_CODE_EXISTS", Map.of("code", code));
         }
-        String borrower = validator.normalizeBorrowerType(req.borrowerType());
+        String borrower = validator.normalizeBorrowerType(
+                CreditTerminologyCompatibility.resolveEntityTypeForStorage(req.entityType(), req.borrowerType()));
         String product = validator.normalizeLoanProduct(req.loanProduct());
-        String intake = validator.normalizeIntakeSegment(req.intakeSegment());
+        String intake = validator.normalizeIntakeSegment(
+                CreditTerminologyCompatibility.resolveCustomerRoleForStorage(req.customerRole(), req.intakeSegment()));
         validator.validateAmountRange(req.minAmount(), req.maxAmount());
         validator.validateEffectiveDates(req.effectiveFrom(), req.effectiveUntil());
         if (req.policySetId() == null) {
@@ -212,14 +215,18 @@ public class CustomerCategoryService {
         if (req.description() != null) {
             e.setDescription(req.description());
         }
-        if (req.borrowerType() != null) {
-            e.setBorrowerType(validator.normalizeBorrowerType(req.borrowerType()));
+        String resolvedEntity = CreditTerminologyCompatibility.resolveEntityTypeForStorage(
+                req.entityType(), req.borrowerType());
+        if (resolvedEntity != null) {
+            e.setBorrowerType(validator.normalizeBorrowerType(resolvedEntity));
         }
         if (req.loanProduct() != null) {
             e.setLoanProduct(validator.normalizeLoanProduct(req.loanProduct()));
         }
-        if (req.intakeSegment() != null) {
-            e.setIntakeSegment(validator.normalizeIntakeSegment(req.intakeSegment()));
+        String resolvedRole = CreditTerminologyCompatibility.resolveCustomerRoleForStorage(
+                req.customerRole(), req.intakeSegment());
+        if (resolvedRole != null) {
+            e.setIntakeSegment(validator.normalizeIntakeSegment(resolvedRole));
         }
         e.setMinAmount(req.minAmount());
         e.setMaxAmount(req.maxAmount());
@@ -531,7 +538,9 @@ public class CustomerCategoryService {
                 e.getReplacesCategoryId(),
                 mine,
                 ConfigLifecycleActions.forStatus(e.getStatus()),
-                ConfigGovernanceHistory.historyView(e.getGovernanceJson()));
+                ConfigGovernanceHistory.historyView(e.getGovernanceJson()),
+                CreditTerminologyCompatibility.toEntityTypeAlias(e.getBorrowerType()),
+                CreditTerminologyCompatibility.toCustomerRoleAlias(e.getIntakeSegment()));
     }
 
     private Map<String, Object> overlapToMap(OverlapWarning o) {
@@ -567,14 +576,18 @@ public class CustomerCategoryService {
         if (req == null) {
             return false;
         }
-        if (req.borrowerType() != null && !req.borrowerType().equalsIgnoreCase(e.getBorrowerType())) {
+        String resolvedEntity = CreditTerminologyCompatibility.resolveEntityTypeForStorage(
+                req.entityType(), req.borrowerType());
+        if (resolvedEntity != null && !resolvedEntity.equalsIgnoreCase(e.getBorrowerType())) {
             return true;
         }
         if (req.loanProduct() != null && !req.loanProduct().equals(e.getLoanProduct())
                 && !(MatchWildcard.isAny(req.loanProduct()) && MatchWildcard.isAny(e.getLoanProduct()))) {
             return true;
         }
-        if (req.intakeSegment() != null && !req.intakeSegment().equalsIgnoreCase(e.getIntakeSegment())) {
+        String resolvedRole = CreditTerminologyCompatibility.resolveCustomerRoleForStorage(
+                req.customerRole(), req.intakeSegment());
+        if (resolvedRole != null && !resolvedRole.equalsIgnoreCase(e.getIntakeSegment())) {
             return true;
         }
         if (req.minAmount() != null

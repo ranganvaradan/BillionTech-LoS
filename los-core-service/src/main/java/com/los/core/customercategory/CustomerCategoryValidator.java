@@ -1,8 +1,9 @@
 package com.los.core.customercategory;
 
 import com.los.core.exception.BusinessRuleException;
+import com.los.core.domain.CustomerRole;
+import com.los.core.domain.EntityType;
 import com.los.core.model.enums.BorrowerType;
-import com.los.core.model.enums.IntakeSegment;
 import com.los.core.model.entity.UnderwritingRuleSet;
 import com.los.core.model.entity.UnderwritingScorecard;
 import com.los.core.repository.UnderwritingRuleSetRepository;
@@ -47,10 +48,13 @@ public class CustomerCategoryValidator {
             return;
         }
         try {
-            BorrowerType.valueOf(v.toUpperCase(Locale.ROOT));
+            EntityType.fromBorrowerTypeValue(v);
         } catch (IllegalArgumentException e) {
-            throw biz("Invalid borrowerType: " + raw, "INVALID_BORROWER_TYPE",
-                    Map.of("borrowerType", raw, "allowed", List.of(BorrowerType.values()) ));
+            throw biz("Invalid Entity Type (borrowerType): " + raw, "INVALID_BORROWER_TYPE",
+                    Map.of(
+                            "entityType", raw,
+                            "borrowerType", raw,
+                            "allowed", List.of(EntityType.values())));
         }
     }
 
@@ -70,10 +74,13 @@ public class CustomerCategoryValidator {
             return;
         }
         try {
-            IntakeSegment.valueOf(v.toUpperCase(Locale.ROOT));
+            CustomerRole.fromIntakeSegmentValue(v);
         } catch (IllegalArgumentException e) {
-            throw biz("Invalid intakeSegment: " + raw, "INVALID_INTAKE_SEGMENT",
-                    Map.of("intakeSegment", raw, "allowed", List.of(IntakeSegment.values())));
+            throw biz("Invalid Customer Role (intakeSegment): " + raw, "INVALID_INTAKE_SEGMENT",
+                    Map.of(
+                            "customerRole", raw,
+                            "intakeSegment", raw,
+                            "allowed", List.of(CustomerRole.values())));
         }
     }
 

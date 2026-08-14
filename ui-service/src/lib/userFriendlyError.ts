@@ -38,6 +38,10 @@ const REASON_MESSAGES: Record<string, string> = {
   RETIREMENT_REASON_REQUIRED: 'A retirement reason is required.',
   CATEGORY_NOT_EDITABLE: 'Only DRAFT categories can be edited.',
   POLICY_SET_NOT_EDITABLE: 'Only DRAFT Policy Sets can be edited.',
+  TERMINOLOGY_CONFLICT_CUSTOMER_ROLE:
+    'Customer Role and Intake Segment disagree. Send one value, or matching aliases.',
+  TERMINOLOGY_CONFLICT_ENTITY_TYPE:
+    'Entity Type and Borrower Type disagree. Send one value, or matching aliases.',
 }
 
 const HTTP_FALLBACK: Record<number, string> = {

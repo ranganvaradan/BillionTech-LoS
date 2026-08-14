@@ -170,9 +170,9 @@ export function CustomerCategoriesPage() {
     setCode(r.code)
     setName(r.name)
     setDescription(r.description ?? '')
-    setBorrowerType(r.borrowerType || ANY_TOKEN)
+    setBorrowerType(r.entityType || r.borrowerType || ANY_TOKEN)
     setLoanProduct(r.loanProduct || ANY_TOKEN)
-    setIntakeSegment(r.intakeSegment || ANY_TOKEN)
+    setIntakeSegment(r.customerRole || r.intakeSegment || ANY_TOKEN)
     setMinAmount(r.minAmount != null ? String(r.minAmount) : '')
     setMaxAmount(r.maxAmount != null ? String(r.maxAmount) : '')
     setPolicySetId(r.policySetId)
@@ -205,13 +205,18 @@ export function CustomerCategoriesPage() {
   }
 
   function toBody(): CategoryRequest {
+    const entityType = toApiMatchValue(borrowerType)
+    const customerRole = toApiMatchValue(intakeSegment)
     return {
       code: code.trim().toUpperCase(),
       name: name.trim(),
       description: description.trim() || null,
-      borrowerType: toApiMatchValue(borrowerType),
+      // Canonical + transitional aliases (must agree when both present).
+      entityType,
+      borrowerType: entityType,
       loanProduct: toApiMatchValue(loanProduct),
-      intakeSegment: toApiMatchValue(intakeSegment),
+      customerRole,
+      intakeSegment: customerRole,
       minAmount: parseOptionalAmount(minAmount),
       maxAmount: parseOptionalAmount(maxAmount),
       policySetId,
@@ -536,7 +541,7 @@ export function CustomerCategoriesPage() {
                         disabled={!editable}
                       />
                     </FormField>
-                    <FormField label="Borrower type">
+                    <FormField label="Entity Type">
                       <select
                         className="bt-input"
                         value={borrowerType}
@@ -566,7 +571,7 @@ export function CustomerCategoriesPage() {
                         ))}
                       </select>
                     </FormField>
-                    <FormField label="Intake segment">
+                    <FormField label="Customer Role">
                       <select
                         className="bt-input"
                         value={intakeSegment}
