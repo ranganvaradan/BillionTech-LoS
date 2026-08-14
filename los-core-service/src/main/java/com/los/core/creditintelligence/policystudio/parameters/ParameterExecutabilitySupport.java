@@ -30,10 +30,17 @@ public final class ParameterExecutabilitySupport {
     public static List<String> runtimeFactAliases(String canonicalParameterId) {
         if (canonicalParameterId == null) return List.of();
         return switch (canonicalParameterId) {
-            case "bureau.score" -> List.of("bureau.consumer.score", "compat.BUREAU_SCORE");
-            case "bureau.status_ntc" -> List.of("NTC_FLAG", "bureau.thin_file_indicator");
-            case "bureau.max_dpd_12m" -> List.of("bureau.dpd.max_12m");
+            case "bureau.score" -> List.of("bureau.consumer.score", "compat.BUREAU_SCORE", "BUREAU_SCORE");
+            case "bureau.live_unsecured_loan_count" -> List.of(
+                    "compat.LIVE_UNSECURED_LOAN_COUNT", "LIVE_UNSECURED_LOAN_COUNT");
+            case "bureau.max_dpd_6m" -> List.of("bureau.dpd.max_6m", "compat.MAX_DPD_6M", "MAX_DPD_6M");
+            case "bureau.max_dpd_12m" -> List.of("bureau.dpd.max_12m", "compat.MAX_DPD_12M", "MAX_DPD_12M");
             case "bureau.max_dpd_24m" -> List.of("bureau.dpd.max_24m");
+            case "bureau.recent_inquiries_90d" -> List.of(
+                    "compat.BUREAU_ENQUIRIES_3M", "BUREAU_ENQUIRIES_3M");
+            case "bureau.total_monthly_obligation" -> List.of(
+                    "MONTHLY_OBLIGATION", "EMI_OBLIGATION", "compat.MONTHLY_OBLIGATION");
+            case "bureau.status_ntc" -> List.of("NTC_FLAG", "bureau.thin_file_indicator");
             case "bureau.written_off_account_count" -> List.of("bureau.accounts.written_off_count");
             case "banking.avg_daily_balance_3m" -> List.of("banking.balance.average_3m", "banking.average_balance");
             case "banking.emi_bounce_count_3m" -> List.of("banking.bounce.emi_count_3m");

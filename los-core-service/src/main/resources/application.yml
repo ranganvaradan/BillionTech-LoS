@@ -415,6 +415,7 @@ credit-intelligence:
       tenant-ids: []
       product-codes: []
       use-for-shadow-rules: false
+      use-for-production-underwriting: false
       persist-tradelines: true
       freshness-days: 365
       live-unsecured-threshold: 6

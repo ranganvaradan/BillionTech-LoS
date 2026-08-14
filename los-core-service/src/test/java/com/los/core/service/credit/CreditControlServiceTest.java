@@ -1,5 +1,6 @@
 package com.los.core.service.credit;
 
+import com.los.core.creditintelligence.bureau.service.CanonicalBureauContextBridge;
 import com.los.core.model.entity.LoanApplication;
 import com.los.core.model.enums.BorrowerType;
 import com.los.core.repository.DocumentRepository;
@@ -45,6 +46,9 @@ class CreditControlServiceTest {
     @Mock
     private LimitSizingService limitSizingService;
 
+    @Mock
+    private CanonicalBureauContextBridge canonicalBureauContextBridge;
+
     private CreditControlService service() {
         return service(true);
     }
@@ -53,13 +57,15 @@ class CreditControlServiceTest {
         lenient().when(documentRepository.findByApplicationIdOrderByCreatedAtDesc(any())).thenReturn(List.of());
         lenient().when(kycStepResultRepository.findTopByApplicationIdAndStepTypeOrderByCreatedAtDesc(any(), any()))
                 .thenReturn(java.util.Optional.empty());
+        lenient().when(canonicalBureauContextBridge.isEnabledFor(any())).thenReturn(false);
         CreditControlService svc = new CreditControlService(
                 kyc,
                 invoiceDiscountingVintageService,
                 documentRepository,
                 kycStepResultRepository,
                 ocrExtractionService,
-                limitSizingService);
+                limitSizingService,
+                canonicalBureauContextBridge);
         ReflectionTestUtils.setField(svc, "providerGapDefaultsEnabled", providerGapDefaultsEnabled);
         return svc;
     }

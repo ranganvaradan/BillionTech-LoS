@@ -102,7 +102,13 @@ credit-intelligence:
   gacat:
     require-database: true
     allow-seed-fallback: false
-  # canonicalization families can stay false — staging demo uses validation harness stubs
+  canonicalization:
+    bureau:
+      enabled: true
+      persist-tradelines: true
+      use-for-shadow-rules: false
+      use-for-production-underwriting: true
+  # other canonicalization families can stay false — staging demo uses validation harness stubs
   internal-token: ${CREDIT_INTELLIGENCE_INTERNAL_TOKEN:}
   # Staging may soft-open when blank; production must require token
   internal-token-required: false

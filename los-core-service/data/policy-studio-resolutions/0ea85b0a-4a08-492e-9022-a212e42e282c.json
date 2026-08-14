@@ -1,0 +1,11 @@
+{
+  "documentId" : "0ea85b0a-4a08-492e-9022-a212e42e282c",
+  "contentHash" : "f28e4eb32d13aeb744eaf9db514f2d1de192aef21d0eb33c6115758c10ec2661",
+  "demoKind" : "banking",
+  "lineageRootId" : "0ea85b0a-4a08-492e-9022-a212e42e282c",
+  "ambiguityResolutions" : { },
+  "ruleResolutions" : { },
+  "savedAt" : "2026-08-14T05:53:35.892055558Z",
+  "policyName" : "Banking BRE",
+  "documentVersion" : 1
+}

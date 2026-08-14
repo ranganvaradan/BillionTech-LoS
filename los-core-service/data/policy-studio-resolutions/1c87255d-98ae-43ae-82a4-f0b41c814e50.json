@@ -1,0 +1,11 @@
+{
+  "documentId" : "1c87255d-98ae-43ae-82a4-f0b41c814e50",
+  "contentHash" : "a637b0e0f35ee9f0521646b6e54aef34fb63c12f7037b6d10b383e410034578c",
+  "demoKind" : null,
+  "lineageRootId" : "1c87255d-98ae-43ae-82a4-f0b41c814e50",
+  "ambiguityResolutions" : { },
+  "ruleResolutions" : { },
+  "savedAt" : "2026-08-14T05:52:37.446934536Z",
+  "policyName" : "TEST",
+  "documentVersion" : 1
+}

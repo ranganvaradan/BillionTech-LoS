@@ -5,6 +5,10 @@ spring:
   config:
     activate:
       on-profile: local
+  flyway:
+    # Local Docker DBs often drift (CRLF edits / branch switches). Repair checksums on boot.
+    repair-on-migrate: true
+    out-of-order: true
 
 los:
   plp:
@@ -33,3 +37,41 @@ los:
       itr-return-forms-url: ${KARZA_ITR_RETURN_FORMS_URL:https://api.karza.in/itr/uat/v1/itr-return-forms}
       gst-docs-upload-url: ${KARZA_GST_DOCS_UPLOAD_URL:https://api.karza.in/gst/uat/v2/docs-upload-advance}
       gst-docs-read-timeout-ms: ${KARZA_GST_DOCS_READ_TIMEOUT:300000}
+
+# Local: Bureau Pull (sample Equifax XML) → normalize → GACAT / CiBureau* tables. Shadow stays off.
+# staging-demo + policy-studio: Credit Intelligence UI uses /staging-demo APIs (same as staging).
+credit-intelligence:
+  staging-demo:
+    enabled: true
+  foundation:
+    enabled: true
+  source-registry:
+    enabled: true
+  validation:
+    enabled: true
+    persist-runs: false
+  policy-studio:
+    enabled: true
+    ai-enabled: false
+    require-maker-checker: false
+  policy-engine:
+    enabled: true
+  decision-engine:
+    enabled: true
+  ai-underwriter:
+    enabled: true
+    cam-draft-enabled: true
+    scenario-enabled: true
+    provider: stub
+  cutover:
+    enabled: true
+    dual-run-enabled: true
+    allow-canonical-authority: false
+  canonicalization:
+    bureau:
+      enabled: true
+      persist-tradelines: true
+      use-for-shadow-rules: false
+      use-for-production-underwriting: true
+  shadow-evaluation:
+    enabled: false

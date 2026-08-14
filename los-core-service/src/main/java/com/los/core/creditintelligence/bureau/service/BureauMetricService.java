@@ -35,6 +35,7 @@ public class BureauMetricService {
     public static final String SECURED_LIVE_EXPOSURE = "bureau.secured_live_exposure";
     public static final String UNSECURED_LIVE_EXPOSURE = "bureau.unsecured_live_exposure";
     public static final String TOTAL_MONTHLY_OBLIGATION = "bureau.total_monthly_obligation";
+    public static final String MAX_DPD_6M = "bureau.max_dpd_6m";
     public static final String MAX_DPD_12M = "bureau.max_dpd_12m";
     public static final String MAX_DPD_24M = "bureau.max_dpd_24m";
     public static final String RECENT_INQUIRIES_90D = "bureau.recent_inquiries_90d";
@@ -55,6 +56,7 @@ public class BureauMetricService {
         results.add(persist(computeExposure(report, tradelines, SECURED_LIVE_EXPOSURE, true)));
         results.add(persist(computeExposure(report, tradelines, UNSECURED_LIVE_EXPOSURE, false)));
         results.add(persist(computeMonthlyObligation(report, tradelines)));
+        results.add(persist(computeMaxDpd(report, tradelines, 6, MAX_DPD_6M, reportData)));
         results.add(persist(computeMaxDpd(report, tradelines, 12, MAX_DPD_12M, reportData)));
         results.add(persist(computeMaxDpd(report, tradelines, 24, MAX_DPD_24M, reportData)));
         results.add(persist(computeInquiries90d(report, reportData)));

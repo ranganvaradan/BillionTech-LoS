@@ -2,3 +2,17 @@
 los:
   plp:
     base-url: ${PLP_BASE_URL:http://host.docker.internal:8180}
+
+credit-intelligence:
+  foundation:
+    enabled: true
+  source-registry:
+    enabled: true
+  canonicalization:
+    bureau:
+      enabled: true
+      persist-tradelines: true
+      use-for-shadow-rules: false
+      use-for-production-underwriting: true
+  shadow-evaluation:
+    enabled: false

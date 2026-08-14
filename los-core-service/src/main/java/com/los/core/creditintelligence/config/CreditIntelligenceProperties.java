@@ -87,6 +87,8 @@ public class CreditIntelligenceProperties {
             private List<String> tenantIds = List.of();
             private List<String> productCodes = List.of();
             private boolean useForShadowRules = false;
+            /** When true, GACAT bureau metrics overlay production scorecard via CanonicalBureauContextBridge. */
+            private boolean useForProductionUnderwriting = false;
             private boolean persistTradelines = true;
             private int freshnessDays = 365;
             private int liveUnsecuredThreshold = 6;

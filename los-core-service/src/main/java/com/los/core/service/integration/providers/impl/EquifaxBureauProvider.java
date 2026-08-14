@@ -217,12 +217,17 @@ public class EquifaxBureauProvider implements IBureauProvider {
                 public Iterator<String> getPrefixes(String namespaceURI) { return null; }
             });
 
-            // Extract header info
+            // Extract header info (PCS uses InquiryResponseHeader; legacy uses ResponseHeader)
             String scoreValue = getTagValue(doc, xpath, "//sch:Score/sch:Value");
-            String successCode = getTagValue(doc, xpath, "//sch:ResponseHeader/sch:SuccessCode");
-            String errorMsg = getTagValue(doc, xpath, "//sch:ResponseHeader/sch:ErrorMessage");
+            String successCode = firstNonBlank(
+                    getTagValue(doc, xpath, "//sch:InquiryResponseHeader/sch:SuccessCode"),
+                    getTagValue(doc, xpath, "//sch:ResponseHeader/sch:SuccessCode"));
+            String errorMsg = firstNonBlank(
+                    getTagValue(doc, xpath, "//sch:InquiryResponseHeader/sch:ErrorMessage"),
+                    getTagValue(doc, xpath, "//sch:ResponseHeader/sch:ErrorMessage"));
             String panId = getTagValue(doc, xpath, "//sch:PANId");
             String fullName = getTagValue(doc, xpath, "//sch:FullName");
+            String scoreName = getTagValue(doc, xpath, "//sch:Score/sch:Name");
 
             int creditScore = 0;
             if (scoreValue != null && !scoreValue.isEmpty()) {
@@ -239,7 +244,8 @@ public class EquifaxBureauProvider implements IBureauProvider {
 
             Map<String, Object> reportData = new LinkedHashMap<>();
             reportData.put("creditScore", creditScore);
-            reportData.put("scoreVersion", "ERS 3.0");
+            reportData.put("scoreVersion",
+                    scoreName != null && !scoreName.isBlank() ? scoreName.trim() : "ERS 3.0");
             reportData.put("panId", panId != null ? panId : "");
             reportData.put("fullName", fullName != null ? fullName : "");
 
@@ -365,7 +371,25 @@ public class EquifaxBureauProvider implements IBureauProvider {
     private BureauPullResult simulatedFallback(Map<String, Object> borrowerInfo, String transactionId) {
         String pan = (String) borrowerInfo.getOrDefault("panNumber", "");
         if (pan.isEmpty()) {
-            return new BureauPullResult(false, 0, null, transactionId, "PAN number is required");
+            return new BureauPullResult(false, 0, null, transactionId, "PAN number is required for bureau pull");
+        }
+
+        String sampleXml = loadSimulatedEquifaxXml();
+        if (sampleXml != null && !sampleXml.isBlank()) {
+            BureauPullResult parsed = parseEquifaxResponse(sampleXml, transactionId);
+            if (parsed.success() && parsed.reportData() != null) {
+                Map<String, Object> reportData = new LinkedHashMap<>(parsed.reportData());
+                reportData.put("simulated", true);
+                reportData.put("simulatedSource", "simulated/equifax-sample-inquiry-response.xml");
+                attachSimulatedBureauReport(borrowerInfo);
+                log.info("[Equifax] Simulated pull using sample XML — score={}, accounts={}, status={}",
+                        parsed.creditScore(),
+                        reportData.get("totalAccounts"),
+                        reportData.get("tradelineExtractionStatus"));
+                return new BureauPullResult(true, parsed.creditScore(), reportData, transactionId, null);
+            }
+            log.warn("[Equifax] Sample XML parse failed ({}) — falling back to aggregates-only simulation",
+                    parsed.errorMessage());
         }
 
         int creditScore = 720;
@@ -385,12 +409,23 @@ public class EquifaxBureauProvider implements IBureauProvider {
         reportData.put("dpd60Plus", 0);
         reportData.put("dpd90Plus", 0);
         reportData.put("suitFiled", false);
-        // Phase C1: simulated path must NOT invent tradelines → DATA_INSUFFICIENT on canonical metrics
         EquifaxBureauAccountExtractor.markSimulatedMissing(reportData);
 
         attachSimulatedBureauReport(borrowerInfo);
 
         return new BureauPullResult(true, creditScore, reportData, transactionId, null);
+    }
+
+    private String loadSimulatedEquifaxXml() {
+        try {
+            ClassPathResource resource = new ClassPathResource("simulated/equifax-sample-inquiry-response.xml");
+            try (InputStream in = resource.getInputStream()) {
+                return new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            }
+        } catch (Exception e) {
+            log.warn("[Equifax] Could not load simulated/equifax-sample-inquiry-response.xml: {}", e.getMessage());
+            return null;
+        }
     }
 
     private void attachSimulatedBureauReport(Map<String, Object> borrowerInfo) {
@@ -444,6 +479,16 @@ public class EquifaxBureauProvider implements IBureauProvider {
         } catch (Exception e) {
             return null;
         }
+    }
+
+    private static String firstNonBlank(String a, String b) {
+        if (a != null && !a.isBlank()) {
+            return a.trim();
+        }
+        if (b != null && !b.isBlank()) {
+            return b.trim();
+        }
+        return null;
     }
 
     private int parseIntSafe(String value) {

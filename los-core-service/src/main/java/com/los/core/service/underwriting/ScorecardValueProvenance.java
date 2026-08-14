@@ -7,6 +7,7 @@ import java.util.Locale;
  */
 public final class ScorecardValueProvenance {
 
+    public static final String CANONICAL = "CANONICAL";
     public static final String REAL_PROVIDER = "REAL_PROVIDER";
     public static final String APPLICATION = "APPLICATION";
     public static final String DERIVED = "DERIVED";
@@ -27,7 +28,8 @@ public final class ScorecardValueProvenance {
     public static boolean isAuthoritative(String provenance) {
         if (provenance == null || provenance.isBlank()) return false;
         String p = provenance.trim().toUpperCase(Locale.ROOT);
-        return REAL_PROVIDER.equals(p)
+        return CANONICAL.equals(p)
+                || REAL_PROVIDER.equals(p)
                 || APPLICATION.equals(p)
                 || DERIVED.equals(p)
                 || MANUAL_AUTHORISED.equals(p);

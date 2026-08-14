@@ -44,3 +44,12 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
+
+target/
+**/target/
+uploads/
+**/uploads/
+*.class
+.idea/
+*.iml
+

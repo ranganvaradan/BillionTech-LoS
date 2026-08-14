@@ -1,5 +1,6 @@
 package com.los.core.service.credit;
 
+import com.los.core.creditintelligence.bureau.service.CanonicalBureauContextBridge;
 import com.los.core.model.entity.KycStepResult;
 import com.los.core.model.entity.LoanApplication;
 import com.los.core.model.enums.BorrowerType;
@@ -37,6 +38,7 @@ class CreditControlItrPreferenceTest {
     @Mock private KycStepResultRepository kycStepResultRepository;
     @Mock private OcrExtractionService ocrExtractionService;
     @Mock private LimitSizingService limitSizingService;
+    @Mock private CanonicalBureauContextBridge canonicalBureauContextBridge;
 
     @Test
     void resolveEffective_prefersItrReturnFormsMappedMetricsOverOcr() {
@@ -62,9 +64,11 @@ class CreditControlItrPreferenceTest {
                 .thenReturn(Optional.of(step));
         when(kycStepResultRepository.findByApplicationIdOrderByCreatedAtAsc(appId)).thenReturn(List.of());
         org.mockito.Mockito.doNothing().when(limitSizingService).applyComputedMetrics(any(), any());
+        org.mockito.Mockito.lenient().when(canonicalBureauContextBridge.isEnabledFor(any())).thenReturn(false);
 
         CreditControlService svc = new CreditControlService(
-                kyc, vintage, documentRepository, kycStepResultRepository, ocrExtractionService, limitSizingService);
+                kyc, vintage, documentRepository, kycStepResultRepository, ocrExtractionService, limitSizingService,
+                canonicalBureauContextBridge);
 
         LoanApplication app = LoanApplication.builder()
                 .id(appId)

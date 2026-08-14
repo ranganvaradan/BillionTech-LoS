@@ -89,6 +89,24 @@ class EquifaxBureauAccountExtractorTest {
     }
 
     @Test
+    void extractsFullSimulatedPcsFixture() throws Exception {
+        String xml;
+        try (var in = getClass().getClassLoader()
+                .getResourceAsStream("simulated/equifax-sample-inquiry-response.xml")) {
+            assertNotNull(in, "classpath simulated Equifax fixture missing");
+            xml = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        }
+        Map<String, Object> data = EquifaxBureauAccountExtractor.enrichFromXml(xml, new LinkedHashMap<>());
+        assertEquals("OK", data.get("tradelineExtractionStatus"));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> accounts = (List<Map<String, Object>>) data.get("accounts");
+        assertNotNull(accounts);
+        assertEquals(13, accounts.size());
+        assertTrue(accounts.stream().anyMatch(a -> "Personal Loan".equals(a.get("AccountType"))));
+        assertTrue(accounts.stream().anyMatch(a -> "Property Loan".equals(a.get("AccountType"))));
+    }
+
+    @Test
     void simulatedMissingDoesNotInventAccounts() {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("creditScore", 720);

@@ -387,6 +387,27 @@ public class ScorecardPolicyEngine {
         if ("BUREAU".equals(src) && "BUREAU_SCORE".equalsIgnoreCase(param)) {
             return BigDecimal.valueOf(ctx.effectiveBureauScore());
         }
+        if ("BUREAU".equals(src)) {
+            if ("LIVE_UNSECURED_LOAN_COUNT".equalsIgnoreCase(param) && ctx.scorecard() != null) {
+                BigDecimal v = ctx.scorecard().get("LIVE_UNSECURED_LOAN_COUNT");
+                if (v != null) {
+                    return v;
+                }
+            }
+            if (("MAX_DPD_6M".equalsIgnoreCase(param) || "MAX_DPD_12M".equalsIgnoreCase(param))
+                    && ctx.scorecard() != null) {
+                BigDecimal v = ctx.scorecard().get(param.toUpperCase(Locale.ROOT));
+                if (v != null) {
+                    return v;
+                }
+            }
+            if ("BUREAU_ENQUIRIES_3M".equalsIgnoreCase(param) && ctx.scorecard() != null) {
+                BigDecimal v = ctx.scorecard().get("BUREAU_ENQUIRIES_3M");
+                if (v != null) {
+                    return v;
+                }
+            }
+        }
         if ("KYC".equals(src) && "KYC_PASS".equalsIgnoreCase(param)) {
             return ctx.kycPassEffective() ? BigDecimal.ONE : BigDecimal.ZERO;
         }

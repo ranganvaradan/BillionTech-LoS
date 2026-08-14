@@ -1,5 +1,6 @@
 package com.los.core.service.credit;
 
+import com.los.core.creditintelligence.bureau.service.CanonicalBureauContextBridge;
 import com.los.core.model.dto.request.ManualCreditInputsRequest;
 import com.los.core.model.entity.Document;
 import com.los.core.model.entity.KycStepResult;
@@ -86,6 +87,7 @@ public class CreditControlService {
     private final KycStepResultRepository kycStepResultRepository;
     private final OcrExtractionService ocrExtractionService;
     private final LimitSizingService limitSizingService;
+    private final CanonicalBureauContextBridge canonicalBureauContextBridge;
 
     /**
      * When false (production default), banking/GST/ITR/SCF placeholder fills are skipped.
@@ -592,6 +594,14 @@ public class CreditControlService {
         if (ratio != null) {
             sc.put("OBLIGATION_RATIO", ratio.multiply(BigDecimal.valueOf(100)));
         }
+        var bureauOverlay = applyCanonicalBureauOverlay(app, bureauSource, sc, provenance);
+        if (bureauOverlay.bureauScore() != null && !SRC_MANUAL.equalsIgnoreCase(bureauSource)) {
+            effBureau = bureauOverlay.bureauScore();
+            bureauSource = bureauOverlay.bureauSource();
+        }
+        if (obl == null && sc.containsKey("MONTHLY_OBLIGATION")) {
+            obl = sc.get("MONTHLY_OBLIGATION");
+        }
         applyMissingScorecardDefaults(app, sc, provenance, inc, obl);
         if (inc == null && sc.get("MONTHLY_INCOME") != null) {
             inc = sc.get("MONTHLY_INCOME");
@@ -636,11 +646,14 @@ public class CreditControlService {
         }
         sc.put("BUREAU_SCORE", BigDecimal.valueOf(effBureau));
         provenance.put("BUREAU_SCORE",
-                "DEMO_FALLBACK".equals(bureauSource)
+                com.los.core.service.underwriting.ScorecardValueProvenance.CANONICAL.equals(
+                        provenance.get("BUREAU_SCORE"))
+                        ? com.los.core.service.underwriting.ScorecardValueProvenance.CANONICAL
+                        : ("DEMO_FALLBACK".equals(bureauSource)
                         ? com.los.core.service.underwriting.ScorecardValueProvenance.DEMO_DEFAULT
                         : (SRC_MANUAL.equals(bureauSource)
                         ? com.los.core.service.underwriting.ScorecardValueProvenance.MANUAL_AUTHORISED
-                        : com.los.core.service.underwriting.ScorecardValueProvenance.REAL_PROVIDER));
+                        : com.los.core.service.underwriting.ScorecardValueProvenance.REAL_PROVIDER)));
         applyProgramInputScorecardValues(app, sc, provenance);
         limitSizingService.applyComputedMetrics(app, sc);
         return new EffectiveUnderwritingContext(
@@ -1129,6 +1142,33 @@ public class CreditControlService {
         if (DOCUMENT_EXTRACT_SCORECARD_KEYS.contains(key) || !sc.containsKey(key) || isZeroOrMissing(sc.get(key))) {
             sc.put(key, b);
         }
+    }
+
+    private record BureauOverlay(Integer bureauScore, String bureauSource) {}
+
+    private BureauOverlay applyCanonicalBureauOverlay(
+            LoanApplication app,
+            String bureauSource,
+            Map<String, BigDecimal> sc,
+            Map<String, String> provenance) {
+        if (canonicalBureauContextBridge == null || !canonicalBureauContextBridge.isEnabledFor(app)) {
+            return new BureauOverlay(null, bureauSource);
+        }
+        return canonicalBureauContextBridge.overlay(app)
+                .map(o -> {
+                    for (var e : o.scorecard().entrySet()) {
+                        sc.put(e.getKey(), e.getValue());
+                    }
+                    for (var e : o.provenance().entrySet()) {
+                        provenance.put(e.getKey(), e.getValue());
+                    }
+                    Integer score = o.bureauScore();
+                    if (score != null && !SRC_MANUAL.equalsIgnoreCase(bureauSource)) {
+                        return new BureauOverlay(score, o.bureauSource());
+                    }
+                    return new BureauOverlay(null, bureauSource);
+                })
+                .orElse(new BureauOverlay(null, bureauSource));
     }
 
     private static boolean putBankGapDefault(
