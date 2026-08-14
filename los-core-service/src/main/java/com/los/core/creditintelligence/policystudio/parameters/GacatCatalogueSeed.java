@@ -165,26 +165,29 @@ final class GacatCatalogueSeed {
 
     private static void bureauRetailDerived(List<CanonicalParameterDefinition> p) {
         String maxDpd6mHow = """
-                Highest days-past-due observed across tradeline payment-history months in a trailing 6-month window.
-                Raw inputs: per-tradeline monthly DPD from payment history.
-                Filters: any tradeline that has at least one payment-history month; no product-type exclusion in the studio helper (credit cards, closed, settled, and write-off accounts are not filtered out when history exists).
-                Transformation: each history month contributes its numeric DPD value as supplied (unknown/malformed months that never become history rows are skipped upstream).
-                Aggregation: MAX across included months.
-                Window: month end-date in [as-of − 6 months, as-of].
-                Missing data: if no tradeline has payment history → data insufficient (not zero).
+                Highest days-past-due across tradeline payment-history months in a trailing 6 calendar-month window.
+                Raw inputs: per-tradeline monthly DPD (Equifax History48Months → YearMonth).
+                Period representation: YearMonth (provider month key stored as first-of-month LocalDate).
+                asOf: bureau report / evaluation date; as-of month is included.
+                Window: inclusive [YearMonth(asOf) − 5, YearMonth(asOf)] (six months).
+                Future periods after as-of month are excluded. Exact lower-bound month is included.
+                Filters: no product-type exclusion (CC/closed/settled included when history exists).
+                Null/malformed periods skipped; null DPD skipped (not zero). Aggregation: MAX.
+                Missing data: no payment-history rows → DATA_INSUFFICIENT (not zero).
+                Calculator: BureauMetricService.evaluateMaxDpd (shared studio + live).
                 """.trim().replace('\n', ' ');
 
         derived(p, "bureau.max_dpd_6m", "Maximum DPD (6 months)", BR, "DAYS", "TRAILING_6M",
                 maxDpd6mHow,
                 List.of("bureau.tradeline.payment_history", "bureau.tradeline.dpd_month"),
-                "PolicyBureauMetricService.maxDpd6m (studio); production BureauMetricService exposes 12m/24m",
+                "BureauMetricService.evaluateMaxDpd",
                 List.of("max dpd", "days past due", "dpd last 6 months", "maximum dpd 6 months", "maximum dpd"),
                 null, null,
                 cap("BUREAU_RETAIL", true, true, true, true, false, "SCALAR",
                         "History48Months/Month/DaysPastDue",
                         "DATA_INSUFFICIENT when no payment history on any tradeline",
-                        "Tradelines with non-empty payment history; no CC/closed/settled exclusion in studio maxDpd6m",
-                        "Month DPD numeric value as normalized into PaymentMonth.dpd",
+                        "Tradelines with payment history; YearMonth trailing window shared with live",
+                        "Month DPD numeric value as normalized YearMonth period",
                         "MAX"),
                 true, true, true, true, false);
 

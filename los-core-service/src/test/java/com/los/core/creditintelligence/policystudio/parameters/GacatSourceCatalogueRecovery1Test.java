@@ -51,7 +51,9 @@ class GacatSourceCatalogueRecovery1Test {
         assertThat(d.calculationSummary()).containsIgnoringCase("MAX");
         assertThat(d.requiredPrimitives()).contains("bureau.tradeline.payment_history");
         assertThat(d.capability().implemented()).isTrue();
-        assertThat(d.capability().productionReady()).isFalse(); // studio helper; prod uses 12m/24m
+        assertThat(d.capability().productionReady()).isFalse(); // not production-certified
+        assertThat(d.existingImplementationBinding()).isEqualTo("BureauMetricService.evaluateMaxDpd");
+        assertThat(d.calculationSummary()).containsIgnoringCase("YearMonth");
         assertThat(d.capability().aggregation()).isEqualTo("MAX");
         assertThat(d.capability().missingDataTreatment()).containsIgnoringCase("insufficient");
 

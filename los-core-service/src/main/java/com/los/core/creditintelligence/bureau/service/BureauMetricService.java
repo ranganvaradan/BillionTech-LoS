@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -49,10 +50,181 @@ public class BureauMetricService {
     public static final String STATUS_NTC = "bureau.status_ntc";
 
     public static final String WRITEOFF_CALCULATOR = "BureauMetricService.computeWriteoffCounts";
+    /** Shared calculator id for max DPD windows (6/12/24). */
+    public static final String MAX_DPD_CALCULATOR = "BureauMetricService.evaluateMaxDpd";
+    public static final String MAX_DPD_CALCULATOR_VERSION = "V1_YEARMONTH_TRAILING";
 
     private final CiMetricResultRepository metricResultRepository;
     private final CiBureauPaymentHistoryRepository paymentHistoryRepository;
     private final BureauStatusNormalizer statusNormalizer = new BureauStatusNormalizer();
+
+    /**
+     * One payment-history month for shared max-DPD evaluation.
+     * {@code period} is the provider reporting month (Equifax History48Months → YearMonth; stored as day-1 LocalDate).
+     */
+    public record PaymentHistoryMonthInput(String tradelineRef, YearMonth period, Integer dpd) {
+        public static PaymentHistoryMonthInput of(String ref, LocalDate monthDate, Integer dpd) {
+            if (monthDate == null) {
+                return new PaymentHistoryMonthInput(ref, null, dpd);
+            }
+            return new PaymentHistoryMonthInput(ref, YearMonth.from(monthDate), dpd);
+        }
+    }
+
+    /**
+     * Shared max-DPD result used by live {@link #computeMaxDpd} and studio PolicyBureauMetricService.
+     *
+     * <p><b>Business definition (trailing {@code windowMonths} calendar months):</b>
+     * <ul>
+     *   <li>asOf = evaluation / bureau report date</li>
+     *   <li>period = YearMonth of the payment-history entry (provider month key → first-of-month LocalDate → YearMonth)</li>
+     *   <li>window = inclusive [{@code YearMonth(asOf) − (windowMonths−1)}, {@code YearMonth(asOf)}]</li>
+     *   <li>as-of month is included; periods after as-of month are excluded (no future influence)</li>
+     *   <li>exact lower-bound month is included</li>
+     *   <li>null/malformed period skipped; null DPD skipped (not treated as zero)</li>
+     *   <li>MAX across all tradelines' included months; closed/CC not filtered when history exists</li>
+     *   <li>no payment-history rows at all → DATA_INSUFFICIENT (not zero); history present but none in window → PASS 0</li>
+     * </ul>
+     */
+    public record MaxDpdEvaluation(
+            String outcome,
+            Integer maxDpd,
+            String quality,
+            YearMonth asOfMonth,
+            YearMonth earliestMonth,
+            int windowMonths,
+            List<Object> included,
+            List<Object> excluded,
+            Map<String, Object> evidence) {
+
+        public Map<String, Object> toStudioMap() {
+            Map<String, Object> m = new LinkedHashMap<>();
+            if (BureauMetricOutcome.DATA_INSUFFICIENT.name().equals(outcome)) {
+                m.put("outcome", "DATA_INSUFFICIENT");
+                m.put("v", null);
+                m.put("quality", quality);
+            } else {
+                m.put("outcome", "PASS");
+                m.put("v", maxDpd != null ? maxDpd : 0);
+                m.put("quality", quality);
+            }
+            m.put("asOfMonth", asOfMonth != null ? asOfMonth.toString() : null);
+            m.put("earliestMonth", earliestMonth != null ? earliestMonth.toString() : null);
+            m.put("windowMonths", windowMonths);
+            m.put("included", included);
+            m.put("excluded", excluded);
+            m.put("evidence", evidence);
+            return m;
+        }
+    }
+
+    /**
+     * Canonical max-DPD calculator — single authority for studio + live.
+     */
+    public MaxDpdEvaluation evaluateMaxDpd(
+            List<PaymentHistoryMonthInput> rows,
+            LocalDate asOf,
+            int windowMonths) {
+        LocalDate effectiveAsOf = asOf != null ? asOf : LocalDate.now();
+        if (windowMonths < 1) {
+            throw new IllegalArgumentException("windowMonths must be >= 1");
+        }
+        YearMonth asOfYm = YearMonth.from(effectiveAsOf);
+        YearMonth earliest = asOfYm.minusMonths(windowMonths - 1L);
+        Map<String, Object> evidence = new LinkedHashMap<>();
+        evidence.put("calculator", MAX_DPD_CALCULATOR);
+        evidence.put("calculatorVersion", MAX_DPD_CALCULATOR_VERSION);
+        evidence.put("asOf", effectiveAsOf.toString());
+        evidence.put("asOfMonth", asOfYm.toString());
+        evidence.put("earliestMonth", earliest.toString());
+        evidence.put("windowMonths", windowMonths);
+        evidence.put("periodRepresentation", "YearMonth");
+        evidence.put("windowSemantics", "INCLUSIVE_YEARMONTH_TRAILING_INCLUDING_ASOF_MONTH");
+
+        if (rows == null || rows.isEmpty()) {
+            evidence.put("reason", "PAYMENT_HISTORY_MISSING");
+            return new MaxDpdEvaluation(
+                    BureauMetricOutcome.DATA_INSUFFICIENT.name(),
+                    null,
+                    "DATA_INSUFFICIENT",
+                    asOfYm,
+                    earliest,
+                    windowMonths,
+                    List.of(),
+                    List.of(),
+                    evidence);
+        }
+
+        Integer max = null;
+        boolean anyValidPeriod = false;
+        List<Object> included = new ArrayList<>();
+        List<Object> excluded = new ArrayList<>();
+        for (PaymentHistoryMonthInput row : rows) {
+            if (row == null) {
+                continue;
+            }
+            String ref = row.tradelineRef() != null ? row.tradelineRef() : "";
+            if (row.period() == null) {
+                excluded.add(Map.of("ref", ref, "reason", "MALFORMED_OR_MISSING_PERIOD"));
+                continue;
+            }
+            anyValidPeriod = true;
+            YearMonth period = row.period();
+            if (period.isBefore(earliest)) {
+                excluded.add(Map.of(
+                        "ref", ref, "period", period.toString(), "dpd", row.dpd(),
+                        "reason", "BEFORE_WINDOW"));
+                continue;
+            }
+            if (period.isAfter(asOfYm)) {
+                excluded.add(Map.of(
+                        "ref", ref, "period", period.toString(), "dpd", row.dpd(),
+                        "reason", "AFTER_ASOF_MONTH"));
+                continue;
+            }
+            if (row.dpd() == null) {
+                excluded.add(Map.of(
+                        "ref", ref, "period", period.toString(),
+                        "reason", "DPD_MISSING"));
+                continue;
+            }
+            if (max == null || row.dpd() > max) {
+                max = row.dpd();
+            }
+            included.add(Map.of(
+                    "ref", ref,
+                    "period", period.toString(),
+                    "dpd", row.dpd()));
+        }
+
+        if (!anyValidPeriod) {
+            evidence.put("reason", "PAYMENT_HISTORY_MISSING");
+            return new MaxDpdEvaluation(
+                    BureauMetricOutcome.DATA_INSUFFICIENT.name(),
+                    null,
+                    "DATA_INSUFFICIENT",
+                    asOfYm,
+                    earliest,
+                    windowMonths,
+                    included,
+                    excluded,
+                    evidence);
+        }
+
+        evidence.put("maxDpd", max != null ? max : 0);
+        evidence.put("includedCount", included.size());
+        evidence.put("excludedCount", excluded.size());
+        return new MaxDpdEvaluation(
+                BureauMetricOutcome.PASS.name(),
+                max != null ? max : 0,
+                "OK",
+                asOfYm,
+                earliest,
+                windowMonths,
+                included,
+                excluded,
+                evidence);
+    }
 
     @Transactional
     public List<CiMetricResult> computeAndPersist(
@@ -665,30 +837,26 @@ public class BureauMetricService {
             return insufficient(report, code, "TRADELINES_NOT_AVAILABLE");
         }
         LocalDate asOf = report.getReportDate() != null ? report.getReportDate() : LocalDate.now();
-        LocalDate cutoff = asOf.minusMonths(months);
-        Integer max = null;
-        boolean anyPh = false;
-        List<Object> included = new ArrayList<>();
+        List<PaymentHistoryMonthInput> rows = new ArrayList<>();
+        boolean anyPhRow = false;
         for (CiBureauTradeline t : safe(tradelines)) {
             if (t.getId() == null) {
                 continue;
             }
             List<CiBureauPaymentHistory> ph = paymentHistoryRepository.findByTradelineIdOrderByMonthDesc(t.getId());
             for (CiBureauPaymentHistory row : ph) {
-                anyPh = true;
-                if (row.getMonth() != null && !row.getMonth().isBefore(cutoff) && row.getDpd() != null) {
-                    if (max == null || row.getDpd() > max) {
-                        max = row.getDpd();
-                    }
-                    included.add(Map.of(
-                            "tradelineId", t.getId().toString(),
-                            "month", row.getMonth().toString(),
-                            "dpd", row.getDpd()));
-                }
+                anyPhRow = true;
+                rows.add(PaymentHistoryMonthInput.of(refOf(t), row.getMonth(), row.getDpd()));
             }
         }
+
+        MaxDpdEvaluation eval = evaluateMaxDpd(rows, asOf, months);
         Map<String, Object> evidence = baseEvidence(report);
-        if (!anyPh) {
+        evidence.putAll(eval.evidence());
+        evidence.put("canonicalParameterId", code);
+        evidence.put("windowMonths", months);
+
+        if (!anyPhRow || BureauMetricOutcome.DATA_INSUFFICIENT.name().equals(eval.outcome())) {
             // Soft aggregate signal in evidence only — metric DATA_INSUFFICIENT, not zero
             Map<String, Object> soft = new LinkedHashMap<>();
             if (reportData != null) {
@@ -702,10 +870,15 @@ public class BureauMetricService {
             evidence.put("aggregateDpdFlags", soft);
             evidence.put("signal", "EXTRACTED_SOFT_ONLY");
             return result(report, code, BureauMetricOutcome.DATA_INSUFFICIENT.name(),
-                    null, "DATA_INSUFFICIENT", included, List.of(), 0, evidence);
+                    null, "DATA_INSUFFICIENT", eval.included(), eval.excluded(), 0, evidence);
         }
         return result(report, code, BureauMetricOutcome.PASS.name(),
-                valueOf(max != null ? max : 0), "OK", included, List.of(), 0, evidence);
+                valueOf(eval.maxDpd() != null ? eval.maxDpd() : 0),
+                eval.quality(),
+                eval.included(),
+                eval.excluded(),
+                0,
+                evidence);
     }
 
     private CiMetricResult computeInquiries90d(CiBureauReport report, Map<String, Object> reportData) {

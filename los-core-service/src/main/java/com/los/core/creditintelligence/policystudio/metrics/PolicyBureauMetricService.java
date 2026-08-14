@@ -49,28 +49,27 @@ public class PolicyBureauMetricService {
     public record InquiryInput(LocalDate date) {}
 
     public Map<String, Object> maxDpd6m(List<TradelineInput> tradelines, LocalDate asOf) {
+        // Single authority: BureauMetricService.evaluateMaxDpd (YearMonth trailing window).
+        BureauMetricService shared = new BureauMetricService(null, null);
         if (tradelines == null) {
-            return di("No tradelines");
+            return shared.evaluateMaxDpd(List.of(), asOf, 6).toStudioMap();
         }
-        boolean anyPh = false;
-        int max = 0;
-        LocalDate cutoff = asOf.minusMonths(6);
+        List<BureauMetricService.PaymentHistoryMonthInput> rows = new ArrayList<>();
+        int i = 0;
         for (TradelineInput t : tradelines) {
+            String ref = "studio-" + (i++);
             if (t.paymentHistory() == null || t.paymentHistory().isEmpty()) {
                 continue;
             }
-            anyPh = true;
             for (PaymentMonth pm : t.paymentHistory()) {
-                LocalDate md = pm.month().atEndOfMonth();
-                if (!md.isBefore(cutoff) && !md.isAfter(asOf)) {
-                    max = Math.max(max, pm.dpd());
+                if (pm == null) {
+                    continue;
                 }
+                rows.add(new BureauMetricService.PaymentHistoryMonthInput(
+                        ref, pm.month(), pm.dpd()));
             }
         }
-        if (!anyPh) {
-            return di("Payment history missing for DPD 6m");
-        }
-        return pass(max);
+        return shared.evaluateMaxDpd(rows, asOf, 6).toStudioMap();
     }
 
     public Map<String, Object> inquiriesCurrentMonth(List<InquiryInput> inquiries, EvaluationClock clock) {
