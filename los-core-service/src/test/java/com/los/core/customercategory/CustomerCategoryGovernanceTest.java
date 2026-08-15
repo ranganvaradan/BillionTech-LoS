@@ -54,6 +54,7 @@ class CustomerCategoryGovernanceTest {
     @Mock CiPolicyApplicabilityRepository applicabilityRepository;
     @Mock PolicyCatalogueService policyCatalogueService;
     @Mock CreditIntelligenceProperties creditIntelligenceProperties;
+    @Mock CategoryWorkflowBindService workflowBindService;
 
     CustomerCategoryValidator validator;
     PolicySetService policySetService;
@@ -74,24 +75,44 @@ class CustomerCategoryGovernanceTest {
     UUID scId;
     UUID policyAppId;
     UUID policyDocId;
+    UUID workflowId;
     UUID tenant = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
     @BeforeEach
     void setUp() {
         when(creditIntelligenceProperties.getDefaultTenantId()).thenReturn(tenant);
+        lenient().when(workflowBindService.workflowActivationChecks(any())).thenReturn(List.of());
+        lenient().when(workflowBindService.resolveBind(any(), any())).thenAnswer(inv -> {
+            UUID id = inv.getArgument(0);
+            Integer ver = inv.getArgument(1);
+            return new CategoryWorkflowBindService.ResolvedWorkflowBind(
+                    id, ver != null ? ver : 1, "wf-hash", "Gov Journey", true);
+        });
+        lenient().doNothing().when(workflowBindService).requireCompatible(
+                any(), any(), any(), any());
+        lenient().doAnswer(inv -> {
+            CustomerCategoryEntity e = inv.getArgument(0);
+            CategoryWorkflowBindService.ResolvedWorkflowBind b = inv.getArgument(1);
+            e.setWorkflowId(b.workflowId());
+            e.setWorkflowVersion(b.workflowVersion());
+            e.setWorkflowContentHash(b.contentHash());
+            e.setWorkflowName(b.workflowName());
+            return null;
+        }).when(workflowBindService).applyBind(any(), any());
         validator = new CustomerCategoryValidator(ruleSetRepository, scorecardRepository);
         policySetService = new PolicySetService(policySetRepository, categoryRepository, validator, auditSupport);
         policyBindService = new CategoryPolicyBindService(
                 applicabilityRepository, policyCatalogueService, creditIntelligenceProperties);
         categoryService = new CustomerCategoryService(
                 categoryRepository, policySetRepository, validator, auditSupport,
-                policyBindService, applicabilityRepository);
+                policyBindService, workflowBindService, applicabilityRepository);
         catalogue = new EligibleComponentCatalogueService(ruleSetRepository, scorecardRepository);
 
         rsId = UUID.randomUUID();
         scId = UUID.randomUUID();
         policyAppId = UUID.randomUUID();
         policyDocId = UUID.randomUUID();
+        workflowId = UUID.randomUUID();
         when(ruleSetRepository.findById(rsId)).thenReturn(Optional.of(rs(rsId, "INDIVIDUAL", "TERM_LOAN")));
         when(scorecardRepository.findById(scId)).thenReturn(Optional.of(sc(scId, "INDIVIDUAL", "TERM_LOAN")));
         when(ruleSetRepository.findAll()).thenReturn(List.of(rs(rsId, "INDIVIDUAL", "TERM_LOAN")));
@@ -306,7 +327,8 @@ class CustomerCategoryGovernanceTest {
                 "INDIVIDUAL", "TERM_LOAN", "BORROWER",
                 new BigDecimal("50000"), new BigDecimal("50000000"),
                 psId, null, null, null,
-                null, null, policyAppId, policyDocId, "v1");
+                null, null, policyAppId, policyDocId, "v1",
+                workflowId, 1);
     }
 
     private static UnderwritingRuleSet rs(UUID id, String bt, String lp) {

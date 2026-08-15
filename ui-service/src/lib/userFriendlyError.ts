@@ -46,6 +46,15 @@ const REASON_MESSAGES: Record<string, string> = {
     'This Policy Version’s scope does not fully cover the Category. Choose a compatible Policy or adjust Category dimensions.',
   POLICY_SCOPE_COMPATIBLE:
     'Policy Scope does not fully cover this Customer Category.',
+  WORKFLOW_LINKAGE_REQUIRED:
+    'Workflow linkage required — select a Workflow Version for this Category.',
+  WORKFLOW_SCOPE_INCOMPATIBLE:
+    'This Workflow Version’s applicability does not match the Category. Choose a compatible Workflow or adjust Category dimensions.',
+  WORKFLOW_NOT_FOUND: 'The selected Workflow Version was not found.',
+  WORKFLOW_VERSION_MUTATED:
+    'The linked Workflow content changed after this Category was bound. Re-select the Workflow Version (P1: immutable versions).',
+  WORKFLOW_NOT_ELIGIBLE:
+    'The selected Workflow Version is not active or eligible for Category binding.',
   TERMINOLOGY_CONFLICT_CUSTOMER_ROLE:
     'Customer Role and Intake Segment disagree. Send one value, or matching aliases.',
   TERMINOLOGY_CONFLICT_ENTITY_TYPE:

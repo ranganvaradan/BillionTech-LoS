@@ -27,6 +27,7 @@ import java.util.UUID;
 /**
  * Customer Category governance — lending proposition config; not wired to live UW.
  * STEP-2: principal underwriting relation = Policy Studio Policy Version (config only).
+ * W2: independent Category → exact Workflow Version bind (config only; no live routing).
  */
 @Service
 @RequiredArgsConstructor
@@ -37,6 +38,7 @@ public class CustomerCategoryService {
     private final CustomerCategoryValidator validator;
     private final AdminConfigAuditSupport auditSupport;
     private final CategoryPolicyBindService policyBindService;
+    private final CategoryWorkflowBindService workflowBindService;
     private final com.los.core.creditintelligence.policystudio.lifecycle.repository.CiPolicyApplicabilityRepository
             applicabilityRepository;
 
@@ -87,6 +89,8 @@ public class CustomerCategoryService {
 
         // Principal underwriting relation — Policy Studio Policy Version
         checks.addAll(policyBindService.policyActivationChecks(e));
+        // W2 — independent Workflow Version bind (config readiness only)
+        checks.addAll(workflowBindService.workflowActivationChecks(e));
 
         // Transitional Policy Set package — informational when present; not required for new Categories
         if (e.getPolicySetId() != null) {
@@ -118,7 +122,7 @@ public class CustomerCategoryService {
         checks.add(runCheck("EFFECTIVE_DATES", "Effective dates valid",
                 () -> validator.validateEffectiveDates(e.getEffectiveFrom(), e.getEffectiveUntil())));
 
-        // Ready for future activation only when Policy link + lifecycle OK (Policy Set no longer required)
+        // Ready for future activation only when Policy + Workflow links OK (Policy Set no longer required)
         boolean ready = checks.stream()
                 .filter(c -> !"POLICY_SET_TRANSITIONAL".equals(c.code())
                         && !"RULE_SET_READY_TRANSITIONAL".equals(c.code()))
@@ -169,6 +173,12 @@ public class CustomerCategoryService {
                     req.policyApplicabilityId());
         }
 
+        CategoryWorkflowBindService.ResolvedWorkflowBind workflowBind = null;
+        if (req.workflowId() != null) {
+            workflowBind = workflowBindService.resolveBind(req.workflowId(), req.workflowVersion());
+            workflowBindService.requireCompatible(intake, borrower, product, req.workflowId());
+        }
+
         UUID transitionalPsId = null;
         if (req.policySetId() != null) {
             PolicySetEntity ps = policySetRepository.findById(req.policySetId())
@@ -203,6 +213,9 @@ public class CustomerCategoryService {
         if (policyBind != null) {
             policyBindService.applyBind(e, policyBind);
         }
+        if (workflowBind != null) {
+            workflowBindService.applyBind(e, workflowBind);
+        }
         ConfigGovernanceHistory.append(e.getGovernanceJson(), "CREATED", actor, req.reasonForChange());
         repository.save(e);
         auditSupport.captureCreate("CUSTOMER_CATEGORY", e.getId().toString(), snapshot(e),
@@ -222,7 +235,8 @@ public class CustomerCategoryService {
         if (e.getStatus() == ConfigLifecycleStatus.ACTIVE
                 || e.getStatus() == ConfigLifecycleStatus.IN_REVIEW
                 || e.getStatus() == ConfigLifecycleStatus.APPROVED) {
-            if (matchingChanged(e, req) || effectiveChanged(e, req) || policyChanged(e, req)) {
+            if (matchingChanged(e, req) || effectiveChanged(e, req) || policyChanged(e, req)
+                    || workflowChanged(e, req)) {
                 throw CustomerCategoryValidator.biz(
                         "Matching criteria cannot be mutated in place for " + e.getStatus()
                                 + "; create a new version",
@@ -284,6 +298,13 @@ public class CustomerCategoryService {
                             e.getMinAmount(), e.getMaxAmount(), from, until),
                     req.policyApplicabilityId());
             policyBindService.applyBind(e, bind);
+        }
+        if (req.workflowId() != null) {
+            CategoryWorkflowBindService.ResolvedWorkflowBind wb = workflowBindService.resolveBind(
+                    req.workflowId(), req.workflowVersion());
+            workflowBindService.requireCompatible(
+                    e.getIntakeSegment(), e.getBorrowerType(), e.getLoanProduct(), req.workflowId());
+            workflowBindService.applyBind(e, wb);
         }
         Instant from = req.effectiveFrom() != null ? req.effectiveFrom() : e.getEffectiveFrom();
         Instant until = req.effectiveUntil() != null ? req.effectiveUntil() : e.getEffectiveUntil();
@@ -407,10 +428,24 @@ public class CustomerCategoryService {
                     "POLICY LINKAGE REQUIRED before activation",
                     CategoryPolicyBindService.LINKAGE_REQUIRED, Map.of("id", id.toString()));
         }
+        if (!"LINKED".equals(CategoryWorkflowBindService.linkageStatus(e))) {
+            throw CustomerCategoryValidator.biz(
+                    "WORKFLOW LINKAGE REQUIRED before activation",
+                    CategoryWorkflowBindService.LINKAGE_REQUIRED, Map.of("id", id.toString()));
+        }
         for (ActivationCheck c : policyBindService.policyActivationChecks(e)) {
             if (!c.ok() && List.of("POLICY_SELECTED", "POLICY_VERSION_RESOLVABLE",
                     "POLICY_LIFECYCLE_OK", "POLICY_NOT_DEPRECATED", "POLICY_READINESS_OK",
                     "POLICY_SCOPE_COMPATIBLE").contains(c.code())) {
+                throw CustomerCategoryValidator.biz(c.detail() == null ? c.label() : c.detail(),
+                        c.code(), Map.of("id", id.toString()));
+            }
+        }
+        for (ActivationCheck c : workflowBindService.workflowActivationChecks(e)) {
+            if (!c.ok() && List.of("WORKFLOW_SELECTED", "WORKFLOW_VERSION_EXISTS",
+                    "WORKFLOW_ELIGIBLE", "WORKFLOW_APPLICABILITY_COMPATIBLE",
+                    "WORKFLOW_CONTENT_IDENTITY_VALID",
+                    CategoryWorkflowBindService.WORKFLOW_VERSION_MUTATED).contains(c.code())) {
                 throw CustomerCategoryValidator.biz(c.detail() == null ? c.label() : c.detail(),
                         c.code(), Map.of("id", id.toString()));
             }
@@ -493,6 +528,10 @@ public class CustomerCategoryService {
                 .policyDocumentId(src.getPolicyDocumentId())
                 .policyVersionLabel(src.getPolicyVersionLabel())
                 .policyLineageId(src.getPolicyLineageId())
+                .workflowId(src.getWorkflowId())
+                .workflowVersion(src.getWorkflowVersion())
+                .workflowContentHash(src.getWorkflowContentHash())
+                .workflowName(src.getWorkflowName())
                 .seedSourceRuleSetId(src.getSeedSourceRuleSetId())
                 .effectiveFrom(src.getEffectiveFrom())
                 .effectiveUntil(src.getEffectiveUntil())
@@ -610,7 +649,12 @@ public class CustomerCategoryService {
                 e.getPolicyLineageId(),
                 policyDisplayName(e),
                 policyBusinessStatus(e),
-                CategoryPolicyBindService.linkageStatus(e));
+                CategoryPolicyBindService.linkageStatus(e),
+                e.getWorkflowId(),
+                e.getWorkflowVersion(),
+                e.getWorkflowContentHash(),
+                e.getWorkflowName(),
+                CategoryWorkflowBindService.linkageStatus(e));
     }
 
     private String policyDisplayName(CustomerCategoryEntity e) {
@@ -663,6 +707,11 @@ public class CustomerCategoryService {
         m.put("policyDocumentId", e.getPolicyDocumentId() == null ? null : e.getPolicyDocumentId().toString());
         m.put("policyVersionLabel", e.getPolicyVersionLabel());
         m.put("policyLinkageStatus", CategoryPolicyBindService.linkageStatus(e));
+        m.put("workflowId", e.getWorkflowId() == null ? null : e.getWorkflowId().toString());
+        m.put("workflowVersion", e.getWorkflowVersion());
+        m.put("workflowContentHash", e.getWorkflowContentHash());
+        m.put("workflowName", e.getWorkflowName());
+        m.put("workflowLinkageStatus", CategoryWorkflowBindService.linkageStatus(e));
         m.put("active", e.getStatus() == ConfigLifecycleStatus.ACTIVE);
         return m;
     }
@@ -713,6 +762,20 @@ public class CustomerCategoryService {
         if (req.policyVersionLabel() != null && !req.policyVersionLabel().isBlank()
                 && !req.policyVersionLabel().trim().equalsIgnoreCase(
                 e.getPolicyVersionLabel() == null ? "" : e.getPolicyVersionLabel().trim())) {
+            return true;
+        }
+        return false;
+    }
+
+    private static boolean workflowChanged(CustomerCategoryEntity e, CategoryRequest req) {
+        if (req == null) {
+            return false;
+        }
+        if (req.workflowId() != null && !req.workflowId().equals(e.getWorkflowId())) {
+            return true;
+        }
+        if (req.workflowVersion() != null
+                && !req.workflowVersion().equals(e.getWorkflowVersion())) {
             return true;
         }
         return false;

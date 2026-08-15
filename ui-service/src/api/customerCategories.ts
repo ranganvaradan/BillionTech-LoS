@@ -85,6 +85,13 @@ export interface CustomerCategory {
   policyBusinessStatus?: string | null
   /** LINKED | POLICY_LINKAGE_REQUIRED */
   policyLinkageStatus?: string | null
+  /** W2 exact Workflow Version id. */
+  workflowId?: string | null
+  workflowVersion?: number | null
+  workflowContentHash?: string | null
+  workflowName?: string | null
+  /** LINKED | WORKFLOW_LINKAGE_REQUIRED */
+  workflowLinkageStatus?: string | null
 }
 
 /**
@@ -110,6 +117,9 @@ export interface CategoryRequest {
   policyApplicabilityId?: string | null
   policyDocumentId?: string | null
   policyVersionLabel?: string | null
+  /** W2 — exact Workflow Version; independent of Policy. */
+  workflowId?: string | null
+  workflowVersion?: number | null
   effectiveFrom?: string | null
   effectiveUntil?: string | null
   reasonForChange?: string | null
@@ -154,6 +164,25 @@ export interface CategoryPolicyCompatibilityReportRow {
   compatiblePolicyVersionCount: number
   incompatibleCount: number
   needsContextCount: number
+}
+
+/** W2 Workflow picker row for Category admin. */
+export interface EligibleWorkflow {
+  workflowId: string
+  workflowName: string
+  workflowVersion: number
+  active: boolean
+  entityTypeApplicability?: string | null
+  customerRoleApplicability?: string | null
+  productApplicability?: string | null
+  journeyStepSummary?: string | null
+  contentHash?: string | null
+  compatibleWithCategory: boolean
+  /** COMPATIBLE | INCOMPATIBLE */
+  compatibilityStatus?: string | null
+  compatibilityReasons?: string[]
+  compatibilityNotes?: string[]
+  scopeSummary?: string | null
 }
 
 export interface EligibleRuleSet {
@@ -248,6 +277,18 @@ export function listEligiblePolicies(params?: {
 }) {
   return http
     .get<EligiblePolicy[]>('/customer-categories/meta/eligible-policies', { params })
+    .then((r) => r.data)
+}
+
+export function listEligibleWorkflows(params?: {
+  entityType?: string
+  borrowerType?: string
+  loanProduct?: string
+  customerRole?: string
+  intakeSegment?: string
+}) {
+  return http
+    .get<EligibleWorkflow[]>('/customer-categories/meta/eligible-workflows', { params })
     .then((r) => r.data)
 }
 

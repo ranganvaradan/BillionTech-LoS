@@ -88,6 +88,39 @@ describe('customer category / policy set typed errors', () => {
       ),
     ).toMatch(/Policy Set must be ACTIVE/i)
   })
+
+  it('maps workflow linkage reasons', () => {
+    expect(
+      userFriendlyMessage(
+        new ApiError('wf', 422, null, { reason: 'WORKFLOW_LINKAGE_REQUIRED' }),
+        'fallback',
+      ),
+    ).toMatch(/Workflow linkage required/i)
+    expect(
+      userFriendlyMessage(
+        new ApiError('wf', 422, null, { reason: 'WORKFLOW_SCOPE_INCOMPATIBLE' }),
+        'fallback',
+      ),
+    ).toMatch(/does not match the Category/i)
+    expect(
+      userFriendlyMessage(
+        new ApiError('wf', 404, null, { reason: 'WORKFLOW_NOT_FOUND' }),
+        'fallback',
+      ),
+    ).toMatch(/not found/i)
+    expect(
+      userFriendlyMessage(
+        new ApiError('wf', 422, null, { reason: 'WORKFLOW_VERSION_MUTATED' }),
+        'fallback',
+      ),
+    ).toMatch(/content changed/i)
+    expect(
+      userFriendlyMessage(
+        new ApiError('wf', 422, null, { reason: 'WORKFLOW_NOT_ELIGIBLE' }),
+        'fallback',
+      ),
+    ).toMatch(/not active or eligible/i)
+  })
 })
 
 describe('customer category admin UI wiring', () => {
@@ -127,12 +160,15 @@ describe('customer category admin UI wiring', () => {
     expect(cat).not.toContain('label="Intake segment"')
     expect(cat).toContain('entityType')
     expect(cat).toContain('customerRole')
-    expect(cat).toContain('Policy / Policy Version')
+    expect(cat).toContain('Policy Version')
+    expect(cat).toContain('Workflow Version')
     expect(cat).toContain('POLICY LINKAGE REQUIRED')
+    expect(cat).toContain('WORKFLOW LINKAGE REQUIRED')
     expect(cat).toContain('listEligiblePolicies')
+    expect(cat).toContain('listEligibleWorkflows')
     expect(cat).toContain('COMPATIBLE')
     expect(cat).toContain('Show incompatible')
-    expect(cat).toContain('Category → Policy Version')
+    expect(cat).toContain('Category → Policy Version + Workflow Version')
     expect(cat).toContain('Also eligible propositions')
     expect(cat).not.toContain('label="Policy Set"')
     expect(cat).not.toContain('Select a Policy Set')
@@ -150,13 +186,22 @@ describe('customer category admin UI wiring', () => {
     expect(cc).toContain('/customer-categories')
     expect(cc).toContain('eligible-policies')
     expect(cc).toContain('listEligiblePolicies')
+    expect(cc).toContain('eligible-workflows')
+    expect(cc).toContain('listEligibleWorkflows')
     expect(cc).toContain('compatibilityStatus')
     expect(cc).toContain('scopeSummary')
+    expect(cc).toContain('journeyStepSummary')
     expect(cc).toContain('policy-scope-compatibility-report')
     expect(cc).toContain('policyApplicabilityId')
     expect(cc).toContain('policyDocumentId')
     expect(cc).toContain('policyVersionLabel')
     expect(cc).toContain('policyLinkageStatus')
+    expect(cc).toContain('workflowId')
+    expect(cc).toContain('workflowVersion')
+    expect(cc).toContain('workflowContentHash')
+    expect(cc).toContain('workflowName')
+    expect(cc).toContain('workflowLinkageStatus')
+    expect(cc).toContain('EligibleWorkflow')
     expect(cc).toContain('eligible-rule-sets')
     expect(cc).toContain('eligible-scorecards')
     expect(cc).toContain('entityType')

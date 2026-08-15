@@ -8,6 +8,7 @@ import {
   deleteCustomerCategory,
   listCustomerCategories,
   listEligiblePolicies,
+  listEligibleWorkflows,
   retireCustomerCategory,
   returnCustomerCategory,
   submitCustomerCategory,
@@ -16,6 +17,7 @@ import {
   type CategoryRequest,
   type CustomerCategory,
   type EligiblePolicy,
+  type EligibleWorkflow,
   type LifecycleAction,
 } from '@/api/customerCategories'
 import { ApiError } from '@/api/http'
@@ -103,12 +105,30 @@ function formatScopeLine(p: EligiblePolicy): string {
   return `${entities} · ${products} · ${amt} · ${eff}`
 }
 
+function workflowPickerLabel(w: EligibleWorkflow): string {
+  const steps = w.journeyStepSummary?.trim() ? ` · ${w.journeyStepSummary}` : ''
+  const compat =
+    w.compatibilityStatus === 'COMPATIBLE' || w.compatibleWithCategory
+      ? ' · COMPATIBLE'
+      : ' · INCOMPATIBLE'
+  const active = w.active ? '' : ' · INACTIVE'
+  return `${w.workflowName} · v${w.workflowVersion}${steps}${active}${compat}`
+}
+
 function listPolicyTag(r: CustomerCategory): string {
   if (r.policyLinkageStatus === 'POLICY_LINKAGE_REQUIRED') return 'POLICY LINKAGE REQUIRED'
   if (r.policyName) {
     return r.policyVersionLabel ? `${r.policyName} · ${r.policyVersionLabel}` : r.policyName
   }
   return 'POLICY LINKAGE REQUIRED'
+}
+
+function listWorkflowTag(r: CustomerCategory): string {
+  if (r.workflowLinkageStatus === 'WORKFLOW_LINKAGE_REQUIRED') return 'WORKFLOW LINKAGE REQUIRED'
+  if (r.workflowName) {
+    return r.workflowVersion != null ? `${r.workflowName} · v${r.workflowVersion}` : r.workflowName
+  }
+  return 'WORKFLOW LINKAGE REQUIRED'
 }
 
 function auditLine(label: string, by: string | null | undefined, at: string | null | undefined) {
@@ -123,6 +143,7 @@ function auditLine(label: string, by: string | null | undefined, at: string | nu
 export function CustomerCategoriesPage() {
   const [rows, setRows] = useState<CustomerCategory[] | null>(null)
   const [eligiblePolicies, setEligiblePolicies] = useState<EligiblePolicy[]>([])
+  const [eligibleWorkflows, setEligibleWorkflows] = useState<EligibleWorkflow[]>([])
   const [loadError, setLoadError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<CustomerCategory | null>(null)
@@ -146,11 +167,14 @@ export function CustomerCategoriesPage() {
   const [policyApplicabilityId, setPolicyApplicabilityId] = useState('')
   const [policyDocumentId, setPolicyDocumentId] = useState<string | null>(null)
   const [policyVersionLabel, setPolicyVersionLabel] = useState<string | null>(null)
+  const [workflowId, setWorkflowId] = useState('')
+  const [workflowVersion, setWorkflowVersion] = useState<number | null>(null)
   const [effectiveFrom, setEffectiveFrom] = useState('')
   const [effectiveUntil, setEffectiveUntil] = useState('')
   const [reasonForChange, setReasonForChange] = useState('')
 
   const [showIncompatiblePolicies, setShowIncompatiblePolicies] = useState(false)
+  const [showIncompatibleWorkflows, setShowIncompatibleWorkflows] = useState(false)
 
   const loadEligible = useCallback(async (opts?: {
     entityType?: string
@@ -162,18 +186,33 @@ export function CustomerCategoriesPage() {
     effectiveUntil?: string
   }) => {
     try {
-      const params: Parameters<typeof listEligiblePolicies>[0] = {}
-      if (opts?.entityType && opts.entityType !== ANY_TOKEN) params.entityType = opts.entityType
-      if (opts?.loanProduct && opts.loanProduct !== ANY_TOKEN) params.loanProduct = opts.loanProduct
-      if (opts?.customerRole && opts.customerRole !== ANY_TOKEN) params.customerRole = opts.customerRole
-      if (opts?.minAmount != null) params.minAmount = opts.minAmount
-      if (opts?.maxAmount != null) params.maxAmount = opts.maxAmount
-      if (opts?.effectiveFrom) params.effectiveFrom = fromLocalInput(opts.effectiveFrom) ?? undefined
-      if (opts?.effectiveUntil) params.effectiveUntil = fromLocalInput(opts.effectiveUntil) ?? undefined
-      const policies = await listEligiblePolicies(params)
+      const policyParams: Parameters<typeof listEligiblePolicies>[0] = {}
+      const workflowParams: Parameters<typeof listEligibleWorkflows>[0] = {}
+      if (opts?.entityType && opts.entityType !== ANY_TOKEN) {
+        policyParams.entityType = opts.entityType
+        workflowParams.entityType = opts.entityType
+      }
+      if (opts?.loanProduct && opts.loanProduct !== ANY_TOKEN) {
+        policyParams.loanProduct = opts.loanProduct
+        workflowParams.loanProduct = opts.loanProduct
+      }
+      if (opts?.customerRole && opts.customerRole !== ANY_TOKEN) {
+        policyParams.customerRole = opts.customerRole
+        workflowParams.customerRole = opts.customerRole
+      }
+      if (opts?.minAmount != null) policyParams.minAmount = opts.minAmount
+      if (opts?.maxAmount != null) policyParams.maxAmount = opts.maxAmount
+      if (opts?.effectiveFrom) policyParams.effectiveFrom = fromLocalInput(opts.effectiveFrom) ?? undefined
+      if (opts?.effectiveUntil) policyParams.effectiveUntil = fromLocalInput(opts.effectiveUntil) ?? undefined
+      const [policies, workflows] = await Promise.all([
+        listEligiblePolicies(policyParams),
+        listEligibleWorkflows(workflowParams),
+      ])
       setEligiblePolicies(policies)
+      setEligibleWorkflows(workflows)
     } catch {
       setEligiblePolicies([])
+      setEligibleWorkflows([])
     }
   }, [])
 
@@ -237,6 +276,10 @@ export function CustomerCategoriesPage() {
         r.policyVersionLabel,
         r.policyLinkageStatus,
         listPolicyTag(r),
+        r.workflowName,
+        r.workflowVersion != null ? String(r.workflowVersion) : '',
+        r.workflowLinkageStatus,
+        listWorkflowTag(r),
       ]
         .filter(Boolean)
         .join(' ')
@@ -257,6 +300,12 @@ export function CustomerCategoriesPage() {
     }
   }
 
+  function selectWorkflow(id: string) {
+    setWorkflowId(id)
+    const hit = eligibleWorkflows.find((w) => w.workflowId === id)
+    setWorkflowVersion(hit ? hit.workflowVersion : null)
+  }
+
   function apply(r: CustomerCategory) {
     setSelected(r)
     setIsCreating(false)
@@ -272,6 +321,8 @@ export function CustomerCategoriesPage() {
     setPolicyApplicabilityId(r.policyApplicabilityId ?? '')
     setPolicyDocumentId(r.policyDocumentId ?? null)
     setPolicyVersionLabel(r.policyVersionLabel ?? null)
+    setWorkflowId(r.workflowId ?? '')
+    setWorkflowVersion(r.workflowVersion ?? null)
     setEffectiveFrom(toLocalInput(r.effectiveFrom))
     setEffectiveUntil(toLocalInput(r.effectiveUntil))
     setReasonForChange(r.reasonForChange ?? '')
@@ -295,6 +346,8 @@ export function CustomerCategoriesPage() {
     setPolicyApplicabilityId('')
     setPolicyDocumentId(null)
     setPolicyVersionLabel(null)
+    setWorkflowId('')
+    setWorkflowVersion(null)
     setEffectiveFrom('')
     setEffectiveUntil('')
     setReasonForChange('')
@@ -326,6 +379,10 @@ export function CustomerCategoriesPage() {
       body.policyApplicabilityId = policyApplicabilityId
       body.policyDocumentId = policyDocumentId
       body.policyVersionLabel = policyVersionLabel
+    }
+    if (workflowId) {
+      body.workflowId = workflowId
+      if (workflowVersion != null) body.workflowVersion = workflowVersion
     }
     // Transitional: only round-trip policySetId when already present on selected.
     if (policySetId) {
@@ -433,6 +490,8 @@ export function CustomerCategoriesPage() {
   const allowed = selected?.allowedActions ?? []
   const linkageRequired =
     selected?.policyLinkageStatus === 'POLICY_LINKAGE_REQUIRED' || !policyApplicabilityId
+  const workflowLinkageRequired =
+    selected?.workflowLinkageStatus === 'WORKFLOW_LINKAGE_REQUIRED' || !workflowId
   const linkedPolicyName =
     selected?.policyName ||
     eligiblePolicies.find((p) => p.policyApplicabilityId === policyApplicabilityId)?.policyName
@@ -440,8 +499,17 @@ export function CustomerCategoriesPage() {
     policyVersionLabel ||
     selected?.policyVersionLabel ||
     eligiblePolicies.find((p) => p.policyApplicabilityId === policyApplicabilityId)?.policyVersionLabel
+  const linkedWorkflowName =
+    selected?.workflowName ||
+    eligibleWorkflows.find((w) => w.workflowId === workflowId)?.workflowName
+  const linkedWorkflowVersion =
+    workflowVersion ??
+    selected?.workflowVersion ??
+    eligibleWorkflows.find((w) => w.workflowId === workflowId)?.workflowVersion
   const selectedPolicyInList = eligiblePolicies.some((p) => p.policyApplicabilityId === policyApplicabilityId)
   const selectedEligiblePolicy = eligiblePolicies.find((p) => p.policyApplicabilityId === policyApplicabilityId)
+  const selectedWorkflowInList = eligibleWorkflows.some((w) => w.workflowId === workflowId)
+  const selectedEligibleWorkflow = eligibleWorkflows.find((w) => w.workflowId === workflowId)
   const pickerPolicies = showIncompatiblePolicies
     ? eligiblePolicies
     : eligiblePolicies.filter(
@@ -449,6 +517,14 @@ export function CustomerCategoriesPage() {
           p.compatibleWithCategory ||
           p.policyApplicabilityId === policyApplicabilityId ||
           p.compatibilityStatus === 'COMPATIBLE',
+      )
+  const pickerWorkflows = showIncompatibleWorkflows
+    ? eligibleWorkflows
+    : eligibleWorkflows.filter(
+        (w) =>
+          w.compatibleWithCategory ||
+          w.workflowId === workflowId ||
+          w.compatibilityStatus === 'COMPATIBLE',
       )
 
   function can(action: LifecycleAction) {
@@ -459,7 +535,7 @@ export function CustomerCategoriesPage() {
     <div>
       <PageHeader
         title="Customer Categories"
-        description="Govern matching scope and Policy Version binding. Categories do not contain underwriting rules."
+        description="Govern matching scope, Policy Version, and Workflow Version binding. Categories do not contain underwriting rules."
       />
       <AdministrationWorkspaceNav />
 
@@ -499,7 +575,9 @@ export function CustomerCategoriesPage() {
             {filtered.map((r) => {
               const overlaps = r.overlapWarnings?.length ?? 0
               const policyTag = listPolicyTag(r)
+              const workflowTag = listWorkflowTag(r)
               const linkageBadge = r.policyLinkageStatus === 'POLICY_LINKAGE_REQUIRED'
+              const workflowBadge = r.workflowLinkageStatus === 'WORKFLOW_LINKAGE_REQUIRED'
               return (
                 <MasterListItem
                   key={r.id}
@@ -514,6 +592,9 @@ export function CustomerCategoriesPage() {
                       {linkageBadge ? (
                         <span className="bt-badge bt-badge-amber">POLICY LINKAGE REQUIRED</span>
                       ) : null}
+                      {workflowBadge ? (
+                        <span className="bt-badge bt-badge-amber">WORKFLOW LINKAGE REQUIRED</span>
+                      ) : null}
                       {overlaps > 0 ? <span className="bt-badge bt-badge-amber">Overlap</span> : null}
                     </span>
                   }
@@ -523,6 +604,7 @@ export function CustomerCategoriesPage() {
                       <span className="bt-tag">{displayLoanProduct(r.loanProduct)}</span>
                       <span className="bt-tag">{displayIntake(r.intakeSegment)}</span>
                       <span className={`bt-tag${linkageBadge ? ' text-amber-800' : ''}`}>{policyTag}</span>
+                      <span className={`bt-tag${workflowBadge ? ' text-amber-800' : ''}`}>{workflowTag}</span>
                       <span className="bt-tag text-slate-500">{formatInstant(r.updatedAt)}</span>
                     </>
                   }
@@ -635,8 +717,8 @@ export function CustomerCategoriesPage() {
                 {actionError ? <BtAlert tone="error">{actionError}</BtAlert> : null}
 
                 <BtAlert tone="info">
-                  Composition: Category → Policy Version. The category binds an exact Policy Studio Policy Version; it does
-                  not contain underwriting rules.
+                  Composition: Category → Policy Version + Workflow Version (independent binds). The category does not
+                  contain underwriting rules or journey steps.
                 </BtAlert>
 
                 {linkageRequired ? (
@@ -649,6 +731,18 @@ export function CustomerCategoriesPage() {
                     Linked Policy: {linkedPolicyName}
                     {linkedPolicyVersion ? ` · ${linkedPolicyVersion}` : ''}
                     {selected?.policyBusinessStatus ? ` · ${selected.policyBusinessStatus}` : ''}
+                  </BtAlert>
+                ) : null}
+
+                {workflowLinkageRequired ? (
+                  <BtAlert tone="warning">
+                    <strong>WORKFLOW LINKAGE REQUIRED</strong> — select a Workflow Version for this Category. Activation
+                    cannot proceed until a Workflow is linked.
+                  </BtAlert>
+                ) : linkedWorkflowName ? (
+                  <BtAlert tone="success">
+                    Linked Workflow: {linkedWorkflowName}
+                    {linkedWorkflowVersion != null ? ` · v${linkedWorkflowVersion}` : ''}
                   </BtAlert>
                 ) : null}
 
@@ -749,76 +843,6 @@ export function CustomerCategoriesPage() {
                         placeholder="Unbounded"
                       />
                     </FormField>
-                    <FormField
-                      label="Policy / Policy Version"
-                      className="sm:col-span-2"
-                      hint="Exact Policy Studio catalogue version. Required for activation. Scope must fully cover this Category."
-                    >
-                      <div className="space-y-2">
-                        <label className="flex items-center gap-2 text-xs text-slate-600">
-                          <input
-                            type="checkbox"
-                            checked={showIncompatiblePolicies}
-                            onChange={(e) => setShowIncompatiblePolicies(e.target.checked)}
-                            disabled={!editable}
-                          />
-                          Show incompatible / needs-context Policies (diagnostic)
-                        </label>
-                        <select
-                          className="bt-input"
-                          value={policyApplicabilityId}
-                          onChange={(e) => selectPolicy(e.target.value)}
-                          disabled={!editable}
-                        >
-                          <option value="">Select Policy Version…</option>
-                          {policyApplicabilityId && !selectedPolicyInList ? (
-                            <option value={policyApplicabilityId}>
-                              {linkedPolicyName || 'Linked Policy'}
-                              {linkedPolicyVersion ? ` · ${linkedPolicyVersion}` : ''} (current)
-                            </option>
-                          ) : null}
-                          {pickerPolicies.map((p) => (
-                            <option key={p.policyApplicabilityId} value={p.policyApplicabilityId}>
-                              {policyPickerLabel(p)}
-                            </option>
-                          ))}
-                        </select>
-                        {selectedEligiblePolicy ? (
-                          <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 space-y-1">
-                            <div>
-                              <span className="font-semibold">Status:</span>{' '}
-                              {selectedEligiblePolicy.businessStatus || '—'}
-                            </div>
-                            <div>
-                              <span className="font-semibold">Scope:</span>{' '}
-                              {formatScopeLine(selectedEligiblePolicy)}
-                            </div>
-                            <div>
-                              <span className="font-semibold">Effective:</span>{' '}
-                              {selectedEligiblePolicy.effectiveFrom ?? 'open'} →{' '}
-                              {selectedEligiblePolicy.effectiveUntil ?? 'open'}
-                            </div>
-                            <div>
-                              <span className="font-semibold">Compatibility:</span>{' '}
-                              {selectedEligiblePolicy.compatibilityStatus ||
-                                (selectedEligiblePolicy.compatibleWithCategory
-                                  ? 'COMPATIBLE'
-                                  : 'INCOMPATIBLE')}
-                            </div>
-                            {!selectedEligiblePolicy.compatibleWithCategory &&
-                            (selectedEligiblePolicy.compatibilityNotes?.length ||
-                              selectedEligiblePolicy.compatibilityReasons?.length) ? (
-                              <div className="text-amber-900">
-                                <span className="font-semibold">Reason:</span>{' '}
-                                {(selectedEligiblePolicy.compatibilityNotes &&
-                                  selectedEligiblePolicy.compatibilityNotes.join('; ')) ||
-                                  selectedEligiblePolicy.compatibilityReasons?.join(', ')}
-                              </div>
-                            ) : null}
-                          </div>
-                        ) : null}
-                      </div>
-                    </FormField>
                     <FormField label="Effective from">
                       <input
                         type="datetime-local"
@@ -853,6 +877,150 @@ export function CustomerCategoriesPage() {
                           <span className="text-xs text-slate-500">v{selected.versionNo}</span>
                         </div>
                       </FormField>
+                    ) : null}
+                  </div>
+                </DetailSection>
+
+                <DetailSection
+                  title="Policy Version"
+                  description="Exact Policy Studio catalogue version. Independent of Workflow. Required for activation."
+                >
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 text-xs text-slate-600">
+                      <input
+                        type="checkbox"
+                        checked={showIncompatiblePolicies}
+                        onChange={(e) => setShowIncompatiblePolicies(e.target.checked)}
+                        disabled={!editable}
+                      />
+                      Show incompatible / needs-context Policies (diagnostic)
+                    </label>
+                    <select
+                      className="bt-input"
+                      value={policyApplicabilityId}
+                      onChange={(e) => selectPolicy(e.target.value)}
+                      disabled={!editable}
+                    >
+                      <option value="">Select Policy Version…</option>
+                      {policyApplicabilityId && !selectedPolicyInList ? (
+                        <option value={policyApplicabilityId}>
+                          {linkedPolicyName || 'Linked Policy'}
+                          {linkedPolicyVersion ? ` · ${linkedPolicyVersion}` : ''} (current)
+                        </option>
+                      ) : null}
+                      {pickerPolicies.map((p) => (
+                        <option key={p.policyApplicabilityId} value={p.policyApplicabilityId}>
+                          {policyPickerLabel(p)}
+                        </option>
+                      ))}
+                    </select>
+                    {selectedEligiblePolicy ? (
+                      <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 space-y-1">
+                        <div>
+                          <span className="font-semibold">Status:</span>{' '}
+                          {selectedEligiblePolicy.businessStatus || '—'}
+                        </div>
+                        <div>
+                          <span className="font-semibold">Scope:</span>{' '}
+                          {formatScopeLine(selectedEligiblePolicy)}
+                        </div>
+                        <div>
+                          <span className="font-semibold">Effective:</span>{' '}
+                          {selectedEligiblePolicy.effectiveFrom ?? 'open'} →{' '}
+                          {selectedEligiblePolicy.effectiveUntil ?? 'open'}
+                        </div>
+                        <div>
+                          <span className="font-semibold">Compatibility:</span>{' '}
+                          {selectedEligiblePolicy.compatibilityStatus ||
+                            (selectedEligiblePolicy.compatibleWithCategory
+                              ? 'COMPATIBLE'
+                              : 'INCOMPATIBLE')}
+                        </div>
+                        {!selectedEligiblePolicy.compatibleWithCategory &&
+                        (selectedEligiblePolicy.compatibilityNotes?.length ||
+                          selectedEligiblePolicy.compatibilityReasons?.length) ? (
+                          <div className="text-amber-900">
+                            <span className="font-semibold">Reason:</span>{' '}
+                            {(selectedEligiblePolicy.compatibilityNotes &&
+                              selectedEligiblePolicy.compatibilityNotes.join('; ')) ||
+                              selectedEligiblePolicy.compatibilityReasons?.join(', ')}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                </DetailSection>
+
+                <DetailSection
+                  title="Workflow Version"
+                  description="Exact journey Workflow Version. Independent of Policy. At most one Workflow per Category Version."
+                >
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 text-xs text-slate-600">
+                      <input
+                        type="checkbox"
+                        checked={showIncompatibleWorkflows}
+                        onChange={(e) => setShowIncompatibleWorkflows(e.target.checked)}
+                        disabled={!editable}
+                      />
+                      Show incompatible Workflows (diagnostic)
+                    </label>
+                    <select
+                      className="bt-input"
+                      value={workflowId}
+                      onChange={(e) => selectWorkflow(e.target.value)}
+                      disabled={!editable}
+                    >
+                      <option value="">Select Workflow Version…</option>
+                      {workflowId && !selectedWorkflowInList ? (
+                        <option value={workflowId}>
+                          {linkedWorkflowName || 'Linked Workflow'}
+                          {linkedWorkflowVersion != null ? ` · v${linkedWorkflowVersion}` : ''} (current)
+                        </option>
+                      ) : null}
+                      {pickerWorkflows.map((w) => (
+                        <option key={w.workflowId} value={w.workflowId}>
+                          {workflowPickerLabel(w)}
+                        </option>
+                      ))}
+                    </select>
+                    {selectedEligibleWorkflow ? (
+                      <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 space-y-1">
+                        <div>
+                          <span className="font-semibold">Journey:</span>{' '}
+                          {selectedEligibleWorkflow.journeyStepSummary || '—'}
+                        </div>
+                        <div>
+                          <span className="font-semibold">Applicability:</span>{' '}
+                          {selectedEligibleWorkflow.scopeSummary ||
+                            [
+                              selectedEligibleWorkflow.entityTypeApplicability,
+                              selectedEligibleWorkflow.productApplicability,
+                              selectedEligibleWorkflow.customerRoleApplicability,
+                            ]
+                              .filter(Boolean)
+                              .join(' · ') ||
+                            '—'}
+                        </div>
+                        <div>
+                          <span className="font-semibold">Compatibility:</span>{' '}
+                          {selectedEligibleWorkflow.compatibilityStatus ||
+                            (selectedEligibleWorkflow.compatibleWithCategory
+                              ? 'COMPATIBLE'
+                              : 'INCOMPATIBLE')}
+                          {!selectedEligibleWorkflow.active ? ' · INACTIVE' : ''}
+                        </div>
+                        {!selectedEligibleWorkflow.compatibleWithCategory &&
+                        (selectedEligibleWorkflow.compatibilityNotes?.length ||
+                          selectedEligibleWorkflow.compatibilityReasons?.length) ? (
+                          <div className="text-amber-900">
+                            <span className="font-semibold">Reason:</span>{' '}
+                            {(selectedEligibleWorkflow.compatibilityNotes &&
+                              selectedEligibleWorkflow.compatibilityNotes.join('; ')) ||
+                              selectedEligibleWorkflow.compatibilityReasons?.join(', ')}
+                          </div>
+                        ) : null}
+                      </div>
                     ) : null}
                   </div>
                 </DetailSection>

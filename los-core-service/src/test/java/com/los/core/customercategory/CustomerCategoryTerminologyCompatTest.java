@@ -43,6 +43,7 @@ class CustomerCategoryTerminologyCompatTest {
     @Mock com.los.core.creditintelligence.policystudio.lifecycle.repository.CiPolicyApplicabilityRepository applicabilityRepository;
     @Mock com.los.core.creditintelligence.policystudio.lifecycle.PolicyCatalogueService policyCatalogueService;
     @Mock com.los.core.creditintelligence.config.CreditIntelligenceProperties creditIntelligenceProperties;
+    @Mock CategoryWorkflowBindService workflowBindService;
 
     CustomerCategoryValidator validator;
     CustomerCategoryService categoryService;
@@ -52,12 +53,13 @@ class CustomerCategoryTerminologyCompatTest {
     void setUp() {
         org.mockito.Mockito.lenient().when(creditIntelligenceProperties.getDefaultTenantId())
                 .thenReturn(UUID.fromString("00000000-0000-0000-0000-000000000001"));
+        lenient().when(workflowBindService.workflowActivationChecks(any())).thenReturn(List.of());
         validator = new CustomerCategoryValidator(ruleSetRepository, scorecardRepository);
         CategoryPolicyBindService policyBindService = new CategoryPolicyBindService(
                 applicabilityRepository, policyCatalogueService, creditIntelligenceProperties);
         categoryService = new CustomerCategoryService(
                 categoryRepository, policySetRepository, validator, auditSupport,
-                policyBindService, applicabilityRepository);
+                policyBindService, workflowBindService, applicabilityRepository);
         actor = new Actor("jwt-user", "CM Maker", "CREDIT_MANAGER");
     }
 

@@ -36,6 +36,7 @@ public class CustomerCategoryController {
     private final CustomerCategoryDay1SeedService day1SeedService;
     private final EligibleComponentCatalogueService catalogueService;
     private final CategoryPolicyBindService policyBindService;
+    private final CategoryWorkflowBindService workflowBindService;
 
     @GetMapping
     @Operation(summary = "List Customer Categories")
@@ -181,6 +182,19 @@ public class CustomerCategoryController {
         String role = customerRole != null ? customerRole : intakeSegment;
         return ResponseEntity.ok(policyBindService.listEligiblePolicies(
                 et, loanProduct, role, minAmount, maxAmount, effectiveFrom, effectiveUntil));
+    }
+
+    @GetMapping("/meta/eligible-workflows")
+    @Operation(summary = "List Workflow Versions for Category binding (config only; no priority matching / no live routing)")
+    public ResponseEntity<List<CustomerCategoryDtos.EligibleWorkflowView>> eligibleWorkflows(
+            @RequestParam(required = false) String entityType,
+            @RequestParam(required = false) String borrowerType,
+            @RequestParam(required = false) String loanProduct,
+            @RequestParam(required = false) String customerRole,
+            @RequestParam(required = false) String intakeSegment) {
+        String et = entityType != null ? entityType : borrowerType;
+        String role = customerRole != null ? customerRole : intakeSegment;
+        return ResponseEntity.ok(workflowBindService.listEligibleWorkflows(et, loanProduct, role));
     }
 
     @GetMapping("/meta/policy-scope-compatibility-report")

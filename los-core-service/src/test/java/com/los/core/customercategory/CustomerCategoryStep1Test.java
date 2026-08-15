@@ -50,6 +50,7 @@ class CustomerCategoryStep1Test {
     @Mock CiPolicyApplicabilityRepository applicabilityRepository;
     @Mock PolicyCatalogueService policyCatalogueService;
     @Mock CreditIntelligenceProperties creditIntelligenceProperties;
+    @Mock CategoryWorkflowBindService workflowBindService;
 
     CustomerCategoryValidator validator;
     PolicySetService policySetService;
@@ -65,13 +66,14 @@ class CustomerCategoryStep1Test {
     @BeforeEach
     void setUp() {
         lenient().when(creditIntelligenceProperties.getDefaultTenantId()).thenReturn(tenant);
+        lenient().when(workflowBindService.workflowActivationChecks(any())).thenReturn(List.of());
         validator = new CustomerCategoryValidator(ruleSetRepository, scorecardRepository);
         policySetService = new PolicySetService(policySetRepository, categoryRepository, validator, auditSupport);
         policyBindService = new CategoryPolicyBindService(
                 applicabilityRepository, policyCatalogueService, creditIntelligenceProperties);
         categoryService = new CustomerCategoryService(
                 categoryRepository, policySetRepository, validator, auditSupport,
-                policyBindService, applicabilityRepository);
+                policyBindService, workflowBindService, applicabilityRepository);
         seedService = new CustomerCategorySeedService(
                 ruleSetRepository, scorecardRepository, policySetRepository, categoryRepository, auditSupport);
         actor = new Actor("jwt-user-42", "CM Reviewer", "CREDIT_MANAGER");
@@ -387,6 +389,10 @@ class CustomerCategoryStep1Test {
                 .policyApplicabilityId(policyAppId)
                 .policyDocumentId(policyDocId)
                 .policyVersionLabel("v1")
+                .workflowId(UUID.randomUUID())
+                .workflowVersion(1)
+                .workflowContentHash("test-workflow-hash")
+                .workflowName("Test Journey")
                 .governanceJson(new java.util.LinkedHashMap<>())
                 .build();
         when(categoryRepository.findById(catId)).thenReturn(Optional.of(approved));

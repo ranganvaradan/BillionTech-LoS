@@ -78,6 +78,25 @@ public class CustomerCategoryEntity {
     @Column(name = "policy_lineage_id")
     private UUID policyLineageId;
 
+    /**
+     * W2 — exact Workflow Version ({@code workflow_configs.id}). Independent of Policy bind.
+     * At most one Workflow Version per Category Version. Config only — not live routing.
+     */
+    @Column(name = "workflow_id")
+    private UUID workflowId;
+
+    /** Denormalized {@code workflow_configs.version} at bind time. */
+    @Column(name = "workflow_version")
+    private Integer workflowVersion;
+
+    /** {@link com.los.core.service.workflow.WorkflowContentHash} snapshot at bind (mutation detection). */
+    @Column(name = "workflow_content_hash", length = 64)
+    private String workflowContentHash;
+
+    /** Denormalized Workflow display name at bind time. */
+    @Column(name = "workflow_name", length = 100)
+    private String workflowName;
+
     @Column(name = "seed_source_rule_set_id")
     private UUID seedSourceRuleSetId;
 

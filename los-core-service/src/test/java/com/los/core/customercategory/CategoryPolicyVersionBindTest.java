@@ -44,6 +44,7 @@ class CategoryPolicyVersionBindTest {
     @Mock CiPolicyApplicabilityRepository applicabilityRepository;
     @Mock PolicyCatalogueService policyCatalogueService;
     @Mock CreditIntelligenceProperties creditIntelligenceProperties;
+    @Mock CategoryWorkflowBindService workflowBindService;
 
     CustomerCategoryValidator validator;
     CategoryPolicyBindService policyBindService;
@@ -57,12 +58,13 @@ class CategoryPolicyVersionBindTest {
     @BeforeEach
     void setUp() {
         lenient().when(creditIntelligenceProperties.getDefaultTenantId()).thenReturn(tenant);
+        lenient().when(workflowBindService.workflowActivationChecks(any())).thenReturn(List.of());
         validator = new CustomerCategoryValidator(ruleSetRepository, scorecardRepository);
         policyBindService = new CategoryPolicyBindService(
                 applicabilityRepository, policyCatalogueService, creditIntelligenceProperties);
         categoryService = new CustomerCategoryService(
                 categoryRepository, policySetRepository, validator, auditSupport,
-                policyBindService, applicabilityRepository);
+                policyBindService, workflowBindService, applicabilityRepository);
         actor = new Actor("u1", "Maker", "CREDIT_MANAGER");
     }
 

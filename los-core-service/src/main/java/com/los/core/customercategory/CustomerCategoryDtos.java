@@ -92,9 +92,13 @@ public final class CustomerCategoryDtos {
             /** Optional — must match catalogue row when supplied. */
             UUID policyDocumentId,
             /** Optional — must match catalogue version label when supplied. */
-            String policyVersionLabel
+            String policyVersionLabel,
+            /** W2 — exact Workflow Version id ({@code workflow_configs.id}). Independent of Policy. */
+            UUID workflowId,
+            /** Optional — must match {@code workflow_configs.version} when supplied. */
+            Integer workflowVersion
     ) {
-        /** Transitional 12-arg constructor — aliases / Policy bind null. */
+        /** Transitional 12-arg constructor — aliases / Policy / Workflow bind null. */
         public CategoryRequest(
                 String code,
                 String name,
@@ -110,10 +114,10 @@ public final class CustomerCategoryDtos {
                 String reasonForChange) {
             this(code, name, description, borrowerType, loanProduct, intakeSegment,
                     minAmount, maxAmount, policySetId, effectiveFrom, effectiveUntil, reasonForChange,
-                    null, null, null, null, null);
+                    null, null, null, null, null, null, null);
         }
 
-        /** STEP-1 14-arg constructor — Policy bind null. */
+        /** STEP-1 14-arg constructor — Policy / Workflow bind null. */
         public CategoryRequest(
                 String code,
                 String name,
@@ -131,7 +135,32 @@ public final class CustomerCategoryDtos {
                 String customerRole) {
             this(code, name, description, borrowerType, loanProduct, intakeSegment,
                     minAmount, maxAmount, policySetId, effectiveFrom, effectiveUntil, reasonForChange,
-                    entityType, customerRole, null, null, null);
+                    entityType, customerRole, null, null, null, null, null);
+        }
+
+        /** STEP-2 Policy bind constructor — Workflow null. */
+        public CategoryRequest(
+                String code,
+                String name,
+                String description,
+                String borrowerType,
+                String loanProduct,
+                String intakeSegment,
+                BigDecimal minAmount,
+                BigDecimal maxAmount,
+                UUID policySetId,
+                Instant effectiveFrom,
+                Instant effectiveUntil,
+                String reasonForChange,
+                String entityType,
+                String customerRole,
+                UUID policyApplicabilityId,
+                UUID policyDocumentId,
+                String policyVersionLabel) {
+            this(code, name, description, borrowerType, loanProduct, intakeSegment,
+                    minAmount, maxAmount, policySetId, effectiveFrom, effectiveUntil, reasonForChange,
+                    entityType, customerRole, policyApplicabilityId, policyDocumentId, policyVersionLabel,
+                    null, null);
         }
     }
 
@@ -183,7 +212,14 @@ public final class CustomerCategoryDtos {
             String policyName,
             String policyBusinessStatus,
             /** LINKED | POLICY_LINKAGE_REQUIRED */
-            String policyLinkageStatus
+            String policyLinkageStatus,
+            /** W2 exact Workflow Version id. */
+            UUID workflowId,
+            Integer workflowVersion,
+            String workflowContentHash,
+            String workflowName,
+            /** LINKED | WORKFLOW_LINKAGE_REQUIRED */
+            String workflowLinkageStatus
     ) {}
 
     /**
@@ -229,6 +265,28 @@ public final class CustomerCategoryDtos {
             int compatiblePolicyVersionCount,
             int incompatibleCount,
             int needsContextCount
+    ) {}
+
+    /**
+     * W2 Workflow picker row for Category admin.
+     * Incompatible Workflows remain visible (not priority-matched / not hidden).
+     */
+    public record EligibleWorkflowView(
+            UUID workflowId,
+            String workflowName,
+            int workflowVersion,
+            boolean active,
+            String entityTypeApplicability,
+            String customerRoleApplicability,
+            String productApplicability,
+            String journeyStepSummary,
+            String contentHash,
+            boolean compatibleWithCategory,
+            /** COMPATIBLE | INCOMPATIBLE */
+            String compatibilityStatus,
+            List<String> compatibilityReasons,
+            List<String> compatibilityNotes,
+            String scopeSummary
     ) {}
 
     public record ActivationCheck(String code, String label, boolean ok, String detail) {}
