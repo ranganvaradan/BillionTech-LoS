@@ -121,4 +121,57 @@ public final class RequirementDtos {
             String reason,
             String actor
     ) {}
+
+    /** W4 — POST plan-from-policy body. */
+    public record PlanFromPolicyRequest(
+            UUID applicationId,
+            UUID policyDocumentId,
+            UUID workflowId,
+            UUID customerCategoryId,
+            UUID policyApplicabilityId,
+            String workflowVersion,
+            UUID replanFromPlanId,
+            Map<String, Object> inventoryHints
+    ) {}
+
+    public record CustomerRequestSummary(
+            String requestKey,
+            String mode,
+            String documentGroup,
+            List<String> linkedCanonicalParameterIds,
+            List<UUID> itemIds,
+            CustomerFulfilmentState customerFulfilment
+    ) {}
+
+    public record CandidateSummary(
+            UUID itemId,
+            String itemKey,
+            String canonicalParameterId,
+            RequirementClass requirementClass,
+            FulfilmentMode preferredMode,
+            List<FulfilmentMode> allowedModes,
+            String productionReadiness,
+            String blockingReason,
+            Map<String, Object> explanation
+    ) {}
+
+    public record PlanningSummary(
+            UUID planId,
+            UUID applicationId,
+            UUID policyDocumentId,
+            String planHash,
+            String semanticHash,
+            CompletenessResult completeness,
+            int alreadySatisfiedCount,
+            int automaticAcquisitionCandidateCount,
+            int derivationCandidateCount,
+            int customerRequestCount,
+            int blockedCount,
+            List<CustomerRequestSummary> customerRequests,
+            List<CandidateSummary> automaticSourceCandidates,
+            List<CandidateSummary> derivationCandidates,
+            List<CandidateSummary> blockedRequirements,
+            List<CandidateSummary> alreadySatisfied,
+            List<CandidateSummary> explanations
+    ) {}
 }

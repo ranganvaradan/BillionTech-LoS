@@ -12,7 +12,7 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * W3 admin/debug APIs for Requirement Plan staging/UAT.
+ * W3/W4 admin/debug APIs for Requirement Plan staging/UAT.
  * No dynamic customer UI; no source execution.
  */
 @RestController
@@ -35,6 +35,37 @@ public class RequirementPlanAdminController {
             return planService.createPlan(body);
         } catch (BusinessRuleException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
+    }
+
+    /** W4 — Policy inventory → RequirementPlan (planning only). */
+    @PostMapping("/plan-from-policy")
+    public Map<String, Object> planFromPolicy(
+            @RequestHeader(value = "X-Internal-Token", required = false) String token,
+            @RequestBody RequirementDtos.PlanFromPolicyRequest body) {
+        assertToken(token);
+        try {
+            RequirementDtos.PlanResponse plan = planService.planFromPolicy(body);
+            RequirementDtos.PlanningSummary summary = planService.planningSummary(plan.id());
+            return Map.of(
+                    "plan", plan,
+                    "summary", summary);
+        } catch (BusinessRuleException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        } catch (UnsupportedOperationException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_IMPLEMENTED, e.getMessage());
+        }
+    }
+
+    @GetMapping("/{id}/planning-summary")
+    public RequirementDtos.PlanningSummary planningSummary(
+            @PathVariable UUID id,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        assertToken(token);
+        try {
+            return planService.planningSummary(id);
+        } catch (BusinessRuleException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
         }
     }
 

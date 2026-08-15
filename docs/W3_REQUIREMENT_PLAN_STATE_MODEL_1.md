@@ -28,5 +28,6 @@ Category selection, live/shadow routing, Policy cutover, source execution, dynam
 
 ## Progressive next steps
 
-- **W4:** Policy Parameter Inventory → `DataRequirementPlanner`
+- **W4:** Policy Parameter Inventory → `DataRequirementPlanner` — **done** (`docs/W4_POLICY_DATA_REQUIREMENT_PLANNER_1.md`)
 - **W5:** Dynamic customer requirement UI
+- **W6:** Acquisition orchestration

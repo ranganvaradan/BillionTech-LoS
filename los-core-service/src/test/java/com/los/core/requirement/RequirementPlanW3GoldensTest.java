@@ -44,7 +44,7 @@ class RequirementPlanW3GoldensTest {
     void setUp() {
         completenessEvaluator = new RequirementCompletenessEvaluator();
         transitionService = new RequirementItemTransitionService(itemRepository, transitionRepository);
-        planService = new RequirementPlanService(planRepository, completenessEvaluator);
+        planService = new RequirementPlanService(planRepository, completenessEvaluator, mock(DataRequirementPlanner.class));
 
         itemStore = new ConcurrentHashMap<>();
         audits = new ArrayList<>();
@@ -396,9 +396,9 @@ class RequirementPlanW3GoldensTest {
     }
 
     @Test
-    void dataRequirementPlanner_stubThrowsForW4() {
-        DataRequirementPlanner planner = new StubDataRequirementPlanner();
+    void dataRequirementPlanner_stubStillExplicitlyUnsupported() {
+        DataRequirementPlanner stub = new StubDataRequirementPlanner();
         assertThrows(UnsupportedOperationException.class, () ->
-                planner.plan(PlanInputs.of(appId, UUID.randomUUID(), UUID.randomUUID())));
+                stub.plan(PlanInputs.of(appId, UUID.randomUUID(), UUID.randomUUID())));
     }
 }
