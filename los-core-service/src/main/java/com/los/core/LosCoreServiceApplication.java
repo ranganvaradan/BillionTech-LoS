@@ -11,6 +11,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EntityScan(basePackages = {
         "com.los.core.model.entity",
         "com.los.core.customercategory",
+        "com.los.core.requirement",
         "com.los.core.payment.model",
         "com.los.core.creditintelligence.domain",
         "com.los.core.creditintelligence.core.domain",
@@ -33,6 +34,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EnableJpaRepositories(basePackages = {
         "com.los.core.repository",
         "com.los.core.customercategory",
+        "com.los.core.requirement",
         "com.los.core.payment.repository",
         "com.los.core.creditintelligence.repository",
         "com.los.core.creditintelligence.core.repository",
