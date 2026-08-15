@@ -232,6 +232,7 @@ Treat Live UW as **legacy lender-facing authority**. DP-3/Policy publish may bri
 | `WorkflowParameterProvidesCatalog` | GST_ANALYSIS + AA/BSA provides for the 8 |
 | `GacatParameterReadinessProjection.knownCatalogueDriftNotes` | Remove resolved seed/DB drift notes; note unresolved Policy tokens |
 | `V131__gacat_bureau_inquiries_last_3m_upsert.sql` | DB parity for `bureau.inquiries.last_3m` |
+| `V132__gacat_kyc_pan_name_match_bind.sql` | DB bind `kyc.pan.name_match` → `NormalizedKycFactBuilder` (`production_ready=false`) |
 | Tests | DP-2B projection / provides / inquiry / KYC / LTV assertions |
 
 ---
