@@ -220,10 +220,11 @@ public class RequirementItemTransitionService {
         }
         RequirementItemEntity item = loadItem(planId, itemId);
 
-        if (newState == SourceAcquisitionState.CUSTOMER_FALLBACK
+        if ((newState == SourceAcquisitionState.CUSTOMER_FALLBACK
+                || newState == SourceAcquisitionState.CUSTOMER_ACTION_REQUIRED)
                 && item.allowsOnly(FulfilmentMode.AUTOMATIC_SOURCE)) {
             throw new BusinessRuleException(
-                    "Cannot set CUSTOMER_FALLBACK when AUTOMATIC_SOURCE is the sole allowed mode: "
+                    "Cannot set CUSTOMER_ACTION_REQUIRED/CUSTOMER_FALLBACK when AUTOMATIC_SOURCE is the sole allowed mode: "
                             + item.getItemKey(),
                     "AUTOMATIC_ONLY_NO_CUSTOMER_FALLBACK", "source-advance", null);
         }

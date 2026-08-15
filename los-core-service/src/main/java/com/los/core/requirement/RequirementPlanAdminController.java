@@ -12,8 +12,8 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * W3/W4 admin/debug APIs for Requirement Plan staging/UAT.
- * No dynamic customer UI; no source execution.
+ * W3/W4/W5/W6 admin/debug APIs for Requirement Plan staging/UAT.
+ * W6 adds acquisition orchestration + data completeness gate (no Policy/Scorecard execution).
  */
 @RestController
 @RequestMapping("/api/v1/internal/requirement-plans")
@@ -23,6 +23,7 @@ public class RequirementPlanAdminController {
     private final RequirementPlanService planService;
     private final RequirementItemTransitionService transitionService;
     private final CustomerRequirementsViewService customerRequirementsViewService;
+    private final WorkflowAcquisitionCoordinator acquisitionCoordinator;
 
     @Value("${credit-intelligence.internal-token:}")
     private String internalToken;
@@ -191,6 +192,50 @@ public class RequirementPlanAdminController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid source state");
         } catch (BusinessRuleException e) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
+    }
+
+    /** W6 — run acquisition coordinator (no Policy/Scorecard). */
+    @PostMapping("/{id}/acquire")
+    public AcquisitionDtos.OrchestrationResult acquire(
+            @PathVariable UUID id,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token,
+            @RequestBody(required = false) Map<String, Object> body) {
+        assertToken(token);
+        try {
+            String actor = body != null && body.get("actor") != null
+                    ? String.valueOf(body.get("actor")) : "W6_ADMIN";
+            boolean dryRun = body != null && Boolean.TRUE.equals(body.get("dryRun"));
+            return acquisitionCoordinator.orchestrate(
+                    new AcquisitionDtos.OrchestrationRequest(id, null, actor, dryRun));
+        } catch (BusinessRuleException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
+    }
+
+    /** W6 — Data Completeness Gate status only (no Policy invocation). */
+    @GetMapping("/{id}/completeness-gate")
+    public AcquisitionDtos.GateResult completenessGate(
+            @PathVariable UUID id,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        assertToken(token);
+        try {
+            return acquisitionCoordinator.gateStatus(id);
+        } catch (BusinessRuleException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
+        }
+    }
+
+    /** W6 — admin source attempt ledger. */
+    @GetMapping("/{id}/acquisition-attempts")
+    public List<AcquisitionDtos.SourceAttemptView> acquisitionAttempts(
+            @PathVariable UUID id,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        assertToken(token);
+        try {
+            return acquisitionCoordinator.listAttempts(id);
+        } catch (BusinessRuleException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
         }
     }
 
