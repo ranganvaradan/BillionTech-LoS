@@ -13,6 +13,7 @@ import com.los.core.creditintelligence.policystudio.repository.CiPolicyRuleGraph
 import com.los.core.creditintelligence.policystudio.repository.CiPolicyRuleGraphRepository;
 import com.los.core.creditintelligence.policystudio.repository.CiPolicyStudioSessionSnapshotRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,11 +21,13 @@ import org.springframework.transaction.annotation.Transactional;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -40,6 +43,8 @@ public class PolicyRuleGraphMaterializer {
     private final CiPolicyRuleGraphNodeRepository nodeRepository;
     private final CiPolicyRuleGraphOperandRepository operandRepository;
     private final ObjectMapper objectMapper;
+    /** Proxy self so {@code materializeAll} → {@code materializeDocument} honors REQUIRES_NEW. */
+    private final ObjectProvider<PolicyRuleGraphMaterializer> selfProvider;
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Map<String, Object> materializeDocument(UUID policyDocumentId) {
@@ -81,11 +86,10 @@ public class PolicyRuleGraphMaterializer {
         graph = graphRepository.save(graph);
 
         int sort = 0;
+        Set<String> usedRuleKeys = new HashSet<>();
         for (CiPolicyRuleCandidate rule : rules) {
             Map<String, Object> expr = rule.getExpression() != null ? rule.getExpression() : Map.of();
-            String ruleKey = rule.getSystemRuleId() != null && !rule.getSystemRuleId().isBlank()
-                    ? rule.getSystemRuleId()
-                    : ("rule-" + (rule.getId() != null ? rule.getId() : UUID.randomUUID()));
+            String ruleKey = uniqueRuleKey(rule, usedRuleKeys);
             String contentHash = sha256(stableJson(expr) + "|" + ruleKey);
             hashBasis.append(contentHash).append(';');
 
@@ -144,6 +148,7 @@ public class PolicyRuleGraphMaterializer {
 
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public Map<String, Object> materializeAll() {
+        PolicyRuleGraphMaterializer self = selfProvider.getObject();
         List<CiPolicyDocument> docs = documentRepository.findAll();
         int ok = 0;
         int skipped = 0;
@@ -151,13 +156,13 @@ public class PolicyRuleGraphMaterializer {
         List<Map<String, Object>> details = new ArrayList<>();
         for (CiPolicyDocument doc : docs) {
             try {
-                Map<String, Object> r = materializeDocument(doc.getId());
+                Map<String, Object> r = self.materializeDocument(doc.getId());
                 details.add(r);
                 if ("SKIPPED_IMMUTABLE".equals(r.get("action"))) skipped++;
                 else ok++;
             } catch (Exception e) {
                 failed++;
-                details.add(Map.of("policyDocumentId", doc.getId().toString(), "error", e.getMessage()));
+                details.add(Map.of("policyDocumentId", doc.getId().toString(), "error", e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName()));
             }
         }
         Map<String, Object> out = new LinkedHashMap<>();
@@ -207,10 +212,11 @@ public class PolicyRuleGraphMaterializer {
         int unresolved = 0;
         StringBuilder hashBasis = new StringBuilder();
         int sort = 0;
+        Set<String> usedRuleKeys = new HashSet<>();
         List<CiPolicyRuleCandidate> safe = rules != null ? rules : List.of();
         for (CiPolicyRuleCandidate rule : safe) {
             Map<String, Object> expr = rule.getExpression() != null ? rule.getExpression() : Map.of();
-            String ruleKey = rule.getSystemRuleId() != null ? rule.getSystemRuleId() : ("rule-" + UUID.randomUUID());
+            String ruleKey = uniqueRuleKey(rule, usedRuleKeys);
             String contentHash = sha256(stableJson(expr) + "|" + ruleKey);
             hashBasis.append(contentHash).append(';');
             CiPolicyRuleGraphNode node = nodeRepository.save(CiPolicyRuleGraphNode.builder()
@@ -287,6 +293,18 @@ public class PolicyRuleGraphMaterializer {
                 || "APPROVED".equalsIgnoreCase(status)
                 || "ACTIVE".equalsIgnoreCase(status)
                 || "PUBLISHED".equalsIgnoreCase(status);
+    }
+
+    private static String uniqueRuleKey(CiPolicyRuleCandidate rule, Set<String> usedRuleKeys) {
+        String baseKey = rule.getSystemRuleId() != null && !rule.getSystemRuleId().isBlank()
+                ? rule.getSystemRuleId()
+                : ("rule-" + (rule.getId() != null ? rule.getId() : UUID.randomUUID()));
+        String ruleKey = baseKey;
+        int dedupe = 2;
+        while (!usedRuleKeys.add(ruleKey)) {
+            ruleKey = baseKey + "#" + dedupe++;
+        }
+        return ruleKey;
     }
 
     private static String usageFromRuleType(String ruleType) {
