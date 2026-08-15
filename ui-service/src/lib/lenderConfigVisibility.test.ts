@@ -21,6 +21,15 @@ describe('lenderConfigVisibility', () => {
     expect(classifyWorkflow({ name: 'Bank Starter Journey' })).toBe('LENDER_CONFIG')
   })
 
+  it('hides historical Individual Personal Loan seed codes and dash-named entity seeds', () => {
+    expect(isPlatformDefaultWorkflow('INDIVIDUAL_PERSONAL_LOAN_KYC')).toBe(true)
+    expect(isPlatformDefaultWorkflow('INDIVIDUAL_PERSONAL_DISPLAY')).toBe(true)
+    expect(isPlatformDefaultWorkflow('Individual - Personal Loan KYC')).toBe(true)
+    expect(isPlatformDefaultWorkflow('Company - Working Capital')).toBe(true)
+    expect(classifyWorkflow({ name: 'INDIVIDUAL_PERSONAL_LOAN_KYC' })).toBe('SYSTEM_REFERENCE')
+    expect(classifyWorkflow({ name: 'Personal Loan – Individual Borrower' })).toBe('LENDER_CONFIG')
+  })
+
   it('retired categories are HISTORICAL', () => {
     expect(classifyCustomerCategory({ code: 'CC_CLEAN_X', status: 'RETIRED' })).toBe('HISTORICAL')
   })

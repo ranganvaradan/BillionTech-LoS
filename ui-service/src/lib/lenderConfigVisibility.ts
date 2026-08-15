@@ -21,14 +21,21 @@ export function isDay1SeedCategory(code: string | null | undefined): boolean {
     .startsWith('CC_DAY1_')
 }
 
-/** Platform default workflow templates (foundation) — not lender-authored journeys. */
+/** Platform default / seed workflow templates — not lender-authored journeys. */
 export function isPlatformDefaultWorkflow(name: string | null | undefined): boolean {
   const n = String(name ?? '').trim()
-  return (
+  if (!n) return false
+  if (
     /^Default Workflow\b/i.test(n) ||
     /^Anchor ID\b/i.test(n) ||
     /^Default\b/i.test(n)
-  )
+  ) {
+    return true
+  }
+  // Historical / seed codes and early product seeds (not new-lender authored)
+  if (/^INDIVIDUAL_PERSONAL_(LOAN_KYC|DISPLAY)$/i.test(n)) return true
+  if (/^(Individual|Proprietor|Partnership|Company|HUF)\s+-\s+/i.test(n)) return true
+  return false
 }
 
 export function classifyCustomerCategory(row: {

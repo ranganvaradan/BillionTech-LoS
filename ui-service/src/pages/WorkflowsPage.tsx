@@ -58,16 +58,22 @@ import { staticWorkflowEventTemplateMappings } from '@/lib/workflowEventTemplate
 import type { WorkflowEventTemplateMappingDto } from '@/api/workflowEventTemplateMappings'
 import type { WorkflowConfigRequest, WorkflowConfigResponse, WorkflowIntakeConfig, WorkflowIntakeSegment } from '@/types/workflow'
 import { defaultWorkflowDrivenIntakeConfig, intakeConfigFromApi } from '@/lib/workflow/workflowIntakeRules'
+import {
+  NOTIFICATION_PROCESS_BUSINESS_LABELS,
+  projectLenderJourney,
+  workflowSetupStatus,
+} from '@/lib/workflow/workflowLenderJourney'
+import { getDataParametersOverview } from '@/api/liveReadiness'
 import type { BorrowerType } from '@/types/createApplication'
 
 const BORROWER_TYPES: BorrowerType[] = [...BORROWER_TYPE_ORDER]
 
 type WorkflowDetailTab =
-  | 'general'
+  | 'overview'
   | 'application'
   | 'kyc'
-  | 'acquisition'
-  | 'assessment'
+  | 'dataCollection'
+  | 'journey'
   | 'notifications'
   | 'advanced'
 
@@ -89,7 +95,7 @@ export function WorkflowsPage() {
   const [autoPullBureauAfterKycSuccess, setAutoPullBureauAfterKycSuccess] = useState(true)
   const [intakeIdentitySchemaJson, setIntakeIdentitySchemaJson] = useState('[]')
   const [intakeConfig, setIntakeConfig] = useState<WorkflowIntakeConfig>(() => defaultWorkflowDrivenIntakeConfig())
-  const [detailTab, setDetailTab] = useState<WorkflowDetailTab>('general')
+  const [detailTab, setDetailTab] = useState<WorkflowDetailTab>('overview')
   const [visualSteps, setVisualSteps] = useState<VisualWorkflowStep[]>([])
   const [processNotifications, setProcessNotifications] = useState<ProcessNotificationConfig[]>([])
   const [stepsJson, setStepsJson] = useState('[]')
@@ -97,6 +103,7 @@ export function WorkflowsPage() {
   const [vkycConditionRows, setVkycConditionRows] = useState<VkycConditionRow[]>([])
   const [vkycTriggerConditionJson, setVkycTriggerConditionJson] = useState('[]')
   const [vkycConditionJsonError, setVkycConditionJsonError] = useState<string | null>(null)
+  const [sourceCapabilitySummary, setSourceCapabilitySummary] = useState<Record<string, unknown>[]>([])
 
   /** Catalog for workflow notification template picker (proxied via los-core → notification-service). */
   const [templateMappings, setTemplateMappings] = useState<WorkflowEventTemplateMappingDto[]>(() =>
@@ -206,11 +213,30 @@ export function WorkflowsPage() {
     }
   }, [])
 
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const ov = await getDataParametersOverview()
+        if (cancelled) return
+        const rows = Array.isArray(ov.sourceCapabilitySummary)
+          ? (ov.sourceCapabilitySummary as Record<string, unknown>[])
+          : []
+        setSourceCapabilitySummary(rows)
+      } catch {
+        if (!cancelled) setSourceCapabilitySummary([])
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   function resetFormToNew() {
     setSuccessMessage(null)
     setSelected(null)
     setIsCreating(true)
-    setName('New workflow')
+    setName('')
     setBorrowerType('INDIVIDUAL')
     setLoanProduct('PERSONAL_LOAN')
     setLmsProductCode('')
@@ -220,7 +246,7 @@ export function WorkflowsPage() {
     setAutoPullBureauAfterKycSuccess(true)
     setIntakeIdentitySchemaJson('[]')
     setIntakeConfig(defaultWorkflowDrivenIntakeConfig())
-    setDetailTab('general')
+    setDetailTab('overview')
     setWorkflowPosition('BEFORE_ESIGN')
     setVkycConditionRows([])
     setVkycTriggerConditionJson('[]')
@@ -249,7 +275,7 @@ export function WorkflowsPage() {
     setAutoPullBureauAfterKycSuccess(w.autoPullBureauAfterKycSuccess !== false)
     setIntakeIdentitySchemaJson(JSON.stringify(w.intakeIdentitySchema ?? [], null, 2))
     setIntakeConfig(intakeConfigFromApi(w, options?.intakeFallback))
-    if (!options?.preserveTab) setDetailTab('general')
+    if (!options?.preserveTab) setDetailTab('overview')
     setWorkflowPosition(w.workflowPosition ?? 'BEFORE_ESIGN')
     const existingConditions = (w.vkycTriggerCondition ?? []) as unknown
     setVkycConditionRows(jsonToRows(existingConditions))
@@ -453,11 +479,47 @@ export function WorkflowsPage() {
 
   const showEditor = selected !== null || isCreating
 
+  const journeyStages = useMemo(
+    () =>
+      projectLenderJourney({
+        intakeConfig,
+        steps: visualSteps,
+        processNotifications,
+      }),
+    [intakeConfig, visualSteps, processNotifications],
+  )
+
+  const setupStatus = useMemo(
+    () =>
+      workflowSetupStatus({
+        name,
+        intakeConfig,
+        steps: visualSteps,
+        processNotifications,
+      }),
+    [name, intakeConfig, visualSteps, processNotifications],
+  )
+
+  const lenderFacingSourceRows = useMemo(() => {
+    const prefer = ['Bureau Retail', 'Bank Statement', 'GST', 'Account Aggregator', 'KYC']
+    const bySource = new Map(
+      sourceCapabilitySummary.map((r) => [String(r.source ?? ''), r] as const),
+    )
+    const ordered: Record<string, unknown>[] = []
+    for (const key of prefer) {
+      const hit =
+        bySource.get(key) ||
+        [...bySource.entries()].find(([s]) => s.toLowerCase().includes(key.toLowerCase()))?.[1]
+      if (hit) ordered.push(hit)
+    }
+    return ordered
+  }, [sourceCapabilitySummary])
+
   return (
     <div>
       <PageHeader
         title="Workflows"
-        description="Journey orchestration versions. Customer Category selects the exact Workflow Version for an application — Workflow does not choose the customer. Compatibility (entity, product, role) constrains which Categories may bind a version."
+        description="Define how applications move from intake through identity checks, data collection, credit assessment, and later lending stages. Policy and Scorecard stay with Customer Category — not here."
       />
       <AdministrationWorkspaceNav />
 
@@ -518,7 +580,7 @@ export function WorkflowsPage() {
                     w.active ? (
                       <span className="bt-badge bt-badge-green">Active</span>
                     ) : (
-                      <span className="bt-badge bt-badge-gray">Inactive</span>
+                      <span className="bt-badge bt-badge-gray">Draft</span>
                     )
                   }
                   tags={
@@ -536,14 +598,20 @@ export function WorkflowsPage() {
 
             {showEditor ? (
               <DetailPanel
-                title={isCreating ? 'New workflow' : name}
-                description="New configs are inactive until activated. Category-selected applications use the exact Workflow Version locked at Category selection (W1). Compatibility fields below are applicability constraints — not independent runtime routing. Legacy apps without a Category lock may still resolve by compatibility."
+                title={isCreating ? 'Create workflow' : name || 'Untitled workflow'}
+                description={
+                  isCreating
+                    ? 'Name the journey and choose who it applies to, then save a draft. Configure Application, Identity & KYC, Data collection, Journey, and Notifications next.'
+                    : selected?.active
+                      ? 'Active — used by new applications when bound through an applicable Customer Category.'
+                      : 'Draft — editable. Activate when ready to bind through a Customer Category.'
+                }
                 badge={
                   !isCreating && selected ? (
                     selected.active ? (
                       <span className="bt-badge bt-badge-green">Active</span>
                     ) : (
-                      <span className="bt-badge bt-badge-gray">Inactive</span>
+                      <span className="bt-badge bt-badge-gray">Draft</span>
                     )
                   ) : undefined
                 }
@@ -553,14 +621,14 @@ export function WorkflowsPage() {
                     {actionError}
                   </p>
                 ) : null}
-                <div className="mb-4 flex flex-wrap gap-1 border-b border-slate-200 pb-2">
+                <div className="mb-4 flex flex-wrap gap-1 border-b border-slate-200 pb-2" data-testid="workflow-lender-tabs">
                   {(
                     [
-                      ['general', 'General / Version'],
-                      ['application', 'Application & requirements'],
+                      ['overview', 'Overview'],
+                      ['application', 'Application'],
                       ['kyc', 'Identity & KYC'],
-                      ['acquisition', 'Data acquisition'],
-                      ['assessment', 'Credit assessment'],
+                      ['dataCollection', 'Data collection'],
+                      ['journey', 'Journey'],
                       ['notifications', 'Notifications'],
                       ['advanced', 'Advanced / Internal'],
                     ] as const
@@ -580,107 +648,131 @@ export function WorkflowsPage() {
                   ))}
                 </div>
 
-                {detailTab === 'general' ? (
-                <DetailSection title="Configuration">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="block text-sm text-slate-700 sm:col-span-2">
-                    <span className="mb-1 block text-xs font-medium text-slate-500">Name</span>
-                    <input
-                      className="bt-input w-full"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                    />
-                  </label>
-                  <label className="block text-sm text-slate-700">
-                    <span className="mb-1 block text-xs font-medium text-slate-500">
-                      Entity Type (compatibility)
-                    </span>
-                    <select
-                      className="bt-input w-full"
-                      value={borrowerType}
-                      onChange={(e) => setBorrowerType(e.target.value as BorrowerType)}
-                    >
-                      {BORROWER_TYPES.map((bt) => (
-                        <option key={bt} value={bt}>
-                          {BORROWER_TYPE_LABELS[bt]}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="block text-sm text-slate-700">
-                    <span className="mb-1 block text-xs font-medium text-slate-500">Loan product (code in API)</span>
-                    <select
-                      className="bt-input w-full"
-                      value={loanProduct}
-                      onChange={(e) => setLoanProduct(e.target.value)}
-                    >
-                      {LOAN_PRODUCT_CODES.map((c) => (
-                        <option key={c} value={c}>
-                          {LOAN_PRODUCT_LABELS[c]}
-                        </option>
-                      ))}
-                      {loanProduct && !isLoanProductCode(loanProduct) ? (
-                        <option value={loanProduct}>{loanProductLabel(loanProduct)} (legacy value)</option>
-                      ) : null}
-                    </select>
-                    <p className="mt-0.5 text-xs text-slate-500">Applications and APIs store the code (e.g. PERSONAL_LOAN).</p>
-                  </label>
-                  {!workflowUsesPlpLmsConfig(loanProduct, intakeSegment) ? (
-                    <>
-                      <label className="block text-sm text-slate-700">
-                        <span className="mb-1 block text-xs font-medium text-slate-500">LMS product code</span>
-                        <input
-                          className="bt-input w-full"
-                          value={lmsProductCode}
-                          onChange={(e) => setLmsProductCode(e.target.value)}
-                          placeholder="Configured Encore LMS product code"
-                        />
-                        <p className="mt-0.5 text-xs text-slate-500">
-                          Required for non-PLP products. Leave blank only if LMS open must fail closed (no UI invent/prefill).
-                        </p>
-                      </label>
-                      <label className="block text-sm text-slate-700">
-                        <span className="mb-1 block text-xs font-medium text-slate-500">LMS tenure type</span>
-                        <select
-                          className="bt-input w-full"
-                          value={lmsTenureUnit}
-                          onChange={(e) => setLmsTenureUnit(e.target.value)}
-                        >
-                          {LMS_TENURE_UNIT_OPTIONS.map((o) => (
-                            <option key={o.value} value={o.value}>
-                              {o.label}
-                            </option>
+                {detailTab === 'overview' ? (
+                <DetailSection title="Overview">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="block text-sm text-slate-700 sm:col-span-2">
+                      <span className="mb-1 block text-xs font-medium text-slate-500">Workflow name</span>
+                      <input
+                        className="bt-input w-full"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        placeholder="Personal Loan – Individual Borrower"
+                      />
+                    </label>
+                    <label className="block text-sm text-slate-700">
+                      <span className="mb-1 block text-xs font-medium text-slate-500">Entity type</span>
+                      <select
+                        className="bt-input w-full"
+                        value={borrowerType}
+                        onChange={(e) => setBorrowerType(e.target.value as BorrowerType)}
+                      >
+                        {BORROWER_TYPES.map((bt) => (
+                          <option key={bt} value={bt}>
+                            {BORROWER_TYPE_LABELS[bt]}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="block text-sm text-slate-700">
+                      <span className="mb-1 block text-xs font-medium text-slate-500">Loan product</span>
+                      <select
+                        className="bt-input w-full"
+                        value={loanProduct}
+                        onChange={(e) => setLoanProduct(e.target.value)}
+                      >
+                        {LOAN_PRODUCT_CODES.map((c) => (
+                          <option key={c} value={c}>
+                            {LOAN_PRODUCT_LABELS[c]}
+                          </option>
+                        ))}
+                        {loanProduct && !isLoanProductCode(loanProduct) ? (
+                          <option value={loanProduct}>{loanProductLabel(loanProduct)} (legacy value)</option>
+                        ) : null}
+                      </select>
+                    </label>
+                    <label className="block text-sm text-slate-700">
+                      <span className="mb-1 block text-xs font-medium text-slate-500">Customer role</span>
+                      <select
+                        className="bt-input w-full"
+                        value={intakeSegment}
+                        onChange={(e) => setIntakeSegment(e.target.value as WorkflowIntakeSegment)}
+                      >
+                        <option value="BORROWER">Borrower</option>
+                        <option value="ANCHOR">Anchor</option>
+                      </select>
+                    </label>
+                    {!isCreating && selected ? (
+                      <div className="rounded border border-slate-100 bg-slate-50 p-3 text-xs text-slate-700 sm:col-span-2">
+                        <div>
+                          Version {selected.version} · {selected.active ? 'Active' : 'Draft'}
+                        </div>
+                        <div className="mt-1 text-slate-500">
+                          {BORROWER_TYPE_LABELS[borrowerType] ?? borrowerType} · {loanProductLabel(loanProduct)} ·{' '}
+                          {intakeSegment === 'ANCHOR' ? 'Anchor' : 'Borrower'}
+                        </div>
+                      </div>
+                    ) : null}
+                    {!workflowUsesPlpLmsConfig(loanProduct, intakeSegment) ? (
+                      <>
+                        <label className="block text-sm text-slate-700">
+                          <span className="mb-1 block text-xs font-medium text-slate-500">LMS product code</span>
+                          <input
+                            className="bt-input w-full"
+                            value={lmsProductCode}
+                            onChange={(e) => setLmsProductCode(e.target.value)}
+                            placeholder="Configured Encore LMS product code"
+                          />
+                        </label>
+                        <label className="block text-sm text-slate-700">
+                          <span className="mb-1 block text-xs font-medium text-slate-500">LMS tenure type</span>
+                          <select
+                            className="bt-input w-full"
+                            value={lmsTenureUnit}
+                            onChange={(e) => setLmsTenureUnit(e.target.value)}
+                          >
+                            {LMS_TENURE_UNIT_OPTIONS.map((o) => (
+                              <option key={o.value} value={o.value}>
+                                {o.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </>
+                    ) : null}
+                  </div>
+
+                  {!isCreating ? (
+                    <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3" data-testid="workflow-setup-status">
+                      <h3 className="text-sm font-semibold text-slate-900">Setup status</h3>
+                      <p className="mt-1 text-xs text-slate-600">
+                        {setupStatus.ready ? 'Ready to activate' : 'Needs attention'}
+                      </p>
+                      <ul className="mt-2 space-y-1 text-xs text-slate-700">
+                        {setupStatus.items.map((item) => (
+                          <li key={item.id}>
+                            {item.done ? '✓' : '○'} {item.label}
+                            {item.optional ? ' (optional)' : ''}
+                          </li>
+                        ))}
+                      </ul>
+                      {!setupStatus.ready ? (
+                        <ul className="mt-2 list-disc pl-4 text-xs text-amber-900">
+                          {setupStatus.attention.map((a, i) => (
+                            <li key={i}>{a}</li>
                           ))}
-                        </select>
-                        <p className="mt-0.5 text-xs text-slate-500">
-                          Encore tenure unit (Day, Month, Week) paired with tenure magnitude at disbursement.
-                        </p>
-                      </label>
-                    </>
+                        </ul>
+                      ) : null}
+                    </div>
                   ) : null}
-                  <label className="block text-sm text-slate-700">
-                    <span className="mb-1 block text-xs font-medium text-slate-500">Customer Role (compatibility)</span>
-                    <select
-                      className="bt-input w-full"
-                      value={intakeSegment}
-                      onChange={(e) => setIntakeSegment(e.target.value as WorkflowIntakeSegment)}
-                    >
-                      <option value="BORROWER">Borrower</option>
-                      <option value="ANCHOR">Anchor</option>
-                    </select>
-                    <p className="mt-0.5 text-xs text-slate-500">
-                      Applicability for Category binding — Category selection is the runtime route authority.
-                    </p>
-                  </label>
-                </div>
                 </DetailSection>
                 ) : null}
 
                 {detailTab === 'application' ? (
-                <DetailSection title="Application & customer requirements">
+                <DetailSection title="Application">
                   <p className="mb-3 text-xs text-slate-600">
-                    Configure what the customer/RM provides during intake. Policy-driven W4/W5 requirements are
-                    planned from Policy — not from Bureau toggles here.
+                    What information and documents should the applicant provide? Credit-policy data requirements are
+                    decided by Policy — not duplicated here.
                   </p>
                   <WorkflowIntakeRulesPanel
                     intakeConfig={intakeConfig}
@@ -691,6 +783,7 @@ export function WorkflowsPage() {
                     onAutoPullBureauAfterKycSuccessChange={setAutoPullBureauAfterKycSuccess}
                     visualSteps={visualSteps}
                     hideBureauRequirementControls
+                    hideIntakePolicyControl
                   />
                 </DetailSection>
                 ) : null}
@@ -698,7 +791,7 @@ export function WorkflowsPage() {
                 {detailTab === 'kyc' ? (
                 <DetailSection title="Identity & KYC">
                 <p className="mb-2 text-xs text-slate-600">
-                  VKYC, identity verification, consent, and regulatory steps. Process-level notifications are under
+                  How should the applicant&apos;s identity and KYC be completed? Notifications are configured under
                   Notifications.
                 </p>
                 <WorkflowStepEditorPanel
@@ -708,40 +801,112 @@ export function WorkflowsPage() {
                   processNotifications={processNotifications}
                   onProcessNotificationsChange={setProcessNotifications}
                   showIntakeOptions={intakeConfig.policy === 'WORKFLOW_DRIVEN'}
+                  showProcessNotifications={false}
+                  showSteps
                 />
                 </DetailSection>
                 ) : null}
 
-                {detailTab === 'acquisition' ? (
-                <DetailSection title="Data acquisition">
+                {detailTab === 'dataCollection' ? (
+                <DetailSection title="Data collection">
                   <p className="text-sm text-slate-700">
-                    Policy determines what data is required. W4 builds the Requirement Plan; W6 orchestrates source
-                    acquisition (Bureau, AA, GST, documents, derivations) with dependency-aware parallelism.
+                    Information required by your credit policy is collected automatically from the sources available
+                    to your organisation. Identity, consent and other prerequisites are completed before a source is
+                    used.
                   </p>
-                  <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-slate-600">
-                    <li>Acquisition runs after identity/KYC and consent prerequisites where configured</li>
-                    <li>One unavailable source must not block unrelated sources</li>
-                    <li>Source success is not the same as Data Ready for Policy</li>
-                  </ul>
-                  <p className="mt-3 text-xs text-amber-900">
-                    Workflow no longer independently requires Bureau as a credit-data authority. Prefer Policy + W4/W6.
+                  <p className="mt-2 text-xs text-slate-600">
+                    Policy decides what underwriting data is required. This workflow does not independently require
+                    Bureau, GST, or other sources as credit rules.
                   </p>
+                  {lenderFacingSourceRows.length > 0 ? (
+                    <ul className="mt-3 space-y-2" data-testid="workflow-data-collection-sources">
+                      {lenderFacingSourceRows.map((row) => {
+                        const facing = (row.lenderFacing && typeof row.lenderFacing === 'object'
+                          ? row.lenderFacing
+                          : {}) as Record<string, unknown>
+                        return (
+                          <li
+                            key={String(row.source)}
+                            className="rounded border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-700"
+                          >
+                            <div className="font-semibold text-slate-900">
+                              {String(row.providerLabel ?? row.source)}
+                            </div>
+                            <div>
+                              {String(
+                                facing.integrationLabel ??
+                                  `BillionTech integration: ${String(row.platformLabel ?? row.platformIntegration ?? '—')}`,
+                              )}
+                            </div>
+                            {row.yourOrganisation && String(row.yourOrganisation) !== 'NOT_APPLICABLE' ? (
+                              <div>
+                                {String(
+                                  facing.organisationLabel ??
+                                    `Your organisation: ${String(row.yourOrganisationLabel ?? row.yourOrganisation)}`,
+                                )}
+                              </div>
+                            ) : null}
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  ) : (
+                    <p className="mt-3 text-xs text-slate-500">
+                      Source status will appear when Data &amp; Parameters capability summary is available.
+                    </p>
+                  )}
                 </DetailSection>
                 ) : null}
 
-                {detailTab === 'assessment' ? (
-                <DetailSection title="Credit assessment">
-                  <p className="text-sm text-slate-700">
-                    Completeness gate → Policy evaluation → optional Policy-linked Scorecard. Scorecard is subordinate
-                    to Policy and does not replace hard Policy rules.
+                {detailTab === 'journey' ? (
+                <DetailSection title="Journey">
+                  <p className="mb-3 text-xs text-slate-600">
+                    How this lending journey moves from application through credit assessment and later stages.
+                    Stages reflect capabilities already supported by the platform — not a second workflow engine.
                   </p>
+                  <ol className="space-y-0" data-testid="workflow-journey">
+                    {journeyStages.map((stage, idx) => (
+                      <li key={stage.id} className="relative pb-4 pl-6">
+                        {idx < journeyStages.length - 1 ? (
+                          <span className="absolute left-[0.55rem] top-5 h-[calc(100%-0.5rem)] w-px bg-slate-200" />
+                        ) : null}
+                        <span className="absolute left-0 top-1 flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 bg-white text-[9px] font-semibold text-slate-600">
+                          {idx + 1}
+                        </span>
+                        <div className="rounded border border-slate-100 bg-white px-3 py-2">
+                          <div className="flex flex-wrap items-baseline justify-between gap-2">
+                            <h4 className="text-sm font-semibold text-slate-900">{stage.name}</h4>
+                            <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                              {stage.statusLabel}
+                            </span>
+                          </div>
+                          <p className="mt-0.5 text-xs text-slate-600">{stage.purpose}</p>
+                          {stage.detail ? (
+                            <p className="mt-1 text-xs text-slate-500">{stage.detail}</p>
+                          ) : null}
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
+                  <div className="mt-2 rounded border border-slate-100 bg-slate-50 p-3 text-xs text-slate-600">
+                    <p className="font-medium text-slate-800">Credit assessment</p>
+                    <p className="mt-1">
+                      Applications reaching this stage are evaluated against the Policy selected for the Customer
+                      Category. Hard rules are evaluated and the linked Scorecard is applied where configured.
+                      Unavailable required data follows existing fail-closed behaviour.
+                    </p>
+                    <p className="mt-2 text-slate-500">
+                      Policy: selected through Customer Category · Scorecard: selected through the linked Policy
+                    </p>
+                  </div>
                 </DetailSection>
                 ) : null}
 
                 {detailTab === 'notifications' ? (
-                <DetailSection title="Notifications & events">
+                <DetailSection title="Notifications">
                   <p className="mb-2 text-xs text-slate-600">
-                    Process notifications and event templates for the journey (separate from Identity & KYC steps).
+                    Notify borrowers or staff at business events on this journey. Only supported channels and templates
+                    are listed.
                   </p>
                   <WorkflowStepEditorPanel
                     steps={visualSteps}
@@ -750,13 +915,20 @@ export function WorkflowsPage() {
                     processNotifications={processNotifications}
                     onProcessNotificationsChange={setProcessNotifications}
                     showIntakeOptions={false}
+                    showProcessNotifications
+                    showSteps={false}
+                    processLabelOverrides={NOTIFICATION_PROCESS_BUSINESS_LABELS}
                   />
                 </DetailSection>
                 ) : null}
 
                 {detailTab === 'advanced' ? (
                 <>
-                <DetailSection title="Advanced configuration">
+                <DetailSection title="Advanced / Internal">
+                  <p className="mb-3 text-xs text-amber-900">
+                    For BillionTech implementation and support. Normal lender administrators should not need this
+                    section.
+                  </p>
                   <label className="block text-sm text-slate-700 sm:col-span-2">
                     <span className="mb-1 block text-xs font-medium text-slate-500">
                       Anchor identity schema (JSON array, optional)
@@ -838,9 +1010,6 @@ export function WorkflowsPage() {
                       rows={vkycConditionRows}
                       onChange={(next) => {
                         setVkycConditionRows(next)
-                        // Keep the advanced JSON view in sync as the user edits
-                        // structured rows, so toggling between the two never
-                        // shows stale JSON.
                         setVkycTriggerConditionJson(JSON.stringify(rowsToJson(next), null, 2))
                         setVkycConditionJsonError(null)
                       }}

@@ -26,6 +26,12 @@ type Props = {
   onProcessNotificationsChange: (next: ProcessNotificationConfig[]) => void
   /** When true, show per-step intake collection options. */
   showIntakeOptions?: boolean
+  /** Process-level notification editor (default true). */
+  showProcessNotifications?: boolean
+  /** KYC / post-KYC step cards (default true). */
+  showSteps?: boolean
+  /** Optional business labels for process codes. */
+  processLabelOverrides?: Record<string, string>
 }
 
 function move<T>(arr: T[], from: number, to: number): T[] {
@@ -425,6 +431,9 @@ export function WorkflowStepEditorPanel({
   processNotifications,
   onProcessNotificationsChange,
   showIntakeOptions = false,
+  showProcessNotifications = true,
+  showSteps = true,
+  processLabelOverrides,
 }: Props) {
   const processRowsByCode = useMemo(() => {
     const map = new Map<string, ProcessNotificationConfig[]>()
@@ -438,19 +447,20 @@ export function WorkflowStepEditorPanel({
 
   return (
     <div className="space-y-2">
+      {showProcessNotifications ? (
       <div className="rounded border border-slate-200 bg-white p-2">
         <div className="mb-2 flex min-w-0 flex-wrap items-center justify-between gap-2">
-          <span className="text-xs font-medium text-slate-600">Process-level notifications</span>
+          <span className="text-xs font-medium text-slate-600">Notifications by business event</span>
         </div>
         <p className="mb-2 text-xs text-slate-500">
-          Configure business notifications by process/event. Runtime resolves these first, then falls back to legacy
-          step-level rules.
+          Choose when borrowers or staff should be notified. Only channels and templates already supported by the
+          platform are available.
         </p>
         <div className="space-y-2">
           {PROCESS_DEFINITIONS.map((p) => (
             <details key={p.code} className="rounded border border-slate-200 bg-slate-50 p-2">
               <summary className="cursor-pointer text-xs font-medium text-slate-700">
-                {p.label} ({processRowsByCode.get(p.code)?.length ?? 0})
+                {processLabelOverrides?.[p.code] ?? p.label} ({processRowsByCode.get(p.code)?.length ?? 0})
               </summary>
               <div className="mt-2 space-y-2 border-t border-slate-200 pt-2">
                 <button
@@ -474,10 +484,10 @@ export function WorkflowStepEditorPanel({
                     ])
                   }}
                 >
-                  Add {p.label} notification
+                  Add notification
                 </button>
                 {(processRowsByCode.get(p.code) ?? []).length === 0 ? (
-                  <p className="text-xs text-slate-500">No process-level rules configured.</p>
+                  <p className="text-xs text-slate-500">No notifications configured for this event.</p>
                 ) : null}
                 {(processRowsByCode.get(p.code) ?? []).map((n) => (
                   <ProcessNotificationRuleRow
@@ -494,9 +504,12 @@ export function WorkflowStepEditorPanel({
           ))}
         </div>
       </div>
+      ) : null}
+      {showSteps ? (
+      <>
       <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <span className="min-w-0 text-xs font-medium text-slate-500">
-          Workflow steps (order = execution order)
+          Identity & KYC steps (order = sequence)
         </span>
         <button
           type="button"
@@ -507,7 +520,7 @@ export function WorkflowStepEditorPanel({
         </button>
       </div>
       {steps.length === 0 ? (
-        <p className="text-sm text-slate-500">No steps. Add a step or use Advanced JSON below.</p>
+        <p className="text-sm text-slate-500">No steps yet. Add the identity checks this journey needs.</p>
       ) : null}
       <ul className="space-y-2">
         {steps.map((s, i) => (
@@ -522,6 +535,8 @@ export function WorkflowStepEditorPanel({
           />
         ))}
       </ul>
+      </>
+      ) : null}
     </div>
   )
 }

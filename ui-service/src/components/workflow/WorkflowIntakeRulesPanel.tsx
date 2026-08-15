@@ -250,6 +250,7 @@ export function WorkflowIntakeRulesPanel({
   onAutoPullBureauAfterKycSuccessChange,
   visualSteps,
   hideBureauRequirementControls = false,
+  hideIntakePolicyControl = false,
 }: {
   intakeConfig: WorkflowIntakeConfig
   onChange: (next: WorkflowIntakeConfig) => void
@@ -260,6 +261,8 @@ export function WorkflowIntakeRulesPanel({
   visualSteps: VisualWorkflowStep[]
   /** Client lender UX: Policy/W4/W6 own Bureau data requirements — not Workflow. */
   hideBureauRequirementControls?: boolean
+  /** Hide LEGACY vs WORKFLOW_DRIVEN selector from normal lender UX. */
+  hideIntakePolicyControl?: boolean
 }) {
   const configuredSteps = visualSteps.map((s) => s.step)
   const [geoStates, setGeoStates] = useState<GeoStateRow[]>([])
@@ -425,6 +428,7 @@ export function WorkflowIntakeRulesPanel({
         ) : null}
       </section>
 
+      {!hideIntakePolicyControl ? (
       <label className="block text-sm text-slate-700">
         <span className="mb-1 block text-xs font-medium text-slate-500">Intake policy</span>
         <select
@@ -448,6 +452,7 @@ export function WorkflowIntakeRulesPanel({
           <option value="WORKFLOW_DRIVEN">Workflow-driven (KYC steps gate fields & documents)</option>
         </select>
       </label>
+      ) : null}
 
       {intakeConfig.policy !== 'WORKFLOW_DRIVEN' ? (
         <p className="text-sm text-slate-600">
