@@ -60,6 +60,23 @@ public class DataParametersAdminService {
         out.put("gapsManual", gapsManual(reg));
         out.put("workflowProvides", WorkflowParameterProvidesCatalog.catalogueView());
         out.put("totals", totals(reg));
+        out.put("dp1", true);
+        out.put("readinessProjection", "GacatParameterReadinessProjection");
+        out.put("knownCatalogueDrift", GacatParameterReadinessProjection.knownCatalogueDriftNotes());
+        out.put("sourceTypes", List.of(
+                GacatParameterReadinessProjection.SOURCE_PROVIDER,
+                GacatParameterReadinessProjection.SOURCE_APPLICATION_INPUT,
+                GacatParameterReadinessProjection.SOURCE_WORKFLOW,
+                GacatParameterReadinessProjection.SOURCE_INTERNAL_SYSTEM,
+                GacatParameterReadinessProjection.SOURCE_MANUAL,
+                GacatParameterReadinessProjection.SOURCE_DERIVED,
+                GacatParameterReadinessProjection.SOURCE_UNKNOWN));
+        out.put("overallReadinessStates", List.of(
+                GacatParameterReadinessProjection.OVERALL_PRODUCTION_READY,
+                GacatParameterReadinessProjection.OVERALL_RUNTIME_READY_NONPROD,
+                GacatParameterReadinessProjection.OVERALL_POLICY_TEST_ONLY,
+                GacatParameterReadinessProjection.OVERALL_CATALOGUE_ONLY,
+                GacatParameterReadinessProjection.OVERALL_READINESS_UNKNOWN));
         if (dbCataloguePresent()) {
             out.put("integrity", catalogueRepository.integrityReport());
         }
@@ -96,8 +113,11 @@ public class DataParametersAdminService {
     }
 
     public Map<String, Object> search(String q) {
-        Map<String, Object> search = registry().search(q);
+        CanonicalParameterRegistry reg = registry();
+        Map<String, Object> search = reg.search(q);
         search.put("allowCanonicalAuthority", false);
+        search.put("results", enrichList(reg, search.get("results")));
+        search.put("dp1", true);
         return search;
     }
 
@@ -106,8 +126,12 @@ public class DataParametersAdminService {
         out.put("allowCanonicalAuthority", false);
         out.put("catalogueAuthority", registry().authority());
         out.put("adminWriteEnabled", false);
+        out.put("dp1", true);
         registry().findById(id).ifPresentOrElse(def -> {
-            out.put("parameter", enrich(def));
+            Map<String, Object> enriched = enrich(def);
+            out.put("parameter", enriched);
+            out.put("sections", enriched.get("sections"));
+            out.put("readiness", enriched.get("readiness"));
             out.put("found", true);
         }, () -> {
             out.put("found", false);
@@ -190,6 +214,24 @@ public class DataParametersAdminService {
         Map<String, Object> m = new LinkedHashMap<>(d.toBusinessView());
         m.put("source", d.evaluatedFrom());
         m.put("lineage", lineage(d));
+        Map<String, Object> readiness = GacatParameterReadinessProjection.project(d);
+        m.put("readiness", readiness);
+        m.put("sourceType", readiness.get("sourceType"));
+        m.put("sourceFamily", readiness.get("sourceFamily"));
+        m.put("overallReadiness", readiness.get("overallReadiness"));
+        m.put("overallReadinessReasons", readiness.get("overallReadinessReasons"));
+        m.put("provider", readiness.get("provider"));
+        m.put("workflow", readiness.get("workflow"));
+        m.put("consumers", readiness.get("consumers"));
+        m.put("mapping", readiness.get("mapping"));
+        // Keep Gate3 factual dims from projection (honest; do not invent)
+        m.put("workflowAvailable", readiness.get("workflowAvailable"));
+        m.put("providerBound", readiness.get("providerBound"));
+        m.put("mappingAvailable", readiness.get("mappingAvailable"));
+        m.put("calculatorAvailable", readiness.get("calculatorAvailable"));
+        m.put("provenanceAvailable", readiness.get("provenanceAvailable"));
+        Map<String, Object> sections = GacatParameterReadinessProjection.detailSections(d, readiness);
+        m.put("sections", sections);
         Map<String, Object> version = dbCataloguePresent()
                 ? catalogueRepository.parameterVersionView(d.id()) : Map.of();
         if (!version.isEmpty()) {
@@ -228,9 +270,13 @@ public class DataParametersAdminService {
             advanced.put("providerFieldPath", d.capability().providerFieldPath());
             advanced.put("schema", d.capability().schema());
             advanced.put("cardinality", d.capability().cardinality());
+            advanced.put("capability", d.capability().toMap());
         }
+        advanced.put("gate3", readiness.get("gate3"));
+        advanced.put("readinessProjection", readiness);
         m.put("advanced", advanced);
         m.put("catalogueAuthority", registry().authority());
+        m.put("dp1", true);
         return m;
     }
 

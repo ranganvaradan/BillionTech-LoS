@@ -211,6 +211,53 @@ public final class WorkflowParameterProvidesCatalog {
         return String.valueOf(raw).trim().toUpperCase(Locale.ROOT);
     }
 
+    /**
+     * DP-1 inverse lookup: which workflow steps / integrations claim this parameter
+     * (production lists + studio-only — visibility only; does not change production filtering).
+     */
+    public static Map<String, Object> lookupForParameter(String parameterId) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        if (parameterId == null || parameterId.isBlank()) {
+            out.put("workflowAvailable", false);
+            out.put("integrationAvailable", false);
+            out.put("productionSteps", List.of());
+            out.put("studioOnlySteps", List.of());
+            out.put("integrations", List.of());
+            return out;
+        }
+        String id = parameterId.trim();
+        List<String> productionSteps = new ArrayList<>();
+        List<String> studioOnlySteps = new ArrayList<>();
+        List<String> integrations = new ArrayList<>();
+        for (Map.Entry<String, List<String>> e : STEP_PROVIDES.entrySet()) {
+            if (e.getValue().contains(id)) {
+                productionSteps.add(e.getKey());
+            }
+        }
+        for (Map.Entry<String, List<String>> e : STEP_STUDIO_ONLY.entrySet()) {
+            if (e.getValue().contains(id)) {
+                studioOnlySteps.add(e.getKey());
+            }
+        }
+        for (Map.Entry<String, List<String>> e : INTEGRATION_PROVIDES.entrySet()) {
+            if (e.getValue().contains(id)) {
+                integrations.add(e.getKey());
+            }
+        }
+        for (Map.Entry<String, List<String>> e : INTEGRATION_STUDIO_ONLY.entrySet()) {
+            if (e.getValue().contains(id) && !integrations.contains(e.getKey())) {
+                integrations.add(e.getKey());
+            }
+        }
+        out.put("workflowAvailable", !productionSteps.isEmpty() || !studioOnlySteps.isEmpty());
+        out.put("integrationAvailable", !integrations.isEmpty());
+        out.put("productionSteps", productionSteps);
+        out.put("studioOnlySteps", studioOnlySteps);
+        out.put("integrations", integrations);
+        out.put("readModelOnly", true);
+        return out;
+    }
+
     private static String noteForStep(String step) {
         return switch (step) {
             case "GSTIN_VERIFY" -> "Verifies GSTIN identity only — does NOT satisfy gst.turnover.*";

@@ -21,6 +21,13 @@ export async function searchDataParameters(q: string): Promise<Record<string, un
   return data
 }
 
+export async function getDataParametersDetail(parameterId: string): Promise<Record<string, unknown>> {
+  const { data } = await http.get<Record<string, unknown>>(
+    `${BASE}/data-parameters/${encodeURIComponent(parameterId)}`,
+  )
+  return data
+}
+
 export async function getWorkflowProvides(): Promise<Record<string, unknown>> {
   const { data } = await http.get<Record<string, unknown>>(`${BASE}/workflow-provides`)
   return data
