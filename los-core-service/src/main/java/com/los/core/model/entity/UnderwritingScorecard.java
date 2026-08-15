@@ -103,6 +103,15 @@ public class UnderwritingScorecard {
     @Builder.Default
     private Map<String, Object> governanceJson = Map.of();
 
+    /** DP-3 — LEGACY_POINTS_V1 | POLICY_WEIGHTED_V2 */
+    @Column(name = "scoring_mode", nullable = false, length = 40)
+    @Builder.Default
+    private String scoringMode = "LEGACY_POINTS_V1";
+
+    /** DP-3 — optional reverse link to owning Policy Version. */
+    @Column(name = "policy_document_id")
+    private UUID policyDocumentId;
+
     @CreationTimestamp
     @Column(name = "created_at", updatable = false, nullable = false)
     private Instant createdAt;

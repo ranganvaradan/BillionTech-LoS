@@ -247,6 +247,11 @@ public class ScorecardPolicyEngine {
         matched.put("parameterResults", paramResults);
         matched.put("weightSemantics", "METADATA_ONLY_NOT_USED_IN_FORMULA");
         matched.put("bandSemantics", "EXCLUSIVE_RANGES");
+        String scoringMode = c.getScoringMode() != null ? c.getScoringMode() : "LEGACY_POINTS_V1";
+        matched.put("scoringMode", scoringMode);
+        // DP-3: live UW always uses LEGACY_POINTS_V1 formula path (no silent V2 cutover).
+        matched.put("liveEngineFormula", "LEGACY_POINTS_V1");
+        matched.put("policyWeightedV2LiveDeferred", PolicyWeightedScorecardEngine.MODE.equals(scoringMode));
         matched.putAll(outcome.evidence());
 
         Map<String, Object> src = new LinkedHashMap<>(ctx.toMap());

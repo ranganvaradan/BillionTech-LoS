@@ -35,6 +35,7 @@ import { CiPolicyAmbiguitiesTab } from '@/pages/creditIntelligence/CiPolicyAmbig
 import { CiPolicyApprovalsTab } from '@/pages/creditIntelligence/CiPolicyApprovalsTab'
 import { CiPolicyKycTab } from '@/pages/creditIntelligence/CiPolicyKycTab'
 import { CiPolicyRulesTab } from '@/pages/creditIntelligence/CiPolicyRulesTab'
+import { PolicyParameterInventoryPanel } from '@/components/policy/PolicyParameterInventoryPanel'
 import {
   resolveDataAndCalculations,
   resolveOtherPolicyContent,
@@ -650,6 +651,8 @@ export function CiPolicyStudioPage() {
           {demoMsg}
         </p>
       ) : null}
+
+      <PolicyParameterInventoryPanel documentId={documentId || null} />
 
       <nav
         className="mb-3 flex flex-wrap items-center gap-2 border-b border-slate-200 pb-2"
