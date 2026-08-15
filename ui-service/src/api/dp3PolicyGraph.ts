@@ -1,6 +1,12 @@
 import { http } from '@/api/http'
 
-const BASE = '/api/v1/internal/credit-intelligence/dp3'
+/**
+ * Relative to http baseURL (`/api/v1` on staging). Must NOT include `/api/v1` —
+ * axios joins baseURL + path and would produce `/api/v1/api/v1/...`.
+ */
+const BASE = 'internal/credit-intelligence/dp3'
+
+export { BASE as DP3_POLICY_GRAPH_API_BASE }
 
 export async function fetchPolicyParameterInventory(policyDocumentId: string) {
   const { data } = await http.get<Record<string, unknown>>(

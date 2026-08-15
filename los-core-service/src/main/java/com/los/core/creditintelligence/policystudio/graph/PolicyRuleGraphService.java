@@ -99,6 +99,9 @@ public class PolicyRuleGraphService {
         if (opt.isEmpty()) {
             out.put("parameters", List.of());
             out.put("graphPresent", false);
+            out.put("unresolvedOperandCount", 0);
+            out.put("inventoryState", "NO_POLICY_GRAPH");
+            out.put("reason", "NO_MATERIALIZED_POLICY_GRAPH");
             return out;
         }
         CiPolicyRuleGraph graph = opt.get();
@@ -158,6 +161,13 @@ public class PolicyRuleGraphService {
         out.put("unresolvedOperandCount", graph.getUnresolvedOperandCount());
         out.put("parameters", params);
         out.put("scoringEligibleParameters", scoringEligible(params));
+        if (params.isEmpty()) {
+            out.put("inventoryState", "NO_PARAMETERS");
+        } else if (graph.getUnresolvedOperandCount() > 0) {
+            out.put("inventoryState", "LOADED_WITH_UNRESOLVED");
+        } else {
+            out.put("inventoryState", "LOADED_WITH_PARAMETERS");
+        }
         return out;
     }
 
