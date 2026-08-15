@@ -136,6 +136,8 @@ public class WorkflowEngineServiceImpl implements IWorkflowEngineService {
 
     @Override
     public WorkflowConfigResponse getActiveWorkflow(BorrowerType borrowerType, String loanProduct, IntakeSegment intakeSegment) {
+        // Admin/catalog lookup by dimensions only — NOT application orchestration (W1).
+        // Application consumers must use ApplicationWorkflowResolver / ActiveWorkflowConfigService.
         IntakeSegment seg = intakeSegment != null ? intakeSegment : IntakeSegment.BORROWER;
         WorkflowConfig config = workflowRepository
                 .findByBorrowerTypeAndLoanProductAndIntakeSegmentAndActiveTrueOrderByVersionDesc(

@@ -15,7 +15,8 @@ import com.los.core.repository.ManualKycReviewRepository;
 import com.los.core.service.audit.AuditService;
 import com.los.core.service.integration.IIntegrationRouterService;
 import com.los.core.service.loan.ApplicantIdentityResolver;
-import com.los.core.service.workflow.IWorkflowEngineService;
+import com.los.core.service.workflow.ApplicationWorkflowResolver;
+import com.los.core.model.entity.WorkflowConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -39,7 +40,7 @@ public class KycOrchestrationServiceImpl implements IKycOrchestrationService {
     private final LoanApplicationRepository loanApplicationRepository;
     private final ManualKycReviewRepository manualKycReviewRepository;
     private final IIntegrationRouterService integrationRouter;
-    private final IWorkflowEngineService workflowEngine;
+    private final ApplicationWorkflowResolver applicationWorkflowResolver;
     private final AuditService auditService;
     private final AuditEventRepository auditEventRepository;
 
@@ -196,9 +197,8 @@ public class KycOrchestrationServiceImpl implements IKycOrchestrationService {
         LoanApplication app = loanApplicationRepository.findById(applicationId)
                 .orElseThrow(() -> new ResourceNotFoundException("Application not found: " + applicationId));
 
-        // Get the active workflow for this borrower type and product
-        IntakeSegment segment = app.getIntakeSegment() != null ? app.getIntakeSegment() : IntakeSegment.BORROWER;
-        var workflowConfig = workflowEngine.getActiveWorkflow(app.getBorrowerType(), app.getLoanProduct(), segment);
+        // W1 — consume the application's resolved Workflow Version (not independent active lookup).
+        WorkflowConfig workflowConfig = applicationWorkflowResolver.requireConfig(app);
 
         List<Map<String, Object>> steps = workflowConfig.getSteps();
         List<KycStepResultResponse> results = new java.util.ArrayList<>();
@@ -262,8 +262,7 @@ public class KycOrchestrationServiceImpl implements IKycOrchestrationService {
         LoanApplication app = loanApplicationRepository.findById(applicationId)
                 .orElseThrow(() -> new ResourceNotFoundException("Application not found: " + applicationId));
 
-        IntakeSegment segment = app.getIntakeSegment() != null ? app.getIntakeSegment() : IntakeSegment.BORROWER;
-        var workflowConfig = workflowEngine.getActiveWorkflow(app.getBorrowerType(), app.getLoanProduct(), segment);
+        WorkflowConfig workflowConfig = applicationWorkflowResolver.requireConfig(app);
         List<Map<String, Object>> steps = workflowConfig.getSteps();
         Map<String, Object> intakeConfig = workflowConfig.getIntakeConfig();
         List<KycStepResultResponse> results = getStepResults(applicationId);

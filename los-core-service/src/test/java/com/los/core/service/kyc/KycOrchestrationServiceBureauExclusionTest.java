@@ -1,10 +1,9 @@
 package com.los.core.service.kyc;
 
-import com.los.core.model.dto.response.WorkflowConfigResponse;
 import com.los.core.model.entity.LoanApplication;
+import com.los.core.model.entity.WorkflowConfig;
 import com.los.core.model.enums.ApplicationStatus;
 import com.los.core.model.enums.BorrowerType;
-import com.los.core.model.enums.IntakeSegment;
 import com.los.core.model.enums.KycStepType;
 import com.los.core.repository.AuditEventRepository;
 import com.los.core.repository.KycStepResultRepository;
@@ -12,7 +11,7 @@ import com.los.core.repository.LoanApplicationRepository;
 import com.los.core.repository.ManualKycReviewRepository;
 import com.los.core.service.audit.AuditService;
 import com.los.core.service.integration.IIntegrationRouterService;
-import com.los.core.service.workflow.IWorkflowEngineService;
+import com.los.core.service.workflow.ApplicationWorkflowResolver;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -28,7 +27,6 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -48,7 +46,7 @@ class KycOrchestrationServiceBureauExclusionTest {
     @Mock
     private IIntegrationRouterService integrationRouter;
     @Mock
-    private IWorkflowEngineService workflowEngine;
+    private ApplicationWorkflowResolver applicationWorkflowResolver;
     @Mock
     private AuditService auditService;
     @Mock
@@ -65,7 +63,7 @@ class KycOrchestrationServiceBureauExclusionTest {
                 loanApplicationRepository,
                 manualKycReviewRepository,
                 integrationRouter,
-                workflowEngine,
+                applicationWorkflowResolver,
                 auditService,
                 auditEventRepository
         );
@@ -92,13 +90,14 @@ class KycOrchestrationServiceBureauExclusionTest {
                         Map.of("confidenceScore", 0.9, "parsedData", Map.of(), "transactionId", "tx-1"),
                         null
                 ));
-        WorkflowConfigResponse cfg = WorkflowConfigResponse.builder()
+        WorkflowConfig cfg = WorkflowConfig.builder()
+                .id(UUID.randomUUID())
                 .steps(List.of(
                         Map.of("step", "PAN_VERIFY", "mandatory", true, "order", 1),
                         Map.of("step", "BUREAU_PULL", "mandatory", true, "order", 2, "provider", "EQUIFAX")
                 ))
                 .build();
-        when(workflowEngine.getActiveWorkflow(BorrowerType.INDIVIDUAL, "PERSONAL_LOAN", IntakeSegment.BORROWER)).thenReturn(cfg);
+        when(applicationWorkflowResolver.requireConfig(app)).thenReturn(cfg);
 
         var results = kycOrchestrationService.executeWorkflow(appId, Map.of());
 
@@ -121,15 +120,17 @@ class KycOrchestrationServiceBureauExclusionTest {
         when(loanApplicationRepository.findById(appId)).thenReturn(Optional.of(app));
         when(kycStepResultRepository.findByApplicationIdOrderByCreatedAtAsc(appId)).thenReturn(List.of());
         when(manualKycReviewRepository.findByApplicationIdOrderByUpdatedAtDesc(appId)).thenReturn(List.of());
-        when(workflowEngine.getActiveWorkflow(BorrowerType.INDIVIDUAL, "PERSONAL_LOAN", IntakeSegment.BORROWER)).thenReturn(WorkflowConfigResponse.builder()
+        WorkflowConfig cfg = WorkflowConfig.builder()
+                .id(UUID.randomUUID())
                 .steps(List.of(
                         Map.of("step", "PAN_VERIFY", "mandatory", true, "order", 1),
                         Map.of("step", "BUREAU_PULL", "mandatory", true, "order", 2)
                 ))
-                .build());
+                .build();
+        when(applicationWorkflowResolver.requireConfig(app)).thenReturn(cfg);
 
         Map<String, Object> out = kycOrchestrationService.computeKycOutcome(appId);
-        // With no KYC results, identity mandatory steps are incomplete, not fail from bureau
-        assertEquals("INCOMPLETE", out.get("outcome"));
+        // Missing mandatory identity (PAN) → FAIL; BUREAU_PULL is ignored as non-identity.
+        assertEquals("FAIL", out.get("outcome"));
     }
 }

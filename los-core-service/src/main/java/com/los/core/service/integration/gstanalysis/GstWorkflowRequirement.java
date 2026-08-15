@@ -1,11 +1,12 @@
 package com.los.core.service.integration.gstanalysis;
 
+import com.los.core.exception.BusinessRuleException;
 import com.los.core.model.entity.LoanApplication;
-import com.los.core.model.enums.IntakeSegment;
+import com.los.core.model.entity.WorkflowConfig;
 import com.los.core.model.enums.KycStepType;
 import com.los.core.model.enums.StepOutcome;
 import com.los.core.repository.KycStepResultRepository;
-import com.los.core.service.workflow.IWorkflowEngineService;
+import com.los.core.service.workflow.ApplicationWorkflowResolver;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -15,12 +16,13 @@ import java.util.UUID;
 
 /**
  * Workflow-gated GST analysis helpers (prepare-gate only — upload success not required at submit).
+ * W1: uses application-resolved Workflow Version only.
  */
 @Component
 @RequiredArgsConstructor
 public class GstWorkflowRequirement {
 
-    private final IWorkflowEngineService workflowEngine;
+    private final ApplicationWorkflowResolver applicationWorkflowResolver;
     private final KycStepResultRepository kycStepResultRepository;
 
     public boolean isOnActiveWorkflow(LoanApplication app) {
@@ -28,9 +30,13 @@ public class GstWorkflowRequirement {
             return false;
         }
         try {
-            IntakeSegment segment = app.getIntakeSegment() != null ? app.getIntakeSegment() : IntakeSegment.BORROWER;
-            var workflow = workflowEngine.getActiveWorkflow(app.getBorrowerType(), app.getLoanProduct(), segment);
-            return workflowHasStep(workflow != null ? workflow.getSteps() : null);
+            WorkflowConfig workflow = applicationWorkflowResolver.requireConfig(app);
+            return workflowHasStep(workflow.getSteps());
+        } catch (BusinessRuleException e) {
+            if ("WORKFLOW_NOT_RESOLVED".equals(e.getReason())) {
+                return false;
+            }
+            throw e;
         } catch (Exception e) {
             return false;
         }
@@ -41,9 +47,13 @@ public class GstWorkflowRequirement {
             return false;
         }
         try {
-            IntakeSegment segment = app.getIntakeSegment() != null ? app.getIntakeSegment() : IntakeSegment.BORROWER;
-            var workflow = workflowEngine.getActiveWorkflow(app.getBorrowerType(), app.getLoanProduct(), segment);
-            return workflowHasMandatory(workflow != null ? workflow.getSteps() : null);
+            WorkflowConfig workflow = applicationWorkflowResolver.requireConfig(app);
+            return workflowHasMandatory(workflow.getSteps());
+        } catch (BusinessRuleException e) {
+            if ("WORKFLOW_NOT_RESOLVED".equals(e.getReason())) {
+                return false;
+            }
+            throw e;
         } catch (Exception e) {
             return false;
         }

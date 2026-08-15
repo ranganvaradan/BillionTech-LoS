@@ -24,6 +24,7 @@ import com.los.core.service.loan.intake.ApplicationCustomerIdResolver;
 import com.los.core.service.loan.intake.AnchorIntakeValidation;
 import com.los.core.service.loan.intake.IntakeMetadataEnricher;
 import com.los.core.service.underwriting.UnderwritingEvaluationService;
+import com.los.core.service.workflow.ApplicationWorkflowResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -54,6 +55,7 @@ public class LoanApplicationServiceImpl implements ILoanApplicationService {
     private final ApplicationSubmitIdentityValidator applicationSubmitIdentityValidator;
     private final ApplicationInputChangeTracker applicationInputChangeTracker;
     private final WorkflowConfigRepository workflowConfigRepository;
+    private final ApplicationWorkflowResolver applicationWorkflowResolver;
 
     private static final AtomicLong SEQUENCE = new AtomicLong(System.currentTimeMillis() % 100000);
     private static final Pattern EMAIL_RE = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
@@ -158,6 +160,10 @@ public class LoanApplicationServiceImpl implements ILoanApplicationService {
                 .build();
 
         application = applicationRepository.save(application);
+        if (workflowId != null) {
+            WorkflowConfig cfg = workflowConfigRepository.findById(workflowId).orElseThrow();
+            applicationWorkflowResolver.stampExplicit(application, cfg);
+        }
         log.info("Application created: {} for customer: {}", applicationNumber, customerId);
 
         auditService.logEvent(application.getId(), "APPLICATION", "CREATED",
@@ -300,8 +306,10 @@ public class LoanApplicationServiceImpl implements ILoanApplicationService {
             app.setLmsTenureUnit(blankToNull(request.getLmsTenureUnit()));
         }
         if (request.getWorkflowId() != null) {
-            app.setWorkflowId(resolveWorkflowBinding(
-                    request.getWorkflowId(), app.getBorrowerType(), app.getLoanProduct(), app.getIntakeSegment()));
+            UUID bound = resolveWorkflowBinding(
+                    request.getWorkflowId(), app.getBorrowerType(), app.getLoanProduct(), app.getIntakeSegment());
+            WorkflowConfig cfg = workflowConfigRepository.findById(bound).orElseThrow();
+            applicationWorkflowResolver.stampExplicit(app, cfg);
         }
         if (request.getPersonalInfo() != null) app.setPersonalInfo(mergeJsonb(app.getPersonalInfo(), request.getPersonalInfo()));
         if (request.getBusinessInfo() != null) app.setBusinessInfo(mergeJsonb(app.getBusinessInfo(), request.getBusinessInfo()));

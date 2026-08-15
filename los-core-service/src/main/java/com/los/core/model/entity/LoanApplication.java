@@ -70,11 +70,26 @@ public class LoanApplication {
     private String lmsTenureUnit;
 
     /**
-     * Explicit workflow binding chosen at create time.
-     * Older applications may keep this null and continue resolving by borrower/product/segment.
+     * Resolved Workflow Version identity ({@code workflow_configs.id}).
+     * Once set, orchestration must use this Version only (W1).
      */
     @Column(name = "workflow_id")
     private UUID workflowId;
+
+    /** Snapshot of {@code workflow_configs.version} at resolution time (W1). */
+    @Column(name = "workflow_version")
+    private Integer workflowVersion;
+
+    /** EXPLICIT | DEFAULT | LEGACY_EXISTING | MIGRATED (W1). */
+    @Column(name = "workflow_resolution_source", length = 40)
+    private String workflowResolutionSource;
+
+    @Column(name = "workflow_resolved_at")
+    private Instant workflowResolvedAt;
+
+    /** SHA-256 of workflow definition at resolve time; detects in-place mutation (W1). */
+    @Column(name = "workflow_content_hash", length = 64)
+    private String workflowContentHash;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
