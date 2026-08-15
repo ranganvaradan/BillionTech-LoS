@@ -914,7 +914,7 @@ export function CustomerCategoriesPage() {
                       categoryId={selected.id}
                       status={selected.status}
                       governanceJson={selected.governanceJson}
-                      onSaved={() => void refresh()}
+                      onSaved={() => void refreshSelected(selected.id)}
                     />
                   </DetailSection>
                 ) : null}

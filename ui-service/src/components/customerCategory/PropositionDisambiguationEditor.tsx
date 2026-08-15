@@ -85,7 +85,7 @@ export function PropositionDisambiguationEditor({
       setMsg('Proposition & disambiguation settings saved.')
       onSaved?.()
     } catch (e) {
-      setErr(e instanceof ApiError ? userFriendlyMessage(e) : 'Could not save proposition config')
+      setErr(e instanceof ApiError ? userFriendlyMessage(e, 'Could not save proposition config') : 'Could not save proposition config')
     } finally {
       setBusy(false)
     }

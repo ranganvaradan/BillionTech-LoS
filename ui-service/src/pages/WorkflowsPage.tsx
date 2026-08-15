@@ -40,7 +40,6 @@ import {
 import { formatInstant } from '@/lib/format'
 import {
   filterWorkflowsForLenderUi,
-  shouldDefaultHidePlatformCatalogue,
 } from '@/lib/lenderConfigVisibility'
 import { isClientLenderSurface } from '@/lib/runtimeEnv'
 import {
