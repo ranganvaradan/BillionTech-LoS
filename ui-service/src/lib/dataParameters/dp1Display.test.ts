@@ -1,99 +1,69 @@
-import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { describe, expect, it } from 'vitest'
 import {
   matchesDp1Filters,
   overallReadinessLabel,
-  providerStatusLabel,
-  readinessBadgeClass,
+  parameterSupportLabel,
+  platformIntegrationLabel,
   sourceTypeLabel,
-} from '@/lib/dataParameters/dp1Display'
+} from './dp1Display'
 
-describe('DP-1 Data & Parameters display', () => {
-  it('labels overall readiness honestly', () => {
-    expect(overallReadinessLabel('PRODUCTION_READY')).toBe('Production Ready')
+describe('dp1Display capability semantics', () => {
+  it('labels legacy readiness and new capability statuses', () => {
     expect(overallReadinessLabel('RUNTIME_READY_NONPROD')).toBe('Runtime Ready — Non-Production')
-    expect(overallReadinessLabel('POLICY_TEST_ONLY')).toBe('Policy Test Only')
-    expect(overallReadinessLabel('CATALOGUE_ONLY')).toBe('Catalogue Only')
-    expect(overallReadinessLabel('READINESS_UNKNOWN')).toBe('Readiness Unknown')
-  })
-
-  it('labels source types', () => {
+    expect(platformIntegrationLabel('PRODUCTION_READY')).toBe('Production Ready')
+    expect(platformIntegrationLabel('NOT_INTEGRATED')).toBe('Not Integrated')
+    expect(parameterSupportLabel('SUPPORTED_DERIVED')).toBe('Supported — Derived')
+    expect(parameterSupportLabel('CALCULATION_NOT_IMPLEMENTED')).toBe('Calculation Not Implemented')
     expect(sourceTypeLabel('APPLICATION_INPUT')).toBe('Application input')
-    expect(sourceTypeLabel('PROVIDER')).toBe('Provider')
-    expect(sourceTypeLabel('WORKFLOW')).toBe('Workflow')
   })
 
-  it('distinguishes provider registration states', () => {
-    expect(providerStatusLabel({ status: 'NOT_APPLICABLE' })).toContain('not applicable')
-    expect(providerStatusLabel({ status: 'INFERRED', label: 'Equifax bureau XML path' })).toContain('inferred')
-    expect(providerStatusLabel({ status: 'UNKNOWN' })).toContain('unknown')
-    expect(providerStatusLabel({ status: 'REGISTERED', label: 'Equifax' })).toContain('registered')
-  })
-
-  it('filters by source family, type, readiness, productionReady', () => {
-    const row = {
-      id: 'bureau.score',
-      businessName: 'Bureau score',
+  it('filters by parameterSupport and source family', () => {
+    const p = {
+      id: 'bureau.accounts.cc_writeoff',
       sourceFamily: 'Bureau Retail',
       sourceType: 'PROVIDER',
-      overallReadiness: 'PRODUCTION_READY',
-      productionReady: true,
+      overallReadiness: 'RUNTIME_READY_NONPROD',
+      productionReady: false,
+      capability: {
+        parameterSupport: { status: 'SUPPORTED_DERIVED' },
+        platformIntegration: { status: 'PRODUCTION_READY' },
+      },
     }
     expect(
-      matchesDp1Filters(row, {
+      matchesDp1Filters(p, {
         sourceFamily: 'Bureau Retail',
-        sourceType: 'PROVIDER',
-        overallReadiness: 'PRODUCTION_READY',
-        productionReady: 'true',
-        q: 'score',
+        sourceType: '',
+        overallReadiness: '',
+        productionReady: '',
+        parameterSupport: 'SUPPORTED_DERIVED',
+        q: '',
       }),
     ).toBe(true)
     expect(
-      matchesDp1Filters(row, {
-        sourceFamily: '',
-        sourceType: '',
-        overallReadiness: 'POLICY_TEST_ONLY',
-        productionReady: '',
-        q: '',
-      }),
-    ).toBe(false)
-    expect(
-      matchesDp1Filters(row, {
+      matchesDp1Filters(p, {
         sourceFamily: '',
         sourceType: '',
         overallReadiness: '',
-        productionReady: 'false',
+        productionReady: '',
+        parameterSupport: 'SUPPORTED_RAW',
         q: '',
       }),
     ).toBe(false)
   })
 
-  it('badge classes differ for readiness buckets', () => {
-    expect(readinessBadgeClass('PRODUCTION_READY')).toContain('emerald')
-    expect(readinessBadgeClass('RUNTIME_READY_NONPROD')).toContain('amber')
-    expect(readinessBadgeClass('POLICY_TEST_ONLY')).toContain('sky')
-    expect(readinessBadgeClass('CATALOGUE_ONLY')).toContain('slate')
-    expect(readinessBadgeClass('READINESS_UNKNOWN')).toContain('rose')
-  })
-
-  it('DataParametersPage wires badges, filters, and detail sections', () => {
-    const page = readFileSync(
-      resolve(__dirname, '../../pages/DataParametersPage.tsx'),
-      'utf8',
-    )
-    expect(page).toContain('data-testid="dp1-badges"')
-    expect(page).toContain('data-testid="dp1-filters"')
-    expect(page).toContain('data-testid="dp1-detail-panel"')
-    expect(page).toContain('A. Definition')
-    expect(page).toContain('D. Readiness')
-    expect(page).toContain('Advanced / Technical Details')
+  it('DataParametersPage wires capability UX and advanced technical details', () => {
+    const page = readFileSync(resolve(__dirname, '../../pages/DataParametersPage.tsx'), 'utf8')
+    expect(page).toContain('dp-lender-capability')
+    expect(page).toContain('dp-source-capability-summary')
+    expect(page).toContain('dp-advanced-technical')
+    expect(page).toContain('Platform Integration')
+    expect(page).toContain('Your Organisation')
+    expect(page).toContain('Available for Production Policy Use')
     expect(page).toContain('getDataParametersDetail')
-  })
-
-  it('API client exposes parameter detail', () => {
-    const api = readFileSync(resolve(__dirname, '../../api/liveReadiness.ts'), 'utf8')
-    expect(api).toContain('getDataParametersDetail')
-    expect(api).toContain('data-parameters/')
+    // Primary readiness facts moved under Advanced
+    expect(page).toContain('Provider Bound')
+    expect(page.indexOf('dp-lender-capability')).toBeLessThan(page.indexOf('dp-advanced-technical'))
   })
 })

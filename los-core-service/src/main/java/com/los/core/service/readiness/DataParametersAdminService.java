@@ -1,5 +1,6 @@
 package com.los.core.service.readiness;
 
+import com.los.core.config.IntegrationProperties;
 import com.los.core.creditintelligence.policystudio.parameters.AuthoringValueTypes;
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterDefinition;
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterRegistry;
@@ -12,6 +13,7 @@ import org.springframework.stereotype.Service;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -22,16 +24,42 @@ import java.util.Map;
 public class DataParametersAdminService {
 
     private final GacatCatalogueRepository catalogueRepository;
+    private final IntegrationProperties integrationProperties;
 
     /** Unit-test convenience when JDBC catalogue is unavailable. */
     public DataParametersAdminService() {
-        this(null);
+        this(null, null);
+    }
+
+    public DataParametersAdminService(GacatCatalogueRepository catalogueRepository) {
+        this(catalogueRepository, null);
     }
 
     /** Production: Spring must inject the JDBC catalogue repository (do not use the no-arg ctor). */
     @Autowired
-    public DataParametersAdminService(GacatCatalogueRepository catalogueRepository) {
+    public DataParametersAdminService(
+            GacatCatalogueRepository catalogueRepository,
+            @Autowired(required = false) IntegrationProperties integrationProperties) {
         this.catalogueRepository = catalogueRepository;
+        this.integrationProperties = integrationProperties;
+    }
+
+    private DataParametersCapabilitySemantics.LenderSourceSubscriptionProbe subscriptionProbe() {
+        return family -> {
+            String f = family == null ? "" : family.toLowerCase(Locale.ROOT);
+            if (integrationProperties == null) {
+                return DataParametersCapabilitySemantics.LENDER_NOT_YET_SUBSCRIBED;
+            }
+            if (f.contains("bureau") && !f.contains("commercial")) {
+                var eq = integrationProperties.getEquifax();
+                if (eq != null && (eq.isConfigured() || eq.isSimulation())) {
+                    return DataParametersCapabilitySemantics.LENDER_SUBSCRIBED;
+                }
+                return DataParametersCapabilitySemantics.LENDER_NOT_YET_SUBSCRIBED;
+            }
+            // Other provider families: no dedicated subscription table yet
+            return DataParametersCapabilitySemantics.LENDER_NOT_YET_SUBSCRIBED;
+        };
     }
 
     private boolean dbCataloguePresent() {
@@ -57,12 +85,32 @@ public class DataParametersAdminService {
         out.put("sources", reg.sources());
         out.put("catalogue", reg.catalogueView());
         out.put("bySourceSummary", bySourceSummary(reg));
+        out.put("sourceCapabilitySummary", sourceCapabilitySummary(reg));
         out.put("gapsManual", gapsManual(reg));
         out.put("workflowProvides", WorkflowParameterProvidesCatalog.catalogueView());
         out.put("totals", totals(reg));
         out.put("dp1", true);
+        out.put("capabilitySemantics", true);
+        out.put("capabilityModel", "DATA-PARAMETERS-CAPABILITY-SEMANTICS-1");
+        out.put("applicationDataStateExcluded", true);
         out.put("readinessProjection", "GacatParameterReadinessProjection");
         out.put("knownCatalogueDrift", GacatParameterReadinessProjection.knownCatalogueDriftNotes());
+        out.put("sourceIntegrationStatuses", List.of(
+                DataParametersCapabilitySemantics.SOURCE_PLATFORM_PRODUCTION_READY,
+                DataParametersCapabilitySemantics.SOURCE_PLATFORM_NOT_INTEGRATED,
+                DataParametersCapabilitySemantics.SOURCE_PLATFORM_NOT_APPLICABLE));
+        out.put("parameterSupportStatuses", List.of(
+                DataParametersCapabilitySemantics.SUPPORT_SUPPORTED_RAW,
+                DataParametersCapabilitySemantics.SUPPORT_SUPPORTED_DERIVED,
+                DataParametersCapabilitySemantics.SUPPORT_PROVIDER_DOES_NOT_SUPPORT,
+                DataParametersCapabilitySemantics.SUPPORT_CALCULATION_NOT_IMPLEMENTED,
+                DataParametersCapabilitySemantics.SUPPORT_SOURCE_NOT_INTEGRATED,
+                DataParametersCapabilitySemantics.SUPPORT_NOT_APPLICABLE));
+        out.put("lenderSubscriptionStatuses", List.of(
+                DataParametersCapabilitySemantics.LENDER_SUBSCRIBED,
+                DataParametersCapabilitySemantics.LENDER_NOT_YET_SUBSCRIBED,
+                DataParametersCapabilitySemantics.LENDER_SUBSCRIPTION_SETUP_PENDING,
+                DataParametersCapabilitySemantics.LENDER_NOT_APPLICABLE));
         out.put("sourceTypes", List.of(
                 GacatParameterReadinessProjection.SOURCE_PROVIDER,
                 GacatParameterReadinessProjection.SOURCE_APPLICATION_INPUT,
@@ -77,6 +125,9 @@ public class DataParametersAdminService {
                 GacatParameterReadinessProjection.OVERALL_POLICY_TEST_ONLY,
                 GacatParameterReadinessProjection.OVERALL_CATALOGUE_ONLY,
                 GacatParameterReadinessProjection.OVERALL_READINESS_UNKNOWN));
+        out.put("subtitle",
+                "See what information the LOS can collect, calculate or obtain from integrated sources, "
+                        + "and whether it is ready for use in lending policies.");
         if (dbCataloguePresent()) {
             out.put("integrity", catalogueRepository.integrityReport());
         }
@@ -132,7 +183,10 @@ public class DataParametersAdminService {
             out.put("parameter", enriched);
             out.put("sections", enriched.get("sections"));
             out.put("readiness", enriched.get("readiness"));
+            out.put("capability", enriched.get("capability"));
             out.put("found", true);
+            out.put("capabilitySemantics", true);
+            out.put("applicationDataStateExcluded", true);
         }, () -> {
             out.put("found", false);
             out.put("message", "Unknown parameter id");
@@ -142,6 +196,7 @@ public class DataParametersAdminService {
 
     private List<Map<String, Object>> bySourceSummary(CanonicalParameterRegistry reg) {
         List<Map<String, Object>> rows = new ArrayList<>();
+        DataParametersCapabilitySemantics.LenderSourceSubscriptionProbe probe = subscriptionProbe();
         for (String source : reg.sources()) {
             Map<String, Object> browse = reg.browseBySource(source);
             int count = browse.get("count") instanceof Number n ? n.intValue() : 0;
@@ -155,7 +210,32 @@ public class DataParametersAdminService {
             row.put("manualCount", browse.get("manualCount"));
             row.put("liveCount", browse.get("liveCount"));
             row.put("count", browse.get("count"));
+            List<CanonicalParameterDefinition> familyParams = reg.all().stream()
+                    .filter(d -> source.equals(d.evaluatedFrom()))
+                    .toList();
+            Map<String, Object> capSummary = DataParametersCapabilitySemantics.sourceFamilySummary(
+                    source, familyParams, probe);
+            row.put("platformIntegration", capSummary.get("platformIntegration"));
+            row.put("platformLabel", capSummary.get("platformLabel"));
+            row.put("providerLabel", capSummary.get("providerLabel"));
+            row.put("yourOrganisation", capSummary.get("yourOrganisation"));
+            row.put("yourOrganisationLabel", capSummary.get("yourOrganisationLabel"));
+            row.put("parameterSupportCounts", capSummary.get("parameterSupportCounts"));
             rows.add(row);
+        }
+        return rows;
+    }
+
+    /** Source-level capability glance for lender UX (section I). */
+    private List<Map<String, Object>> sourceCapabilitySummary(CanonicalParameterRegistry reg) {
+        DataParametersCapabilitySemantics.LenderSourceSubscriptionProbe probe = subscriptionProbe();
+        List<Map<String, Object>> rows = new ArrayList<>();
+        for (String source : reg.sources()) {
+            List<CanonicalParameterDefinition> familyParams = reg.all().stream()
+                    .filter(d -> source.equals(d.evaluatedFrom()))
+                    .toList();
+            if (familyParams.isEmpty()) continue;
+            rows.add(DataParametersCapabilitySemantics.sourceFamilySummary(source, familyParams, probe));
         }
         return rows;
     }
@@ -230,7 +310,21 @@ public class DataParametersAdminService {
         m.put("mappingAvailable", readiness.get("mappingAvailable"));
         m.put("calculatorAvailable", readiness.get("calculatorAvailable"));
         m.put("provenanceAvailable", readiness.get("provenanceAvailable"));
-        Map<String, Object> sections = GacatParameterReadinessProjection.detailSections(d, readiness);
+
+        Map<String, Object> capability = DataParametersCapabilitySemantics.project(
+                d, readiness, subscriptionProbe());
+        m.put("capability", capability);
+        m.put("platformIntegration", capability.get("platformIntegration"));
+        m.put("parameterSupport", capability.get("parameterSupport"));
+        m.put("yourOrganisation", capability.get("yourOrganisation"));
+        m.put("availableForProductionPolicyUse", capability.get("availableForProductionPolicyUse"));
+        m.put("canBillionTechSupport", capability.get("canBillionTechSupport"));
+        m.put("canBillionTechSupportLabel", capability.get("canBillionTechSupportLabel"));
+        m.put("applicationDataStateExcluded", true);
+        m.put("capabilitySemantics", true);
+
+        Map<String, Object> legacySections = GacatParameterReadinessProjection.detailSections(d, readiness);
+        Map<String, Object> sections = lenderFacingSections(d, readiness, capability, legacySections);
         m.put("sections", sections);
         Map<String, Object> version = dbCataloguePresent()
                 ? catalogueRepository.parameterVersionView(d.id()) : Map.of();
@@ -274,10 +368,87 @@ public class DataParametersAdminService {
         }
         advanced.put("gate3", readiness.get("gate3"));
         advanced.put("readinessProjection", readiness);
+        advanced.put("legacyOverallReadiness", readiness.get("overallReadiness"));
+        advanced.put("legacyOverallReadinessReasons", readiness.get("overallReadinessReasons"));
+        advanced.put("legacyDetailSections", legacySections);
+        advanced.put("policyTestReady", readiness.get("policyTestReady"));
+        advanced.put("runtimeReady", readiness.get("runtimeReady"));
+        advanced.put("productionReady", readiness.get("productionReady"));
+        advanced.put("providerBound", readiness.get("providerBound"));
+        advanced.put("mappingAvailable", readiness.get("mappingAvailable"));
+        advanced.put("calculatorAvailable", readiness.get("calculatorAvailable"));
+        advanced.put("workflowAvailable", readiness.get("workflowAvailable"));
+        advanced.put("provenanceAvailable", readiness.get("provenanceAvailable"));
+        advanced.put("note", "Engineering evidence preserved — not primary lender status model");
         m.put("advanced", advanced);
         m.put("catalogueAuthority", registry().authority());
         m.put("dp1", true);
         return m;
+    }
+
+    /**
+     * Lender-facing sections: capability semantics first; Gate3/PT/RT/providerBound under Advanced.
+     */
+    private Map<String, Object> lenderFacingSections(
+            CanonicalParameterDefinition d,
+            Map<String, Object> readiness,
+            Map<String, Object> capability,
+            Map<String, Object> legacySections) {
+        Map<String, Object> sections = new LinkedHashMap<>();
+
+        Map<String, Object> definition = new LinkedHashMap<>();
+        definition.put("canonicalId", d.id());
+        definition.put("displayName", d.businessName());
+        definition.put("description", d.calculationSummary());
+        if (d.capability() != null) {
+            definition.put("datatype", d.capability().schema());
+        }
+        definition.put("unit", d.unit());
+        definition.put("period", d.period());
+        definition.put("parameterKind", d.type());
+        sections.put("definition", definition);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> platform = (Map<String, Object>) capability.get("platformIntegration");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> support = (Map<String, Object>) capability.get("parameterSupport");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> org = (Map<String, Object>) capability.get("yourOrganisation");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> prod = (Map<String, Object>) capability.get("availableForProductionPolicyUse");
+
+        Map<String, Object> lenderCapability = new LinkedHashMap<>();
+        lenderCapability.put("canBillionTechSupport", capability.get("canBillionTechSupportLabel"));
+        lenderCapability.put("source", d.evaluatedFrom());
+        lenderCapability.put("sourceType", readiness.get("sourceType"));
+        lenderCapability.put("platformIntegration", platform == null ? null : platform.get("label"));
+        lenderCapability.put("platformIntegrationStatus", platform == null ? null : platform.get("status"));
+        lenderCapability.put("providerLabel", platform == null ? null : platform.get("providerLabel"));
+        lenderCapability.put("parameterSupport", support == null ? null : support.get("label"));
+        lenderCapability.put("parameterSupportStatus", support == null ? null : support.get("status"));
+        lenderCapability.put("how", support == null ? null : support.get("how"));
+        lenderCapability.put("yourOrganisation", org == null ? null : org.get("label"));
+        lenderCapability.put("yourOrganisationStatus", org == null ? null : org.get("status"));
+        lenderCapability.put("availableForProductionPolicyUse", prod == null ? null : prod.get("label"));
+        lenderCapability.put("availableForProductionPolicyUseReason", prod == null ? null : prod.get("reason"));
+        lenderCapability.put("applicationDataStateExcluded", true);
+        sections.put("lenderCapability", lenderCapability);
+
+        // Preserve legacy section keys for older clients / diagnostics
+        sections.put("source", legacySections.get("source"));
+        sections.put("mappingCalculation", legacySections.get("mappingCalculation"));
+        sections.put("missingData", legacySections.get("missingData"));
+        sections.put("consumers", legacySections.get("consumers"));
+        sections.put("provenance", legacySections.get("provenance"));
+
+        Map<String, Object> engineeringReadiness = new LinkedHashMap<>();
+        engineeringReadiness.put("note", "Moved under Advanced — not primary lender status");
+        engineeringReadiness.put("overallReadiness", readiness.get("overallReadiness"));
+        engineeringReadiness.put("overallReadinessReasons", readiness.get("overallReadinessReasons"));
+        engineeringReadiness.put("facts", readiness.get("facts"));
+        engineeringReadiness.put("gate3", readiness.get("gate3"));
+        sections.put("engineeringReadinessAdvanced", engineeringReadiness);
+        return sections;
     }
 
     private Map<String, Object> lineage(CanonicalParameterDefinition d) {
