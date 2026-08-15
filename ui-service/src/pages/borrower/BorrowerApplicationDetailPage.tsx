@@ -12,6 +12,7 @@ import { ApiError } from '@/api/http'
 import { loanProductLabel } from '@/catalog/loanProducts'
 import { BorrowerContinueIntakeLink } from '@/components/borrower/BorrowerContinueIntakeLink'
 import { CustomerRequirementsPanel } from '@/components/requirements/CustomerRequirementsPanel'
+import { CategorySelectionPanel } from '@/components/category/CategorySelectionPanel'
 import { isUuid } from '@/lib/format'
 
 type Tab = 'overview' | 'documents' | 'kfs' | 'loan'
@@ -165,6 +166,7 @@ export function BorrowerApplicationDetailPage() {
 
       {tab === 'overview' ? (
         <div className="space-y-5">
+          <CategorySelectionPanel applicationId={id} actorRole="CUSTOMER" actor="borrower" />
           <CustomerRequirementsPanel applicationId={id} variant="borrower" actorRole="CUSTOMER" />
           {data.rejectionMessage ? (
             <div className="rounded-lg border border-rose-200 bg-rose-50 p-5 text-sm text-rose-900 shadow-sm">

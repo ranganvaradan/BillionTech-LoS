@@ -11,5 +11,7 @@ public enum WorkflowResolutionSource {
     /** Pre-W1 application already had workflow_id; metadata backfilled. */
     LEGACY_EXISTING,
     /** Explicit data migration (reserved). */
-    MIGRATED
+    MIGRATED,
+    /** Application Category selection supplied exact Workflow Version (selection step). */
+    CATEGORY_SELECTION
 }

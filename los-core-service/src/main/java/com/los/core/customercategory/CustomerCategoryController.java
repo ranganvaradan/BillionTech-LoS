@@ -259,6 +259,21 @@ public class CustomerCategoryController {
         return ResponseEntity.ok(day1SeedService.readBack(0, 0, 0));
     }
 
+    /**
+     * Configure customer-facing proposition + SAFE disambiguation attributes on DRAFT/APPROVED Categories.
+     * Does not activate Categories or change live UW.
+     */
+    @PutMapping("/{id}/proposition-config")
+    @Operation(summary = "Update proposition / safe disambiguation config (DRAFT/APPROVED only)")
+    public ResponseEntity<Map<String, Object>> propositionConfig(
+            @PathVariable UUID id,
+            @RequestBody Map<String, Object> body,
+            @RequestHeader(value = "X-User-Id", required = false) String userId,
+            @RequestHeader(value = "X-User-Role", required = false) String role) {
+        withAudit(userId, role);
+        return ResponseEntity.ok(categoryService.updatePropositionConfig(id, body));
+    }
+
     private static Actor actor(String userId, String userName, String role) {
         return new Actor(
                 userId == null ? "" : userId.trim(),

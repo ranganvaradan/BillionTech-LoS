@@ -11,6 +11,7 @@ import com.los.core.customercategory.CustomerCategoryDtos.CategoryResponse;
 import com.los.core.customercategory.CustomerCategoryDtos.LifecycleActionRequest;
 import com.los.core.customercategory.CustomerCategoryOverlapDetector.CategoryCriteria;
 import com.los.core.customercategory.CustomerCategoryOverlapDetector.OverlapWarning;
+import com.los.core.customercategory.selection.CategoryPropositionConfig;
 import com.los.core.domain.CreditTerminologyCompatibility;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -563,6 +564,38 @@ public class CustomerCategoryService {
         Map<String, Object> before = snapshot(e);
         repository.delete(e);
         auditSupport.captureDelete("CUSTOMER_CATEGORY", id.toString(), before, "Delete DRAFT Customer Category");
+    }
+
+    /**
+     * Customer-facing proposition + SAFE disambiguation attributes (governanceJson).
+     * Allowed on DRAFT/APPROVED; does not activate or change matching criteria.
+     */
+    @Transactional
+    public Map<String, Object> updatePropositionConfig(UUID id, Map<String, Object> body) {
+        CustomerCategoryEntity e = load(id);
+        if (e.getStatus() == ConfigLifecycleStatus.RETIRED) {
+            throw CustomerCategoryValidator.biz("RETIRED category cannot be edited",
+                    "CATEGORY_RETIRED", Map.of("id", id.toString()));
+        }
+        if (e.getStatus() == ConfigLifecycleStatus.ACTIVE) {
+            // Cosmetic proposition only for ACTIVE
+            Map<String, Object> limited = new LinkedHashMap<>();
+            if (body.get("proposition") instanceof Map<?, ?> p) {
+                Map<String, Object> copy = new LinkedHashMap<>();
+                p.forEach((k, v) -> copy.put(String.valueOf(k), v));
+                limited.put("proposition", copy);
+            }
+            CategoryPropositionConfig.putPropositionConfig(e, limited);
+        } else {
+            CategoryPropositionConfig.putPropositionConfig(e, body != null ? body : Map.of());
+        }
+        repository.save(e);
+        return Map.of(
+                "categoryId", e.getId(),
+                "code", e.getCode(),
+                "versionNo", e.getVersionNo(),
+                "status", e.getStatus().name(),
+                "governanceJson", e.getGovernanceJson() != null ? e.getGovernanceJson() : Map.of());
     }
 
     @Transactional(readOnly = true)

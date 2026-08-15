@@ -91,6 +91,40 @@ public class LoanApplication {
     @Column(name = "workflow_content_hash", length = 64)
     private String workflowContentHash;
 
+    /** Pinned Customer Category Version row after selection (immutable for app). */
+    @Column(name = "selected_customer_category_id")
+    private UUID selectedCustomerCategoryId;
+
+    @Column(name = "selected_customer_category_code", length = 64)
+    private String selectedCustomerCategoryCode;
+
+    @Column(name = "selected_customer_category_version")
+    private Integer selectedCustomerCategoryVersion;
+
+    @Column(name = "selected_policy_applicability_id")
+    private UUID selectedPolicyApplicabilityId;
+
+    @Column(name = "selected_policy_document_id")
+    private UUID selectedPolicyDocumentId;
+
+    @Column(name = "selected_policy_version_label", length = 40)
+    private String selectedPolicyVersionLabel;
+
+    @Column(name = "category_selection_source", length = 40)
+    private String categorySelectionSource;
+
+    @Column(name = "category_selected_at")
+    private Instant categorySelectedAt;
+
+    @Column(name = "category_selected_by", length = 120)
+    private String categorySelectedBy;
+
+    @Column(name = "category_selection_reason", length = 500)
+    private String categorySelectionReason;
+
+    @Column(name = "category_selection_state", length = 60)
+    private String categorySelectionState;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 30)
     @Builder.Default
