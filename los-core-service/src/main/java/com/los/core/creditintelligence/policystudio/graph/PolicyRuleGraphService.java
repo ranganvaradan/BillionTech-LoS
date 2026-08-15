@@ -5,6 +5,9 @@ import com.los.core.creditintelligence.policystudio.parameters.CanonicalParamete
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterRegistry;
 import com.los.core.creditintelligence.policystudio.parameters.PolicyStudioConvergencePresenter;
 import com.los.core.creditintelligence.policystudio.repository.CiPolicyDocumentRepository;
+import com.los.core.creditintelligence.policystudio.repository.CiPolicyRuleGraphNodeRepository;
+import com.los.core.creditintelligence.policystudio.repository.CiPolicyRuleGraphOperandRepository;
+import com.los.core.creditintelligence.policystudio.repository.CiPolicyRuleGraphRepository;
 import com.los.core.service.readiness.GacatParameterReadinessProjection;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;

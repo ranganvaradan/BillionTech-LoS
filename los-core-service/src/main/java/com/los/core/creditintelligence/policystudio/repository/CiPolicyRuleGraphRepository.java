@@ -1,4 +1,6 @@
-package com.los.core.creditintelligence.policystudio.graph;
+package com.los.core.creditintelligence.policystudio.repository;
+
+import com.los.core.creditintelligence.policystudio.graph.*;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
