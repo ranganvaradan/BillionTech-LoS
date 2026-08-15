@@ -278,6 +278,149 @@ public class RequirementItemTransitionService {
         return itemRepository.save(item);
     }
 
+    /** W5 — persist dual-mode choice without fulfilling yet. */
+    @Transactional
+    public RequirementItemEntity chooseFulfilmentMode(UUID planId, UUID itemId, FulfilmentMode mode,
+                                                      String actor, String actorRole) {
+        RequirementItemEntity item = loadItem(planId, itemId);
+        if (mode == null) {
+            throw new BusinessRuleException("fulfilment mode is required");
+        }
+        if (!item.allows(mode)) {
+            throw new BusinessRuleException(
+                    "Mode " + mode + " not allowed for " + item.getItemKey(),
+                    "FULFILMENT_MODE_NOT_ALLOWED", "choose-mode", null);
+        }
+        if (item.allowsOnly(FulfilmentMode.AUTOMATIC_SOURCE)) {
+            throw new BusinessRuleException(
+                    "Automatic-only item cannot choose customer mode",
+                    "AUTOMATIC_ONLY_NO_DIRECT_INPUT", "choose-mode", null);
+        }
+        if (item.getSourceHints() == null) {
+            item.setSourceHints(new java.util.LinkedHashMap<>());
+        }
+        item.getSourceHints().put("chosenMode", mode.name());
+        item.getSourceHints().put("preferredMode", mode.name());
+        if (actorRole != null) {
+            item.getSourceHints().put("lastActorRole", actorRole);
+        }
+        // Do not set fulfilmentModeUsed until actual provide — choice only
+        audit(item.getId(), RequirementStateTransitionEntity.FIELD_FULFILMENT,
+                item.getCustomerFulfilmentState() != null ? item.getCustomerFulfilmentState().name() : null,
+                item.getCustomerFulfilmentState() != null ? item.getCustomerFulfilmentState().name() : CustomerFulfilmentState.REQUESTED.name(),
+                "chose fulfilment mode " + mode + (actorRole != null ? " actorRole=" + actorRole : ""),
+                actor, null);
+        if (item.getCustomerFulfilmentState() == CustomerFulfilmentState.REQUIRED) {
+            item.setCustomerFulfilmentState(CustomerFulfilmentState.REQUESTED);
+        }
+        return itemRepository.save(item);
+    }
+
+    /** W5 — save partial direct input without marking PROVIDED. */
+    @Transactional
+    public RequirementItemEntity saveDirectInputDraft(UUID planId, UUID itemId, String value,
+                                                      String actor, String actorRole) {
+        RequirementItemEntity item = loadItem(planId, itemId);
+        if (!item.allows(FulfilmentMode.DIRECT_INPUT)) {
+            throw new BusinessRuleException(
+                    "Item does not allow DIRECT_INPUT: " + item.getItemKey(),
+                    "FULFILMENT_MODE_NOT_ALLOWED", "draft", null);
+        }
+        if (item.getSourceHints() == null) {
+            item.setSourceHints(new java.util.LinkedHashMap<>());
+        }
+        item.getSourceHints().put("draftValue", value);
+        if (actorRole != null) {
+            item.getSourceHints().put("lastActorRole", actorRole);
+        }
+        audit(item.getId(), RequirementStateTransitionEntity.FIELD_FULFILMENT,
+                item.getCustomerFulfilmentState() != null ? item.getCustomerFulfilmentState().name() : null,
+                item.getCustomerFulfilmentState() != null ? item.getCustomerFulfilmentState().name() : CustomerFulfilmentState.REQUESTED.name(),
+                "saved draft direct input actorRole=" + (actorRole != null ? actorRole : "UNKNOWN"),
+                actor, null);
+        return itemRepository.save(item);
+    }
+
+    /**
+     * W5 — explicit DOCUMENT_REJECTED → REUPLOAD_REQUIRED.
+     * Do not use for parser/extraction failure.
+     */
+    @Transactional
+    public List<RequirementItemEntity> markDocumentRejected(UUID planId, UUID itemId,
+                                                            String actor, String reason) {
+        List<RequirementItemEntity> targets = expandDocumentGroup(planId, itemId);
+        for (RequirementItemEntity item : targets) {
+            CustomerFulfilmentState from = item.getCustomerFulfilmentState();
+            if (item.getSourceHints() == null) {
+                item.setSourceHints(new java.util.LinkedHashMap<>());
+            }
+            item.getSourceHints().put("documentOutcome", "DOCUMENT_REJECTED");
+            item.setCustomerFulfilmentState(CustomerFulfilmentState.REUPLOAD_REQUIRED);
+            item.setDataReadinessState(DataReadinessState.FAILED);
+            audit(item.getId(), RequirementStateTransitionEntity.FIELD_FULFILMENT,
+                    from != null ? from.name() : null,
+                    CustomerFulfilmentState.REUPLOAD_REQUIRED.name(),
+                    reason != null ? reason : "DOCUMENT_REJECTED — re-upload required",
+                    actor, item.getDocumentRef());
+            audit(item.getId(), RequirementStateTransitionEntity.FIELD_READINESS,
+                    null, DataReadinessState.FAILED.name(),
+                    "DOCUMENT_REJECTED", actor, item.getDocumentRef());
+            itemRepository.save(item);
+        }
+        return targets;
+    }
+
+    /**
+     * W5 — EXTRACTION_FAILED keeps PROVIDED; does not require customer re-upload.
+     */
+    @Transactional
+    public List<RequirementItemEntity> markExtractionFailed(UUID planId, UUID itemId,
+                                                            String actor, String reason) {
+        List<RequirementItemEntity> targets = expandDocumentGroup(planId, itemId);
+        for (RequirementItemEntity item : targets) {
+            if (item.getSourceHints() == null) {
+                item.setSourceHints(new java.util.LinkedHashMap<>());
+            }
+            item.getSourceHints().put("documentOutcome", "EXTRACTION_FAILED");
+            // Keep PROVIDED — customer already uploaded
+            if (item.getCustomerFulfilmentState() != CustomerFulfilmentState.PROVIDED) {
+                // If somehow not provided, do not invent REUPLOAD
+            }
+            DataReadinessState from = item.getDataReadinessState();
+            item.setDataReadinessState(DataReadinessState.FAILED);
+            item.setSourceAcquisitionState(SourceAcquisitionState.MANUAL_REVIEW);
+            audit(item.getId(), RequirementStateTransitionEntity.FIELD_READINESS,
+                    from != null ? from.name() : null, DataReadinessState.FAILED.name(),
+                    reason != null ? reason : "EXTRACTION_FAILED — retry/manual first, not auto re-upload",
+                    actor, item.getDocumentRef());
+            audit(item.getId(), RequirementStateTransitionEntity.FIELD_SOURCE,
+                    null, SourceAcquisitionState.MANUAL_REVIEW.name(),
+                    "EXTRACTION_FAILED", actor, item.getDocumentRef());
+            itemRepository.save(item);
+        }
+        return targets;
+    }
+
+    private List<RequirementItemEntity> expandDocumentGroup(UUID planId, UUID itemId) {
+        RequirementItemEntity lead = loadItem(planId, itemId);
+        List<RequirementItemEntity> targets = new ArrayList<>();
+        targets.add(lead);
+        UUID effectivePlanId = planId != null ? planId
+                : (lead.getPlan() != null ? lead.getPlan().getId() : null);
+        Object hint = lead.getSourceHints() != null
+                ? lead.getSourceHints().get("pendingDocumentGroup") : null;
+        if (effectivePlanId != null && hint != null) {
+            String groupKey = hint.toString();
+            for (RequirementItemEntity sibling : itemRepository.findByPlanIdOrderBySortOrderAscCreatedAtAsc(effectivePlanId)) {
+                if (lead.getId().equals(sibling.getId())) continue;
+                if (matchesDocumentGroup(sibling, groupKey)) {
+                    targets.add(sibling);
+                }
+            }
+        }
+        return targets;
+    }
+
     private RequirementItemEntity loadItem(UUID planId, UUID itemId) {
         if (itemId == null) {
             throw new BusinessRuleException("itemId is required");

@@ -15,6 +15,7 @@ import { CollateralIntakeStaffPanel } from '@/components/CollateralIntakeStaffPa
 import { CollateralPanel } from '@/components/CollateralPanel'
 import { AaConsentPanel } from '@/components/AaConsentPanel'
 import { BorrowerSubmittedIntakePanel } from '@/components/BorrowerSubmittedIntakePanel'
+import { CustomerRequirementsPanel } from '@/components/requirements/CustomerRequirementsPanel'
 import { BorrowerSubmissionReviewPanel } from '@/components/application/BorrowerSubmissionReviewPanel'
 import { CamSection } from '@/components/CamSection'
 import { DisbursementSection } from '@/components/DisbursementSection'
@@ -471,6 +472,7 @@ function OverviewWorkspace({
         </p>
       ) : null}
       <BorrowerSubmissionReviewPanel app={app} onRefetch={onRefetch} />
+      <CustomerRequirementsPanel applicationId={applicationId} variant="staff" actorRole="RM" />
       <SummaryPanel app={app} applicationId={applicationId} role={role} />
       <div className="rounded-lg border border-[var(--bt-gray-200)]">
         <button

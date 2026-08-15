@@ -109,7 +109,9 @@ public class RequirementCompletenessEvaluator {
             return false;
         }
         if (item.getRequirementClass() == RequirementClass.CUSTOMER_PROVIDED) {
-            return f == CustomerFulfilmentState.REQUIRED || f == CustomerFulfilmentState.REQUESTED;
+            return f == CustomerFulfilmentState.REQUIRED
+                    || f == CustomerFulfilmentState.REQUESTED
+                    || f == CustomerFulfilmentState.REUPLOAD_REQUIRED;
         }
         // Direct/document modes pending without CUSTOMER_PROVIDED class still count if asked
         boolean customerMode = item.allows(FulfilmentMode.DIRECT_INPUT) || item.allows(FulfilmentMode.DOCUMENT_UPLOAD);
@@ -118,7 +120,9 @@ public class RequirementCompletenessEvaluator {
         if (autoOnly) {
             return false;
         }
-        return customerMode && (f == CustomerFulfilmentState.REQUIRED || f == CustomerFulfilmentState.REQUESTED);
+        return customerMode && (f == CustomerFulfilmentState.REQUIRED
+                || f == CustomerFulfilmentState.REQUESTED
+                || f == CustomerFulfilmentState.REUPLOAD_REQUIRED);
     }
 
     private static boolean isSatisfiedWithoutReadiness(RequirementItemEntity item) {

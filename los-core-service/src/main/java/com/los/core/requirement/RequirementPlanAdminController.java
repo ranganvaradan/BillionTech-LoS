@@ -22,6 +22,7 @@ public class RequirementPlanAdminController {
 
     private final RequirementPlanService planService;
     private final RequirementItemTransitionService transitionService;
+    private final CustomerRequirementsViewService customerRequirementsViewService;
 
     @Value("${credit-intelligence.internal-token:}")
     private String internalToken;
@@ -64,6 +65,21 @@ public class RequirementPlanAdminController {
         assertToken(token);
         try {
             return planService.planningSummary(id);
+        } catch (BusinessRuleException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
+        }
+    }
+
+    /** W5 — customer-facing projection + admin debug rows. */
+    @GetMapping("/{id}/customer-view")
+    public Map<String, Object> customerView(
+            @PathVariable UUID id,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        assertToken(token);
+        try {
+            return Map.of(
+                    "customerView", customerRequirementsViewService.viewForPlan(id),
+                    "adminDebug", customerRequirementsViewService.adminDebug(id));
         } catch (BusinessRuleException e) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
         }

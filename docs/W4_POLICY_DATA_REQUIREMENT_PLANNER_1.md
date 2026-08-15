@@ -34,5 +34,5 @@ Source execution (Bureau/AA/GST/ITR/OCR), KYC execution, Policy/Scorecard run, C
 
 ## Progressive next
 
-- **W5:** Dynamic customer requirements UI from planning summary  
+- **W5:** Dynamic customer requirements UI from planning summary — **done** (`docs/W5_DYNAMIC_CUSTOMER_REQUIREMENTS_UI_1.md`)
 - **W6:** Acquisition orchestration for AUTO_SOURCE / DERIVATION candidates  
