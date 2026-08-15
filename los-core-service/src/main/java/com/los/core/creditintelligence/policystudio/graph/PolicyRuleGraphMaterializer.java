@@ -14,6 +14,7 @@ import com.los.core.creditintelligence.policystudio.repository.CiPolicyRuleGraph
 import com.los.core.creditintelligence.policystudio.repository.CiPolicyStudioSessionSnapshotRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
@@ -40,12 +41,13 @@ public class PolicyRuleGraphMaterializer {
     private final CiPolicyRuleGraphOperandRepository operandRepository;
     private final ObjectMapper objectMapper;
 
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public Map<String, Object> materializeDocument(UUID policyDocumentId) {
         CiPolicyDocument doc = documentRepository.findById(policyDocumentId)
                 .orElseThrow(() -> new IllegalArgumentException("policy document not found: " + policyDocumentId));
+        int docVersion = doc.getDocumentVersion() != null ? doc.getDocumentVersion() : 1;
         Optional<CiPolicyRuleGraph> existing = graphRepository
-                .findByPolicyDocumentIdAndDocumentVersion(doc.getId(), doc.getDocumentVersion());
+                .findByPolicyDocumentIdAndDocumentVersion(doc.getId(), docVersion);
         if (existing.isPresent() && existing.get().isImmutable()) {
             return summary(existing.get(), "SKIPPED_IMMUTABLE");
         }
@@ -69,8 +71,8 @@ public class PolicyRuleGraphMaterializer {
 
         CiPolicyRuleGraph graph = CiPolicyRuleGraph.builder()
                 .policyDocumentId(doc.getId())
-                .policyVersionLabel(String.valueOf(doc.getDocumentVersion()))
-                .documentVersion(doc.getDocumentVersion())
+                .policyVersionLabel(String.valueOf(docVersion))
+                .documentVersion(docVersion)
                 .graphHash("pending")
                 .sourceSnapshotHash(snapshotHash)
                 .immutable(isGovernedImmutable(doc))
@@ -140,7 +142,7 @@ public class PolicyRuleGraphMaterializer {
         return summary(graph, "MATERIALIZED");
     }
 
-    @Transactional
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public Map<String, Object> materializeAll() {
         List<CiPolicyDocument> docs = documentRepository.findAll();
         int ok = 0;
