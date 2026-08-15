@@ -69,9 +69,12 @@ public final class DataParametersCapabilitySemantics {
         String lender = resolveLenderSubscription(family, sourceType, platform, subscriptionProbe);
         ProductionPolicyAvailability avail = resolveProductionPolicyAvailability(
                 def, readiness, platform, support, lender);
+        PolicyDesignAvailability design = resolvePolicyDesignAvailability(platform, support);
+        LiveUseAvailability live = resolveLiveUseAvailability(platform, support, lender, avail);
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("capabilityModel", "DATA-PARAMETERS-CAPABILITY-SEMANTICS-1");
+        out.put("lenderUx", "DATA-PARAMETERS-LENDER-UX-CLEANUP-2");
         out.put("applicationDataStateExcluded", true);
         out.put("canonicalParameterId", def.id());
         out.put("displayName", def.businessName());
@@ -88,7 +91,9 @@ public final class DataParametersCapabilitySemantics {
         Map<String, Object> paramSupport = new LinkedHashMap<>();
         paramSupport.put("status", support.status());
         paramSupport.put("label", supportLabel(support.status()));
+        paramSupport.put("businessLabel", supportBusinessLabel(support.status()));
         paramSupport.put("how", support.how());
+        paramSupport.put("businessHow", businessHow(platform, support));
         paramSupport.put("evidence", support.evidence());
         out.put("parameterSupport", paramSupport);
 
@@ -97,10 +102,25 @@ public final class DataParametersCapabilitySemantics {
         org.put("label", lenderLabel(lender));
         out.put("yourOrganisation", org);
 
+        Map<String, Object> designMap = new LinkedHashMap<>();
+        designMap.put("available", design.available());
+        designMap.put("label", design.label());
+        designMap.put("reason", design.reason());
+        out.put("policyDesign", designMap);
+
+        Map<String, Object> liveMap = new LinkedHashMap<>();
+        liveMap.put("status", live.status());
+        liveMap.put("available", live.available());
+        liveMap.put("label", live.label());
+        liveMap.put("reason", live.reason());
+        out.put("liveUse", liveMap);
+
+        // Compat: prior single "policy use" field now means live evaluation (not design)
         Map<String, Object> prod = new LinkedHashMap<>();
-        prod.put("available", avail.available());
-        prod.put("label", avail.available() ? "Yes" : "No");
-        prod.put("reason", avail.reason());
+        prod.put("available", live.available());
+        prod.put("label", live.label());
+        prod.put("reason", live.reason());
+        prod.put("means", "LIVE_EVALUATION_NOT_POLICY_DESIGN");
         out.put("availableForProductionPolicyUse", prod);
 
         // BillionTech engineering can support?
@@ -151,6 +171,34 @@ public final class DataParametersCapabilitySemantics {
         counts.put("notApplicable", na);
         counts.put("other", other);
         counts.put("total", parameters.size());
+        int available = raw + derived + na;
+        counts.put("parametersAvailable", available);
+
+        Map<String, Object> lenderFacing = new LinkedHashMap<>();
+        lenderFacing.put("integrationLabel", "BillionTech integration: " + platform.label());
+        if (!SOURCE_PLATFORM_NOT_APPLICABLE.equals(platform.status())) {
+            lenderFacing.put("organisationLabel", "Your organisation: " + lenderLabel(lender));
+        }
+        if (SOURCE_PLATFORM_NOT_APPLICABLE.equals(platform.status())) {
+            lenderFacing.put("summaryLine", parameters.size() + " application / internal parameters");
+        } else if (SOURCE_PLATFORM_NOT_INTEGRATED.equals(platform.status())) {
+            lenderFacing.put("summaryLine", "Integration not yet available");
+        } else {
+            StringBuilder sb = new StringBuilder();
+            sb.append(available).append(" parameters available");
+            if (calcMissing > 0) {
+                sb.append(" · ").append(calcMissing).append(" calculations not yet implemented");
+            }
+            lenderFacing.put("summaryLine", sb.toString());
+        }
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("directlyProvided", raw);
+        detail.put("calculatedByBillionTech", derived);
+        detail.put("unsupportedByProvider", noSupport);
+        detail.put("calculationsNotYetImplemented", calcMissing);
+        detail.put("integrationNotYetAvailable", sourceMissing);
+        detail.put("notApplicable", na);
+        lenderFacing.put("expandableDetail", detail);
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("source", family);
@@ -161,6 +209,7 @@ public final class DataParametersCapabilitySemantics {
         out.put("yourOrganisation", lender);
         out.put("yourOrganisationLabel", lenderLabel(lender));
         out.put("parameterSupportCounts", counts);
+        out.put("lenderFacing", lenderFacing);
         return out;
     }
 
@@ -208,13 +257,14 @@ public final class DataParametersCapabilitySemantics {
                             "BureauMetricService / PolicyBureauMetricService certified retail metrics",
                             "Workflow BUREAU_PULL production provides list"));
         }
-        if (f.contains("bureau commercial") || f.contains("commercial")) {
+        if (f.contains("bureau commercial") || (f.contains("commercial") && f.contains("bureau"))) {
             return new SourcePlatform(
                     SOURCE_PLATFORM_NOT_INTEGRATED,
                     "Not Integrated",
-                    "Bureau Commercial (SurePass fixture / commercial path)",
+                    "Commercial Bureau",
                     List.of(
                             "Commercial GACAT rows reference CommercialBureauResponseDetails fixture schema",
+                            "SurePass fixture / commercial path — engineering evidence only",
                             "No production-certified commercial bureau go-live evidence in GACAT production_ready rollup"));
         }
         if (f.contains("bank") || f.contains("banking") || f.contains("account aggregator") || f.equals("aa")) {
@@ -222,7 +272,7 @@ public final class DataParametersCapabilitySemantics {
                 return new SourcePlatform(
                         SOURCE_PLATFORM_PRODUCTION_READY,
                         "Production Ready",
-                        "Account Aggregator (consent/transport)",
+                        "Account Aggregator",
                         List.of(
                                 "ACCOUNT_AGGREGATOR workflow integration provides core banking metrics",
                                 "AA meta parameters are consent/transport — FIP facts come from bank/GST sources"));
@@ -230,7 +280,7 @@ public final class DataParametersCapabilitySemantics {
             return new SourcePlatform(
                     SOURCE_PLATFORM_PRODUCTION_READY,
                     "Production Ready",
-                    "Bank Statement / BSA",
+                    "Bank Statement",
                     List.of(
                             "BankingMetricService + BankAverageDailyBalanceCalculator production paths",
                             "BANK_STATEMENT_DOCUMENT / ACCOUNT_AGGREGATOR acquisition",
@@ -254,7 +304,7 @@ public final class DataParametersCapabilitySemantics {
             return new SourcePlatform(
                     SOURCE_PLATFORM_PRODUCTION_READY,
                     "Production Ready",
-                    "KYC providers (Authbridge / workflow KYC steps)",
+                    "KYC",
                     List.of("KYC workflow steps + aggregator_configs provider matrix", "GACAT kyc.* catalogue bindings"));
         }
         if (f.contains("computed") || f.contains("obligation") || f.contains("collateral") || f.contains("derived")) {
@@ -421,7 +471,7 @@ public final class DataParametersCapabilitySemantics {
         return LENDER_NOT_YET_SUBSCRIBED;
     }
 
-    // ─── Production policy availability ──────────────────────────────
+    // ─── Production policy availability (compat / live evaluation) ───
 
     record ProductionPolicyAvailability(boolean available, String reason) {}
 
@@ -431,39 +481,182 @@ public final class DataParametersCapabilitySemantics {
             SourcePlatform platform,
             ParameterSupport support,
             String lender) {
+        // Retained for engineering/compat — mirrors live evaluation, not policy design.
+        LiveUseAvailability live = resolveLiveUseAvailability(
+                platform, support, lender,
+                new ProductionPolicyAvailability(false, "deferred"));
+        return new ProductionPolicyAvailability(live.available(), live.reason());
+    }
+
+    /**
+     * Policy / Scorecard design availability.
+     * Audit: Policy Studio authoring is gated by GACAT/executability, not lender subscription.
+     * Subscription must not block designing a future policy.
+     */
+    record PolicyDesignAvailability(boolean available, String label, String reason) {}
+
+    static PolicyDesignAvailability resolvePolicyDesignAvailability(
+            SourcePlatform platform,
+            ParameterSupport support) {
         if (SUPPORT_NOT_APPLICABLE.equals(support.status())) {
-            boolean catProd = Boolean.TRUE.equals(readiness.get("productionReady"));
-            return new ProductionPolicyAvailability(
-                    catProd,
-                    catProd
-                            ? "Application / manual input available for production policy use"
-                            : "Application input not marked production-ready on catalogue");
+            return new PolicyDesignAvailability(
+                    true,
+                    "Available for policy design",
+                    "Application / manual / internal parameter — selectable while designing Policy/Scorecard");
         }
         if (SOURCE_PLATFORM_NOT_INTEGRATED.equals(platform.status())
                 || SUPPORT_SOURCE_NOT_INTEGRATED.equals(support.status())) {
-            return new ProductionPolicyAvailability(false, "Source Not Integrated");
+            return new PolicyDesignAvailability(
+                    false,
+                    "Not currently available",
+                    "Integration not yet available");
         }
         if (SUPPORT_PROVIDER_DOES_NOT_SUPPORT.equals(support.status())) {
-            return new ProductionPolicyAvailability(false, "Provider Does Not Support");
+            return new PolicyDesignAvailability(
+                    false,
+                    "Not currently available",
+                    "Provider does not supply required data");
         }
         if (SUPPORT_CALCULATION_NOT_IMPLEMENTED.equals(support.status())) {
-            return new ProductionPolicyAvailability(false, "Calculation Not Implemented");
+            return new PolicyDesignAvailability(
+                    false,
+                    "Not currently available",
+                    "Calculation not yet implemented");
+        }
+        if (SUPPORT_SUPPORTED_RAW.equals(support.status())
+                || SUPPORT_SUPPORTED_DERIVED.equals(support.status())) {
+            return new PolicyDesignAvailability(
+                    true,
+                    "Available for policy design",
+                    "BillionTech can support this parameter — may be selected in Policy/Scorecard design");
+        }
+        return new PolicyDesignAvailability(
+                false,
+                "Not currently available",
+                "Parameter support incomplete");
+    }
+
+    /**
+     * Live production evaluation for this lender organisation.
+     * Runtime remains fail-closed until subscription/configuration is valid.
+     */
+    record LiveUseAvailability(String status, boolean available, String label, String reason) {}
+
+    static final String LIVE_AVAILABLE = "AVAILABLE";
+    static final String LIVE_SUBSCRIPTION_REQUIRED = "SUBSCRIPTION_REQUIRED";
+    static final String LIVE_SETUP_PENDING = "SUBSCRIPTION_SETUP_PENDING";
+    static final String LIVE_NOT_AVAILABLE = "NOT_AVAILABLE";
+
+    static LiveUseAvailability resolveLiveUseAvailability(
+            SourcePlatform platform,
+            ParameterSupport support,
+            String lender,
+            ProductionPolicyAvailability ignoredCompat) {
+        if (SUPPORT_NOT_APPLICABLE.equals(support.status())) {
+            return new LiveUseAvailability(
+                    LIVE_AVAILABLE,
+                    true,
+                    "Available for live use",
+                    "Application / RM input — evaluated when captured on the application");
+        }
+        if (SOURCE_PLATFORM_NOT_INTEGRATED.equals(platform.status())
+                || SUPPORT_SOURCE_NOT_INTEGRATED.equals(support.status())) {
+            return new LiveUseAvailability(
+                    LIVE_NOT_AVAILABLE,
+                    false,
+                    "Not available for live use",
+                    "Integration not yet available");
+        }
+        if (SUPPORT_PROVIDER_DOES_NOT_SUPPORT.equals(support.status())) {
+            return new LiveUseAvailability(
+                    LIVE_NOT_AVAILABLE,
+                    false,
+                    "Not available for live use",
+                    "Provider does not supply required data");
+        }
+        if (SUPPORT_CALCULATION_NOT_IMPLEMENTED.equals(support.status())) {
+            return new LiveUseAvailability(
+                    LIVE_NOT_AVAILABLE,
+                    false,
+                    "Not available for live use",
+                    "Calculation not yet implemented");
         }
         if (LENDER_NOT_YET_SUBSCRIBED.equals(lender)) {
-            return new ProductionPolicyAvailability(false, "Not Yet Subscribed");
+            String subName = subscriptionDisplayName(platform);
+            return new LiveUseAvailability(
+                    LIVE_SUBSCRIPTION_REQUIRED,
+                    false,
+                    "Live use requires subscription",
+                    "Live use requires " + subName + " subscription");
         }
         if (LENDER_SUBSCRIPTION_SETUP_PENDING.equals(lender)) {
-            return new ProductionPolicyAvailability(false, "Subscription Setup Pending");
-        }
-        // Support exists; honour catalogue certification flag — do not silently promote
-        boolean catalogueProd = Boolean.TRUE.equals(readiness.get("productionReady"));
-        if (!catalogueProd) {
-            return new ProductionPolicyAvailability(
+            return new LiveUseAvailability(
+                    LIVE_SETUP_PENDING,
                     false,
-                    "Calculation/support exists but parameter is not production-certified on GACAT "
-                            + "(catalogue production_ready=false; typically Gate3 studio/runtime helper)");
+                    "Subscription/setup required",
+                    "Subscription accepted — setup still pending before live evaluation");
         }
-        return new ProductionPolicyAvailability(true, "Platform Production Ready + Supported + Subscribed + certified");
+        if (SUPPORT_SUPPORTED_RAW.equals(support.status())
+                || SUPPORT_SUPPORTED_DERIVED.equals(support.status())) {
+            return new LiveUseAvailability(
+                    LIVE_AVAILABLE,
+                    true,
+                    "Available for live use",
+                    "Platform integrated, parameter supported, organisation subscribed");
+        }
+        return new LiveUseAvailability(
+                LIVE_NOT_AVAILABLE,
+                false,
+                "Not available for live use",
+                "Live evaluation not available");
+    }
+
+    private static String subscriptionDisplayName(SourcePlatform platform) {
+        String label = platform.providerLabel();
+        if (label != null && !label.isBlank()) {
+            if (label.toLowerCase(Locale.ROOT).contains("equifax")) {
+                return "Equifax";
+            }
+            return label;
+        }
+        return "provider";
+    }
+
+    public static String supportBusinessLabel(String status) {
+        return switch (String.valueOf(status)) {
+            case SUPPORT_SUPPORTED_RAW -> "Supported — directly provided";
+            case SUPPORT_SUPPORTED_DERIVED -> "Supported — calculated by BillionTech";
+            case SUPPORT_PROVIDER_DOES_NOT_SUPPORT -> "Provider does not supply required data";
+            case SUPPORT_CALCULATION_NOT_IMPLEMENTED -> "Calculation not yet implemented";
+            case SUPPORT_SOURCE_NOT_INTEGRATED -> "Integration not yet available";
+            case SUPPORT_NOT_APPLICABLE -> "Application / internal input";
+            default -> status;
+        };
+    }
+
+    static String businessHow(SourcePlatform platform, ParameterSupport support) {
+        String st = support.status();
+        if (SUPPORT_SUPPORTED_RAW.equals(st)) {
+            String provider = platform.providerLabel() == null ? "the source" : platform.providerLabel();
+            return "Directly provided by " + provider;
+        }
+        if (SUPPORT_SUPPORTED_DERIVED.equals(st)) {
+            String provider = platform.providerLabel() == null ? "source data" : platform.providerLabel() + " data";
+            return "Calculated by BillionTech from " + provider;
+        }
+        if (SUPPORT_NOT_APPLICABLE.equals(st)) {
+            return "Captured as application / customer / RM input";
+        }
+        if (SUPPORT_CALCULATION_NOT_IMPLEMENTED.equals(st)) {
+            return "Calculation not yet implemented";
+        }
+        if (SUPPORT_PROVIDER_DOES_NOT_SUPPORT.equals(st)) {
+            return "Provider does not supply required data";
+        }
+        if (SUPPORT_SOURCE_NOT_INTEGRATED.equals(st)) {
+            return "Integration not yet available";
+        }
+        return support.how();
     }
 
     public static String supportLabel(String status) {

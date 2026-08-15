@@ -1,4 +1,4 @@
-/** Data & Parameters capability semantics display helpers (lender SETUP catalogue). */
+/** Data & Parameters lender-facing display helpers (capability semantics + UX cleanup-2). */
 
 export const OVERALL_READINESS_LABELS: Record<string, string> = {
   PRODUCTION_READY: 'Production Ready',
@@ -22,6 +22,16 @@ export const PLATFORM_INTEGRATION_LABELS: Record<string, string> = {
   PRODUCTION_READY: 'Production Ready',
   NOT_INTEGRATED: 'Not Integrated',
   NOT_APPLICABLE: 'Not applicable',
+}
+
+/** Lender-facing business labels (prefer over enum codes). */
+export const PARAMETER_SUPPORT_BUSINESS_LABELS: Record<string, string> = {
+  SUPPORTED_RAW: 'Directly provided',
+  SUPPORTED_DERIVED: 'Calculated by BillionTech',
+  PROVIDER_DOES_NOT_SUPPORT: 'Provider does not supply required data',
+  CALCULATION_NOT_IMPLEMENTED: 'Calculation not yet implemented',
+  SOURCE_NOT_INTEGRATED: 'Integration not yet available',
+  NOT_APPLICABLE: 'Application / internal input',
 }
 
 export const PARAMETER_SUPPORT_LABELS: Record<string, string> = {
@@ -60,6 +70,11 @@ export function parameterSupportLabel(code: unknown): string {
   return PARAMETER_SUPPORT_LABELS[key] ?? (key || '—')
 }
 
+export function parameterSupportBusinessLabel(code: unknown): string {
+  const key = String(code ?? '')
+  return PARAMETER_SUPPORT_BUSINESS_LABELS[key] ?? parameterSupportLabel(key)
+}
+
 export function lenderOrgLabel(code: unknown): string {
   const key = String(code ?? '')
   return LENDER_ORG_LABELS[key] ?? (key || '—')
@@ -84,6 +99,11 @@ export function nestStatus(obj: unknown, key = 'status'): string {
     return String((obj as Record<string, unknown>)[key] ?? '')
   }
   return ''
+}
+
+export function isSupportedSupport(status: unknown): boolean {
+  const s = String(status ?? '')
+  return s === 'SUPPORTED_RAW' || s === 'SUPPORTED_DERIVED' || s === 'NOT_APPLICABLE'
 }
 
 export type Dp1ListFilters = {
@@ -156,14 +176,13 @@ export function supportBadgeClass(status: unknown): string {
   switch (String(status ?? '')) {
     case 'SUPPORTED_RAW':
     case 'SUPPORTED_DERIVED':
+    case 'NOT_APPLICABLE':
       return 'bg-emerald-100 text-emerald-900 border-emerald-200'
     case 'CALCULATION_NOT_IMPLEMENTED':
     case 'PROVIDER_DOES_NOT_SUPPORT':
       return 'bg-amber-100 text-amber-900 border-amber-200'
     case 'SOURCE_NOT_INTEGRATED':
       return 'bg-rose-100 text-rose-900 border-rose-200'
-    case 'NOT_APPLICABLE':
-      return 'bg-slate-100 text-slate-700 border-slate-200'
     default:
       return 'bg-slate-50 text-slate-600 border-slate-200'
   }

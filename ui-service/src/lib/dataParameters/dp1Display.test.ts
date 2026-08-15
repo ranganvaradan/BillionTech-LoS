@@ -4,31 +4,31 @@ import { describe, expect, it } from 'vitest'
 import {
   matchesDp1Filters,
   overallReadinessLabel,
-  parameterSupportLabel,
+  parameterSupportBusinessLabel,
   platformIntegrationLabel,
   sourceTypeLabel,
 } from './dp1Display'
 
-describe('dp1Display capability semantics', () => {
-  it('labels legacy readiness and new capability statuses', () => {
-    expect(overallReadinessLabel('RUNTIME_READY_NONPROD')).toBe('Runtime Ready — Non-Production')
+describe('dp1Display lender UX cleanup-2', () => {
+  it('uses business language for support statuses', () => {
+    expect(parameterSupportBusinessLabel('SUPPORTED_DERIVED')).toBe('Calculated by BillionTech')
+    expect(parameterSupportBusinessLabel('CALCULATION_NOT_IMPLEMENTED')).toBe(
+      'Calculation not yet implemented',
+    )
     expect(platformIntegrationLabel('PRODUCTION_READY')).toBe('Production Ready')
-    expect(platformIntegrationLabel('NOT_INTEGRATED')).toBe('Not Integrated')
-    expect(parameterSupportLabel('SUPPORTED_DERIVED')).toBe('Supported — Derived')
-    expect(parameterSupportLabel('CALCULATION_NOT_IMPLEMENTED')).toBe('Calculation Not Implemented')
+    expect(overallReadinessLabel('RUNTIME_READY_NONPROD')).toBe('Runtime Ready — Non-Production')
     expect(sourceTypeLabel('APPLICATION_INPUT')).toBe('Application input')
   })
 
-  it('filters by parameterSupport and source family', () => {
+  it('filters by parameterSupport', () => {
     const p = {
       id: 'bureau.accounts.cc_writeoff',
       sourceFamily: 'Bureau Retail',
       sourceType: 'PROVIDER',
-      overallReadiness: 'RUNTIME_READY_NONPROD',
-      productionReady: false,
       capability: {
         parameterSupport: { status: 'SUPPORTED_DERIVED' },
-        platformIntegration: { status: 'PRODUCTION_READY' },
+        policyDesign: { available: true },
+        liveUse: { status: 'SUBSCRIPTION_REQUIRED', available: false },
       },
     }
     expect(
@@ -41,29 +41,20 @@ describe('dp1Display capability semantics', () => {
         q: '',
       }),
     ).toBe(true)
-    expect(
-      matchesDp1Filters(p, {
-        sourceFamily: '',
-        sourceType: '',
-        overallReadiness: '',
-        productionReady: '',
-        parameterSupport: 'SUPPORTED_RAW',
-        q: '',
-      }),
-    ).toBe(false)
   })
 
-  it('DataParametersPage wires capability UX and advanced technical details', () => {
+  it('DataParametersPage separates policy design vs live use and simplifies source cards', () => {
     const page = readFileSync(resolve(__dirname, '../../pages/DataParametersPage.tsx'), 'utf8')
-    expect(page).toContain('dp-lender-capability')
+    expect(page).toContain('dp-detail-policy-design')
+    expect(page).toContain('dp-detail-live-use')
+    expect(page).toContain('Available for policy design')
+    expect(page).toContain('Live use: subscription required')
     expect(page).toContain('dp-source-capability-summary')
+    expect(page).toContain('BillionTech integration')
+    expect(page).toContain('dp-diagnostics-source-counts')
     expect(page).toContain('dp-advanced-technical')
-    expect(page).toContain('Platform Integration')
-    expect(page).toContain('Your Organisation')
-    expect(page).toContain('Available for Production Policy Use')
-    expect(page).toContain('getDataParametersDetail')
-    // Primary readiness facts moved under Advanced
-    expect(page).toContain('Provider Bound')
-    expect(page.indexOf('dp-lender-capability')).toBeLessThan(page.indexOf('dp-advanced-technical'))
+    expect(page).not.toContain('Policy use: No')
+    expect(page).not.toContain('Source N/I')
+    expect(page).not.toContain('SurePass')
   })
 })

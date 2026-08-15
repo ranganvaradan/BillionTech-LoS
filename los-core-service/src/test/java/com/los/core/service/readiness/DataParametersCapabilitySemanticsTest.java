@@ -48,7 +48,7 @@ class DataParametersCapabilitySemanticsTest {
     }
 
     @Test
-    void ccWriteoff_supportedDerived_catalogueNotSilentlyPromoted() {
+    void ccWriteoff_supportedDerived_policyDesignAvailable_liveRequiresSubscription() {
         CanonicalParameterDefinition def = require("bureau.accounts.cc_writeoff");
         Map<String, Object> readiness = GacatParameterReadinessProjection.project(def);
         assertThat(readiness.get("productionReady")).isEqualTo(false);
@@ -58,7 +58,7 @@ class DataParametersCapabilitySemanticsTest {
         Map<String, Object> cap = DataParametersCapabilitySemantics.project(
                 def,
                 readiness,
-                family -> DataParametersCapabilitySemantics.LENDER_SUBSCRIBED);
+                family -> DataParametersCapabilitySemantics.LENDER_NOT_YET_SUBSCRIBED);
 
         @SuppressWarnings("unchecked")
         Map<String, Object> platform = (Map<String, Object>) cap.get("platformIntegration");
@@ -67,34 +67,61 @@ class DataParametersCapabilitySemanticsTest {
         @SuppressWarnings("unchecked")
         Map<String, Object> org = (Map<String, Object>) cap.get("yourOrganisation");
         @SuppressWarnings("unchecked")
-        Map<String, Object> prod = (Map<String, Object>) cap.get("availableForProductionPolicyUse");
+        Map<String, Object> design = (Map<String, Object>) cap.get("policyDesign");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> live = (Map<String, Object>) cap.get("liveUse");
 
         assertThat(platform.get("status"))
                 .isEqualTo(DataParametersCapabilitySemantics.SOURCE_PLATFORM_PRODUCTION_READY);
         assertThat(support.get("status"))
                 .isEqualTo(DataParametersCapabilitySemantics.SUPPORT_SUPPORTED_DERIVED);
-        assertThat(String.valueOf(support.get("how"))).containsIgnoringCase("written-off");
-        assertThat(String.valueOf(support.get("how"))).contains("BureauMetricService.computeWriteoffCounts");
-        assertThat(org.get("status")).isEqualTo(DataParametersCapabilitySemantics.LENDER_SUBSCRIBED);
-        // Do not silently promote catalogue production_ready=false
-        assertThat(prod.get("available")).isEqualTo(false);
-        assertThat(String.valueOf(prod.get("reason"))).containsIgnoringCase("production_ready=false");
+        assertThat(String.valueOf(support.get("businessHow"))).containsIgnoringCase("Calculated by BillionTech");
+        assertThat(org.get("status")).isEqualTo(DataParametersCapabilitySemantics.LENDER_NOT_YET_SUBSCRIBED);
+        assertThat(design.get("available")).isEqualTo(true);
+        assertThat(String.valueOf(design.get("label"))).containsIgnoringCase("policy design");
+        assertThat(live.get("available")).isEqualTo(false);
+        assertThat(live.get("status"))
+                .isEqualTo(DataParametersCapabilitySemantics.LIVE_SUBSCRIPTION_REQUIRED);
+        assertThat(String.valueOf(live.get("reason"))).containsIgnoringCase("Equifax");
         assertThat(cap.get("flagsMutated")).isEqualTo(false);
+        assertThat(cap.get("catalogueProductionReady")).isEqualTo(false);
     }
 
     @Test
-    void notSubscribed_isNotCalledNotProductionReady() {
+    void notSubscribed_doesNotBlockPolicyDesign() {
         Map<String, Object> cap = DataParametersCapabilitySemantics.project(
                 require("bureau.score"),
                 family -> DataParametersCapabilitySemantics.LENDER_NOT_YET_SUBSCRIBED);
         @SuppressWarnings("unchecked")
         Map<String, Object> platform = (Map<String, Object>) cap.get("platformIntegration");
         @SuppressWarnings("unchecked")
-        Map<String, Object> prod = (Map<String, Object>) cap.get("availableForProductionPolicyUse");
+        Map<String, Object> design = (Map<String, Object>) cap.get("policyDesign");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> live = (Map<String, Object>) cap.get("liveUse");
         assertThat(platform.get("status"))
                 .isEqualTo(DataParametersCapabilitySemantics.SOURCE_PLATFORM_PRODUCTION_READY);
-        assertThat(prod.get("available")).isEqualTo(false);
-        assertThat(prod.get("reason")).isEqualTo("Not Yet Subscribed");
+        assertThat(design.get("available")).isEqualTo(true);
+        assertThat(live.get("available")).isEqualTo(false);
+        assertThat(live.get("status"))
+                .isEqualTo(DataParametersCapabilitySemantics.LIVE_SUBSCRIPTION_REQUIRED);
+    }
+
+    @Test
+    void commercialBureau_providerLabelIsBusinessFacing() {
+        List<CanonicalParameterDefinition> commercial = registry.all().stream()
+                .filter(d -> {
+                    String f = d.evaluatedFrom() == null ? "" : d.evaluatedFrom().toLowerCase();
+                    return f.contains("commercial");
+                })
+                .toList();
+        if (commercial.isEmpty()) {
+            return;
+        }
+        Map<String, Object> cap = DataParametersCapabilitySemantics.project(commercial.get(0));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> platform = (Map<String, Object>) cap.get("platformIntegration");
+        assertThat(platform.get("providerLabel")).isEqualTo("Commercial Bureau");
+        assertThat(String.valueOf(platform.get("providerLabel"))).doesNotContain("SurePass");
     }
 
     @Test

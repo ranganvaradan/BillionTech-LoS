@@ -10,12 +10,12 @@ import {
 import { ApiError } from '@/api/http'
 import {
   capabilityFromParameter,
+  isSupportedSupport,
   lenderOrgLabel,
   matchesDp1Filters,
   nestStatus,
   overallReadinessLabel,
-  parameterSupportLabel,
-  platformBadgeClass,
+  parameterSupportBusinessLabel,
   platformIntegrationLabel,
   providerStatusLabel,
   readinessBadgeClass,
@@ -53,44 +53,54 @@ function Badge({
   )
 }
 
-function ParameterBadges({ p }: { p: Record<string, unknown> }) {
+function ParameterBadges({
+  p,
+}: {
+  p: Record<string, unknown>
+  hideOrgBadge?: boolean
+}) {
   const cap = capabilityFromParameter(p)
-  const platformStatus = nestStatus(cap.platformIntegration ?? p.platformIntegration)
   const supportStatus = nestStatus(cap.parameterSupport ?? p.parameterSupport)
-  const orgStatus = nestStatus(cap.yourOrganisation ?? p.yourOrganisation)
-  const prod = asRecord(cap.availableForProductionPolicyUse ?? p.availableForProductionPolicyUse)
-  const prodAvailable = prod.available === true
-  const hasCapability = Boolean(platformStatus || supportStatus)
+  const design = asRecord(cap.policyDesign ?? p.policyDesign)
+  const live = asRecord(cap.liveUse ?? p.liveUse)
+  const supported = isSupportedSupport(supportStatus)
+  const hasCapability = Boolean(supportStatus)
 
   return (
     <div className="mt-1 flex flex-wrap gap-1" data-testid="dp1-badges">
-      <Badge className="border-slate-200 bg-white text-slate-700">{String(p.id)}</Badge>
-      <Badge className="border-indigo-100 bg-indigo-50 text-indigo-900">
-        {sourceTypeLabel(p.sourceType)}
+      <Badge className="border-slate-200 bg-white text-slate-700">
+        {String(p.type ?? sourceTypeLabel(p.sourceType))}
       </Badge>
       {hasCapability ? (
         <>
-          <Badge className={platformBadgeClass(platformStatus)} testId="dp-platform-integration">
-            Platform: {platformIntegrationLabel(platformStatus)}
-          </Badge>
           <Badge className={supportBadgeClass(supportStatus)} testId="dp-parameter-support">
-            {parameterSupportLabel(supportStatus)}
+            {supported ? 'Supported' : 'Not currently available'}
           </Badge>
-          {orgStatus && orgStatus !== 'NOT_APPLICABLE' ? (
-            <Badge className="border-slate-200 bg-white text-slate-700" testId="dp-your-organisation">
-              Org: {lenderOrgLabel(orgStatus)}
+          {design.available === true ? (
+            <Badge
+              className="border-emerald-200 bg-emerald-50 text-emerald-900"
+              testId="dp-policy-design"
+            >
+              Available for policy design
+            </Badge>
+          ) : design.available === false ? (
+            <Badge className="border-slate-200 bg-slate-50 text-slate-600" testId="dp-policy-design">
+              Not for policy design yet
             </Badge>
           ) : null}
-          <Badge
-            className={
-              prodAvailable
-                ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
-                : 'border-slate-200 bg-slate-50 text-slate-600'
-            }
-            testId="dp-production-policy"
-          >
-            Policy use: {prodAvailable ? 'Yes' : 'No'}
-          </Badge>
+          {String(live.status ?? '') === 'SUBSCRIPTION_REQUIRED' ? (
+            <Badge className="border-amber-200 bg-amber-50 text-amber-900" testId="dp-live-use">
+              Live use: subscription required
+            </Badge>
+          ) : live.available === true ? (
+            <Badge className="border-emerald-200 bg-emerald-50 text-emerald-900" testId="dp-live-use">
+              Live use: available
+            </Badge>
+          ) : live.available === false ? (
+            <Badge className="border-slate-200 bg-slate-50 text-slate-600" testId="dp-live-use">
+              Live use: not available
+            </Badge>
+          ) : null}
         </>
       ) : (
         <Badge className={readinessBadgeClass(p.overallReadiness)} testId="dp1-overall-readiness">
@@ -121,14 +131,20 @@ function FactRow({ label, value }: { label: string; value: unknown }) {
 function ParameterCard({
   p,
   onOpen,
+  hideOrgBadge = true,
 }: {
   p: Record<string, unknown>
   onOpen: (id: string) => void
+  hideOrgBadge?: boolean
 }) {
   const lineage = asRecord(p.lineage)
   const cap = capabilityFromParameter(p)
   const support = asRecord(cap.parameterSupport ?? p.parameterSupport)
-  const how = String(support.how ?? lineage.howCalculated ?? p.calculationSummary ?? '').trim()
+  const supportStatus = String(support.status ?? '')
+  const supported = isSupportedSupport(supportStatus)
+  const how = String(
+    support.businessHow ?? support.how ?? lineage.howCalculated ?? p.calculationSummary ?? '',
+  ).trim()
   const advanced = asRecord(p.advanced)
   const id = String(p.id ?? '')
   return (
@@ -140,18 +156,22 @@ function ParameterCard({
         data-testid="dp1-open-detail"
       >
         <div className="font-medium text-slate-900">{String(p.businessName)}</div>
-        <div className="text-xs text-slate-500">
-          {String(p.type)}
-          {p.period ? ` · ${String(p.period)}` : ''}
-        </div>
-        <ParameterBadges p={p} />
+        <div className="text-xs text-slate-500">{String(p.type)}</div>
+        <ParameterBadges p={p} hideOrgBadge={hideOrgBadge} />
+        {how ? (
+          <p className="mt-1 text-xs text-slate-600" data-testid="dp-card-how">
+            {supported ? how : parameterSupportBusinessLabel(supportStatus)}
+          </p>
+        ) : null}
       </button>
-      {how ? (
+      {how && supported ? (
         <details className="mt-1 text-xs text-slate-600">
-          <summary className="cursor-pointer font-medium text-sky-800">How</summary>
+          <summary className="cursor-pointer font-medium text-sky-800">How calculated</summary>
           <p className="mt-1 whitespace-pre-wrap">{how}</p>
           {asList(lineage.rawInputs).length > 0 ? (
-            <p className="mt-1 text-slate-500">Raw inputs: {asList(lineage.rawInputs).map(String).join(', ')}</p>
+            <p className="mt-1 text-slate-500">
+              Inputs: {asList(lineage.rawInputs).map(String).join(', ')}
+            </p>
           ) : null}
         </details>
       ) : null}
@@ -160,11 +180,9 @@ function ParameterCard({
         <pre className="mt-1 whitespace-pre-wrap">
           {JSON.stringify(
             {
+              id,
               providerFieldPath: p.providerFieldPath ?? advanced.providerFieldPath,
               binding: p.existingImplementationBinding ?? advanced.existingImplementationBinding,
-              schema: advanced.schema,
-              liveRule: advanced.liveRuleParameter,
-              liveScorecard: advanced.liveScorecardParameter,
               gate3: advanced.gate3,
               policyTestReady: advanced.policyTestReady,
               runtimeReady: advanced.runtimeReady,
@@ -173,6 +191,7 @@ function ParameterCard({
               mappingAvailable: advanced.mappingAvailable,
               calculatorAvailable: advanced.calculatorAvailable,
               legacyOverallReadiness: advanced.legacyOverallReadiness ?? p.overallReadiness,
+              catalogueProductionReady: cap.catalogueProductionReady,
             },
             null,
             2,
@@ -217,9 +236,9 @@ function ParameterDetailPanel({
   const provider = asRecord(source.provider ?? parameter.provider)
   const advanced = asRecord(parameter.advanced)
   const capability = asRecord(detail.capability ?? parameter.capability)
-  const prod = asRecord(
-    capability.availableForProductionPolicyUse ?? parameter.availableForProductionPolicyUse,
-  )
+  const design = asRecord(capability.policyDesign ?? parameter.policyDesign)
+  const live = asRecord(capability.liveUse ?? parameter.liveUse)
+  const support = asRecord(capability.parameterSupport ?? parameter.parameterSupport)
 
   return (
     <section
@@ -231,7 +250,7 @@ function ParameterDetailPanel({
           <h2 className="text-lg font-semibold text-slate-900">
             {String(definition.displayName ?? parameter.businessName)}
           </h2>
-          <ParameterBadges p={parameter} />
+          <ParameterBadges p={parameter} hideOrgBadge={false} />
         </div>
         <button type="button" className="bt-btn bt-btn-secondary bt-btn-sm" onClick={onClose}>
           Close
@@ -257,7 +276,7 @@ function ParameterDetailPanel({
             </dd>
           </div>
           <div>
-            <dt className="text-slate-500">Platform Integration</dt>
+            <dt className="text-slate-500">BillionTech integration</dt>
             <dd data-testid="dp-detail-platform">
               {String(
                 lenderCap.platformIntegration ??
@@ -266,20 +285,25 @@ function ParameterDetailPanel({
             </dd>
           </div>
           <div>
-            <dt className="text-slate-500">Parameter Support</dt>
+            <dt className="text-slate-500">Parameter support</dt>
             <dd data-testid="dp-detail-support">
               {String(
                 lenderCap.parameterSupport ??
-                  parameterSupportLabel(nestStatus(capability.parameterSupport)),
+                  support.businessLabel ??
+                  parameterSupportBusinessLabel(nestStatus(support)),
               )}
             </dd>
           </div>
           <div className="sm:col-span-2">
             <dt className="text-slate-500">How?</dt>
-            <dd>{String(lenderCap.how ?? asRecord(capability.parameterSupport).how ?? '—')}</dd>
+            <dd>
+              {String(
+                lenderCap.how ?? support.businessHow ?? support.how ?? '—',
+              )}
+            </dd>
           </div>
           <div>
-            <dt className="text-slate-500">Your Organisation</dt>
+            <dt className="text-slate-500">Your organisation</dt>
             <dd data-testid="dp-detail-org">
               {String(
                 lenderCap.yourOrganisation ??
@@ -288,12 +312,23 @@ function ParameterDetailPanel({
             </dd>
           </div>
           <div>
-            <dt className="text-slate-500">Available for Production Policy Use</dt>
-            <dd data-testid="dp-detail-policy-use">
-              {String(lenderCap.availableForProductionPolicyUse ?? prod.label ?? '—')}
-              {prod.reason || lenderCap.availableForProductionPolicyUseReason ? (
+            <dt className="text-slate-500">Available for policy design</dt>
+            <dd data-testid="dp-detail-policy-design">
+              {String(lenderCap.policyDesign ?? design.label ?? '—')}
+              {design.reason || lenderCap.policyDesignReason ? (
                 <span className="mt-0.5 block font-normal text-slate-500">
-                  {String(lenderCap.availableForProductionPolicyUseReason ?? prod.reason)}
+                  {String(lenderCap.policyDesignReason ?? design.reason)}
+                </span>
+              ) : null}
+            </dd>
+          </div>
+          <div className="sm:col-span-2">
+            <dt className="text-slate-500">Live use</dt>
+            <dd data-testid="dp-detail-live-use">
+              {String(lenderCap.liveUse ?? live.label ?? '—')}
+              {live.reason || lenderCap.liveUseReason ? (
+                <span className="mt-0.5 block font-normal text-slate-500">
+                  {String(lenderCap.liveUseReason ?? live.reason)}
                 </span>
               ) : null}
             </dd>
@@ -301,7 +336,7 @@ function ParameterDetailPanel({
         </dl>
         <p className="mt-2 text-[11px] text-slate-500">
           Setup catalogue only — does not represent whether a particular loan application currently has a
-          value.
+          value. Live underwriting remains fail-closed until subscription and configuration are valid.
         </p>
       </div>
 
@@ -509,7 +544,7 @@ function FilterBar({
         <option value="">Parameter support (all)</option>
         {supportStatuses.map((s) => (
           <option key={s} value={s}>
-            {parameterSupportLabel(s)}
+            {parameterSupportBusinessLabel(s)}
           </option>
         ))}
       </select>
@@ -704,34 +739,87 @@ export function DataParametersPage() {
         <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4">
           {sourceCapability.length > 0 ? (
             <div className="space-y-2" data-testid="dp-source-capability-summary">
-              <h3 className="text-sm font-semibold text-slate-900">Source capability summary</h3>
+              <h3 className="text-sm font-semibold text-slate-900">Sources</h3>
               <div className="grid gap-2 lg:grid-cols-2">
                 {sourceCapability.map((s) => {
                   const counts = asRecord(s.parameterSupportCounts)
+                  const facing = asRecord(s.lenderFacing)
+                  const detail = asRecord(facing.expandableDetail)
+                  const available =
+                    Number(counts.parametersAvailable ?? 0) ||
+                    Number(counts.supportedRaw ?? 0) +
+                      Number(counts.supportedDerived ?? 0) +
+                      Number(counts.notApplicable ?? 0)
+                  const calcPending = Number(counts.calculationNotImplemented ?? 0)
+                  const selected = source === s.source
                   return (
-                    <button
+                    <div
                       key={String(s.source)}
-                      type="button"
                       className={`rounded border px-3 py-2 text-left text-xs ${
-                        source === s.source
+                        selected
                           ? 'border-slate-900 bg-slate-900 text-white'
                           : 'border-slate-200 bg-slate-50 text-slate-800'
                       }`}
-                      onClick={() => setSource(String(s.source))}
                     >
-                      <div className="font-semibold">{String(s.providerLabel ?? s.source)}</div>
-                      <div className={source === s.source ? 'text-slate-200' : 'text-slate-600'}>
-                        Platform: {platformIntegrationLabel(s.platformIntegration)} · Org:{' '}
-                        {lenderOrgLabel(s.yourOrganisation)}
-                      </div>
-                      <div className={source === s.source ? 'text-slate-300' : 'text-slate-500'}>
-                        Raw {String(counts.supportedRaw ?? 0)} · Derived{' '}
-                        {String(counts.supportedDerived ?? 0)} · No support{' '}
-                        {String(counts.providerDoesNotSupport ?? 0)} · Calc pending{' '}
-                        {String(counts.calculationNotImplemented ?? 0)} · Source N/I{' '}
-                        {String(counts.sourceNotIntegrated ?? 0)}
-                      </div>
-                    </button>
+                      <button
+                        type="button"
+                        className="w-full text-left"
+                        onClick={() => setSource(String(s.source))}
+                      >
+                        <div className="font-semibold">{String(s.providerLabel ?? s.source)}</div>
+                        <div className={selected ? 'text-slate-200' : 'text-slate-600'}>
+                          {String(
+                            facing.integrationLabel ??
+                              `BillionTech integration: ${platformIntegrationLabel(s.platformIntegration)}`,
+                          )}
+                        </div>
+                        {s.yourOrganisation && String(s.yourOrganisation) !== 'NOT_APPLICABLE' ? (
+                          <div className={selected ? 'text-slate-200' : 'text-slate-600'}>
+                            {String(
+                              facing.organisationLabel ??
+                                `Your organisation: ${lenderOrgLabel(s.yourOrganisation)}`,
+                            )}
+                          </div>
+                        ) : null}
+                        <div className={`mt-1 ${selected ? 'text-slate-300' : 'text-slate-500'}`}>
+                          {String(
+                            facing.summaryLine ??
+                              (String(s.platformIntegration) === 'NOT_INTEGRATED'
+                                ? 'Integration not yet available'
+                                : `${available} parameters available${
+                                    calcPending > 0
+                                      ? ` · ${calcPending} calculations not yet implemented`
+                                      : ''
+                                  }`),
+                          )}
+                        </div>
+                      </button>
+                      <details className={`mt-1 ${selected ? 'text-slate-300' : 'text-slate-500'}`}>
+                        <summary className="cursor-pointer">More detail</summary>
+                        <ul className="mt-1 list-disc pl-4">
+                          <li>
+                            {String(detail.directlyProvided ?? counts.supportedRaw ?? 0)} directly
+                            provided
+                          </li>
+                          <li>
+                            {String(detail.calculatedByBillionTech ?? counts.supportedDerived ?? 0)}{' '}
+                            calculated by BillionTech
+                          </li>
+                          <li>
+                            {String(detail.unsupportedByProvider ?? counts.providerDoesNotSupport ?? 0)}{' '}
+                            unsupported by provider
+                          </li>
+                          <li>
+                            {String(
+                              detail.calculationsNotYetImplemented ??
+                                counts.calculationNotImplemented ??
+                                0,
+                            )}{' '}
+                            calculations not yet implemented
+                          </li>
+                        </ul>
+                      </details>
+                    </div>
                   )
                 })}
               </div>
@@ -747,7 +835,7 @@ export function DataParametersPage() {
                   }`}
                   onClick={() => setSource(String(s.source))}
                 >
-                  {String(s.source)} · Raw {String(s.rawCount ?? 0)} · Derived {String(s.derivedCount ?? 0)}
+                  {String(s.source)}
                 </button>
               ))}
             </div>
@@ -756,9 +844,9 @@ export function DataParametersPage() {
             <div className="grid gap-4 lg:grid-cols-3">
               {(
                 [
-                  ['raw', 'RAW'],
-                  ['derived', 'DERIVED'],
-                  ['manual', 'MANUAL'],
+                  ['raw', 'Directly provided'],
+                  ['derived', 'Calculated'],
+                  ['manual', 'Application / manual'],
                 ] as const
               ).map(([key, label]) => (
                 <div key={key}>
@@ -767,7 +855,7 @@ export function DataParametersPage() {
                   </h3>
                   <ul className="mt-2 space-y-2 text-sm">
                     {filterParams(asList(sourceView[key])).map((p, i) => (
-                      <ParameterCard key={i} p={p} onOpen={(id) => void openDetail(id)} />
+                      <ParameterCard key={i} p={p} onOpen={(id) => void openDetail(id)} hideOrgBadge />
                     ))}
                   </ul>
                 </div>
@@ -876,8 +964,28 @@ export function DataParametersPage() {
               </>
             ) : null}
             {overview?.dp1 ? ' · DP-1 surface enabled' : null}
+            {overview?.capabilitySemantics ? ' · capability semantics on' : null}
             {overview?.adminWriteEnabled === false ? ' · read-only' : null}
           </p>
+          {sourceCapability.length > 0 ? (
+            <div data-testid="dp-diagnostics-source-counts">
+              <p className="font-semibold">Engineering source support counts</p>
+              <ul className="mt-1 space-y-1">
+                {sourceCapability.map((s) => {
+                  const c = asRecord(s.parameterSupportCounts)
+                  return (
+                    <li key={String(s.source)}>
+                      <code>{String(s.source)}</code> · platform={String(s.platformIntegration)} · org=
+                      {String(s.yourOrganisation)} · raw={String(c.supportedRaw)} · derived=
+                      {String(c.supportedDerived)} · noSupport={String(c.providerDoesNotSupport)} · calc=
+                      {String(c.calculationNotImplemented)} · sourceNI={String(c.sourceNotIntegrated)} ·
+                      total={String(c.total)}
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          ) : null}
           {drift.length > 0 ? (
             <div>
               <p className="font-semibold">Known catalogue drift</p>

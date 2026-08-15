@@ -317,6 +317,8 @@ public class DataParametersAdminService {
         m.put("platformIntegration", capability.get("platformIntegration"));
         m.put("parameterSupport", capability.get("parameterSupport"));
         m.put("yourOrganisation", capability.get("yourOrganisation"));
+        m.put("policyDesign", capability.get("policyDesign"));
+        m.put("liveUse", capability.get("liveUse"));
         m.put("availableForProductionPolicyUse", capability.get("availableForProductionPolicyUse"));
         m.put("canBillionTechSupport", capability.get("canBillionTechSupport"));
         m.put("canBillionTechSupportLabel", capability.get("canBillionTechSupportLabel"));
@@ -415,7 +417,9 @@ public class DataParametersAdminService {
         @SuppressWarnings("unchecked")
         Map<String, Object> org = (Map<String, Object>) capability.get("yourOrganisation");
         @SuppressWarnings("unchecked")
-        Map<String, Object> prod = (Map<String, Object>) capability.get("availableForProductionPolicyUse");
+        Map<String, Object> design = (Map<String, Object>) capability.get("policyDesign");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> live = (Map<String, Object>) capability.get("liveUse");
 
         Map<String, Object> lenderCapability = new LinkedHashMap<>();
         lenderCapability.put("canBillionTechSupport", capability.get("canBillionTechSupportLabel"));
@@ -424,13 +428,17 @@ public class DataParametersAdminService {
         lenderCapability.put("platformIntegration", platform == null ? null : platform.get("label"));
         lenderCapability.put("platformIntegrationStatus", platform == null ? null : platform.get("status"));
         lenderCapability.put("providerLabel", platform == null ? null : platform.get("providerLabel"));
-        lenderCapability.put("parameterSupport", support == null ? null : support.get("label"));
+        lenderCapability.put("parameterSupport", support == null ? null : support.get("businessLabel"));
         lenderCapability.put("parameterSupportStatus", support == null ? null : support.get("status"));
-        lenderCapability.put("how", support == null ? null : support.get("how"));
+        lenderCapability.put("how", support == null ? null : support.get("businessHow"));
         lenderCapability.put("yourOrganisation", org == null ? null : org.get("label"));
         lenderCapability.put("yourOrganisationStatus", org == null ? null : org.get("status"));
-        lenderCapability.put("availableForProductionPolicyUse", prod == null ? null : prod.get("label"));
-        lenderCapability.put("availableForProductionPolicyUseReason", prod == null ? null : prod.get("reason"));
+        lenderCapability.put("policyDesign", design == null ? null : design.get("label"));
+        lenderCapability.put("policyDesignAvailable", design == null ? null : design.get("available"));
+        lenderCapability.put("policyDesignReason", design == null ? null : design.get("reason"));
+        lenderCapability.put("liveUse", live == null ? null : live.get("label"));
+        lenderCapability.put("liveUseStatus", live == null ? null : live.get("status"));
+        lenderCapability.put("liveUseReason", live == null ? null : live.get("reason"));
         lenderCapability.put("applicationDataStateExcluded", true);
         sections.put("lenderCapability", lenderCapability);
 
