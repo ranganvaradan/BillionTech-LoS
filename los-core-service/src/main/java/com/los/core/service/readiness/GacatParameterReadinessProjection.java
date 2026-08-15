@@ -400,17 +400,13 @@ public final class GacatParameterReadinessProjection {
     /** Known catalogue drift (visibility only — no mutation). */
     public static List<Map<String, Object>> knownCatalogueDriftNotes() {
         List<Map<String, Object>> notes = new ArrayList<>();
-        notes.add(Map.of(
-                "code", "SEED_NOT_IN_DB",
-                "canonicalParameterId", "bureau.inquiries.last_3m",
-                "detail", "Present in GacatCatalogueSeed Java inventory; absent from staging ci_gacat_canonical_parameter (both DBs)."));
-        notes.add(Map.of(
-                "code", "DB_NOT_IN_SEED",
-                "canonicalParameterId", "collateral.ltv",
-                "detail", "Present in DB via Flyway V123; absent from GacatCatalogueSeed Java inventory."));
+        // DP-2B: bureau.inquiries.last_3m restored via V131; collateral.ltv reconciled into Java seed.
         notes.add(Map.of(
                 "code", "META_SEED_COUNT_STALE",
                 "detail", "Internal ci_gacat_catalogue_meta.seed_count may lag actual parameter row count — cosmetic meta only."));
+        notes.add(Map.of(
+                "code", "POLICY_SNAPSHOT_TOKENS_UNRESOLVED",
+                "detail", "10 Policy session-snapshot tokens remain unbound to exact GACAT IDs (no fuzzy bind in DP-2B)."));
         return notes;
     }
 }

@@ -41,7 +41,13 @@ public final class WorkflowParameterProvidesCatalog {
                     "bureau.tradeline.account_open_date",
                     "bureau.inquiry")),
             Map.entry("GST_ANALYSIS", List.of(
-                    "gst.turnover.trailing_12m")),
+                    "gst.turnover.trailing_12m",
+                    "gst.turnover.trailing_3m",
+                    "gst.turnover.trailing_6m",
+                    "gst.gstr1_gstr3b_turnover_variance",
+                    "gst.return.missing_count_12m",
+                    "gst.return.late_count_12m",
+                    "gst.filing.timeliness_score")),
             Map.entry("GSTIN_VERIFY", List.of(
                     // Identity verification only — does NOT provide GST turnover
             )),
@@ -83,6 +89,8 @@ public final class WorkflowParameterProvidesCatalog {
             "ACCOUNT_AGGREGATOR", List.of(
                     "banking.avg_daily_balance_3m",
                     "banking.emi_bounce_count_3m",
+                    "banking.adjusted_business_credits_12m",
+                    "banking.monthly_obligation",
                     "bank.transaction.amount",
                     "bank.transaction.date",
                     "bank.account.closing_balance",
@@ -91,6 +99,8 @@ public final class WorkflowParameterProvidesCatalog {
             "BANK_STATEMENT_DOCUMENT", List.of(
                     "banking.avg_daily_balance_3m",
                     "banking.emi_bounce_count_3m",
+                    "banking.adjusted_business_credits_12m",
+                    "banking.monthly_obligation",
                     "bank.account.closing_balance")
     );
 

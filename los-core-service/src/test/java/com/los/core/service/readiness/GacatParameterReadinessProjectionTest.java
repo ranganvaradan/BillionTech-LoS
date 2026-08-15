@@ -241,4 +241,68 @@ class GacatParameterReadinessProjectionTest {
         Map<String, Object> studio = WorkflowParameterProvidesCatalog.lookupForParameter("bureau.max_dpd_6m");
         assertThat(studio.get("studioOnlySteps")).asList().contains("BUREAU_PULL");
     }
+
+    @Test
+    void dp2b_eightFormerNeedsReview_haveWorkflowOrIntegrationClaim() {
+        // DP-2B: acquisition claims restored so PRODUCTION_READY is not hollow.
+        for (String id : List.of(
+                "banking.adjusted_business_credits_12m",
+                "banking.monthly_obligation",
+                "gst.turnover.trailing_3m",
+                "gst.turnover.trailing_6m",
+                "gst.filing.timeliness_score",
+                "gst.gstr1_gstr3b_turnover_variance",
+                "gst.return.missing_count_12m",
+                "gst.return.late_count_12m")) {
+            CanonicalParameterDefinition def = require(id);
+            assertThat(def.capability().productionReady()).as(id + " productionReady").isTrue();
+            assertThat(def.capability().missingDataTreatment()).as(id + " missing").isEqualTo("DATA_INSUFFICIENT");
+            Map<String, Object> lookup = WorkflowParameterProvidesCatalog.lookupForParameter(id);
+            boolean claimed = Boolean.TRUE.equals(lookup.get("workflowAvailable"))
+                    || Boolean.TRUE.equals(lookup.get("integrationAvailable"));
+            assertThat(claimed).as(id + " workflow/integration claim").isTrue();
+            Map<String, Object> projected = GacatParameterReadinessProjection.project(def);
+            assertThat(projected.get("overallReadiness")).as(id)
+                    .isEqualTo(GacatParameterReadinessProjection.OVERALL_PRODUCTION_READY);
+            assertThat(projected.get("workflowAvailable")).as(id + " proj acquisition").isEqualTo(true);
+        }
+    }
+
+    @Test
+    void dp2b_inquiryFamily_remainSemanticallyDistinct() {
+        CanonicalParameterDefinition last3 = require("bureau.inquiries.last_3m");
+        CanonicalParameterDefinition current = require("bureau.inquiries.current_month");
+        CanonicalParameterDefinition d90 = require("bureau.recent_inquiries_90d");
+        assertThat(last3.capability().productionReady()).isFalse();
+        assertThat(current.capability().productionReady()).isFalse();
+        assertThat(d90.capability().productionReady()).isTrue();
+        assertThat(last3.id()).isNotEqualTo(current.id());
+        assertThat(last3.id()).isNotEqualTo(d90.id());
+        assertThat(GacatParameterReadinessProjection.project(last3).get("overallReadiness"))
+                .isEqualTo(GacatParameterReadinessProjection.OVERALL_POLICY_TEST_ONLY);
+    }
+
+    @Test
+    void dp2b_collateralLtv_inSeed_notProductionReady() {
+        CanonicalParameterDefinition ltv = require("collateral.ltv");
+        assertThat(ltv.capability().implemented()).isTrue();
+        assertThat(ltv.capability().productionReady()).isFalse();
+    }
+
+    @Test
+    void dp2b_kycPanNameMatch_boundButNotProductionReady() {
+        CanonicalParameterDefinition nm = require("kyc.pan.name_match");
+        assertThat(nm.capability().implemented()).isTrue();
+        assertThat(nm.capability().productionReady()).isFalse();
+        assertThat(nm.existingImplementationBinding()).contains("NormalizedKycFactBuilder");
+        assertThat(GacatParameterReadinessProjection.project(nm).get("overallReadiness"))
+                .isNotEqualTo(GacatParameterReadinessProjection.OVERALL_PRODUCTION_READY);
+    }
+
+    @Test
+    void dp2b_timelinessPeriod_matchesSixMonthRuntime() {
+        CanonicalParameterDefinition def = require("gst.filing.timeliness_score");
+        assertThat(def.period()).isEqualTo("TRAILING_6M");
+        assertThat(def.capability().filtersEligibility()).contains("6");
+    }
 }

@@ -598,11 +598,11 @@ final class GacatCatalogueSeed {
                 List.of("gst.return.taxable_value"),
                 "GstMetricService", List.of("gst turnover 6m"), null, null,
                 prodGst(), true, true, true, true, true);
-        derived(p, "gst.filing.timeliness_score", "GST filing timeliness score", GST, "SCORE", "TRAILING_12M",
-                "Filing timeliness score from return periods",
+        derived(p, "gst.filing.timeliness_score", "GST filing timeliness score", GST, "SCORE", "TRAILING_6M",
+                "Filing timeliness score from return periods (GstMetricService.computeTimeliness uses trailing 6 months)",
                 List.of("gst.return.filing_status"),
                 "GstMetricService", List.of("filing timeliness"), null, null,
-                prodGst(), true, true, true, true, true);
+                prodGstPeriod("Runtime window = trailing 6 months (not 12m)"), true, true, true, true, true);
         derived(p, "gst.gstr1_gstr3b_turnover_variance", "GSTR-1 vs GSTR-3B turnover variance", GST, "PERCENT", "TRAILING",
                 "Variance between GSTR-1 and GSTR-3B turnover",
                 List.of("gst.return.taxable_value"),
@@ -673,7 +673,13 @@ final class GacatCatalogueSeed {
 
         kycFact(p, "kyc.pan.present", "PAN present", "BOOLEAN", true, true);
         kycFact(p, "kyc.pan.verified", "PAN verified", "BOOLEAN", true, true);
-        kycFact(p, "kyc.pan.name_match", "PAN name match", "BOOLEAN", true, false);
+        // Bound to NormalizedKycFactBuilder (emits when provider/nameMatchHint present).
+        // Not auto-certified Production Ready — optional/provider-conditional fact.
+        raw(p, "kyc.pan.name_match", "PAN name match", KYC, "BOOLEAN", "SCALAR",
+                "NormalizedKycFactBuilder / provider nameMatch hint",
+                List.of("pan name match", "name match"),
+                "NormalizedKycFactBuilder", null, null,
+                true, true, false, true, false);
         kycFact(p, "kyc.pan.verification_status", "PAN verification status", "STRING", true, true);
         kycFact(p, "kyc.ckyc.available", "CKYC available", "BOOLEAN", true, true);
         kycFact(p, "kyc.ckyc.verified", "CKYC verified", "BOOLEAN", true, true);
@@ -734,8 +740,19 @@ final class GacatCatalogueSeed {
                 "CreditControlService / PolicyRegistryMetricService.computeFoir",
                 List.of("foir", "obligation ratio", "dti"),
                 "OBLIGATION_RATIO", "OBLIGATION_RATIO",
-                Capability.of("COMPUTED", true, true, true, true, true, "SCALAR", null, null, null, null, null),
+                Capability.of("COMPUTED", true, true, true, true, true, "SCALAR", null,
+                        "DATA_INSUFFICIENT", null, null, null),
                 true, true, true, true, true);
+        // DB-canonical (Flyway V123); seed omission was catalogue drift — keep productionReady=false.
+        derived(p, "collateral.ltv", "LTV", COMP, "PERCENT", "PIT",
+                "Loan amount / eligible collateral value * 100",
+                List.of("application.requested_amount", "collateral.value"),
+                "Collateral valuation / LTV ratio",
+                List.of("ltv", "loan to value", "loan-to-value", "loan to value ratio"),
+                "LTV", "LTV",
+                Capability.of("COMPUTED", true, true, true, true, false, "SCALAR", null,
+                        "DATA_INSUFFICIENT", null, null, null),
+                true, true, true, true, false);
     }
 
     // ---- helpers ----
@@ -823,12 +840,18 @@ final class GacatCatalogueSeed {
 
     private static Capability prodBank() {
         return Capability.of("BANK_STATEMENT", true, true, true, true, true,
-                "SCALAR", null, null, null, null, null);
+                "SCALAR", null, "DATA_INSUFFICIENT", null, null, null);
     }
 
     private static Capability prodGst() {
         return Capability.of("GST", true, true, true, true, true,
-                "SCALAR", null, null, null, null, null);
+                "SCALAR", null, "DATA_INSUFFICIENT", null, null, null);
+    }
+
+    /** GST metric with explicit trailing period honesty (must match GstMetricService window). */
+    private static Capability prodGstPeriod(String periodNote) {
+        return Capability.of("GST", true, true, true, true, true,
+                "SCALAR", null, "DATA_INSUFFICIENT", periodNote, null, null);
     }
 
     private static Capability cap(

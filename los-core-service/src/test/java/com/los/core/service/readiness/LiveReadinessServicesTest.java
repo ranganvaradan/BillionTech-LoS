@@ -62,6 +62,23 @@ class LiveReadinessServicesTest {
         Set<String> ids = WorkflowParameterProvidesCatalog.parametersProvidedByWorkflowSteps(
                 List.of(Map.of("stepType", "GST_ANALYSIS")));
         assertThat(ids).contains("gst.turnover.trailing_12m");
+        assertThat(ids).contains("gst.turnover.trailing_3m", "gst.turnover.trailing_6m",
+                "gst.filing.timeliness_score", "gst.gstr1_gstr3b_turnover_variance",
+                "gst.return.missing_count_12m", "gst.return.late_count_12m");
+    }
+
+    @Test
+    void aaAndBsa_provideAdjustedCreditsAndMonthlyObligation() {
+        Map<String, Object> adj = WorkflowParameterProvidesCatalog.lookupForParameter(
+                "banking.adjusted_business_credits_12m");
+        Map<String, Object> obl = WorkflowParameterProvidesCatalog.lookupForParameter(
+                "banking.monthly_obligation");
+        assertThat(adj.get("integrationAvailable")).isEqualTo(true);
+        assertThat(obl.get("integrationAvailable")).isEqualTo(true);
+        assertThat(adj.get("integrations")).asList()
+                .contains("ACCOUNT_AGGREGATOR", "BANK_STATEMENT_DOCUMENT");
+        assertThat(obl.get("integrations")).asList()
+                .contains("ACCOUNT_AGGREGATOR", "BANK_STATEMENT_DOCUMENT");
     }
 
     @Test
