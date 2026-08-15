@@ -25,7 +25,7 @@ function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {}
 }
 
-type Tab = 'by-source' | 'by-parameter' | 'gaps'
+type Tab = 'by-source' | 'by-parameter' | 'gaps' | 'diagnostics'
 
 function Badge({
   children,
@@ -48,28 +48,26 @@ function Badge({
 
 function ParameterBadges({ p }: { p: Record<string, unknown> }) {
   const overall = String(p.overallReadiness ?? '')
+  // Single coherent readiness indicator — avoid duplicate Production Ready badges
+  const showProductionSeparate =
+    overall !== 'PRODUCTION_READY' && p.productionReady === true
   return (
     <div className="mt-1 flex flex-wrap gap-1" data-testid="dp1-badges">
       <Badge className="border-slate-200 bg-white text-slate-700">{String(p.id)}</Badge>
-      <Badge className="border-slate-200 bg-slate-50 text-slate-700">
-        {String(p.sourceFamily ?? p.source ?? p.evaluatedFrom ?? '—')}
-      </Badge>
       <Badge className="border-indigo-100 bg-indigo-50 text-indigo-900">
         {sourceTypeLabel(p.sourceType)}
       </Badge>
       <Badge className={readinessBadgeClass(overall)} testId="dp1-overall-readiness">
         {overallReadinessLabel(overall)}
       </Badge>
-      <Badge
-        className={
-          p.productionReady === true
-            ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
-            : 'border-slate-200 bg-slate-50 text-slate-600'
-        }
-        testId="dp1-production-ready"
-      >
-        {p.productionReady === true ? 'Production Ready' : 'Not Production Ready'}
-      </Badge>
+      {showProductionSeparate ? (
+        <Badge
+          className="border-emerald-200 bg-emerald-50 text-emerald-900"
+          testId="dp1-production-ready"
+        >
+          Production Ready
+        </Badge>
+      ) : null}
     </div>
   )
 }
@@ -501,7 +499,7 @@ export function DataParametersPage() {
     <div className="space-y-4" data-testid="data-parameters-page">
       <PageHeader
         title="Data & Parameters"
-        description="Operational readiness and source lineage over GACAT — CanonicalParameterRegistry (read-only). Not a new catalogue."
+        description="See what information the LOS can collect, calculate, or obtain from integrated sources, and whether it is ready for use in lending policies."
       />
       <AdministrationWorkspaceNav />
 
@@ -511,29 +509,12 @@ export function DataParametersPage() {
       {loading ? <p className="text-sm text-slate-600">Loading…</p> : null}
 
       {totals.registryCount != null ? (
-        <p className="text-xs text-slate-500">
-          Registry {String(totals.registryCount)} · Raw {String(totals.rawCount)} · Derived{' '}
-          {String(totals.derivedCount)} · Live {String(totals.productionReadyCount)} · Implemented{' '}
-          {String(totals.implementedCount)}
-          {overview?.inventoryVersion ? ` · ${String(overview.inventoryVersion)}` : ''}
-          {overview?.catalogueAuthority ? ` · authority=${String(overview.catalogueAuthority)}` : ''}
-          {overview?.adminWriteEnabled === false ? ' · read-only' : ''}
-          {overview?.dp1 ? ' · DP-1' : ''}
+        <p className="text-xs text-slate-600">
+          {String(totals.registryCount)} parameters ·{' '}
+          {String(totals.productionReadyCount ?? 0)} production ready ·{' '}
+          {String(totals.derivedCount ?? 0)} derived ·{' '}
+          {String(totals.rawCount ?? 0)} sourced
         </p>
-      ) : null}
-
-      {drift.length > 0 ? (
-        <details className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
-          <summary className="cursor-pointer font-semibold">Known catalogue drift (visibility only)</summary>
-          <ul className="mt-2 list-disc pl-4">
-            {drift.map((d, i) => (
-              <li key={i}>
-                {d.canonicalParameterId ? `${String(d.canonicalParameterId)} — ` : ''}
-                {String(d.detail ?? d.code)}
-              </li>
-            ))}
-          </ul>
-        </details>
       ) : null}
 
       <ParameterDetailPanel detail={detail} onClose={() => setDetail(null)} />
@@ -543,7 +524,8 @@ export function DataParametersPage() {
           [
             ['by-source', 'By Source'],
             ['by-parameter', 'By Parameter'],
-            ['gaps', 'Gaps / Manual'],
+            ['gaps', 'Coverage & Gaps'],
+            ['diagnostics', 'System Diagnostics'],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -653,8 +635,13 @@ export function DataParametersPage() {
       ) : null}
 
       {tab === 'gaps' ? (
-        <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 text-sm">
-          <h3 className="font-semibold">Manual parameters ({String(gaps.manualCount ?? 0)})</h3>
+        <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 text-sm" data-testid="coverage-gaps">
+          <p className="text-xs text-slate-600">
+            Coverage describes how parameters can be fulfilled. Intentional customer/application input is not a
+            defect. Customer Provided is separate from Data Ready for Policy.
+          </p>
+          <h3 className="font-semibold">Customer / application input ({String(gaps.manualCount ?? 0)})</h3>
+          <p className="text-xs text-slate-500">Direct input or document paths — not an integration gap.</p>
           <ul className="space-y-1">
             {asList(gaps.manualParameters).map((raw, i) => {
               const p = asRecord(raw)
@@ -673,7 +660,7 @@ export function DataParametersPage() {
             })}
           </ul>
           <h3 className="mt-4 font-semibold">
-            Defined not implemented ({String(gaps.definedNotImplementedCount ?? 0)})
+            Integration / fulfilment outstanding ({String(gaps.definedNotImplementedCount ?? 0)})
           </h3>
           <ul className="space-y-1">
             {asList(gaps.definedNotImplemented).map((raw, i) => {
@@ -698,6 +685,38 @@ export function DataParametersPage() {
               )
             })}
           </ul>
+        </section>
+      ) : null}
+
+      {tab === 'diagnostics' ? (
+        <section className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-700">
+          <h3 className="text-sm font-semibold text-slate-900">System diagnostics</h3>
+          <p>
+            Catalogue authority: <code>{String(overview?.catalogueAuthority ?? '—')}</code>
+            {overview?.inventoryVersion ? (
+              <>
+                {' '}
+                · inventory <code>{String(overview.inventoryVersion)}</code>
+              </>
+            ) : null}
+            {overview?.dp1 ? ' · DP-1 surface enabled' : null}
+            {overview?.adminWriteEnabled === false ? ' · read-only' : null}
+          </p>
+          {drift.length > 0 ? (
+            <div>
+              <p className="font-semibold">Known catalogue drift</p>
+              <ul className="mt-1 list-disc pl-4">
+                {drift.map((d, i) => (
+                  <li key={i}>
+                    {d.canonicalParameterId ? `${String(d.canonicalParameterId)} — ` : ''}
+                    {String(d.detail ?? d.code)}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <p>No catalogue drift reported.</p>
+          )}
         </section>
       ) : null}
     </div>

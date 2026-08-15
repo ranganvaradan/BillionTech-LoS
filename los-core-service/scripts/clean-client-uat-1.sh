@@ -57,6 +57,19 @@ echo "=== MATERIALIZE GRAPHS ==="
 curl -sS "${HDR[@]}" -X POST "$DP3/policies/$DOC_A/materialize-graph" | jdump | head -30
 curl -sS "${HDR[@]}" -X POST "$DP3/policies/$DOC_B/materialize-graph" | jdump | head -30
 
+echo "=== SCOPE SAVE (lifecycle — authoritative Scope tab source) ==="
+for DOC_SCOPE in "$DOC_A" "$DOC_B"; do
+  curl -sS "${HDR[@]}" -X POST "$SD/policy-studio/documents/$DOC_SCOPE/lifecycle/save-draft" -d "{
+    \"products\": [\"BUSINESS_TERM_LOAN\"],
+    \"borrowerTypes\": [\"INDIVIDUAL\"],
+    \"customerSegment\": \"BORROWER\",
+    \"minLoanAmount\": 20000,
+    \"maxLoanAmount\": 500000,
+    \"effectiveFrom\": \"2026-01-01\",
+    \"reasonForChange\": \"Clean-client UAT scope aligned to STARTER eligibility\"
+  }" | jdump | head -25 || true
+done
+
 echo "=== CATALOGUE UPSERT + SCHEDULE A ==="
 CAT_A=$(curl -sS "${HDR[@]}" -X POST "$SD/policy-catalogue" -d "{
   \"policyDocumentId\": \"$DOC_A\",

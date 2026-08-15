@@ -137,6 +137,31 @@ class PolicyScopeUx2bTest {
     }
 
     @Test
+    void starterLoanPolicy_doesNotDefaultToDigiLeapProduct() {
+        CiPolicyDocument doc = CiPolicyDocument.builder()
+                .id(UUID.randomUUID())
+                .tenantId(tenantId)
+                .name("CLEAN UAT Policy A — STARTER LOAN")
+                .sourceText("Bureau score and FOIR rules")
+                .contentHash("starter-scope-test")
+                .metadata(new LinkedHashMap<>())
+                .build();
+        PolicyStudioSession session = new PolicyStudioSession();
+        session.setDocument(doc);
+        Map<String, Object> view = lifecycle.settingsView(session);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> app = (Map<String, Object>) view.get("applicability");
+        @SuppressWarnings("unchecked")
+        List<String> products = (List<String>) app.get("products");
+        assertThat(products).contains("BUSINESS_TERM_LOAN");
+        assertThat(products).doesNotContain("DIGILEAP");
+        @SuppressWarnings("unchecked")
+        Map<String, Object> summary = (Map<String, Object>) view.get("scopeSummary");
+        assertThat(String.valueOf(summary.get("appliesTo"))).contains("Business Term Loan");
+        assertThat(String.valueOf(summary.get("appliesTo"))).doesNotContain("DigiLeap");
+    }
+
+    @Test
     void minGreaterThanMax_rejected() {
         Map<String, Object> app = new LinkedHashMap<>();
         app.put("minLoanAmount", "500000");

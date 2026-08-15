@@ -869,21 +869,23 @@ public class PolicyLifecycleService {
         String text = session.getDocument() == null || session.getDocument().getSourceText() == null
                 ? "" : session.getDocument().getSourceText().toUpperCase(Locale.ROOT);
         List<String> products = new ArrayList<>();
-        if (name.contains("BANK") || text.contains("DIGILEAP") || text.contains("SMART SWITCH")
-                || text.contains("SMART_SWITCH")) {
-            products.add("DIGILEAP");
-            if (text.contains("SMART")) {
-                products.add("SMART_SWITCH");
-            }
-        }
-        if (name.contains("BUREAU") || text.contains("BUREAU")) {
-            if (products.isEmpty()) {
-                products.add("DIGILEAP");
-            }
-        }
-        if (products.isEmpty()) {
+        // Explicit demo product names only — do not invent DigiLeap from "BANK" / empty defaults.
+        if (name.contains("DIGILEAP") || text.contains("DIGILEAP")) {
             products.add("DIGILEAP");
         }
+        if (name.contains("SMART SWITCH") || text.contains("SMART SWITCH") || text.contains("SMART_SWITCH")) {
+            products.add("SMART_SWITCH");
+        }
+        if (name.contains("INVOICE")) {
+            products.add("BUSINESS_WC_INVOICE_DISCOUNTING");
+        } else if (name.contains("PERSONAL")) {
+            products.add("PERSONAL_LOAN");
+        } else if (name.contains("STARTER") || name.contains("TERM") || name.contains("BUSINESS")
+                || name.contains("CLEAN") || name.contains("BANK")) {
+            // Clean-client / term-loan propositions — not DigiLeap demo product codes
+            products.add("BUSINESS_TERM_LOAN");
+        }
+        // Empty list = All products until Credit Manager sets scope (never default DIGILEAP)
         return products;
     }
 

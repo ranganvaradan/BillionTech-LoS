@@ -74,6 +74,7 @@ export interface CustomerCategory {
   reasonForChange?: string | null
   replacesCategoryId?: string | null
   overlapWarnings?: Record<string, unknown>[]
+  governanceJson?: Record<string, unknown> | null
   allowedActions?: LifecycleAction[]
   history?: Record<string, unknown>[]
   /** Principal Policy Studio catalogue id (exact Policy Version). */

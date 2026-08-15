@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+﻿import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { POLICY_STUDIO_PRIMARY_TAB_IDS } from '@/lib/applicationWorkbench'
@@ -6,10 +6,11 @@ import { POLICY_STUDIO_PRIMARY_TAB_IDS } from '@/lib/applicationWorkbench'
 const uiSrc = join(__dirname, '../..')
 
 describe('POLICY-PARAMETER-RESOLVER-1', () => {
-  it('policy shell remains Scope | Rules | Test | Versions', () => {
+  it('policy shell remains Scope | Rules | Scorecard | Test | Versions', () => {
     expect([...POLICY_STUDIO_PRIMARY_TAB_IDS]).toEqual([
       'scope',
       'rules',
+      'scorecard',
       'simulation',
       'lifecycle',
     ])

@@ -132,10 +132,40 @@ export function PolicyParameterInventoryPanel({ documentId }: { documentId: stri
                   <td className="py-1 pr-3">{r.usageType ?? '—'}</td>
                   <td className="py-1 pr-3">{r.sourceFamily ?? '—'}</td>
                   <td className="py-1 pr-3">
-                    {String(r.overallReadiness ?? '—')}
-                    <div className="text-[10px] text-slate-500">
-                      PT:{String(!!r.policyTestReady)} RT:{String(!!r.runtimeReady)} PR:
-                      {String(!!r.productionReady)}
+                    <div className="flex flex-wrap gap-1">
+                      <span
+                        className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                          r.policyTestReady
+                            ? 'bg-emerald-50 text-emerald-900'
+                            : 'bg-slate-100 text-slate-500'
+                        }`}
+                        title="Can this parameter be used in Policy Test simulations?"
+                      >
+                        Policy Test Ready
+                      </span>
+                      <span
+                        className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                          r.runtimeReady
+                            ? 'bg-sky-50 text-sky-900'
+                            : 'bg-slate-100 text-slate-500'
+                        }`}
+                        title="Available for runtime evaluation when fulfilment path succeeds"
+                      >
+                        Runtime Ready
+                      </span>
+                      <span
+                        className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                          r.productionReady
+                            ? 'bg-indigo-50 text-indigo-900'
+                            : 'bg-slate-100 text-slate-500'
+                        }`}
+                        title="Certified for production lending use"
+                      >
+                        Production Ready
+                      </span>
+                    </div>
+                    <div className="mt-0.5 text-[10px] text-slate-500">
+                      Overall: {String(r.overallReadiness ?? '—')}
                     </div>
                   </td>
                   <td className="py-1 pr-3">{r.resolutionStatus ?? '—'}</td>

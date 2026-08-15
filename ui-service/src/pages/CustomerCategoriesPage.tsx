@@ -25,6 +25,9 @@ import { ErrorState } from '@/components/ErrorState'
 import { LoadingState } from '@/components/LoadingState'
 import { PageHeader } from '@/components/PageHeader'
 import { AdministrationWorkspaceNav } from '@/components/workspace/AdministrationWorkspaceNav'
+import { filterCategoriesForLenderUi } from '@/lib/lenderConfigVisibility'
+import { isClientLenderSurface } from '@/lib/runtimeEnv'
+import { PropositionDisambiguationEditor } from '@/components/customerCategory/PropositionDisambiguationEditor'
 import { EditorModal } from '@/components/scorecard/EditorModal'
 import {
   BtAlert,
@@ -258,8 +261,10 @@ export function CustomerCategoriesPage() {
     loadEligible,
   ])
 
+  const [showPlatformCatalogue, setShowPlatformCatalogue] = useState(false)
+
   const filtered = useMemo(() => {
-    const items = rows ?? []
+    const items = filterCategoriesForLenderUi(rows ?? [], { showPlatformCatalogue })
     const q = listSearch.trim().toLowerCase()
     if (!q) return items
     return items.filter((r) => {
@@ -286,7 +291,7 @@ export function CustomerCategoriesPage() {
         .toLowerCase()
       return hay.includes(q)
     })
-  }, [rows, listSearch])
+  }, [rows, listSearch, showPlatformCatalogue])
 
   function selectPolicy(applicabilityId: string) {
     setPolicyApplicabilityId(applicabilityId)
@@ -534,8 +539,8 @@ export function CustomerCategoriesPage() {
   return (
     <div>
       <PageHeader
-        title="Customer Categories"
-        description="Govern matching scope, Policy Version, and Workflow Version binding. Categories do not contain underwriting rules."
+        title="Customer Categories / Lending Propositions"
+        description="Who is eligible for this lending proposition? Bind exact Policy Version and Workflow Version. Identical eligibility dimensions are valid when propositions differ."
       />
       <AdministrationWorkspaceNav />
 
@@ -551,9 +556,21 @@ export function CustomerCategoriesPage() {
             onSearchChange={setListSearch}
             searchPlaceholder="Search categories…"
             action={
-              <button type="button" onClick={startNew} className="bt-btn bt-btn-primary bt-btn-sm">
-                Create Category
-              </button>
+              <div className="flex flex-col items-end gap-1">
+                {isClientLenderSurface() ? (
+                  <label className="flex items-center gap-1 text-[10px] font-normal text-slate-500">
+                    <input
+                      type="checkbox"
+                      checked={showPlatformCatalogue}
+                      onChange={(e) => setShowPlatformCatalogue(e.target.checked)}
+                    />
+                    Show seed / platform
+                  </label>
+                ) : null}
+                <button type="button" onClick={startNew} className="bt-btn bt-btn-primary bt-btn-sm">
+                  Create Category
+                </button>
+              </div>
             }
             empty={
               filtered.length === 0 && !isCreating ? (
@@ -595,7 +612,14 @@ export function CustomerCategoriesPage() {
                       {workflowBadge ? (
                         <span className="bt-badge bt-badge-amber">WORKFLOW LINKAGE REQUIRED</span>
                       ) : null}
-                      {overlaps > 0 ? <span className="bt-badge bt-badge-amber">Overlap</span> : null}
+                      {overlaps > 0 ? (
+                        <span
+                          className="bt-badge bt-badge-amber"
+                          title="Another active lending proposition matches the same initial customer information. The application may ask additional configured questions or allow proposition selection."
+                        >
+                          Also eligible
+                        </span>
+                      ) : null}
                     </span>
                   }
                   tags={
@@ -881,20 +905,37 @@ export function CustomerCategoriesPage() {
                   </div>
                 </DetailSection>
 
+                {!isCreating && selected ? (
+                  <DetailSection
+                    title="When multiple propositions match"
+                    description="SAFE progressive questions and explicit selection. Does not expose Policy thresholds."
+                  >
+                    <PropositionDisambiguationEditor
+                      categoryId={selected.id}
+                      status={selected.status}
+                      governanceJson={selected.governanceJson}
+                      onSaved={() => void refresh()}
+                    />
+                  </DetailSection>
+                ) : null}
+
                 <DetailSection
                   title="Policy Version"
                   description="Exact Policy Studio catalogue version. Independent of Workflow. Required for activation."
                 >
                   <div className="space-y-2">
-                    <label className="flex items-center gap-2 text-xs text-slate-600">
-                      <input
-                        type="checkbox"
-                        checked={showIncompatiblePolicies}
-                        onChange={(e) => setShowIncompatiblePolicies(e.target.checked)}
-                        disabled={!editable}
-                      />
-                      Show incompatible / needs-context Policies (diagnostic)
-                    </label>
+                    <details className="text-xs text-slate-600">
+                      <summary className="cursor-pointer font-medium">Advanced / diagnostics</summary>
+                      <label className="mt-2 flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={showIncompatiblePolicies}
+                          onChange={(e) => setShowIncompatiblePolicies(e.target.checked)}
+                          disabled={!editable}
+                        />
+                        Show incompatible / needs-context Policies
+                      </label>
+                    </details>
                     <select
                       className="bt-input"
                       value={policyApplicabilityId}

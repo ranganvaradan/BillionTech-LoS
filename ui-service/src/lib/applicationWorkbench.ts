@@ -337,6 +337,7 @@ export function collateralOverviewCopy(opts: {
 export const PROSPECT_DEMO_VISIBLE_TAB_IDS = [
   'scope',
   'rules',
+  'scorecard',
   'simulation',
   'lifecycle',
 ] as const
@@ -352,10 +353,11 @@ export const PROSPECT_DEMO_HIDDEN_TAB_IDS = [
   'approvals',
 ] as const
 
-/** Stable primary tabs: Scope | Rules | Test | Versions */
+/** Stable primary tabs: Scope | Rules | Scorecard | Test | Versions */
 export const POLICY_STUDIO_PRIMARY_TAB_IDS = [
   'scope',
   'rules',
+  'scorecard',
   'simulation',
   'lifecycle',
 ] as const

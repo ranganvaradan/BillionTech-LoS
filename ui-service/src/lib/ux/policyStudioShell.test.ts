@@ -16,15 +16,22 @@ import {
 } from '@/lib/applicationWorkbench'
 
 describe('POLICY-UX-SHELL-1', () => {
-  it('primary tabs are exactly Scope / Rules / Test / Versions', () => {
+  it('primary tabs are exactly Scope / Rules / Scorecard / Test / Versions', () => {
     expect(POLICY_STUDIO_WORKFLOW_TABS.map((t) => t.label)).toEqual([
       'Scope',
       'Rules',
+      'Scorecard',
       'Test',
       'Versions',
     ])
-    expect(workflowTabIds()).toEqual(['scope', 'rules', 'simulation', 'lifecycle'])
-    expect([...POLICY_STUDIO_PRIMARY_TAB_IDS]).toEqual(['scope', 'rules', 'simulation', 'lifecycle'])
+    expect(workflowTabIds()).toEqual(['scope', 'rules', 'scorecard', 'simulation', 'lifecycle'])
+    expect([...POLICY_STUDIO_PRIMARY_TAB_IDS]).toEqual([
+      'scope',
+      'rules',
+      'scorecard',
+      'simulation',
+      'lifecycle',
+    ])
   })
 
   it('opening Advanced/details does not change primary tab ids', () => {
@@ -34,12 +41,12 @@ describe('POLICY-UX-SHELL-1', () => {
     expect(POLICY_STUDIO_ADVANCED_TAB_IDS.length).toBeGreaterThan(0)
     const after = primaryTabsSnapshot()
     expect(after).toEqual(before)
-    expect(after).toEqual(['scope', 'rules', 'simulation', 'lifecycle'])
+    expect(after).toEqual(['scope', 'rules', 'scorecard', 'simulation', 'lifecycle'])
   })
 
   it('switching workflow tabs does not mutate primary tab list', () => {
     const a = primaryTabsSnapshot()
-    for (const id of ['scope', 'rules', 'simulation', 'lifecycle']) {
+    for (const id of ['scope', 'rules', 'scorecard', 'simulation', 'lifecycle']) {
       expect(isWorkflowTab(id)).toBe(true)
       expect(primaryTabsSnapshot()).toEqual(a)
     }

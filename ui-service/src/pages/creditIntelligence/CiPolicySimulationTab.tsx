@@ -334,7 +334,7 @@ export function CiPolicySimulationTab({
             </CiSection>
           ) : null}
 
-          <CiSection title="Rule results" description="Underwriting rules only — data/calculation items excluded.">
+          <CiSection title="Hard Rules" description="Pass/fail per underwriting rule.">
             <div className="space-y-3">
               {ruleResults.map((r, i) => (
                 <RuleResultCard
@@ -350,6 +350,75 @@ export function CiPolicySimulationTab({
               ) : null}
             </div>
           </CiSection>
+
+          {asRecord(result.scorecard).outcome || asList(result.scorecardFactors).length || result.scorecardIncluded ? (
+            <CiSection
+              title="Scorecard"
+              description="Optional Policy-linked score — subordinate to hard rules / final Policy outcome."
+            >
+              <dl className="mb-3 grid gap-2 text-sm sm:grid-cols-3" data-testid="test-scorecard-summary">
+                <div>
+                  <dt className="text-slate-500">Total score</dt>
+                  <dd className="font-medium">
+                    {String(asRecord(result.scorecard).weightedScore ?? asRecord(result.scorecard).totalScore ?? '—')}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-slate-500">Scorecard outcome</dt>
+                  <dd className="font-medium">{String(asRecord(result.scorecard).outcome ?? '—')}</dd>
+                </div>
+                <div>
+                  <dt className="text-slate-500">Mode</dt>
+                  <dd className="font-medium">
+                    {String(asRecord(result.scorecard).scoringMode ?? 'POLICY_WEIGHTED_V2')}
+                  </dd>
+                </div>
+              </dl>
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-left text-xs">
+                  <thead className="text-slate-500">
+                    <tr>
+                      <th className="py-1 pr-2">Factor</th>
+                      <th className="py-1 pr-2">Raw value</th>
+                      <th className="py-1 pr-2">Factor score</th>
+                      <th className="py-1 pr-2">Raw weight</th>
+                      <th className="py-1 pr-2">Normalized</th>
+                      <th className="py-1 pr-2">Contribution</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {asList(result.scorecardFactors ?? asRecord(result.scorecard).factorEvidence).map((raw, i) => {
+                      const f = asRecord(raw)
+                      return (
+                        <tr key={i} className="border-t border-slate-100">
+                          <td className="py-1 pr-2 font-mono text-[11px]">
+                            {String(f.canonicalParameterId ?? f.parameter ?? f.factor ?? '—')}
+                          </td>
+                          <td className="py-1 pr-2">{String(f.rawValue ?? f.value ?? '—')}</td>
+                          <td className="py-1 pr-2">{String(f.factorScore ?? f.bandPointsEarned ?? '—')}</td>
+                          <td className="py-1 pr-2">{String(f.rawWeight ?? f.weight ?? '—')}</td>
+                          <td className="py-1 pr-2">
+                            {f.normalizedWeight != null ? `${Number(f.normalizedWeight).toFixed(1)}%` : '—'}
+                          </td>
+                          <td className="py-1 pr-2">{String(f.weightedContribution ?? f.contribution ?? '—')}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </CiSection>
+          ) : null}
+
+          <CiExecutiveSummary title="Final Policy outcome">
+            <p className="text-lg font-semibold text-slate-900" data-testid="final-policy-outcome">
+              {String(result.simulatedDecision ?? summary.outcome ?? '—')}
+            </p>
+            <p className="mt-1 text-xs text-slate-600">
+              Policy remains sole underwriting authority. Scorecard contributes when linked; it does not
+              replace hard rules.
+            </p>
+          </CiExecutiveSummary>
 
           {recent.length ? (
             <CiSection title="Recent tests" description="Session-only history — not a durable audit table.">

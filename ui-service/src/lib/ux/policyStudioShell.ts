@@ -6,6 +6,7 @@
 export const POLICY_STUDIO_WORKFLOW_TABS = [
   { id: 'scope', label: 'Scope' },
   { id: 'rules', label: 'Rules' },
+  { id: 'scorecard', label: 'Scorecard' },
   { id: 'simulation', label: 'Test' },
   { id: 'lifecycle', label: 'Versions' },
 ] as const

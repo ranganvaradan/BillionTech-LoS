@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
 import {
   approveLifecyclePolicy,
   createLifecycleVersion,
@@ -24,7 +23,7 @@ function asList(v: unknown): unknown[] {
 
 const PROGRESS = ['DRAFT', 'IN REVIEW', 'APPROVED', 'SCHEDULED', 'ACTIVE'] as const
 
-type NavTab = 'scope' | 'rules' | 'tests' | 'approvals' | 'lifecycle'
+type NavTab = 'scope' | 'rules' | 'scorecard' | 'tests' | 'approvals' | 'lifecycle'
 
 /**
  * POLICY-LIFECYCLE-FIX-1 — one primary next action, clear blockers, no silent no-ops.
@@ -36,6 +35,7 @@ export function CiPolicyLifecycleTab({
   onError,
   onSessionRefresh,
   onNavigateTab,
+  onOpenScorecardTab,
   session,
 }: {
   documentId: string
@@ -44,13 +44,14 @@ export function CiPolicyLifecycleTab({
   onError: (msg: string | null) => void
   onSessionRefresh?: (next?: StagingPolicyStudio) => void
   onNavigateTab?: (tab: NavTab) => void
+  onOpenScorecardTab?: () => void
   session?: StagingPolicyStudio | null
 }) {
   const [settings, setSettings] = useState<Record<string, unknown> | null>(null)
   const [history, setHistory] = useState<unknown[]>([])
   const [loading, setLoading] = useState(true)
   const [feedback, setFeedback] = useState<string | null>(null)
-  const [products, setProducts] = useState('DIGILEAP')
+  const [products, setProducts] = useState('BUSINESS_TERM_LOAN')
   const [effectiveFrom, setEffectiveFrom] = useState('2026-09-01')
   const [effectiveUntil, setEffectiveUntil] = useState('')
   const [reason, setReason] = useState('')
@@ -525,13 +526,14 @@ export function CiPolicyLifecycleTab({
           </dl>
           {['APPROVED', 'SCHEDULED', 'ACTIVE'].includes(progressCurrent) ? (
             <div className="mt-3 flex flex-wrap gap-2">
-              <Link
-                to="/underwriting-scorecards"
+              <button
+                type="button"
                 className="bt-btn bt-btn-primary bt-btn-sm"
                 data-testid="create-scorecard-handoff"
+                onClick={() => onOpenScorecardTab?.()}
               >
-                Create / Open Scorecard
-              </Link>
+                Configure Scorecard in Policy
+              </button>
             </div>
           ) : null}
         </section>

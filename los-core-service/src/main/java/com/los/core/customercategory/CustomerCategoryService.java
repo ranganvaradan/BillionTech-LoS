@@ -578,12 +578,17 @@ public class CustomerCategoryService {
                     "CATEGORY_RETIRED", Map.of("id", id.toString()));
         }
         if (e.getStatus() == ConfigLifecycleStatus.ACTIVE) {
-            // Cosmetic proposition only for ACTIVE
+            // Proposition + SAFE disambiguation only — does not change matching dimensions
             Map<String, Object> limited = new LinkedHashMap<>();
             if (body.get("proposition") instanceof Map<?, ?> p) {
                 Map<String, Object> copy = new LinkedHashMap<>();
                 p.forEach((k, v) -> copy.put(String.valueOf(k), v));
                 limited.put("proposition", copy);
+            }
+            if (body.get("disambiguation") instanceof Map<?, ?> d) {
+                Map<String, Object> copy = new LinkedHashMap<>();
+                d.forEach((k, v) -> copy.put(String.valueOf(k), v));
+                limited.put("disambiguation", copy);
             }
             CategoryPropositionConfig.putPropositionConfig(e, limited);
         } else {

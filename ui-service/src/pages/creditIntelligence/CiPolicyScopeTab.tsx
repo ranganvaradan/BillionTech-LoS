@@ -237,6 +237,13 @@ export function CiPolicyScopeTab({
         <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Applies to</div>
           <div className="mt-1 text-base font-medium text-slate-900">{liveSummary}</div>
+          {!customerSegment ? (
+            <p className="mt-2 text-xs text-slate-500" data-testid="scope-role-gap-note">
+              Application relationship (Borrower / Anchor) is unset — shown as All. Customer Role is
+              primarily owned by Customer Category / Lending Proposition eligibility; Policy scope does
+              not require a role dimension unless you constrain it here.
+            </p>
+          ) : null}
           {summary.effective ? (
             <div className="mt-1 text-sm text-slate-600">{String(summary.effective)}</div>
           ) : effectiveFrom ? (

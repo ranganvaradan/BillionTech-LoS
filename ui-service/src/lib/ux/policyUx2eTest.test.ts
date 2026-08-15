@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+﻿import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { POLICY_STUDIO_PRIMARY_TAB_IDS } from '@/lib/applicationWorkbench'
@@ -31,10 +31,11 @@ describe('POLICY-UX-2E Test experience', () => {
     expect(api).toContain('runPolicyQuickTest')
   })
 
-  it('shell remains Scope | Rules | Test | Versions and Save Draft ungated', () => {
+  it('shell remains Scope | Rules | Scorecard | Test | Versions and Save Draft ungated', () => {
     expect([...POLICY_STUDIO_PRIMARY_TAB_IDS]).toEqual([
       'scope',
       'rules',
+      'scorecard',
       'simulation',
       'lifecycle',
     ])
@@ -51,12 +52,15 @@ describe('POLICY-UX-2E Test experience', () => {
     expect(rules).toContain('CiParameterResolverPanel')
   })
 
-  it('live scorecard route unchanged', () => {
+  it('scorecard is first-class in Policy Studio (legacy route retained)', () => {
     const life = readFileSync(
       join(uiSrc, 'pages/creditIntelligence/CiPolicyLifecycleTab.tsx'),
       'utf8',
     )
-    expect(life).toContain('/underwriting-scorecards')
+    expect(life).toContain('Configure Scorecard in Policy')
+    expect(life).toContain('onOpenScorecardTab')
+    const page = readFileSync(join(uiSrc, 'pages/creditIntelligence/CiPolicyStudioPage.tsx'), 'utf8')
+    expect(page).toContain('CiPolicyScorecardTab')
     const scoreApi = readFileSync(join(uiSrc, 'api/scorecards.ts'), 'utf8')
     expect(scoreApi.length).toBeGreaterThan(50)
   })

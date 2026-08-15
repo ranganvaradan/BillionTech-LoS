@@ -249,6 +249,7 @@ export function WorkflowIntakeRulesPanel({
   onBureauEnabledChange,
   onAutoPullBureauAfterKycSuccessChange,
   visualSteps,
+  hideBureauRequirementControls = false,
 }: {
   intakeConfig: WorkflowIntakeConfig
   onChange: (next: WorkflowIntakeConfig) => void
@@ -257,6 +258,8 @@ export function WorkflowIntakeRulesPanel({
   onBureauEnabledChange: (next: boolean) => void
   onAutoPullBureauAfterKycSuccessChange: (next: boolean) => void
   visualSteps: VisualWorkflowStep[]
+  /** Client lender UX: Policy/W4/W6 own Bureau data requirements — not Workflow. */
+  hideBureauRequirementControls?: boolean
 }) {
   const configuredSteps = visualSteps.map((s) => s.step)
   const [geoStates, setGeoStates] = useState<GeoStateRow[]>([])
@@ -303,11 +306,11 @@ export function WorkflowIntakeRulesPanel({
         <span className="text-xs text-slate-500">{intakeSummary(intakeConfig)}</span>
       </div>
 
+      {!hideBureauRequirementControls ? (
       <section className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
-        <h3 className="text-sm font-medium text-slate-800">Bureau controls</h3>
+        <h3 className="text-sm font-medium text-slate-800">Bureau controls (legacy runtime)</h3>
         <p className="mt-1 text-xs text-slate-500">
-          Decide whether this workflow can run bureau checks at all, and whether KYC success should trigger them
-          automatically.
+          Transitional compatibility. Preferred model: Policy requires Bureau parameters → W4 plans → W6 acquires.
         </p>
         <div className="mt-3 space-y-3">
           <label className="flex items-start gap-2 text-sm text-slate-700">
@@ -318,7 +321,7 @@ export function WorkflowIntakeRulesPanel({
               onChange={(e) => onBureauEnabledChange(e.target.checked)}
             />
             <span>
-              <span className="font-medium text-slate-800">Enable bureau step</span>
+              <span className="font-medium text-slate-800">Enable bureau step (legacy)</span>
               <span className="mt-0.5 block text-xs text-slate-500">
                 When off, this workflow skips and blocks bureau pull execution entirely.
               </span>
@@ -333,7 +336,7 @@ export function WorkflowIntakeRulesPanel({
               disabled={!bureauEnabled}
             />
             <span>
-              <span className="font-medium text-slate-800">Auto-pull after KYC success</span>
+              <span className="font-medium text-slate-800">Auto-pull after KYC success (legacy)</span>
               <span className="mt-0.5 block text-xs text-slate-500">
                 When off, users can still trigger bureau manually later in the flow.
               </span>
@@ -341,6 +344,15 @@ export function WorkflowIntakeRulesPanel({
           </label>
         </div>
       </section>
+      ) : (
+        <section className="rounded-lg border border-emerald-200 bg-emerald-50/60 p-3 text-xs text-emerald-950">
+          <p className="font-medium">Bureau & automatic sources</p>
+          <p className="mt-1">
+            Data requirements come from Policy. The platform plans fulfilment (W4) and acquires sources (W6). This
+            Workflow does not independently require Bureau.
+          </p>
+        </section>
+      )}
 
       <section className="rounded-lg border border-slate-200 bg-slate-50/80 p-3">
         <h3 className="text-sm font-medium text-slate-800">Allowed states</h3>

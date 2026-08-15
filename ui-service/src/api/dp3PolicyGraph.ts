@@ -28,9 +28,18 @@ export async function previewScorecardWeights(body: {
     rawWeight: number | string
     required?: boolean
     dataState?: string
+    bandPointsEarned?: number
+    bandPointsMax?: number
   }>
 }) {
   const { data } = await http.post<Record<string, unknown>>(`${BASE}/scorecards/weight-preview`, body)
+  return data
+}
+
+export async function linkPolicyScorecard(policyDocumentId: string, scorecardId: string) {
+  const { data } = await http.post<Record<string, unknown>>(
+    `${BASE}/policies/${encodeURIComponent(policyDocumentId)}/link-scorecard/${encodeURIComponent(scorecardId)}`,
+  )
   return data
 }
 

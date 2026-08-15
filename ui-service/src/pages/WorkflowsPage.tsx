@@ -39,6 +39,11 @@ import {
 } from '@/catalog/lmsTenureUnits'
 import { formatInstant } from '@/lib/format'
 import {
+  filterWorkflowsForLenderUi,
+  shouldDefaultHidePlatformCatalogue,
+} from '@/lib/lenderConfigVisibility'
+import { isClientLenderSurface } from '@/lib/runtimeEnv'
+import {
   deriveProcessNotificationsFromSteps,
   parseProcessNotifications,
   processNotificationsToJsonArray,
@@ -58,7 +63,14 @@ import type { BorrowerType } from '@/types/createApplication'
 
 const BORROWER_TYPES: BorrowerType[] = [...BORROWER_TYPE_ORDER]
 
-type WorkflowDetailTab = 'general' | 'intake' | 'kyc' | 'advanced'
+type WorkflowDetailTab =
+  | 'general'
+  | 'application'
+  | 'kyc'
+  | 'acquisition'
+  | 'assessment'
+  | 'notifications'
+  | 'advanced'
 
 export function WorkflowsPage() {
   const [list, setList] = useState<WorkflowConfigResponse[] | null>(null)
@@ -130,11 +142,39 @@ export function WorkflowsPage() {
     void load()
   }, [load])
 
+  const [showPlatformCatalogue, setShowPlatformCatalogue] = useState(false)
+  const [linkedWorkflowIds, setLinkedWorkflowIds] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    if (!isClientLenderSurface() || showPlatformCatalogue) return
+    let cancelled = false
+    void (async () => {
+      try {
+        const { listCustomerCategories } = await import('@/api/customerCategories')
+        const cats = await listCustomerCategories()
+        if (cancelled) return
+        const ids = new Set<string>()
+        for (const c of cats) {
+          if (c.workflowId) ids.add(String(c.workflowId))
+        }
+        setLinkedWorkflowIds(ids)
+      } catch {
+        if (!cancelled) setLinkedWorkflowIds(new Set())
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [showPlatformCatalogue])
+
   const filteredList = useMemo(() => {
-    const items = list ?? []
+    const base = filterWorkflowsForLenderUi(list ?? [], {
+      showPlatformCatalogue,
+      linkedWorkflowIds,
+    })
     const q = listSearch.trim().toLowerCase()
-    if (!q) return items
-    return items.filter((w) => {
+    if (!q) return base
+    return base.filter((w) => {
       const borrowerLabel = (BORROWER_TYPE_LABELS[w.borrowerType as BorrowerType] ?? w.borrowerType).toLowerCase()
       const productLabel = loanProductLabel(w.loanProduct).toLowerCase()
       const segmentLabel = (w.intakeSegment === 'ANCHOR' ? 'anchor' : 'borrower').toLowerCase()
@@ -147,7 +187,7 @@ export function WorkflowsPage() {
         || segmentLabel.includes(q)
       )
     })
-  }, [list, listSearch])
+  }, [list, listSearch, showPlatformCatalogue, linkedWorkflowIds])
 
   useEffect(() => {
     let cancelled = false
@@ -418,7 +458,7 @@ export function WorkflowsPage() {
     <div>
       <PageHeader
         title="Workflows"
-        description="Create, edit, activate, and remove KYC and bureau step templates per borrower type, loan product, and intake segment (borrower vs anchor invoice-discounting onboarding)."
+        description="Journey orchestration versions. Customer Category selects the exact Workflow Version for an application — Workflow does not choose the customer. Compatibility (entity, product, role) constrains which Categories may bind a version."
       />
       <AdministrationWorkspaceNav />
 
@@ -427,6 +467,16 @@ export function WorkflowsPage() {
 
       {list && !loading && (
         <div>
+          {isClientLenderSurface() ? (
+            <label className="mb-3 flex items-center gap-2 text-xs text-slate-600">
+              <input
+                type="checkbox"
+                checked={showPlatformCatalogue}
+                onChange={(e) => setShowPlatformCatalogue(e.target.checked)}
+              />
+              Show platform / seed workflows (diagnostics)
+            </label>
+          ) : null}
           {successMessage ? (
             <p
               className="bt-alert bt-alert-success mb-4"
@@ -488,7 +538,7 @@ export function WorkflowsPage() {
             {showEditor ? (
               <DetailPanel
                 title={isCreating ? 'New workflow' : name}
-                description="New configs are inactive until you activate them. Multiple active workflows are allowed for the same borrower type, loan product, and intake segment; applications use an explicit workflow binding when set, otherwise the highest version."
+                description="New configs are inactive until activated. Category-selected applications use the exact Workflow Version locked at Category selection (W1). Compatibility fields below are applicability constraints — not independent runtime routing. Legacy apps without a Category lock may still resolve by compatibility."
                 badge={
                   !isCreating && selected ? (
                     selected.active ? (
@@ -507,10 +557,13 @@ export function WorkflowsPage() {
                 <div className="mb-4 flex flex-wrap gap-1 border-b border-slate-200 pb-2">
                   {(
                     [
-                      ['general', 'General'],
-                      ['intake', 'Intake rules'],
-                      ['kyc', 'KYC steps'],
-                      ['advanced', 'Advanced'],
+                      ['general', 'General / Version'],
+                      ['application', 'Application & requirements'],
+                      ['kyc', 'Identity & KYC'],
+                      ['acquisition', 'Data acquisition'],
+                      ['assessment', 'Credit assessment'],
+                      ['notifications', 'Notifications'],
+                      ['advanced', 'Advanced / Internal'],
                     ] as const
                   ).map(([id, label]) => (
                     <button
@@ -540,7 +593,9 @@ export function WorkflowsPage() {
                     />
                   </label>
                   <label className="block text-sm text-slate-700">
-                    <span className="mb-1 block text-xs font-medium text-slate-500">Borrower type</span>
+                    <span className="mb-1 block text-xs font-medium text-slate-500">
+                      Entity Type (compatibility)
+                    </span>
                     <select
                       className="bt-input w-full"
                       value={borrowerType}
@@ -605,26 +660,29 @@ export function WorkflowsPage() {
                     </>
                   ) : null}
                   <label className="block text-sm text-slate-700">
-                    <span className="mb-1 block text-xs font-medium text-slate-500">Intake segment</span>
+                    <span className="mb-1 block text-xs font-medium text-slate-500">Customer Role (compatibility)</span>
                     <select
                       className="bt-input w-full"
                       value={intakeSegment}
                       onChange={(e) => setIntakeSegment(e.target.value as WorkflowIntakeSegment)}
                     >
-                      <option value="BORROWER">Borrower (default self-service / staff loan intake)</option>
-                      <option value="ANCHOR">Anchor (invoice discounting onboarding)</option>
+                      <option value="BORROWER">Borrower</option>
+                      <option value="ANCHOR">Anchor</option>
                     </select>
                     <p className="mt-0.5 text-xs text-slate-500">
-                      Activating a row only competes with other configs that share the same segment for this borrower type
-                      and product.
+                      Applicability for Category binding — Category selection is the runtime route authority.
                     </p>
                   </label>
                 </div>
                 </DetailSection>
                 ) : null}
 
-                {detailTab === 'intake' ? (
-                <DetailSection title="Intake rules">
+                {detailTab === 'application' ? (
+                <DetailSection title="Application & customer requirements">
+                  <p className="mb-3 text-xs text-slate-600">
+                    Configure what the customer/RM provides during intake. Policy-driven W4/W5 requirements are
+                    planned from Policy — not from Bureau toggles here.
+                  </p>
                   <WorkflowIntakeRulesPanel
                     intakeConfig={intakeConfig}
                     onChange={setIntakeConfig}
@@ -633,12 +691,17 @@ export function WorkflowsPage() {
                     onBureauEnabledChange={setBureauEnabled}
                     onAutoPullBureauAfterKycSuccessChange={setAutoPullBureauAfterKycSuccess}
                     visualSteps={visualSteps}
+                    hideBureauRequirementControls
                   />
                 </DetailSection>
                 ) : null}
 
                 {detailTab === 'kyc' ? (
-                <DetailSection title="KYC steps & notifications">
+                <DetailSection title="Identity & KYC">
+                <p className="mb-2 text-xs text-slate-600">
+                  VKYC, identity verification, consent, and regulatory steps. Process-level notifications are under
+                  Notifications.
+                </p>
                 <WorkflowStepEditorPanel
                   steps={visualSteps}
                   onChange={setVisualSteps}
@@ -647,6 +710,48 @@ export function WorkflowsPage() {
                   onProcessNotificationsChange={setProcessNotifications}
                   showIntakeOptions={intakeConfig.policy === 'WORKFLOW_DRIVEN'}
                 />
+                </DetailSection>
+                ) : null}
+
+                {detailTab === 'acquisition' ? (
+                <DetailSection title="Data acquisition">
+                  <p className="text-sm text-slate-700">
+                    Policy determines what data is required. W4 builds the Requirement Plan; W6 orchestrates source
+                    acquisition (Bureau, AA, GST, documents, derivations) with dependency-aware parallelism.
+                  </p>
+                  <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-slate-600">
+                    <li>Acquisition runs after identity/KYC and consent prerequisites where configured</li>
+                    <li>One unavailable source must not block unrelated sources</li>
+                    <li>Source success is not the same as Data Ready for Policy</li>
+                  </ul>
+                  <p className="mt-3 text-xs text-amber-900">
+                    Workflow no longer independently requires Bureau as a credit-data authority. Prefer Policy + W4/W6.
+                  </p>
+                </DetailSection>
+                ) : null}
+
+                {detailTab === 'assessment' ? (
+                <DetailSection title="Credit assessment">
+                  <p className="text-sm text-slate-700">
+                    Completeness gate → Policy evaluation → optional Policy-linked Scorecard. Scorecard is subordinate
+                    to Policy and does not replace hard Policy rules.
+                  </p>
+                </DetailSection>
+                ) : null}
+
+                {detailTab === 'notifications' ? (
+                <DetailSection title="Notifications & events">
+                  <p className="mb-2 text-xs text-slate-600">
+                    Process notifications and event templates for the journey (separate from Identity & KYC steps).
+                  </p>
+                  <WorkflowStepEditorPanel
+                    steps={visualSteps}
+                    onChange={setVisualSteps}
+                    templateMappings={templateMappings}
+                    processNotifications={processNotifications}
+                    onProcessNotificationsChange={setProcessNotifications}
+                    showIntakeOptions={false}
+                  />
                 </DetailSection>
                 ) : null}
 

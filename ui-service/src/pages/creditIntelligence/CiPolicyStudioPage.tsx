@@ -45,6 +45,7 @@ import { CiPolicySimulationTab } from '@/pages/creditIntelligence/CiPolicySimula
 import { CiPolicyDataReadinessTab } from '@/pages/creditIntelligence/CiPolicyDataReadinessTab'
 import { CiPolicyLifecycleTab } from '@/pages/creditIntelligence/CiPolicyLifecycleTab'
 import { CiPolicyScopeTab } from '@/pages/creditIntelligence/CiPolicyScopeTab'
+import { CiPolicyScorecardTab } from '@/pages/creditIntelligence/CiPolicyScorecardTab'
 import { CiPolicyTestsTab } from '@/pages/creditIntelligence/CiPolicyTestsTab'
 
 type TabId =
@@ -54,6 +55,7 @@ type TabId =
   | 'ambiguities'
   | 'scope'
   | 'rules'
+  | 'scorecard'
   | 'data-readiness'
   | 'tests'
   | 'simulation'
@@ -1013,6 +1015,34 @@ export function CiPolicyStudioPage() {
         />
       ) : null}
 
+      {contentTab === 'scorecard' && session ? (
+        documentId ? (
+          <CiPolicyScorecardTab
+            documentId={documentId}
+            policyName={String(header.policyName ?? '')}
+            loanProduct={String(header.productScope ?? header.loanProduct ?? '')}
+            borrowerType={String(header.borrowerType ?? '')}
+            linkedScorecardId={
+              header.scorecardId != null
+                ? String(header.scorecardId)
+                : asRecord(session).scorecardId != null
+                  ? String(asRecord(session).scorecardId)
+                  : null
+            }
+            busy={busy}
+            setBusy={setBusy}
+            onError={setError}
+            onLinked={() => {
+              void getPolicyStudioSession(documentId).then(setSession).catch(() => undefined)
+            }}
+          />
+        ) : (
+          <CiSection title="Scorecard">
+            <p className="text-sm text-slate-600">Open a policy session to configure Scorecard.</p>
+          </CiSection>
+        )
+      ) : null}
+
       {contentTab === 'data-readiness' && session ? (
         <CiPolicyDataReadinessTab
           session={session}
@@ -1087,6 +1117,7 @@ export function CiPolicyStudioPage() {
             onError={setError}
             session={session}
             onNavigateTab={(nextTab) => selectWorkflowTab(nextTab as TabId)}
+            onOpenScorecardTab={() => selectWorkflowTab('scorecard')}
             onSessionRefresh={(next) => {
               if (next && typeof next === 'object' && 'policyHeader' in next) {
                 setSession(next)

@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+﻿import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { POLICY_STUDIO_PRIMARY_TAB_IDS } from '@/lib/applicationWorkbench'
@@ -31,26 +31,27 @@ describe('POLICY-CREATION-1', () => {
     expect(page).toContain('data-testid="policy-primary-tabs"')
   })
 
-  it('shell remains Scope | Rules | Test | Versions', () => {
+  it('shell remains Scope | Rules | Scorecard | Test | Versions', () => {
     expect([...POLICY_STUDIO_PRIMARY_TAB_IDS]).toEqual([
       'scope',
       'rules',
+      'scorecard',
       'simulation',
       'lifecycle',
     ])
   })
 
-  it('approved policy exposes scorecard handoff to live scorecards', () => {
+  it('approved policy exposes scorecard handoff inside Policy Studio', () => {
     const life = readFileSync(
       join(uiSrc, 'pages/creditIntelligence/CiPolicyLifecycleTab.tsx'),
       'utf8',
     )
     expect(life).toContain('Policy approved')
-    expect(life).toContain('Automatic/derived parameters')
-    expect(life).toContain('Manual parameters')
-    expect(life).toContain('Create Scorecard')
-    expect(life).toContain('/underwriting-scorecards')
+    expect(life).toContain('Configure Scorecard in Policy')
     expect(life).toContain('create-scorecard-handoff')
+    expect(life).toContain('onOpenScorecardTab')
+    const page = readFileSync(join(uiSrc, 'pages/creditIntelligence/CiPolicyStudioPage.tsx'), 'utf8')
+    expect(page).toContain('CiPolicyScorecardTab')
   })
 
   it('parameter resolver panel remains available', () => {
@@ -72,13 +73,11 @@ describe('POLICY-CREATION-1', () => {
     expect(scorecards.length).toBeGreaterThan(100)
     const api = readFileSync(join(uiSrc, 'api/scorecards.ts'), 'utf8')
     expect(api).toMatch(/scorecard/i)
-    // Handoff only — no auto-convert of policy rules into scorecard factors
     const life = readFileSync(
       join(uiSrc, 'pages/creditIntelligence/CiPolicyLifecycleTab.tsx'),
       'utf8',
     )
-    expect(life).toContain('not every policy rule becomes a')
     expect(life).not.toContain('autoActivateScorecard')
+    expect(life).toContain('Configure Scorecard in Policy')
   })
 })
-
