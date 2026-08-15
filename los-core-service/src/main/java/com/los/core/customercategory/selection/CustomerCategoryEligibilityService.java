@@ -38,7 +38,9 @@ public class CustomerCategoryEligibilityService {
         List<CustomerCategoryEntity> pool = new ArrayList<>();
         pool.addAll(categoryRepository.findByStatus(ConfigLifecycleStatus.ACTIVE));
         if (ctx.allowDraftSimulation()) {
+            // Staging/clean-room: include governed non-ACTIVE Categories without activating Day-1 seed.
             pool.addAll(categoryRepository.findByStatus(ConfigLifecycleStatus.DRAFT));
+            pool.addAll(categoryRepository.findByStatus(ConfigLifecycleStatus.IN_REVIEW));
             pool.addAll(categoryRepository.findByStatus(ConfigLifecycleStatus.APPROVED));
         }
 
