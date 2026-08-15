@@ -7,7 +7,6 @@ import {
 } from '@/lib/workflowProcessNotifications'
 import { WORKFLOW_NOTIFICATION_CHANNELS, WORKFLOW_NOTIFICATION_EVENT_OPTIONS } from '@/lib/workflowNotificationConstants'
 import {
-  WORKFLOW_STEP_TYPES,
   createEmptyVisualStep,
   defaultProviderForWorkflowStep,
   getStepMatrixHelp,
@@ -15,6 +14,12 @@ import {
   type StepNotificationConfig,
   type VisualWorkflowStep,
 } from '@/lib/workflowVisual'
+import {
+  workflowProviderBusinessLabel,
+  workflowStepBusinessLabel,
+  workflowStepExplanation,
+  workflowStepSelectOptions,
+} from '@/lib/workflow/workflowStepLabels'
 import { WorkflowStepIntakeOptions } from '@/components/workflow/WorkflowStepIntakeOptions'
 import { useLayoutEffect, useMemo } from 'react'
 
@@ -87,7 +92,6 @@ function StepCard(props: {
 }) {
   const { s, i, steps, onChange, templateMappings, showIntakeOptions } = props
   const postKyc = isPostKycWorkflowStep(s.step)
-  const help = getStepMatrixHelp(s.step)
   const providerOptions = providersForWorkflowStep(s.step)
   function updateNotifications(nextNotifications: StepNotificationConfig[]) {
     onChange(steps.map((x) => (x.id === s.id ? { ...x, notifications: nextNotifications } : x)))
@@ -167,21 +171,23 @@ function StepCard(props: {
               )
             }}
           >
-            {WORKFLOW_STEP_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t}
-                {isPostKycWorkflowStep(t) ? ' (post-KYC / eSign)' : ''}
+            {workflowStepSelectOptions().map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+                {isPostKycWorkflowStep(opt.value) ? ' (after KYC)' : ''}
               </option>
             ))}
           </select>
-          <p className="mt-1 text-xs text-slate-500">
-            <span className="font-medium text-slate-600">Purpose:</span> {help.purpose}
-            <br />
-            <span className="font-medium text-slate-600">Applies to:</span> {help.appliesTo}
+          <p className="mt-1 text-xs text-slate-600">{workflowStepExplanation(s.step)}</p>
+          <p className="mt-0.5 text-[11px] text-slate-400">
+            {workflowStepBusinessLabel(s.step)}
+            {getStepMatrixHelp(s.step).appliesTo !== '—'
+              ? ` · Applies to: ${getStepMatrixHelp(s.step).appliesTo}`
+              : ''}
           </p>
         </label>
         <label className="block min-w-0 text-xs text-slate-600">
-          <span className="mb-0.5 block text-slate-500">Provider (ordered primary → fallback)</span>
+          <span className="mb-0.5 block text-slate-500">Provider</span>
           <select
             className="w-full min-w-0 rounded border border-slate-300 bg-white px-2 py-1 text-sm"
             value={s.provider || defaultProviderForWorkflowStep(s.step)}
@@ -194,7 +200,7 @@ function StepCard(props: {
           >
             {providerOptions.map((p) => (
               <option key={p} value={p}>
-                {p}
+                {workflowProviderBusinessLabel(p)}
               </option>
             ))}
           </select>

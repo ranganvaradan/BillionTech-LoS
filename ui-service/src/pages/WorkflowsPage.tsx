@@ -63,7 +63,12 @@ import {
   projectLenderJourney,
   workflowSetupStatus,
 } from '@/lib/workflow/workflowLenderJourney'
+import {
+  formatLenderWorkflowVersionLabel,
+  lenderFacingWorkflowVersion,
+} from '@/lib/workflow/workflowLenderVersion'
 import { getDataParametersOverview } from '@/api/liveReadiness'
+import { Link } from 'react-router-dom'
 import type { BorrowerType } from '@/types/createApplication'
 
 const BORROWER_TYPES: BorrowerType[] = [...BORROWER_TYPE_ORDER]
@@ -500,19 +505,29 @@ export function WorkflowsPage() {
     [name, intakeConfig, visualSteps, processNotifications],
   )
 
-  const lenderFacingSourceRows = useMemo(() => {
-    const prefer = ['Bureau Retail', 'Bank Statement', 'GST', 'Account Aggregator', 'KYC']
-    const bySource = new Map(
-      sourceCapabilitySummary.map((r) => [String(r.source ?? ''), r] as const),
-    )
-    const ordered: Record<string, unknown>[] = []
-    for (const key of prefer) {
-      const hit =
-        bySource.get(key) ||
-        [...bySource.entries()].find(([s]) => s.toLowerCase().includes(key.toLowerCase()))?.[1]
-      if (hit) ordered.push(hit)
-    }
-    return ordered
+  const compactDataSources = useMemo(() => {
+    const catalog: { id: string; label: string; match: RegExp }[] = [
+      { id: 'bureau', label: 'Bureau', match: /bureau/i },
+      { id: 'bank', label: 'Bank Statements', match: /bank|bsa|statement/i },
+      { id: 'gst', label: 'GST', match: /^gst$|gst\b/i },
+      { id: 'aa', label: 'Account Aggregator', match: /account aggregator|\baa\b/i },
+      { id: 'kyc', label: 'KYC', match: /^kyc$/i },
+    ]
+    return catalog.map((c) => {
+      const row = sourceCapabilitySummary.find((r) => c.match.test(String(r.source ?? '')))
+      const platform = String(row?.platformLabel ?? row?.platformIntegration ?? '')
+      const org = String(row?.yourOrganisationLabel ?? row?.yourOrganisation ?? '')
+      const platformReady =
+        /production ready|available|integrated/i.test(platform) ||
+        String(row?.platformIntegration ?? '').toUpperCase() === 'PRODUCTION_READY'
+      return {
+        id: c.id,
+        label: c.label,
+        platformCapable: row ? platformReady || Boolean(row) : false,
+        orgStatus: org,
+        hasRow: Boolean(row),
+      }
+    })
   }, [sourceCapabilitySummary])
 
   return (
@@ -575,7 +590,7 @@ export function WorkflowsPage() {
                   onClick={() => applySelection(w)}
                   avatar={w.name}
                   title={w.name}
-                  subtitle={`Version ${w.version}`}
+                  subtitle={`Version ${lenderFacingWorkflowVersion(w)}`}
                   meta={
                     w.active ? (
                       <span className="bt-badge bt-badge-green">Active</span>
@@ -630,7 +645,7 @@ export function WorkflowsPage() {
                       ['dataCollection', 'Data collection'],
                       ['journey', 'Journey'],
                       ['notifications', 'Notifications'],
-                      ['advanced', 'Advanced / Internal'],
+                      ['advanced', 'Advanced'],
                     ] as const
                   ).map(([id, label]) => (
                     <button
@@ -704,41 +719,12 @@ export function WorkflowsPage() {
                     </label>
                     {!isCreating && selected ? (
                       <div className="rounded border border-slate-100 bg-slate-50 p-3 text-xs text-slate-700 sm:col-span-2">
-                        <div>
-                          Version {selected.version} · {selected.active ? 'Active' : 'Draft'}
-                        </div>
+                        <div>{formatLenderWorkflowVersionLabel(selected)}</div>
                         <div className="mt-1 text-slate-500">
                           {BORROWER_TYPE_LABELS[borrowerType] ?? borrowerType} · {loanProductLabel(loanProduct)} ·{' '}
                           {intakeSegment === 'ANCHOR' ? 'Anchor' : 'Borrower'}
                         </div>
                       </div>
-                    ) : null}
-                    {!workflowUsesPlpLmsConfig(loanProduct, intakeSegment) ? (
-                      <>
-                        <label className="block text-sm text-slate-700">
-                          <span className="mb-1 block text-xs font-medium text-slate-500">LMS product code</span>
-                          <input
-                            className="bt-input w-full"
-                            value={lmsProductCode}
-                            onChange={(e) => setLmsProductCode(e.target.value)}
-                            placeholder="Configured Encore LMS product code"
-                          />
-                        </label>
-                        <label className="block text-sm text-slate-700">
-                          <span className="mb-1 block text-xs font-medium text-slate-500">LMS tenure type</span>
-                          <select
-                            className="bt-input w-full"
-                            value={lmsTenureUnit}
-                            onChange={(e) => setLmsTenureUnit(e.target.value)}
-                          >
-                            {LMS_TENURE_UNIT_OPTIONS.map((o) => (
-                              <option key={o.value} value={o.value}>
-                                {o.label}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      </>
                     ) : null}
                   </div>
 
@@ -746,7 +732,7 @@ export function WorkflowsPage() {
                     <div className="mt-4 rounded-lg border border-slate-200 bg-white p-3" data-testid="workflow-setup-status">
                       <h3 className="text-sm font-semibold text-slate-900">Setup status</h3>
                       <p className="mt-1 text-xs text-slate-600">
-                        {setupStatus.ready ? 'Ready to activate' : 'Needs attention'}
+                        {setupStatus.ready ? 'Ready to activate' : 'Needs attention before activate'}
                       </p>
                       <ul className="mt-2 space-y-1 text-xs text-slate-700">
                         {setupStatus.items.map((item) => (
@@ -810,51 +796,45 @@ export function WorkflowsPage() {
                 {detailTab === 'dataCollection' ? (
                 <DetailSection title="Data collection">
                   <p className="text-sm text-slate-700">
-                    Information required by your credit policy is collected automatically from the sources available
-                    to your organisation. Identity, consent and other prerequisites are completed before a source is
-                    used.
+                    Data collection is driven automatically by your Credit Policy.
+                  </p>
+                  <p className="mt-2 text-sm text-slate-700">
+                    When your policy requires bureau, banking, GST or other information, BillionTech collects it from
+                    the available source after the required identity, consent and other prerequisites are completed.
                   </p>
                   <p className="mt-2 text-xs text-slate-600">
-                    Policy decides what underwriting data is required. This workflow does not independently require
-                    Bureau, GST, or other sources as credit rules.
+                    This workflow does not configure which underwriting data is required, and it is not where source
+                    subscriptions are managed.
                   </p>
-                  {lenderFacingSourceRows.length > 0 ? (
-                    <ul className="mt-3 space-y-2" data-testid="workflow-data-collection-sources">
-                      {lenderFacingSourceRows.map((row) => {
-                        const facing = (row.lenderFacing && typeof row.lenderFacing === 'object'
-                          ? row.lenderFacing
-                          : {}) as Record<string, unknown>
-                        return (
-                          <li
-                            key={String(row.source)}
-                            className="rounded border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-700"
-                          >
-                            <div className="font-semibold text-slate-900">
-                              {String(row.providerLabel ?? row.source)}
-                            </div>
-                            <div>
-                              {String(
-                                facing.integrationLabel ??
-                                  `BillionTech integration: ${String(row.platformLabel ?? row.platformIntegration ?? '—')}`,
-                              )}
-                            </div>
-                            {row.yourOrganisation && String(row.yourOrganisation) !== 'NOT_APPLICABLE' ? (
-                              <div>
-                                {String(
-                                  facing.organisationLabel ??
-                                    `Your organisation: ${String(row.yourOrganisationLabel ?? row.yourOrganisation)}`,
-                                )}
-                              </div>
-                            ) : null}
-                          </li>
-                        )
-                      })}
-                    </ul>
-                  ) : (
-                    <p className="mt-3 text-xs text-slate-500">
-                      Source status will appear when Data &amp; Parameters capability summary is available.
+                  <div className="mt-4" data-testid="workflow-data-collection-sources">
+                    <h3 className="text-sm font-semibold text-slate-900">Available data sources</h3>
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      &quot;Platform capable&quot; means BillionTech can collect from this family — not that your
+                      organisation is subscribed.
                     </p>
-                  )}
+                    <ul className="mt-2 divide-y divide-slate-100 rounded border border-slate-200 bg-white">
+                      {compactDataSources.map((s) => (
+                        <li
+                          key={s.id}
+                          className="flex flex-wrap items-baseline justify-between gap-2 px-3 py-2 text-sm text-slate-800"
+                        >
+                          <span className="font-medium">{s.label}</span>
+                          <span className="text-xs text-slate-600">
+                            {s.hasRow
+                              ? s.platformCapable
+                                ? 'Platform capable'
+                                : 'Not yet integrated'
+                              : 'See Data & Parameters'}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-3 text-sm">
+                      <Link className="font-medium text-slate-900 underline underline-offset-2" to="/data-parameters">
+                        Manage data sources →
+                      </Link>
+                    </p>
+                  </div>
                 </DetailSection>
                 ) : null}
 
@@ -924,11 +904,38 @@ export function WorkflowsPage() {
 
                 {detailTab === 'advanced' ? (
                 <>
-                <DetailSection title="Advanced / Internal">
+                <DetailSection title="Advanced">
                   <p className="mb-3 text-xs text-amber-900">
-                    For BillionTech implementation and support. Normal lender administrators should not need this
+                    Expert configuration for implementation and support. Normal lender setup does not require this
                     section.
                   </p>
+                  {!workflowUsesPlpLmsConfig(loanProduct, intakeSegment) ? (
+                    <div className="mb-4 grid gap-3 sm:grid-cols-2" data-testid="workflow-advanced-lms">
+                      <label className="block text-sm text-slate-700">
+                        <span className="mb-1 block text-xs font-medium text-slate-500">LMS product code</span>
+                        <input
+                          className="bt-input w-full"
+                          value={lmsProductCode}
+                          onChange={(e) => setLmsProductCode(e.target.value)}
+                          placeholder="Configured Encore LMS product code"
+                        />
+                      </label>
+                      <label className="block text-sm text-slate-700">
+                        <span className="mb-1 block text-xs font-medium text-slate-500">LMS tenure type</span>
+                        <select
+                          className="bt-input w-full"
+                          value={lmsTenureUnit}
+                          onChange={(e) => setLmsTenureUnit(e.target.value)}
+                        >
+                          {LMS_TENURE_UNIT_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                  ) : null}
                   <label className="block text-sm text-slate-700 sm:col-span-2">
                     <span className="mb-1 block text-xs font-medium text-slate-500">
                       Anchor identity schema (JSON array, optional)
@@ -1143,9 +1150,9 @@ export function WorkflowsPage() {
                 {!isCreating && selected && selected.active ? (
                   <p className="text-xs text-amber-800">Deactivate this workflow before deleting it.</p>
                 ) : null}
-                {!isCreating && selected ? (
+                {!isCreating && selected && detailTab === 'advanced' ? (
                   <p className="mt-3 text-xs text-slate-500">
-                    Id: {selected.id} · version {selected.version} ·
+                    Id: {selected.id} · persisted version {selected.version} ·
                     {selected.createdAt ? ` created ${formatInstant(selected.createdAt)}` : ''}
                   </p>
                 ) : null}

@@ -119,7 +119,17 @@ public class WorkflowEngineServiceImpl implements IWorkflowEngineService {
         config.setConditionalRules(request.getConditionalRules());
         config.setVkycTriggerCondition(request.getVkycTriggerCondition());
         config.setWorkflowPosition(request.getWorkflowPosition());
-        config.setVersion(config.getVersion() + 1);
+        // Lender-facing lineage: new workflows start at version 1.
+        // Draft (inactive) authoring must NOT inflate version on every save — that made
+        // first-time lender journeys appear as "Version 8" after iterative edits.
+        // Active workflows still bump version on content change (Category lock identity).
+        if (config.isActive()) {
+            config.setVersion(config.getVersion() + 1);
+        } else if (config.getVersion() > 1) {
+            // Heal draft rows inflated by legacy per-save bumps so lender lineage returns to Version 1.
+            // Active Category locks use workflow_id + version of active configs; unbound drafts are safe to reset.
+            config.setVersion(1);
+        }
         config.setUpdatedAt(Instant.now());
 
         config = workflowRepository.save(config);

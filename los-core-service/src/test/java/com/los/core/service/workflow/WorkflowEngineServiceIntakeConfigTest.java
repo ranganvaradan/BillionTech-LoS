@@ -1,5 +1,6 @@
 package com.los.core.service.workflow;
 
+import com.los.core.audit.AdminConfigAuditSupport;
 import com.los.core.model.dto.request.WorkflowConfigRequest;
 import com.los.core.model.entity.WorkflowConfig;
 import com.los.core.model.enums.BorrowerType;
@@ -28,6 +29,9 @@ class WorkflowEngineServiceIntakeConfigTest {
 
     @Mock
     private WorkflowConfigRepository workflowRepository;
+
+    @Mock
+    private AdminConfigAuditSupport adminConfigAuditSupport;
 
     @InjectMocks
     private WorkflowEngineServiceImpl workflowEngineService;
