@@ -64,18 +64,16 @@ los:
     ai-los:
       # do not call production AI-LOS; leave blank or stub
       ingest-url: ""
+  # Clean-room / staging: evaluate DRAFT/APPROVED Categories without activating Day-1 seed.
+  # Query param allowDraftSimulation=true also works; UI staging builds pass it.
+  category-selection:
+    allow-draft-simulation: true
 
 eureka:
   client:
     enabled: false
     register-with-eureka: false
     fetch-registry: false
-
-# Clean-room / staging: evaluate DRAFT/APPROVED Categories without activating Day-1 seed.
-# Query param allowDraftSimulation=true also works; UI staging builds pass it.
-los:
-  category-selection:
-    allow-draft-simulation: true
 
 credit-intelligence:
   staging-demo:
