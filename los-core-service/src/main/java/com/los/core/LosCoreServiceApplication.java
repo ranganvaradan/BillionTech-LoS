@@ -22,6 +22,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
         "com.los.core.creditintelligence.reconciliation.domain",
         "com.los.core.creditintelligence.validation.domain",
         "com.los.core.creditintelligence.policystudio.domain",
+        "com.los.core.creditintelligence.policystudio.graph",
         "com.los.core.creditintelligence.policystudio.lifecycle.domain",
         "com.los.core.creditintelligence.policy.domain",
         "com.los.core.creditintelligence.decision.domain",
