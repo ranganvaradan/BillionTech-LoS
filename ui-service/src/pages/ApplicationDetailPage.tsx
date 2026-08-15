@@ -17,6 +17,7 @@ import { AaConsentPanel } from '@/components/AaConsentPanel'
 import { BorrowerSubmittedIntakePanel } from '@/components/BorrowerSubmittedIntakePanel'
 import { CustomerRequirementsPanel } from '@/components/requirements/CustomerRequirementsPanel'
 import { CategorySelectionPanel } from '@/components/category/CategorySelectionPanel'
+import { showStagingDemoNav } from '@/nav/workspaceNav'
 import { BorrowerSubmissionReviewPanel } from '@/components/application/BorrowerSubmissionReviewPanel'
 import { CamSection } from '@/components/CamSection'
 import { DisbursementSection } from '@/components/DisbursementSection'
@@ -473,7 +474,12 @@ function OverviewWorkspace({
         </p>
       ) : null}
       <BorrowerSubmissionReviewPanel app={app} onRefetch={onRefetch} />
-      <CategorySelectionPanel applicationId={applicationId} actorRole="RM" actor="rm" />
+      <CategorySelectionPanel
+        applicationId={applicationId}
+        actorRole="RM"
+        actor="rm"
+        allowDraftSimulation={showStagingDemoNav()}
+      />
       <CustomerRequirementsPanel applicationId={applicationId} variant="staff" actorRole="RM" />
       <SummaryPanel app={app} applicationId={applicationId} role={role} />
       <div className="rounded-lg border border-[var(--bt-gray-200)]">

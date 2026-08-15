@@ -13,6 +13,7 @@ import {
   UsersIcon,
   WorkflowsIcon,
 } from '@/components/SidebarNavIcons'
+import { hideLegacyDecisionConfigFromLenderNav } from '@/lib/runtimeEnv'
 import {
   ADMIN_CATEGORY_STORAGE_KEY,
   DEFAULT_ADMIN_CATEGORY,
@@ -36,41 +37,62 @@ type AdminCategoryMeta = {
   items: AdminItemMeta[]
 }
 
+const CLIENT_HIDDEN_ADMIN_PATHS = new Set(['/underwriting-rules', '/policy-sets'])
+
 const ADMIN_CATEGORIES: AdminCategoryMeta[] = [
   {
-    id: 'Decision Configuration',
-    label: 'Decision Configuration',
-    helper: 'Current LOS production configuration — not Policy Studio drafts.',
+    id: 'Lending Configuration',
+    label: 'Lending Configuration',
+    helper: 'Define data, journey, credit Policy (Policy Studio), then lending propositions.',
     items: [
       {
-        to: '/underwriting-rules',
-        label: 'Live Underwriting Rules',
-        description: 'Current LOS production decision rules',
-        icon: RulesIcon,
+        to: '/data-parameters',
+        label: 'Data & Parameters',
+        description: 'GACAT — canonical parameters the institution can know and use in Policy',
+        icon: DocumentsIcon,
       },
       {
-        to: '/underwriting-scorecards',
-        label: 'Live Scorecards',
-        description: 'Current LOS production scorecards',
-        icon: ScorecardsIcon,
+        to: '/workflows',
+        label: 'Workflows',
+        description: 'Customer journey / orchestration versions (KYC, acquisition, completeness)',
+        icon: WorkflowsIcon,
       },
       {
         to: '/customer-categories',
         label: 'Customer Categories',
-        description: 'Lender matching criteria → Policy Set (not live routing yet)',
+        description: 'Lending propositions → exact Policy Version + Workflow Version',
         icon: UnderwritingIcon,
-      },
-      {
-        to: '/policy-sets',
-        label: 'Policy Sets',
-        description: 'Compose one underwriting rule set + scorecard for categories',
-        icon: RulesIcon,
       },
       {
         to: '/product-configuration',
         label: 'Product Configuration',
-        description: 'Compose Product → Workflow → Live Rules → Scorecard and check readiness',
+        description: 'Capability / readiness composition (not a runtime category router)',
         icon: DashboardIcon,
+      },
+    ],
+  },
+  {
+    id: 'Decision Configuration',
+    label: 'Decision Configuration',
+    helper: 'Transitional production runtime artefacts — Internal/legacy; not the lender Policy authoring model.',
+    items: [
+      {
+        to: '/underwriting-rules',
+        label: 'Live Underwriting Rules',
+        description: 'Compiled production decision rules (transitional runtime)',
+        icon: RulesIcon,
+      },
+      {
+        to: '/underwriting-scorecards',
+        label: 'Live Scorecards (legacy)',
+        description: 'Legacy scorecards — prefer Policy-linked POLICY_WEIGHTED_V2 in Policy Studio',
+        icon: ScorecardsIcon,
+      },
+      {
+        to: '/policy-sets',
+        label: 'Policy Sets',
+        description: 'Transitional compose of rule set + scorecard (not lender-facing Policy)',
+        icon: RulesIcon,
       },
     ],
   },
@@ -120,18 +142,6 @@ const ADMIN_CATEGORIES: AdminCategoryMeta[] = [
     id: 'Platform',
     label: 'Platform',
     items: [
-      {
-        to: '/data-parameters',
-        label: 'Data & Parameters',
-        description: 'CanonicalParameterRegistry — what the institution can know',
-        icon: DocumentsIcon,
-      },
-      {
-        to: '/workflows',
-        label: 'Workflows',
-        description: 'KYC and bureau step templates by product and intake',
-        icon: WorkflowsIcon,
-      },
       {
         to: '/integrations/provider-matrix',
         label: 'Integrations',
@@ -211,9 +221,19 @@ function readStoredCategory(availableIds: string[]): string {
 export function AdministrationPage() {
   const showTechnical = showStagingDemoNav()
 
+  const hideLegacy = hideLegacyDecisionConfigFromLenderNav()
+
   const categories = useMemo(
-    () => ADMIN_CATEGORIES.filter((c) => !c.stagingOnly || showTechnical),
-    [showTechnical],
+    () =>
+      ADMIN_CATEGORIES.filter((c) => !c.stagingOnly || showTechnical)
+        .map((c) => ({
+          ...c,
+          items: hideLegacy
+            ? c.items.filter((i) => !CLIENT_HIDDEN_ADMIN_PATHS.has(i.to))
+            : c.items,
+        }))
+        .filter((c) => c.items.length > 0),
+    [showTechnical, hideLegacy],
   )
 
   const [selectedId, setSelectedId] = useState(() =>
@@ -242,7 +262,11 @@ export function AdministrationPage() {
     <div className="space-y-4">
       <PageHeader
         title="Administration"
-        description="Credit setup, people and access, platform integrations, and governance. Technical tools stay under Technical when staging is enabled."
+        description={
+          hideLegacy
+            ? 'Configure Data & Parameters, Workflows, Policies (Policy Studio), and Customer Categories. Live Underwriting Rules and Policy Sets are hidden on Client — Policy is the lender-facing underwriting authority.'
+            : 'Credit setup, people and access, platform integrations, and governance. Technical tools stay under Technical when staging is enabled.'
+        }
       />
 
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:gap-6">

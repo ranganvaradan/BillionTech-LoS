@@ -16,6 +16,26 @@ export function readBtRuntime(): BtRuntimeEnv {
 }
 
 /**
+ * True on Client / Client-Test staging surfaces.
+ * Used to hide transitional lender-facing concepts (Live UW Rules, Policy Sets)
+ * without removing Internal/debug access or backend runtime tables.
+ */
+export function isClientLenderSurface(): boolean {
+  const rt = readBtRuntime()
+  const surface = (rt.surface || '').toUpperCase()
+  if (surface === 'CLIENT' || surface === 'CLIENT_TEST') return true
+  if (typeof window === 'undefined') return false
+  // Staging Client nginx often serves on :8085
+  if (window.location.port === '8085') return true
+  return false
+}
+
+/** Hide Live Underwriting Rules + Policy Sets from normal Client lender navigation. */
+export function hideLegacyDecisionConfigFromLenderNav(): boolean {
+  return isClientLenderSurface()
+}
+
+/**
  * Visible staging identity. Prefer deploy-time label; fall back to port topology.
  * Does not change business behaviour.
  */

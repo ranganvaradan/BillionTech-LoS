@@ -3,10 +3,20 @@
  * Does not change routes, RBAC, or backend behaviour.
  */
 
+import { hideLegacyDecisionConfigFromLenderNav } from '@/lib/runtimeEnv'
+
 export type WorkspaceNavItem = {
   to: string
   label: string
   end?: boolean
+}
+
+/** Paths hidden from Client lender nav (routes may remain for Internal/debug deep-links). */
+const CLIENT_HIDDEN_ADMIN_PATHS = new Set(['/underwriting-rules', '/policy-sets'])
+
+function filterClientHiddenItems(items: WorkspaceNavItem[]): WorkspaceNavItem[] {
+  if (!hideLegacyDecisionConfigFromLenderNav()) return items
+  return items.filter((i) => !CLIENT_HIDDEN_ADMIN_PATHS.has(i.to))
 }
 
 /** Staging/demo UI affordances (Demo Samples, STAGING badge). Set on staging UI builds. */
@@ -106,16 +116,28 @@ export type AdminNavGroup = {
  * People & Access kept separate so Users ≠ User–role Mappings.
  * Governance kept separate from Platform configuration.
  */
+/**
+ * Full Administration nav catalogue (Internal + Client source of truth).
+ * Client lender surface filters transitional items via administrationNavGroups().
+ */
 export const ADMINISTRATION_NAV_GROUPS: AdminNavGroup[] = [
   {
+    label: 'Lending Configuration',
+    helper: 'Data → Workflow → Policy → Customer Category (lending proposition)',
+    items: [
+      { to: '/data-parameters', label: 'Data & Parameters' },
+      { to: '/workflows', label: 'Workflows' },
+      { to: '/customer-categories', label: 'Customer Categories' },
+      { to: '/product-configuration', label: 'Product Configuration' },
+    ],
+  },
+  {
     label: 'Decision Configuration',
-    helper: 'Current LOS production configuration',
+    helper: 'Transitional production runtime (Internal / legacy)',
     items: [
       { to: '/underwriting-rules', label: 'Live Underwriting Rules' },
-      { to: '/underwriting-scorecards', label: 'Live Scorecards' },
-      { to: '/customer-categories', label: 'Customer Categories' },
+      { to: '/underwriting-scorecards', label: 'Live Scorecards (legacy)' },
       { to: '/policy-sets', label: 'Policy Sets' },
-      { to: '/product-configuration', label: 'Product Configuration' },
     ],
   },
   {
@@ -136,8 +158,6 @@ export const ADMINISTRATION_NAV_GROUPS: AdminNavGroup[] = [
   {
     label: 'Platform',
     items: [
-      { to: '/data-parameters', label: 'Data & Parameters' },
-      { to: '/workflows', label: 'Workflows' },
       { to: '/integrations/provider-matrix', label: 'Integrations' },
     ],
   },
@@ -157,11 +177,19 @@ export const ADMINISTRATION_NAV_GROUPS: AdminNavGroup[] = [
   },
 ]
 
+/** Administration groups visible for the current surface (Client hides Live UW Rules + Policy Sets). */
+export function administrationNavGroups(): AdminNavGroup[] {
+  return ADMINISTRATION_NAV_GROUPS.map((g) => ({
+    ...g,
+    items: filterClientHiddenItems(g.items),
+  })).filter((g) => g.items.length > 0)
+}
+
 export const DEFAULT_ADMIN_CATEGORY = 'Credit Setup'
 export const ADMIN_CATEGORY_STORAGE_KEY = 'los_admin_workspace_category_v1'
 
 export function administrationSiblingItems(pathname: string): WorkspaceNavItem[] {
-  for (const group of ADMINISTRATION_NAV_GROUPS) {
+  for (const group of administrationNavGroups()) {
     if (group.items.some((i) => pathStartsWith(pathname, i.to))) {
       return group.items
     }
@@ -170,7 +198,7 @@ export function administrationSiblingItems(pathname: string): WorkspaceNavItem[]
 }
 
 export function administrationGroupLabel(pathname: string): string | null {
-  for (const group of ADMINISTRATION_NAV_GROUPS) {
+  for (const group of administrationNavGroups()) {
     if (group.items.some((i) => pathStartsWith(pathname, i.to))) {
       return group.label
     }

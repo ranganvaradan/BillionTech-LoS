@@ -141,6 +141,23 @@ describe('customer category admin UI wiring', () => {
     expect(nav).toContain("label: 'Policy Sets'")
     expect(nav).toContain("to: '/customer-categories'")
     expect(nav).toContain("to: '/policy-sets'")
+    expect(nav).toContain('administrationNavGroups')
+    expect(nav).toContain('hideLegacyDecisionConfigFromLenderNav')
+    expect(nav).toContain("'/underwriting-rules'")
+    // Client lender surface filters these; catalogue still lists them for Internal
+    expect(nav).toContain('CLIENT_HIDDEN_ADMIN_PATHS')
+  })
+
+  it('Client surface hides Live UW Rules and Policy Sets from lender nav', () => {
+    const rt = readFileSync(resolve(root, 'lib/runtimeEnv.ts'), 'utf8')
+    expect(rt).toContain('isClientLenderSurface')
+    expect(rt).toContain('hideLegacyDecisionConfigFromLenderNav')
+    const admin = readFileSync(resolve(root, 'pages/AdministrationPage.tsx'), 'utf8')
+    expect(admin).toContain('CLIENT_HIDDEN_ADMIN_PATHS')
+    expect(admin).toContain("'/underwriting-rules'")
+    expect(admin).toContain("'/policy-sets'")
+    expect(admin).toContain('hideLegacyDecisionConfigFromLenderNav')
+    expect(admin).toContain('Policy is the lender-facing underwriting authority')
   })
 
   it('pages export components and cover required UX', () => {
