@@ -33,7 +33,11 @@ public class ExecutionSpineProducerBootstrap {
             "banking.inward_return_count_3m",
             "reconciliation.bank_gst_ratio",
             "bureau.inquiries.current_month",
-            "bureau.inquiries.current_month_count"
+            "bureau.inquiries.current_month_count",
+            "application.requested_amount",
+            "kyc.quality",
+            "gst.turnover.trailing_12m",
+            "bureau.total_monthly_obligation"
     );
 
     private final ProducerRegistry registry;

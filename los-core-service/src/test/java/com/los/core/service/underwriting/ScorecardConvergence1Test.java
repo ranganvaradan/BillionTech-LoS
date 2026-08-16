@@ -152,6 +152,8 @@ class ScorecardConvergence1Test {
         assertEquals(1, resolved.canonicalDefinitionVersion());
         assertEquals("BUREAU_SCORE", resolved.legacyParameterKey());
         assertEquals(0, resolved.numericValue().compareTo(new java.math.BigDecimal("760")));
+        assertEquals(false, resolved.legacyFallbackUsed());
+        assertEquals("CanonicalParameterExecutionService", ScorecardFactorValueAdapter.RUNTIME_AUTHORITY);
     }
 
     @Test

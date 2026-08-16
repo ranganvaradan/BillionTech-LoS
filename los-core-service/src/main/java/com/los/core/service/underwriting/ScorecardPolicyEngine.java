@@ -1,5 +1,6 @@
 package com.los.core.service.underwriting;
 
+import com.los.core.creditintelligence.policystudio.parameters.execution.EvaluationContext;
 import com.los.core.model.entity.LoanApplication;
 import com.los.core.model.entity.UnderwritingScorecard;
 import com.los.core.repository.UnderwritingScorecardRepository;
@@ -383,44 +384,49 @@ public class ScorecardPolicyEngine {
         return source != null ? source : "—";
     }
 
+    /**
+     * Resolve a scorecard parameter value.
+     * <p>
+     * When the parameter maps to a GACAT canonical ID (EXACT / SAFE_ALIAS), value comes
+     * only from {@link CanonicalParameterExecutionService} — no silent legacy fallback.
+     * Unmapped keys (AGE, OCCUPATION, DTI_RATIO context formulas, etc.) remain scorecard
+     * business/application inputs.
+     */
     static BigDecimal resolve(
             String source, String param, LoanApplication app, EffectiveUnderwritingContext ctx) {
         if (param == null) {
             return null;
         }
+        EvaluationContext evalCtx = UnderwritingEvaluationContextFactory.forUnderwriting(app, ctx);
+        var mapped = CanonicalScorecardValueResolver.resolveMappedLegacyKey(param, evalCtx);
+        if (mapped.isPresent()) {
+            CanonicalScorecardValueResolver.ResolveOutcome outcome = mapped.get();
+            // No silent fallback to legacy ScorecardPolicyEngine paths for canonical params
+            return outcome.valueAvailable() ? outcome.numericValue() : null;
+        }
+        return resolveNonCanonicalScorecardInput(source, param, app, ctx);
+    }
+
+    /**
+     * Non-GACAT scorecard inputs only (KEEP_SCORECARD_BUSINESS_LOGIC).
+     * Never used for EXACT/SAFE_ALIAS canonical mappings.
+     */
+    static BigDecimal resolveNonCanonicalScorecardInput(
+            String source, String param, LoanApplication app, EffectiveUnderwritingContext ctx) {
+        if (param == null) {
+            return null;
+        }
         String src = source != null ? source.trim().toUpperCase(Locale.ROOT) : "BUREAU";
-        if ("BUREAU".equals(src) && "BUREAU_SCORE".equalsIgnoreCase(param)) {
-            return BigDecimal.valueOf(ctx.effectiveBureauScore());
-        }
-        if ("BUREAU".equals(src)) {
-            if ("LIVE_UNSECURED_LOAN_COUNT".equalsIgnoreCase(param) && ctx.scorecard() != null) {
-                BigDecimal v = ctx.scorecard().get("LIVE_UNSECURED_LOAN_COUNT");
-                if (v != null) {
-                    return v;
-                }
-            }
-            if (("MAX_DPD_6M".equalsIgnoreCase(param) || "MAX_DPD_12M".equalsIgnoreCase(param))
-                    && ctx.scorecard() != null) {
-                BigDecimal v = ctx.scorecard().get(param.toUpperCase(Locale.ROOT));
-                if (v != null) {
-                    return v;
-                }
-            }
-            if ("BUREAU_ENQUIRIES_3M".equalsIgnoreCase(param) && ctx.scorecard() != null) {
-                BigDecimal v = ctx.scorecard().get("BUREAU_ENQUIRIES_3M");
-                if (v != null) {
-                    return v;
-                }
-            }
-        }
         if ("KYC".equals(src) && "KYC_PASS".equalsIgnoreCase(param)) {
-            return ctx.kycPassEffective() ? BigDecimal.ONE : BigDecimal.ZERO;
+            // KYC_PASS without unique GACAT binding when mapper returns AMBIGUOUS — kyc.quality is EXACT for KYC_QUALITY
+            return ctx != null && ctx.kycPassEffective() ? BigDecimal.ONE : BigDecimal.ZERO;
         }
         if ("APPLICATION".equals(src)) {
-            if ("REQUESTED_AMOUNT".equalsIgnoreCase(param) && app.getRequestedAmount() != null) {
-                return app.getRequestedAmount();
+            if ("REQUESTED_AMOUNT".equalsIgnoreCase(param) && app != null && app.getRequestedAmount() != null) {
+                // REQUESTED_AMOUNT is SAFE_ALIAS — should have been handled by spine; defensive only if mapper drifts
+                return null;
             }
-            if ("TENURE_MONTHS".equalsIgnoreCase(param) && app.getTenureMonths() != null) {
+            if ("TENURE_MONTHS".equalsIgnoreCase(param) && app != null && app.getTenureMonths() != null) {
                 return BigDecimal.valueOf(app.getTenureMonths());
             }
             BigDecimal applicationParam = ApplicationScorecardParameterResolver.resolve(param, app, null);
@@ -430,13 +436,14 @@ public class ScorecardPolicyEngine {
         }
         if ("CONTEXT".equals(src)) {
             if ("MONTHLY_INCOME".equalsIgnoreCase(param) || "EFFECTIVE_INCOME".equalsIgnoreCase(param)) {
-                return ctx.effectiveIncome();
+                return ctx != null ? ctx.effectiveIncome() : null;
             }
             if ("MONTHLY_OBLIGATION".equalsIgnoreCase(param) || "EMI_OBLIGATION".equalsIgnoreCase(param)) {
-                return ctx.effectiveObligation();
+                return ctx != null ? ctx.effectiveObligation() : null;
             }
             if ("DTI_RATIO".equalsIgnoreCase(param) || "OBLIGATION_TO_INCOME".equalsIgnoreCase(param)) {
-                if (ctx.effectiveIncome() == null
+                if (ctx == null
+                        || ctx.effectiveIncome() == null
                         || ctx.effectiveIncome().compareTo(BigDecimal.ZERO) <= 0
                         || ctx.effectiveObligation() == null) {
                     return null;
@@ -447,7 +454,15 @@ public class ScorecardPolicyEngine {
                         .multiply(BigDecimal.valueOf(100));
             }
         }
-        if (ctx.scorecard() != null && param != null) {
+        // Unmapped legacy keys may still appear in ctx.scorecard() (KEEP for NO_MATCH / AMBIGUOUS)
+        if (ctx != null && ctx.scorecard() != null && param != null) {
+            ScorecardCanonicalFactorMapper.Binding bind = ScorecardCanonicalFactorMapper.resolve(param);
+            if (bind.canonicalParameterId() != null
+                    && (ScorecardCanonicalFactorMapper.EXACT.equals(bind.mappingStatus())
+                    || ScorecardCanonicalFactorMapper.SAFE_ALIAS.equals(bind.mappingStatus()))) {
+                // Canonical — never read legacy map as substitute for spine
+                return null;
+            }
             BigDecimal z = ctx.scorecard().get(param);
             if (z == null) {
                 z = ctx.scorecard().get(param.toUpperCase(Locale.ROOT));
@@ -853,6 +868,12 @@ public class ScorecardPolicyEngine {
         if (param == null) {
             return null;
         }
+        EvaluationContext evalCtx = UnderwritingEvaluationContextFactory.forUnderwriting(app, ctx);
+        var mapped = CanonicalScorecardValueResolver.resolveMappedLegacyKey(param, evalCtx);
+        if (mapped.isPresent()) {
+            CanonicalScorecardValueResolver.ResolveOutcome outcome = mapped.get();
+            return outcome.valueAvailable() ? outcome.stringValue() : null;
+        }
         String fromApp = ApplicationScorecardParameterResolver.resolveString(param, app);
         if (fromApp != null && !fromApp.isBlank()) {
             return fromApp;
@@ -861,7 +882,13 @@ public class ScorecardPolicyEngine {
         if (fromMetrics != null && !fromMetrics.isBlank()) {
             return fromMetrics;
         }
-        if (ctx.scorecard() != null) {
+        if (ctx != null && ctx.scorecard() != null) {
+            ScorecardCanonicalFactorMapper.Binding bind = ScorecardCanonicalFactorMapper.resolve(param);
+            if (bind.canonicalParameterId() != null
+                    && (ScorecardCanonicalFactorMapper.EXACT.equals(bind.mappingStatus())
+                    || ScorecardCanonicalFactorMapper.SAFE_ALIAS.equals(bind.mappingStatus()))) {
+                return null;
+            }
             BigDecimal z = ctx.scorecard().get(param);
             if (z == null) {
                 z = ctx.scorecard().get(param.toUpperCase(Locale.ROOT));

@@ -133,7 +133,7 @@ class SurfaceConvergenceAcceptanceTest {
         assertThat(item.get("designable")).isEqualTo(true);
         @SuppressWarnings("unchecked")
         Map<String, Object> adv = (Map<String, Object>) item.get("advanced");
-        assertThat(adv.get("scorecardRuntimeAuthority")).isEqualTo("LEGACY_ScorecardPolicyEngine");
+        assertThat(adv.get("scorecardRuntimeAuthority")).isEqualTo("CanonicalParameterExecutionService");
     }
 
     @Test

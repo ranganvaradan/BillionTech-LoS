@@ -266,10 +266,10 @@ public class ScorecardConvergenceService {
                 d.capability() != null && d.capability().productionReady());
         advanced.put("legacyCatalogueImplemented",
                 d.capability() != null && d.capability().implemented());
-        advanced.put("scorecardRuntimeAuthority", "LEGACY_ScorecardPolicyEngine");
+        advanced.put("scorecardRuntimeAuthority", CanonicalScorecardValueResolver.AUTHORITY);
         advanced.put("scorecardRuntimeNote",
-                "Factor values still resolve via ScorecardPolicyEngine — not yet migrated to "
-                        + "CanonicalParameterExecutionService; capability display is spine-aligned.");
+                "Factor values resolve through CanonicalParameterExecutionService; "
+                        + "weights/bands remain ScorecardPolicyEngine.");
         m.put("advanced", advanced);
         return m;
     }

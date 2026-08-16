@@ -2,6 +2,8 @@ package com.los.core.service.underwriting;
 
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterDefinition;
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterRegistry;
+import com.los.core.creditintelligence.policystudio.parameters.execution.EvaluationContext;
+import com.los.core.creditintelligence.policystudio.parameters.execution.ExecutionStatus;
 import com.los.core.model.entity.LoanApplication;
 import com.los.core.service.credit.EffectiveUnderwritingContext;
 
@@ -11,21 +13,17 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * SCORECARD-CONVERGENCE-1 — thin adapter: canonical parameter → existing live scorecard context key.
- * Does not calculate ADB/FOIR/GST; delegates to {@link ScorecardPolicyEngine#resolve}.
+ * Thin adapter: scorecard row → exact canonical ID → {@link CanonicalParameterExecutionService}.
+ * Does not calculate ADB/FOIR/GST; does not fall back to legacy numeric resolution for
+ * GACAT-mapped parameters.
  */
 public final class ScorecardFactorValueAdapter {
 
     private ScorecardFactorValueAdapter() {}
 
-    /**
-     * Runtime value path remains {@link ScorecardPolicyEngine} (legacy).
-     * Capability / certification display must use {@code CanonicalParameterCapabilityProjection};
-     * this adapter does not claim spine execution parity for values.
-     */
-    public static final String RUNTIME_AUTHORITY = "LEGACY_ScorecardPolicyEngine";
+    public static final String RUNTIME_AUTHORITY = CanonicalScorecardValueResolver.AUTHORITY;
     public static final String RUNTIME_NOTE =
-            "Scorecard factor values are not yet resolved through CanonicalParameterExecutionService";
+            "Canonical factor values resolve only through CanonicalParameterExecutionService";
 
     public record ResolvedValue(
             String canonicalParameterId,
@@ -34,7 +32,11 @@ public final class ScorecardFactorValueAdapter {
             String source,
             BigDecimal numericValue,
             String stringValue,
-            String provenance) {
+            String provenance,
+            ExecutionStatus executionStatus,
+            String producerId,
+            String reason,
+            boolean legacyFallbackUsed) {
 
         public Map<String, Object> toMap() {
             Map<String, Object> m = new LinkedHashMap<>();
@@ -44,13 +46,17 @@ public final class ScorecardFactorValueAdapter {
             m.put("source", source);
             m.put("valueUsed", numericValue != null ? numericValue.toPlainString() : stringValue);
             m.put("valueProvenance", provenance);
+            m.put("executionStatus", executionStatus == null ? null : executionStatus.name());
+            m.put("producerId", producerId);
+            m.put("reason", reason);
+            m.put("legacyFallbackUsed", legacyFallbackUsed);
+            m.put("valueAuthority", RUNTIME_AUTHORITY);
             return m;
         }
     }
 
     /**
-     * Resolve value for a scorecard row using legacy key (runtime authority unchanged).
-     * Canonical id is attached for evidence only.
+     * Resolve value for a scorecard row. Canonical-mapped factors use the spine only.
      */
     public static ResolvedValue resolveRow(
             Map<String, Object> row,
@@ -71,7 +77,6 @@ public final class ScorecardFactorValueAdapter {
                 defVer = b.canonicalDefinitionVersion();
             }
         }
-        // Prefer liveScorecardParameter from registry when only canonical id is known
         if (legacy == null && canonicalId != null) {
             Optional<CanonicalParameterDefinition> def =
                     CanonicalParameterRegistry.shared().findById(canonicalId);
@@ -79,10 +84,49 @@ public final class ScorecardFactorValueAdapter {
                 legacy = def.get().liveScorecardParameter();
             }
         }
-        BigDecimal numeric = ScorecardPolicyEngine.resolve(source, legacy, app, ctx);
-        String stringValue = ScorecardPolicyEngine.resolveStringValue(source, legacy, app, ctx);
-        String provenance = ScorecardSafetyScoring.resolveProvenancePublic(legacy, ctx);
-        return new ResolvedValue(canonicalId, defVer, legacy, source, numeric, stringValue, provenance);
+
+        EvaluationContext evalCtx = UnderwritingEvaluationContextFactory.forUnderwriting(app, ctx);
+
+        if (canonicalId != null) {
+            CanonicalScorecardValueResolver.ResolveOutcome outcome =
+                    CanonicalScorecardValueResolver.resolveCanonical(canonicalId, evalCtx);
+            String prov = outcome.exactProducerPath() != null
+                    ? outcome.exactProducerPath()
+                    : (outcome.producerId() != null ? outcome.producerId() : RUNTIME_AUTHORITY);
+            return new ResolvedValue(
+                    canonicalId,
+                    defVer,
+                    legacy,
+                    source,
+                    outcome.numericValue(),
+                    outcome.stringValue(),
+                    prov,
+                    outcome.status(),
+                    outcome.producerId(),
+                    outcome.reason(),
+                    false);
+        }
+
+        // Non-canonical scorecard input (AGE, OCCUPATION, …)
+        BigDecimal numeric = ScorecardPolicyEngine.resolveNonCanonicalScorecardInput(source, legacy, app, ctx);
+        String stringValue = null;
+        if (numeric == null) {
+            stringValue = ApplicationScorecardParameterResolver.resolveString(legacy, app);
+        }
+        return new ResolvedValue(
+                null,
+                defVer,
+                legacy,
+                source,
+                numeric,
+                stringValue,
+                "NON_CANONICAL_SCORECARD_INPUT",
+                numeric != null || stringValue != null
+                        ? ExecutionStatus.VALUE_AVAILABLE
+                        : ExecutionStatus.DATA_NOT_AVAILABLE,
+                "ScorecardNonCanonicalInput",
+                numeric != null || stringValue != null ? null : "No non-canonical scorecard input",
+                false);
     }
 
     private static String str(Object o) {
