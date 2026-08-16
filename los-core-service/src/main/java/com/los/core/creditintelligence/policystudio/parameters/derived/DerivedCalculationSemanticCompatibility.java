@@ -125,8 +125,8 @@ public final class DerivedCalculationSemanticCompatibility {
             CanonicalParameterDefinition target,
             Map<String, Object> expression,
             java.util.function.Function<String, CanonicalParameterDefinition> resolve) {
-        if (isMonthsSinceLastMatch(expression)) {
-            return assessMonthsSinceLastMatch(target, expression, resolve);
+        if (isMonthsSinceLastMatch(expression) || isCountPeriodsMatching(expression)) {
+            return assessHistoryWindowTransform(target, expression, resolve);
         }
         Set<String> deps = SafeDerivedExpressionEvaluator.collectDependencies(expression);
         boolean directRef = isDirectRef(expression);
@@ -161,14 +161,27 @@ public final class DerivedCalculationSemanticCompatibility {
         return "MONTHS_SINCE_LAST_MATCH".equals(op);
     }
 
-    private static Result assessMonthsSinceLastMatch(
+    static boolean isCountPeriodsMatching(Map<String, Object> expression) {
+        if (expression == null || expression.isEmpty()) return false;
+        String op = String.valueOf(expression.getOrDefault("op", "")).trim().toUpperCase(Locale.ROOT);
+        return "COUNT_PERIODS_MATCHING".equals(op);
+    }
+
+    private static Result assessHistoryWindowTransform(
             CanonicalParameterDefinition target,
             Map<String, Object> expression,
             java.util.function.Function<String, CanonicalParameterDefinition> resolve) {
         List<String> failures = new ArrayList<>();
         List<String> evidence = new ArrayList<>();
+        String op = String.valueOf(expression.getOrDefault("op", "")).trim().toUpperCase(Locale.ROOT);
         String tu = dimFamily(target.unit());
-        if (!"DURATION_CALENDAR".equals(tu) && !"COUNT".equals(tu) && !tu.isBlank()) {
+        if ("COUNT_PERIODS_MATCHING".equals(op)) {
+            if (!"COUNT".equals(tu) && !"DURATION_CALENDAR".equals(tu) && !tu.isBlank()) {
+                failures.add("COUNT_PERIODS_MATCHING requires COUNT target unit; got " + norm(target.unit()));
+            } else {
+                evidence.add("Target unit compatible with period-count transform: " + norm(target.unit()));
+            }
+        } else if (!"DURATION_CALENDAR".equals(tu) && !"COUNT".equals(tu) && !tu.isBlank()) {
             failures.add("MONTHS_SINCE_LAST_MATCH requires MONTHS (or count) target unit; got "
                     + norm(target.unit()));
         } else {
@@ -176,11 +189,11 @@ public final class DerivedCalculationSemanticCompatibility {
         }
         Set<String> deps = SafeDerivedExpressionEvaluator.collectDependencies(expression);
         if (deps.isEmpty()) {
-            failures.add("MONTHS_SINCE_LAST_MATCH requires a history REF dependency");
+            failures.add(op + " requires a history REF dependency");
         }
         for (String depId : deps) {
             if (BusinessCalculationAssistant.isMaxDpdProxyId(depId)) {
-                failures.add("max_dpd proxy rejected as clean-history input: " + depId);
+                failures.add("max_dpd proxy rejected as input: " + depId);
                 continue;
             }
             CanonicalParameterDefinition src = resolve.apply(depId);
@@ -203,7 +216,7 @@ public final class DerivedCalculationSemanticCompatibility {
         Object asOf = expression.get("asOf");
         if (!(asOf instanceof Map<?, ?> asOfMap)
                 || !"EVAL_AS_OF".equalsIgnoreCase(String.valueOf(asOfMap.get("op")))) {
-            failures.add("MONTHS_SINCE_LAST_MATCH requires asOf EVAL_AS_OF (deterministic evaluation date)");
+            failures.add(op + " requires asOf EVAL_AS_OF (deterministic evaluation date)");
         } else {
             evidence.add("Evaluation date authority: EVAL_AS_OF");
         }
@@ -212,6 +225,13 @@ public final class DerivedCalculationSemanticCompatibility {
         }
         boolean compatible = failures.isEmpty();
         return new Result(compatible, false, failures, evidence);
+    }
+
+    private static Result assessMonthsSinceLastMatch(
+            CanonicalParameterDefinition target,
+            Map<String, Object> expression,
+            java.util.function.Function<String, CanonicalParameterDefinition> resolve) {
+        return assessHistoryWindowTransform(target, expression, resolve);
     }
 
     public static boolean isDirectRef(Map<String, Object> expression) {

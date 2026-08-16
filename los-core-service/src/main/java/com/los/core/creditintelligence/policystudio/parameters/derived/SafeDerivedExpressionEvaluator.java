@@ -14,7 +14,7 @@ import java.util.Set;
 /**
  * Safe typed expression evaluator for GACAT derived parameters.
  * No arbitrary code — only REF / CONST / arithmetic / compare / IF /
- * EVAL_AS_OF / MONTHS_SINCE_LAST_MATCH over exact GACAT IDs.
+ * EVAL_AS_OF / MONTHS_SINCE_LAST_MATCH / COUNT_PERIODS_MATCHING over exact GACAT IDs.
  * Missing inputs → DATA_INSUFFICIENT (never default to zero).
  */
 public final class SafeDerivedExpressionEvaluator {
@@ -98,6 +98,7 @@ public final class SafeDerivedExpressionEvaluator {
             case "IF" -> evalIf(m, inputs);
             case "EVAL_AS_OF" -> evalAsOf(inputs);
             case "MONTHS_SINCE_LAST_MATCH" -> evalMonthsSinceLastMatch(m, inputs);
+            case "COUNT_PERIODS_MATCHING" -> evalCountPeriodsMatching(m, inputs);
             default -> throw new IllegalArgumentException("Unsupported op: " + op);
         };
     }
@@ -169,6 +170,49 @@ public final class SafeDerivedExpressionEvaluator {
         }
         long months = ChronoUnit.MONTHS.between(latestMatch, asOf);
         return Math.max(0L, months);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Object evalCountPeriodsMatching(Map<String, Object> m, Map<String, Object> inputs) {
+        Object historyVal = evalNode(m.get("history"), inputs);
+        if (historyVal instanceof Missing) return historyVal;
+        Object asOfVal = m.get("asOf") == null ? evalAsOf(inputs) : evalNode(m.get("asOf"), inputs);
+        if (asOfVal instanceof Missing) return asOfVal;
+        YearMonth asOf = asOfVal instanceof YearMonth ym ? ym : parseYearMonth(asOfVal);
+
+        String matchField = String.valueOf(m.getOrDefault("matchField", "dpd")).trim();
+        String dateField = String.valueOf(m.getOrDefault("dateField", "month")).trim();
+        String matchOp = String.valueOf(m.getOrDefault("matchOp", "GTE")).trim().toUpperCase(Locale.ROOT);
+        double matchValue = toDouble(m.get("matchValue"));
+        int windowMonths = m.get("windowMonths") == null ? 6 : (int) toDouble(m.get("windowMonths"));
+        if (windowMonths < 1) throw new IllegalArgumentException("windowMonths must be >= 1");
+        boolean distinct = !Boolean.FALSE.equals(m.get("distinctPeriods"));
+        YearMonth earliest = asOf.minusMonths(windowMonths - 1L);
+
+        List<?> rows;
+        if (historyVal instanceof List<?> list) {
+            rows = list;
+        } else if (historyVal instanceof Map<?, ?> single) {
+            rows = List.of(single);
+        } else {
+            throw new IllegalArgumentException("COUNT_PERIODS_MATCHING history must be a list of observations");
+        }
+
+        LinkedHashSet<YearMonth> matched = new LinkedHashSet<>();
+        long rawCount = 0;
+        for (Object rowObj : rows) {
+            if (!(rowObj instanceof Map<?, ?> rowRaw)) continue;
+            Map<String, Object> row = (Map<String, Object>) rowRaw;
+            Object matchRaw = firstPresent(row, matchField, "DaysPastDue", "dpd", "DPD");
+            Object dateRaw = firstPresent(row, dateField, "YearMonth", "month", "observationMonth", "period");
+            if (matchRaw == null || dateRaw == null) continue;
+            YearMonth ym = parseYearMonth(dateRaw);
+            if (ym.isBefore(earliest) || ym.isAfter(asOf)) continue;
+            if (!compareMatch(matchOp, toDouble(matchRaw), matchValue)) continue;
+            rawCount++;
+            matched.add(ym);
+        }
+        return distinct ? (long) matched.size() : rawCount;
     }
 
     private static boolean compareMatch(String op, double left, double right) {
@@ -334,6 +378,20 @@ public final class SafeDerivedExpressionEvaluator {
                 String mop = String.valueOf(m.getOrDefault("matchOp", "GT")).trim().toUpperCase(Locale.ROOT);
                 if (!Set.of("GT", "GTE", "LT", "LTE", "EQ").contains(mop)) {
                     throw new IllegalArgumentException("Unsupported matchOp: " + mop);
+                }
+            }
+            case "COUNT_PERIODS_MATCHING" -> {
+                if (m.get("history") == null) {
+                    throw new IllegalArgumentException("COUNT_PERIODS_MATCHING requires history");
+                }
+                evalShape(m.get("history"));
+                if (m.get("asOf") != null) evalShape(m.get("asOf"));
+                if (!m.containsKey("matchValue")) {
+                    throw new IllegalArgumentException("COUNT_PERIODS_MATCHING requires matchValue");
+                }
+                String mop2 = String.valueOf(m.getOrDefault("matchOp", "GTE")).trim().toUpperCase(Locale.ROOT);
+                if (!Set.of("GT", "GTE", "LT", "LTE", "EQ").contains(mop2)) {
+                    throw new IllegalArgumentException("Unsupported matchOp: " + mop2);
                 }
             }
             default -> throw new IllegalArgumentException("Unsupported op: " + op);

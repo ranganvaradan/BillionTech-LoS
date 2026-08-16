@@ -777,16 +777,32 @@ export function CiPolicyRulesTab({
                                           </p>
                                         )}
                                       </div>
-                                    ) : null}
-                                    {op.howCalculated && op.calculationRequired !== true ? (
-                                      <details className="mt-1">
-                                        <summary className="cursor-pointer text-xs font-medium text-slate-600">
-                                          How calculated
-                                        </summary>
-                                        <p className="mt-1 text-xs text-slate-600">
-                                          {String(op.howCalculated)}
-                                        </p>
-                                      </details>
+                                    ) : String(op.parameterId ?? op.suggestedParameterId ?? '') &&
+                                      (String(op.availabilityLabel ?? '')
+                                        .toLowerCase()
+                                        .includes('derived') ||
+                                        String(op.howCalculated ?? '').trim().length > 0) ? (
+                                      <div className="mt-2">
+                                        <SuggestCalculationWorkflow
+                                          canonicalParameterId={String(
+                                            op.parameterId ?? op.suggestedParameterId,
+                                          )}
+                                          businessName={String(op.businessName ?? op.label ?? '')}
+                                          knownExisting
+                                          existingExplanation={
+                                            op.howCalculated
+                                              ? String(op.howCalculated)
+                                              : undefined
+                                          }
+                                          onMeaningAccepted={() => {
+                                            void onReview(id, {
+                                              uiAction: 'ACCEPT',
+                                              reason:
+                                                'Accepted calculation meaning — matches intended policy',
+                                            })
+                                          }}
+                                        />
+                                      </div>
                                     ) : null}
                                     <div className="mt-2">
                                       <button
@@ -843,7 +859,18 @@ export function CiPolicyRulesTab({
                         </div>
                       ) : null}
 
-                      {asRecord(r.howCalculated).calculation ? (
+                      {asRecord(r.howCalculated).calculation &&
+                      !(Array.isArray(r.operands)
+                        ? (r.operands as Array<Record<string, unknown>>).some(
+                            (op) =>
+                              op.calculationRequired === true ||
+                              (String(op.parameterId ?? op.suggestedParameterId ?? '') &&
+                                (String(op.availabilityLabel ?? '')
+                                  .toLowerCase()
+                                  .includes('derived') ||
+                                  String(op.howCalculated ?? '').trim().length > 0)),
+                          )
+                        : false) ? (
                         <details className="mt-3 rounded border border-slate-100 bg-slate-50 px-3 py-2 text-sm">
                           <summary className="cursor-pointer font-medium text-slate-800">How is this calculated?</summary>
                           <dl className="mt-2 space-y-1 text-slate-700">

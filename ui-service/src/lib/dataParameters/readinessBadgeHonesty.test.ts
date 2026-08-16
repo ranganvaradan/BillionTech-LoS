@@ -68,9 +68,13 @@ describe('POLICY-DERIVED-CALCULATION-BUSINESS-ASSISTANT-1', () => {
     expect(src).toContain('Use this calculation')
     expect(src).toContain('I can calculate this')
     expect(src).toContain('I need one detail')
-    expect(src).toContain("I can't calculate this yet")
+    expect(src).toContain("I can&apos;t calculate this yet")
     expect(src).toContain('data-lender-ux="layer-1"')
     expect(src).toContain('data-business-assistant="1"')
+    expect(src).toContain('data-universal-flow="1"')
+    expect(src).toContain("How I'll calculate it")
+    expect(src).toContain('change-calculation')
+    expect(src).toContain('lender-change-flow')
     // Exactly one Advanced summary style in the needs-input card path (plus optional ready-state)
     const advancedMatches = src.match(/>Advanced &gt;</g) ?? src.match(/>Advanced >/g) ?? []
     expect(advancedMatches.length).toBeGreaterThanOrEqual(1)
@@ -116,12 +120,29 @@ describe('POLICY-DERIVED-CALCULATION-BUSINESS-ASSISTANT-1', () => {
       resolve(__dirname, '../../pages/creditIntelligence/CiPolicyRulesTab.tsx'),
       'utf8',
     )
-    expect(rules).toContain('op.howCalculated && op.calculationRequired !== true')
+    expect(rules).toContain('knownExisting')
+    expect(rules).toContain('onMeaningAccepted')
     const sim = readFileSync(
       resolve(__dirname, '../../pages/creditIntelligence/CiPolicySimulationTab.tsx'),
       'utf8',
     )
     expect(sim).toContain('p.calculationRequired !== true && (how.calculation || how.source)')
+  })
+
+  it('universal lender flow exposes Accept Change and shared change path', () => {
+    const src = readFileSync(
+      resolve(__dirname, '../../components/dataParameters/SuggestCalculationWorkflow.tsx'),
+      'utf8',
+    )
+    expect(src).toContain('data-universal-flow="1"')
+    expect(src).toContain('knownExisting')
+    expect(src).toContain('lender-change-flow')
+    expect(src).toContain("How I'll calculate it")
+    expect(src).toContain('clarification-choice-${c.id}')
+    expect(src).toContain('SEMANTIC_CONFLICT')
+    expect(src).toContain('change-after-accept')
+    expect(src).toContain('openChangeFlow')
+    expect(src).toContain("choiceId === 'other'")
   })
 
   it('inventory default title drops GACAT jargon', () => {

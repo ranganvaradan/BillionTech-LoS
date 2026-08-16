@@ -159,6 +159,15 @@ public class DerivedCalculationResearchService {
             if (opt.get("dataICanUse") != null) {
                 meta.put("dataICanUse", opt.get("dataICanUse"));
             }
+            if (opt.get("proposalKind") != null) {
+                meta.put("proposalKind", opt.get("proposalKind"));
+            }
+            if (opt.get("knownExistingCalculation") != null) {
+                meta.put("knownExistingCalculation", opt.get("knownExistingCalculation"));
+            }
+            if (opt.get("conflictChoices") != null) {
+                meta.put("conflictChoices", opt.get("conflictChoices"));
+            }
             if (businessDescription != null && !businessDescription.isBlank()) {
                 meta.put("businessDescription", businessDescription.trim());
             }
@@ -244,6 +253,12 @@ public class DerivedCalculationResearchService {
         opt.put("maxDpdProxyRejected", r.maxDpdProxyRejected());
         opt.put("clarificationQuestions", questions);
         opt.put("dataICanUse", r.dataICanUse());
+        opt.put("proposalKind", r.proposalKind() == null
+                ? BusinessCalculationAssistant.KIND_AUTHOR_EXPRESSION : r.proposalKind());
+        opt.put("knownExistingCalculation", r.knownExistingCalculation());
+        if (r.conflictChoices() != null && !r.conflictChoices().isEmpty()) {
+            opt.put("conflictChoices", r.conflictChoices());
+        }
         return opt;
     }
 
@@ -550,6 +565,28 @@ public class DerivedCalculationResearchService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Proposal cannot be accepted: " + row.getProposalStatus());
         }
         Map<String, Object> expr = row.getProposedExpression();
+        Map<String, Object> meta = row.getMetadata() == null ? Map.of() : row.getMetadata();
+        boolean confirmExisting = BusinessCalculationAssistant.KIND_CONFIRM_EXISTING.equals(
+                String.valueOf(meta.getOrDefault("proposalKind", "")))
+                || Boolean.TRUE.equals(meta.get("knownExistingCalculation"));
+        if ((expr == null || expr.isEmpty()) && confirmExisting) {
+            // Lender confirms existing implemented calculation — no new definition authored
+            row.setProposalStatus(STATUS_APPROVED);
+            row.setApprovedBy(actor);
+            row.setApprovedAt(Instant.now());
+            row.setUpdatedAt(Instant.now());
+            Map<String, Object> meta2 = new LinkedHashMap<>(meta);
+            meta2.put("meaningAccepted", true);
+            meta2.put("definitionAuthored", false);
+            row.setMetadata(meta2);
+            proposalRepository.save(row);
+            Map<String, Object> out = toView(row);
+            out.put("duplicateParameterCreated", false);
+            out.put("targetCanonicalParameterReused", true);
+            out.put("definitionAuthored", false);
+            out.put("meaningAccepted", true);
+            return out;
+        }
         if (expr == null || expr.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Proposal has no proposedExpression — Edit calculation before Accept");
@@ -580,6 +617,7 @@ public class DerivedCalculationResearchService {
         out.put("definition", def);
         out.put("duplicateParameterCreated", false);
         out.put("targetCanonicalParameterReused", true);
+        out.put("definitionAuthored", true);
         return out;
     }
 
@@ -657,6 +695,15 @@ public class DerivedCalculationResearchService {
             m.put("dataICanUse", meta.get("dataICanUse"));
         } else if (row.getCandidateDependencies() != null) {
             m.put("dataICanUse", row.getCandidateDependencies());
+        }
+        if (meta.get("proposalKind") != null) {
+            m.put("proposalKind", meta.get("proposalKind"));
+        }
+        if (meta.get("knownExistingCalculation") != null) {
+            m.put("knownExistingCalculation", meta.get("knownExistingCalculation"));
+        }
+        if (meta.get("conflictChoices") != null) {
+            m.put("conflictChoices", meta.get("conflictChoices"));
         }
         return m;
     }

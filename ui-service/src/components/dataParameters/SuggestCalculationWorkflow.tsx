@@ -1,9 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   acceptDerivedCalculationProposal,
   editDerivedCalculationProposal,
   getDerivedCalculationLatest,
-  rejectDerivedCalculationProposal,
   suggestDerivedCalculation,
 } from '@/api/derivedCalculations'
 import { ApiError } from '@/api/http'
@@ -19,15 +18,17 @@ import {
 type Props = {
   canonicalParameterId: string
   businessName?: string
-  /** Catalogue support status — CALCULATION_NOT_IMPLEMENTED triggers setup CTA */
   supportStatus?: string
   calculationRequired?: boolean
+  /** Already-implemented calculation: show How I'll calculate it + Accept/Change */
+  knownExisting?: boolean
+  existingExplanation?: string
   primitives?: string[]
-  /** Optional rule statement for lender context */
   ruleStatement?: string
-  /** When true, parent already shows the parameter title — avoid duplicate heading */
   hideTitle?: boolean
   onChanged?: () => void
+  /** Called when lender Accepts meaning of an existing implemented calculation */
+  onMeaningAccepted?: () => void
 }
 
 type Dep = {
@@ -48,21 +49,23 @@ type ClarificationQuestion = {
 }
 
 /**
- * POLICY-DERIVED-CALCULATION-BUSINESS-ASSISTANT-1
- * One primary working card. Business language by default; Advanced for diagnostics.
- * "Use this calculation" remains the only approval boundary.
+ * POLICY-DERIVED-CALCULATION-UNIVERSAL-LENDER-FLOW-1
+ * States: UNDERSTOOD (Accept/Change) | Work it out | Clarification | Conflict
  */
 export function SuggestCalculationWorkflow({
   canonicalParameterId,
   businessName,
   supportStatus,
   calculationRequired,
+  knownExisting = false,
+  existingExplanation,
   primitives = [],
   ruleStatement,
   hideTitle = false,
   onChanged,
+  onMeaningAccepted,
 }: Props) {
-  const needsSuggest =
+  const needsSetup =
     calculationRequired === true ||
     supportStatus === 'CALCULATION_NOT_IMPLEMENTED' ||
     supportStatus === 'SUPPORT_CALCULATION_NOT_IMPLEMENTED'
@@ -78,8 +81,11 @@ export function SuggestCalculationWorkflow({
   const [msg, setMsg] = useState<string | null>(null)
   const [businessDefinition, setBusinessDefinition] = useState('')
   const [clarificationAnswers, setClarificationAnswers] = useState<Record<string, string>>({})
-  const [phase, setPhase] = useState<'idle' | 'research' | 'done'>('idle')
-  const [showChange, setShowChange] = useState(false)
+  const [phase, setPhase] = useState<'idle' | 'research' | 'change' | 'done'>(
+    knownExisting ? 'research' : 'idle',
+  )
+  const [autoLoaded, setAutoLoaded] = useState(false)
+  const [showChangeSurface, setShowChangeSurface] = useState(false)
 
   const selected = options[selectedIdx] ?? proposal
   const deps = (Array.isArray(selected?.candidateDependencies)
@@ -90,43 +96,63 @@ export function SuggestCalculationWorkflow({
 
   const proposalStatus = String(selected?.proposalStatus ?? '')
   const businessOutcome = String(selected?.businessOutcome ?? '')
+  const proposalKind = String(selected?.proposalKind ?? '')
+  const knownExistingCalc =
+    knownExisting ||
+    selected?.knownExistingCalculation === true ||
+    proposalKind === 'CONFIRM_EXISTING'
   const hasExpression = selected?.proposedExpression != null
   const clarificationQuestions = (Array.isArray(selected?.clarificationQuestions)
     ? selected!.clarificationQuestions
     : []) as ClarificationQuestion[]
+  const conflictChoices = (Array.isArray(selected?.conflictChoices)
+    ? selected!.conflictChoices
+    : []) as Array<{ id?: string; label?: string }>
 
+  const isSemanticConflict = businessOutcome === 'SEMANTIC_CONFLICT'
   const isCanCalculate =
-    businessOutcome === 'CAN_CALCULATE' ||
-    (hasExpression && proposalStatus === 'READY_FOR_REVIEW')
+    !isSemanticConflict &&
+    (businessOutcome === 'CAN_CALCULATE' ||
+      (hasExpression && proposalStatus === 'READY_FOR_REVIEW') ||
+      (knownExistingCalc && selected != null && proposalStatus === 'READY_FOR_REVIEW'))
   const isNeedsClarification =
     businessOutcome === 'NEEDS_CLARIFICATION' ||
-    (clarificationQuestions.length > 0 && !hasExpression)
+    (clarificationQuestions.length > 0 && !hasExpression && !knownExistingCalc)
   const isMissingData =
     businessOutcome === 'MISSING_DATA' ||
     (!isCanCalculate &&
       !isNeedsClarification &&
+      !isSemanticConflict &&
       selected != null &&
       (selected.unableToRecommend === true ||
-        proposalStatus === 'NEEDS_INPUT' ||
-        !hasExpression))
+        (proposalStatus === 'NEEDS_INPUT' && !knownExistingCalc)))
 
   const plainExplanation = useMemo(() => {
-    const raw = String(selected?.humanExplanation ?? msg ?? '')
+    const raw = String(selected?.humanExplanation ?? existingExplanation ?? msg ?? '')
     return sanitizeLenderTechnicalPhrase(raw)
-  }, [selected, msg])
+  }, [selected, msg, existingExplanation])
 
-  const canCalculateNarrative = useMemo(
-    () => formatCanCalculateNarrative(String(selected?.humanExplanation ?? '')),
-    [selected],
-  )
+  const canCalculateNarrative = useMemo(() => {
+    const raw = String(selected?.humanExplanation ?? existingExplanation ?? '')
+    const cleaned = formatCanCalculateNarrative(raw)
+    return cleaned || sanitizeLenderTechnicalPhrase(raw)
+  }, [selected, existingExplanation])
 
   const dataICanUse = useMemo(() => businessFacingInputLabels(deps), [deps])
-
   const resultLabel = formatCalculationResultLabel(displayName)
 
-  if (!canonicalParameterId) return null
+  const showCard = needsSetup || knownExisting
 
-  async function runResearch(answers?: Record<string, string>) {
+  useEffect(() => {
+    if (!canonicalParameterId || !knownExisting || autoLoaded) return
+    setAutoLoaded(true)
+    void runResearch()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canonicalParameterId, knownExisting])
+
+  if (!canonicalParameterId || !showCard) return null
+
+  async function runResearch(answers?: Record<string, string>, descriptionOverride?: string) {
     setBusy(true)
     setError(null)
     setMsg(null)
@@ -134,44 +160,45 @@ export function SuggestCalculationWorkflow({
     try {
       const merged = { ...clarificationAnswers, ...(answers ?? {}) }
       setClarificationAnswers(merged)
+      const desc = (descriptionOverride ?? businessDefinition).trim()
       const res = await suggestDerivedCalculation(canonicalParameterId, {
-        businessDescription: businessDefinition.trim() || undefined,
+        businessDescription: desc || undefined,
         clarificationAnswers: Object.keys(merged).length ? merged : undefined,
       })
       const opts = Array.isArray(res.options) ? (res.options as Array<Record<string, unknown>>) : [res]
       setOptions(opts)
       setProposal(opts[0] ?? res)
       setSelectedIdx(0)
-      if (res.unableToRecommend === true) {
-        setMsg(
-          sanitizeLenderTechnicalPhrase(
-            String(res.humanExplanation ?? "I can't calculate this yet."),
-          ),
-        )
-      }
     } catch (e) {
       setError(e instanceof ApiError ? e.message : String(e))
-      setPhase('idle')
+      setPhase(knownExisting ? 'research' : 'idle')
     } finally {
       setBusy(false)
     }
   }
 
-  async function onWorkItOut() {
-    await runResearch()
-  }
-
-  async function onClarificationChoice(questionId: string, choiceId: string) {
-    await runResearch({ [questionId]: choiceId })
+  function openChangeFlow() {
+    setShowChangeSurface(true)
+    setPhase('change')
+    setProposal(null)
+    setOptions([])
   }
 
   async function onAccept() {
     const id = String(selected?.id ?? '')
     if (!id) {
+      // Known existing without proposal yet — still allow meaning accept via parent
+      if (knownExistingCalc) {
+        setPhase('done')
+        setMsg('Accepted ✓')
+        onMeaningAccepted?.()
+        onChanged?.()
+        return
+      }
       setError('No proposal selected')
       return
     }
-    if (!selected?.proposedExpression) {
+    if (!selected?.proposedExpression && !knownExistingCalc) {
       setError('I still need a complete calculation before you can confirm it.')
       return
     }
@@ -179,34 +206,17 @@ export function SuggestCalculationWorkflow({
     setError(null)
     try {
       const res = await acceptDerivedCalculationProposal(id)
-      setMsg('Calculation saved. This rule is ready to test when Policy Test readiness allows.')
+      setMsg(knownExistingCalc ? 'Accepted ✓' : 'Calculation ready ✓')
       setProposal(res)
       const def = (res.definition as Record<string, unknown> | undefined) ?? null
       setDefinition(def)
       setPhase('done')
+      onMeaningAccepted?.()
       onChanged?.()
-      const latest = await getDerivedCalculationLatest(canonicalParameterId)
-      if (latest.found !== false) setDefinition(latest)
-    } catch (e) {
-      setError(e instanceof ApiError ? e.message : String(e))
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function onReject() {
-    const id = String(selected?.id ?? '')
-    if (!id) return
-    setBusy(true)
-    setError(null)
-    try {
-      await rejectDerivedCalculationProposal(id)
-      setMsg('Proposal discarded — no calculation was saved.')
-      setProposal(null)
-      setOptions([])
-      setPhase('idle')
-      setShowChange(false)
-      setClarificationAnswers({})
+      if (!knownExistingCalc) {
+        const latest = await getDerivedCalculationLatest(canonicalParameterId)
+        if (latest.found !== false) setDefinition(latest)
+      }
     } catch (e) {
       setError(e instanceof ApiError ? e.message : String(e))
     } finally {
@@ -225,7 +235,6 @@ export function SuggestCalculationWorkflow({
       setOptions((prev) => prev.map((o, i) => (i === selectedIdx ? updated : o)))
       setProposal(updated)
       setMsg('Updated — please review the calculation again.')
-      setShowChange(false)
     } catch (e) {
       setError(e instanceof ApiError ? e.message : String(e))
     } finally {
@@ -233,8 +242,18 @@ export function SuggestCalculationWorkflow({
     }
   }
 
+  async function onClarificationChoice(questionId: string, choiceId: string) {
+    if (choiceId === 'other' || choiceId === 'something_else') {
+      openChangeFlow()
+      return
+    }
+    await runResearch({ [questionId]: choiceId })
+  }
+
   const showHowCalculated = definition != null && definition.found !== false
-  const showAssistant = needsSuggest && !showHowCalculated
+  const acceptLabel = knownExistingCalc ? 'Accept' : 'Use this calculation'
+  const heading =
+    knownExistingCalc && isCanCalculate ? "How I'll calculate it" : 'I can calculate this'
 
   return (
     <div
@@ -242,6 +261,7 @@ export function SuggestCalculationWorkflow({
       data-testid="suggest-calculation-workflow"
       data-lender-ux="layer-1"
       data-business-assistant="1"
+      data-universal-flow="1"
     >
       {!hideTitle ? (
         <div>
@@ -252,15 +272,53 @@ export function SuggestCalculationWorkflow({
         </div>
       ) : null}
 
-      {showAssistant ? (
+      {phase === 'done' || showHowCalculated ? (
+        <div
+          className="rounded-md border border-emerald-200 bg-emerald-50/70 p-3"
+          data-testid="lender-calculation-ready"
+        >
+          <div className="text-sm font-semibold text-emerald-950">
+            {msg?.includes('Accepted') ? 'Accepted ✓' : 'Calculation ready ✓'}
+          </div>
+          <p className="mt-1 text-xs text-emerald-900">
+            {knownExistingCalc
+              ? 'You confirmed this calculation for the rule.'
+              : 'This rule is ready to test. Production use still requires separate certification.'}
+          </p>
+          <button
+            type="button"
+            className="bt-btn bt-btn-secondary bt-btn-sm mt-3"
+            disabled={busy}
+            onClick={() => openChangeFlow()}
+            data-testid="change-after-accept"
+          >
+            Change
+          </button>
+          <details className="mt-3" data-testid="lender-advanced-details">
+            <summary className="cursor-pointer text-xs font-medium text-slate-600">Advanced &gt;</summary>
+            <div className="mt-2 space-y-1 text-[11px] text-slate-600">
+              <div>
+                Canonical parameter ID:{' '}
+                <span className="font-mono">{canonicalParameterId}</span>
+              </div>
+              {definition ? (
+                <pre className="overflow-x-auto rounded bg-slate-50 p-2 text-[10px]">
+                  {JSON.stringify(definition?.expression ?? {}, null, 2)}
+                </pre>
+              ) : null}
+            </div>
+          </details>
+        </div>
+      ) : null}
+
+      {phase !== 'done' && !showHowCalculated ? (
         <div
           className="rounded-md border border-amber-200 bg-amber-50/60 p-3 text-sm text-amber-950"
           data-testid="lender-needs-input-panel"
         >
-          <div className="font-medium">Needs your input</div>
-
-          {phase === 'idle' ? (
+          {needsSetup && phase === 'idle' ? (
             <>
+              <div className="font-medium">Needs your input</div>
               <p className="mt-1 text-xs leading-relaxed">
                 I have related bureau or application data, but I need to understand what you mean by
                 “{displayName}” before I can apply this rule.
@@ -275,14 +333,12 @@ export function SuggestCalculationWorkflow({
                 onChange={(e) => setBusinessDefinition(e.target.value)}
                 data-testid="lender-business-definition"
               />
-              <p className="mt-1 text-[11px] text-amber-800/90">
-                Example: {LENDER_SETUP_EXAMPLE}
-              </p>
+              <p className="mt-1 text-[11px] text-amber-800/90">Example: {LENDER_SETUP_EXAMPLE}</p>
               <button
                 type="button"
                 className="bt-btn bt-btn-primary bt-btn-sm mt-3"
                 disabled={busy}
-                onClick={() => void onWorkItOut()}
+                onClick={() => void runResearch()}
                 data-testid="suggest-calculation-btn"
               >
                 Work it out for me
@@ -290,13 +346,90 @@ export function SuggestCalculationWorkflow({
             </>
           ) : null}
 
+          {phase === 'change' || showChangeSurface ? (
+            <div data-testid="lender-change-flow">
+              <div className="font-medium">How should I calculate it?</div>
+              <textarea
+                className="bt-input mt-2 min-h-[88px] text-xs"
+                placeholder="Describe the calculation in business terms…"
+                value={businessDefinition}
+                onChange={(e) => setBusinessDefinition(e.target.value)}
+                data-testid="lender-change-definition"
+              />
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="bt-btn bt-btn-primary bt-btn-sm"
+                  disabled={busy || !businessDefinition.trim()}
+                  onClick={() => {
+                    setShowChangeSurface(false)
+                    void runResearch(undefined, businessDefinition)
+                  }}
+                  data-testid="change-work-it-out"
+                >
+                  Work it out for me
+                </button>
+                <button
+                  type="button"
+                  className="bt-btn bt-btn-secondary bt-btn-sm"
+                  disabled={busy}
+                  onClick={() => {
+                    setShowChangeSurface(false)
+                    setPhase(knownExisting ? 'research' : 'idle')
+                    if (knownExisting) void runResearch()
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : null}
+
           {error ? <p className="mt-2 text-xs text-rose-700">{error}</p> : null}
 
-          {selected && phase === 'research' ? (
+          {selected && phase === 'research' && !showChangeSurface ? (
             <div className="mt-3 space-y-3" data-testid="suggested-derivation-panel">
+              {isSemanticConflict ? (
+                <div data-testid="lender-semantic-conflict">
+                  <div className="text-sm font-semibold text-slate-900">This would change the meaning</div>
+                  <p className="mt-2 text-xs leading-relaxed text-slate-800 whitespace-pre-wrap">
+                    {plainExplanation}
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {conflictChoices.map((c) => (
+                      <button
+                        key={String(c.id)}
+                        type="button"
+                        className="bt-btn bt-btn-secondary bt-btn-sm"
+                        disabled={busy}
+                        onClick={() => {
+                          if (c.id === 'keep_canonical') {
+                            setBusinessDefinition('')
+                            void runResearch()
+                          } else {
+                            openChangeFlow()
+                          }
+                        }}
+                      >
+                        {c.label}
+                      </button>
+                    ))}
+                    {conflictChoices.length === 0 ? (
+                      <button
+                        type="button"
+                        className="bt-btn bt-btn-secondary bt-btn-sm"
+                        onClick={() => openChangeFlow()}
+                      >
+                        Revise description
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+
               {isCanCalculate ? (
                 <div data-testid="lender-proposal-panel">
-                  <div className="text-sm font-semibold text-slate-900">I can calculate this</div>
+                  <div className="text-sm font-semibold text-slate-900">{heading}</div>
                   {canCalculateNarrative ? (
                     <p className="mt-2 text-xs leading-relaxed text-slate-800 whitespace-pre-wrap">
                       {canCalculateNarrative}
@@ -312,53 +445,27 @@ export function SuggestCalculationWorkflow({
                       </ul>
                     </div>
                   ) : null}
-                  <p className="mt-3 text-xs font-medium text-slate-900">
-                    Result: {resultLabel}
-                  </p>
+                  <p className="mt-3 text-xs font-medium text-slate-900">Result: {resultLabel}</p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <button
                       type="button"
                       className="bt-btn bt-btn-primary bt-btn-sm"
-                      disabled={busy || !hasExpression}
+                      disabled={busy || (!hasExpression && !knownExistingCalc)}
                       onClick={() => void onAccept()}
                       data-testid="accept-create-calculation"
                     >
-                      Use this calculation
+                      {acceptLabel}
                     </button>
                     <button
                       type="button"
                       className="bt-btn bt-btn-secondary bt-btn-sm"
                       disabled={busy}
-                      onClick={() => setShowChange((v) => !v)}
+                      onClick={() => openChangeFlow()}
+                      data-testid="change-calculation"
                     >
                       Change
                     </button>
                   </div>
-                  {showChange ? (
-                    <div className="mt-3 space-y-2 rounded border border-amber-100 bg-white/80 p-2">
-                      <button
-                        type="button"
-                        className="bt-btn bt-btn-secondary bt-btn-sm"
-                        disabled={busy}
-                        onClick={() => {
-                          setPhase('idle')
-                          setProposal(null)
-                          setOptions([])
-                          setShowChange(false)
-                        }}
-                      >
-                        Describe again
-                      </button>
-                      <button
-                        type="button"
-                        className="bt-btn bt-btn-secondary bt-btn-sm ml-2"
-                        disabled={busy}
-                        onClick={() => void onReject()}
-                      >
-                        Discard
-                      </button>
-                    </div>
-                  ) : null}
                 </div>
               ) : null}
 
@@ -392,25 +499,18 @@ export function SuggestCalculationWorkflow({
                       ))}
                     </div>
                   ) : (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        className="bt-btn bt-btn-secondary bt-btn-sm"
-                        disabled={busy}
-                        onClick={() => {
-                          setPhase('idle')
-                          setProposal(null)
-                          setOptions([])
-                        }}
-                      >
-                        Revise description
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      className="bt-btn bt-btn-secondary bt-btn-sm mt-3"
+                      onClick={() => openChangeFlow()}
+                    >
+                      Revise description
+                    </button>
                   )}
                 </div>
               ) : null}
 
-              {isMissingData && !isNeedsClarification && !isCanCalculate ? (
+              {isMissingData && !isNeedsClarification && !isCanCalculate && !isSemanticConflict ? (
                 <div data-testid="lender-missing-data-panel">
                   <div className="text-sm font-semibold text-slate-900">
                     I can&apos;t calculate this yet
@@ -420,37 +520,19 @@ export function SuggestCalculationWorkflow({
                   </p>
                   {Array.isArray(selected.missingDependencies) &&
                   (selected.missingDependencies as unknown[]).length > 0 ? (
-                    <div className="mt-3 text-xs text-slate-800">
-                      <div className="font-medium">To calculate this I need</div>
-                      <ul className="mt-1 list-disc pl-4">
-                        {(selected.missingDependencies as unknown[]).map((m, i) => (
-                          <li key={i}>{sanitizeLenderTechnicalPhrase(String(m))}</li>
-                        ))}
-                      </ul>
-                    </div>
+                    <ul className="mt-2 list-disc pl-4 text-xs">
+                      {(selected.missingDependencies as unknown[]).map((m, i) => (
+                        <li key={i}>{sanitizeLenderTechnicalPhrase(String(m))}</li>
+                      ))}
+                    </ul>
                   ) : null}
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      className="bt-btn bt-btn-secondary bt-btn-sm"
-                      disabled={busy}
-                      onClick={() => {
-                        setPhase('idle')
-                        setProposal(null)
-                        setOptions([])
-                      }}
-                    >
-                      Revise description
-                    </button>
-                    <button
-                      type="button"
-                      className="bt-btn bt-btn-secondary bt-btn-sm"
-                      disabled={busy}
-                      onClick={() => void onReject()}
-                    >
-                      Cancel
-                    </button>
-                  </div>
+                  <button
+                    type="button"
+                    className="bt-btn bt-btn-secondary bt-btn-sm mt-3"
+                    onClick={() => openChangeFlow()}
+                  >
+                    Revise description
+                  </button>
                 </div>
               ) : null}
             </div>
@@ -466,30 +548,15 @@ export function SuggestCalculationWorkflow({
               {selected ? (
                 <>
                   <div>
-                    Business outcome: {String(selected.businessOutcome ?? '—')} · Status:{' '}
-                    {String(selected.proposalStatus ?? '—')} · Confidence:{' '}
-                    {String(selected.confidence ?? '—')}
+                    Business outcome: {String(selected.businessOutcome ?? '—')} · Kind:{' '}
+                    {String(selected.proposalKind ?? '—')}
                   </div>
-                  {selected.evaluationDateAuthority ? (
-                    <div>Evaluation date: {String(selected.evaluationDateAuthority)}</div>
-                  ) : null}
-                  <div className="font-medium text-slate-800">Candidate inputs</div>
-                  <ul className="space-y-1">
-                    {deps.map((d) => (
-                      <li key={d.parameterId} className="rounded bg-white/80 px-2 py-1">
-                        <span className="font-medium">{d.displayName || d.parameterId}</span>
-                        <div className="font-mono text-[10px] text-slate-400">{d.parameterId}</div>
-                      </li>
-                    ))}
-                    {deps.length === 0 ? <li>None</li> : null}
-                  </ul>
                   {selected.proposedExpression ? (
                     <pre className="overflow-x-auto rounded bg-slate-900/90 p-2 text-[10px] text-slate-100">
                       {JSON.stringify(selected.proposedExpression, null, 2)}
                     </pre>
                   ) : (
                     <div className="space-y-1">
-                      <div className="text-amber-800">No complete expression yet.</div>
                       <textarea
                         className="bt-input min-h-[80px] font-mono text-[11px]"
                         placeholder='{"op":"REF","id":"exact.parameter.id"}'
@@ -515,35 +582,8 @@ export function SuggestCalculationWorkflow({
                     ? primitives
                     : deps.map((d) => String(d.parameterId ?? '')).filter(Boolean)
                 }
-                supportStatus={needsSuggest ? 'CALCULATION_NOT_IMPLEMENTED' : supportStatus}
+                supportStatus={needsSetup ? 'CALCULATION_NOT_IMPLEMENTED' : supportStatus}
               />
-            </div>
-          </details>
-        </div>
-      ) : null}
-
-      {showHowCalculated ? (
-        <div
-          className="rounded-md border border-emerald-200 bg-emerald-50/70 p-3"
-          data-testid="lender-calculation-ready"
-        >
-          <div className="text-sm font-semibold text-emerald-950">✓ Calculation ready</div>
-          <p className="mt-1 text-xs text-emerald-900">
-            This rule is ready to test. Production use still requires separate certification.
-          </p>
-          <details className="mt-3" data-testid="lender-advanced-details">
-            <summary className="cursor-pointer text-xs font-medium text-slate-600">Advanced &gt;</summary>
-            <div className="mt-2 space-y-1 text-[11px] text-slate-600">
-              <div>
-                Definition status: <strong>{String(definition?.status ?? '—')}</strong>
-              </div>
-              <div>
-                Version: v{String(definition?.versionNo ?? '—')} · Scope:{' '}
-                {String(definition?.scope ?? '—')}
-              </div>
-              <pre className="overflow-x-auto rounded bg-slate-50 p-2 text-[10px]">
-                {JSON.stringify(definition?.expression ?? {}, null, 2)}
-              </pre>
             </div>
           </details>
         </div>
