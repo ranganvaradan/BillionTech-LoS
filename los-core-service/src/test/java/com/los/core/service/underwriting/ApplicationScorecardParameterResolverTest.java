@@ -14,10 +14,17 @@ class ApplicationScorecardParameterResolverTest {
 
     @Test
     void resolvesAgeFromDateOfBirth() {
-        String dob = LocalDate.now().minusYears(30).toString();
-        BigDecimal age = ApplicationScorecardParameterResolver.ageYears(Map.of("dateOfBirth", dob));
+        LocalDate asOf = LocalDate.of(2026, 8, 1);
+        String dob = asOf.minusYears(30).toString();
+        BigDecimal age = ApplicationScorecardParameterResolver.ageYears(Map.of("dateOfBirth", dob), asOf);
         assertNotNull(age);
         assertEquals(30, age.intValue());
+    }
+
+    @Test
+    void ageWithoutAsOfDoesNotUseWallClock() {
+        String dob = LocalDate.of(1990, 1, 1).toString();
+        assertNull(ApplicationScorecardParameterResolver.ageYears(Map.of("dateOfBirth", dob)));
     }
 
     @Test

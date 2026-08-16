@@ -1,0 +1,36 @@
+{
+  "wave": "PLATFORM-CONVERGENCE-WAVE-6-TEST-LIVE-EXECUTION-CONVERGENCE",
+  "recordedAtUtc": "2026-08-16T17:30:00Z",
+  "branch": "reconcile/laptop-layout-2026-08",
+  "SOURCE_START_SHA": "3293e22aba543047a5ce8e793a1b2ef8d56cc22f",
+  "SOURCE_FINAL_SHA": "PENDING_CONTENT_COMMIT",
+  "GITHUB_REMOTE": "https://github.com/ranganvaradan/BillionTech-LoS.git",
+  "DB_MIGRATION_WAVE6": "NONE",
+  "POLICY_TEST_RUNTIME": "CanonicalPolicyRuntime",
+  "TARGET_LIVE_RUNTIME": "TargetLiveCanonicalPolicyEvaluation",
+  "GRAPH_TEST_RUNTIME": "PolicyGraphPolicyTestService→CanonicalPolicyRuntime",
+  "SHADOW_RUNTIME": "CanonicalPolicyRuntime+PolicyRuntimeShadowParity",
+  "ALL_CANONICAL_POLICY_PATHS_USE_CPES": true,
+  "GRAPH_TEST_SPINE_BACKED": true,
+  "SIMULATION_CHANGES_REAL_CAPABILITY": false,
+  "LIVE_DECISION_AUTHORITY_CHANGED": false,
+  "FROZEN_RETIREMENT_READY": false,
+  "CAPABILITY_COUNTS_AFTER": {
+    "policyTestCapableCount": 40,
+    "w6CapableCount": 30,
+    "underwritingCapableCount": 40
+  },
+  "GACAT_MUTATED": false,
+  "VIKASAM_MUTATED": false,
+  "PRODUCTION_DEFINITIONS_CREATED": "NONE",
+  "SCORECARD_LOGIC_CHANGED": false,
+  "WAVE_6_EXIT_CRITERIA": "PASS",
+  "WAVE_7_STARTED": false,
+  "KNOWN_UNTRACKED_ARTIFACTS_PRESERVED": true,
+  "notes": [
+    "SharedCanonicalEvaluationSupport is the shared context/asOf contract.",
+    "Graph Policy Test rewired to CanonicalPolicyRuntime + CPES; retirement Wave 10 if redundant.",
+    "Dangerous enquiry aliases no longer stamped via runtimeFactAliases.",
+    "Age resolution requires explicit asOf (no LocalDate.now())."
+  ]
+}

@@ -99,8 +99,8 @@ public final class CanonicalCompatibilityRegistry {
         addAll(out, "bureau.settled_account_count", AliasClass.LEGACY_REMAP_PENDING_WAVE6, null);
         addAll(out, "bureau.secured_live_exposure", AliasClass.LEGACY_REMAP_PENDING_WAVE6, null);
         addAll(out, "bureau.unsecured_live_exposure", AliasClass.LEGACY_REMAP_PENDING_WAVE6, null);
-        addAll(out, "bureau.recent_inquiries_90d", AliasClass.LEGACY_REMAP_PENDING_WAVE6,
-                "count_90d remap is TRUE_COMPAT; ENQUIRIES_3M is dangerous");
+        addAll(out, "bureau.recent_inquiries_90d", AliasClass.TRUE_COMPAT_ALIAS,
+                "count_90d is TRUE_COMPAT; ENQUIRIES_3M remains DANGEROUS");
         for (String d : dangerousAliases("bureau.recent_inquiries_90d")) {
             out.add(new AliasEntry("bureau.recent_inquiries_90d", d, AliasClass.DANGEROUS_ALIAS_REJECTED,
                     "90d != 3m enquiry window"));

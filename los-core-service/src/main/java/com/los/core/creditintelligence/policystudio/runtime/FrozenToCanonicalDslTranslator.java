@@ -67,22 +67,72 @@ public final class FrozenToCanonicalDslTranslator {
                     null, "Missing parameter or condition", false);
         }
         if (condition.toUpperCase(Locale.ROOT).startsWith("PARAM_REF:")) {
-            return new TranslationResult(TranslationClass.NOT_TRANSLATABLE, parameter, null, condition, decision,
-                    null, "PARAM_REF conditions require explicit compatibility design", false);
-        }
-        if (hardRule.get("dependsOn") instanceof Map<?, ?> dep && !dep.isEmpty()) {
+            String refKey = condition.substring(condition.indexOf(':') + 1).trim();
+            ScorecardCanonicalFactorMapper.Binding left = ScorecardCanonicalFactorMapper.resolve(parameter);
+            ScorecardCanonicalFactorMapper.Binding right = ScorecardCanonicalFactorMapper.resolve(refKey);
+            String leftId = exactCanonical(left, parameter);
+            String rightId = exactCanonical(right, refKey);
+            if (leftId == null || rightId == null) {
+                return new TranslationResult(TranslationClass.NOT_TRANSLATABLE, parameter, leftId, condition, decision,
+                        null, "PARAM_REF target has no EXACT/SAFE_ALIAS GACAT identity", false);
+            }
+            boolean rejectish = decision != null && (decision.equalsIgnoreCase("REJECT")
+                    || decision.equalsIgnoreCase("REJECTED")
+                    || decision.equalsIgnoreCase("MANUAL")
+                    || decision.equalsIgnoreCase("MANUAL_REVIEW"));
+            if (!rejectish) {
+                return new TranslationResult(TranslationClass.NOT_POLICY_SEMANTICS, parameter, leftId, condition,
+                        decision, null, "PARAM_REF decision is not REJECT/MANUAL", false);
+            }
+            // MATCH when left == right → REJECT ⇒ PASS when left != right
+            Map<String, Object> dsl = PolicyDsl.ne(PolicyDsl.metric(leftId), PolicyDsl.metric(rightId));
             return new TranslationResult(TranslationClass.TRANSLATABLE_WITH_EXPLICIT_COMPATIBILITY,
-                    parameter, null, condition, decision, null,
-                    "dependsOn present — structural dependency not auto-translated", false);
+                    parameter, leftId, condition, decision, dsl,
+                    "PARAM_REF→EQ match inverted to NE for PASS-when-OK; explicit compatibility", true);
         }
 
+        TranslationResult core = translateCore(parameter, condition, decision);
+        if (hardRule.get("dependsOn") instanceof Map<?, ?> dep && !dep.isEmpty()) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> depMap = (Map<String, Object>) dep;
+            TranslationResult depTr = translateHardRule(depMap);
+            if (core.dslExpression() != null && depTr.dslExpression() != null
+                    && (core.classification() == TranslationClass.TRANSLATABLE_EXACT
+                    || core.classification() == TranslationClass.TRANSLATABLE_WITH_EXPLICIT_COMPATIBILITY)
+                    && (depTr.classification() == TranslationClass.TRANSLATABLE_EXACT
+                    || depTr.classification() == TranslationClass.TRANSLATABLE_WITH_EXPLICIT_COMPATIBILITY)) {
+                Map<String, Object> and = PolicyDsl.and(depTr.dslExpression(), core.dslExpression());
+                return new TranslationResult(TranslationClass.TRANSLATABLE_WITH_EXPLICIT_COMPATIBILITY,
+                        parameter, core.canonicalParameterId(), condition, decision, and,
+                        "dependsOn AND primary (explicit compatibility compound)", true);
+            }
+            return new TranslationResult(TranslationClass.TRANSLATABLE_WITH_EXPLICIT_COMPATIBILITY,
+                    parameter, core.canonicalParameterId(), condition, decision, core.dslExpression(),
+                    "dependsOn present — dependency not fully translatable; primary only if available",
+                    core.polarityInverted());
+        }
+        return core;
+    }
+
+    private static String exactCanonical(ScorecardCanonicalFactorMapper.Binding bind, String fallback) {
+        if (bind != null && bind.canonicalParameterId() != null
+                && (ScorecardCanonicalFactorMapper.EXACT.equals(bind.mappingStatus())
+                || ScorecardCanonicalFactorMapper.SAFE_ALIAS.equals(bind.mappingStatus()))) {
+            return bind.canonicalParameterId();
+        }
+        if (fallback != null && fallback.contains(".")) {
+            return fallback.trim();
+        }
+        return null;
+    }
+
+    private static TranslationResult translateCore(String parameter, String condition, String decision) {
         ScorecardCanonicalFactorMapper.Binding bind = ScorecardCanonicalFactorMapper.resolve(parameter);
         String canonicalId = bind.canonicalParameterId();
         boolean exactMap = canonicalId != null
                 && (ScorecardCanonicalFactorMapper.EXACT.equals(bind.mappingStatus())
                 || ScorecardCanonicalFactorMapper.SAFE_ALIAS.equals(bind.mappingStatus()));
         if (!exactMap) {
-            // Allow dotted GACAT ids already
             if (parameter.contains(".")) {
                 canonicalId = parameter.trim();
                 exactMap = true;
@@ -107,7 +157,6 @@ public final class FrozenToCanonicalDslTranslator {
                     decision, null, "Decision is not REJECT/MANUAL hard gate", false);
         }
 
-        // Invert for PASS-when-OK DSL
         Map<String, Object> dsl = invertToPassExpression(canonicalId, parsed);
         TranslationClass cls = exactMap && parsed.simple
                 ? TranslationClass.TRANSLATABLE_EXACT
@@ -142,13 +191,11 @@ public final class FrozenToCanonicalDslTranslator {
     private static Map<String, Object> invertToPassExpression(String canonicalId, ParsedCond parsed) {
         Object left = PolicyDsl.metric(canonicalId);
         Object right = parsed.rightConst;
-        // Hard MATCH means bad. PASS expression = NOT(hardCondition) ≈ inverted op
         return switch (parsed.op) {
-            case "GTE" -> PolicyDsl.lt(left, right);   // NOT(v>=x) => v<x ... wait
-            // If hard is GTE:x REJECT when v>=x → PASS when v<x → LT
+            case "GTE" -> PolicyDsl.lt(left, right);
             case "GT" -> PolicyDsl.lte(left, right);
             case "LTE" -> PolicyDsl.gt(left, right);
-            case "LT" -> PolicyDsl.gte(left, right);  // REJECT when v<x → PASS when v>=x
+            case "LT" -> PolicyDsl.gte(left, right);
             case "EQ" -> PolicyDsl.ne(left, right);
             case "NE" -> PolicyDsl.eq(left, right);
             case "BETWEEN" -> PolicyDsl.not(PolicyDsl.between(left, parsed.betweenA, parsed.betweenB));

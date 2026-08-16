@@ -24,8 +24,10 @@ public final class ApplicationScorecardParameterResolver {
             return null;
         }
         Map<String, Object> personal = app.getPersonalInfo() != null ? app.getPersonalInfo() : Map.of();
+        LocalDate asOf = com.los.core.creditintelligence.policystudio.lifecycle.ApplicationPolicyQueryFactory
+                .resolveEvaluationBusinessDate(app, null);
         BigDecimal standard = switch (param.trim().toUpperCase()) {
-            case "AGE", "APPLICANT_AGE", "AGE_YEARS" -> ageYears(personal);
+            case "AGE", "APPLICANT_AGE", "AGE_YEARS" -> ageYears(personal, asOf);
             // OCCUPATION / LOAN_PURPOSE are string codes — resolved via resolveString()
             default -> null;
         };
@@ -54,13 +56,24 @@ public final class ApplicationScorecardParameterResolver {
     }
 
     public static BigDecimal ageYears(Map<String, Object> personal) {
+        return ageYears(personal, null);
+    }
+
+    /**
+     * Age as of explicit business date. When asOf is null, returns null rather than using wall-clock
+     * (Wave-6: no silent LocalDate.now() on canonical decision-adjacent paths).
+     */
+    public static BigDecimal ageYears(Map<String, Object> personal, LocalDate asOf) {
         String dobStr = stringValue(personal.get("dateOfBirth"));
         if (dobStr.isBlank()) {
             return null;
         }
+        if (asOf == null) {
+            return null;
+        }
         try {
             LocalDate dob = LocalDate.parse(dobStr);
-            int age = Period.between(dob, LocalDate.now()).getYears();
+            int age = Period.between(dob, asOf).getYears();
             return BigDecimal.valueOf(age);
         } catch (DateTimeParseException e) {
             return null;

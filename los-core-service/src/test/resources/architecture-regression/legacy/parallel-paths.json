@@ -1,10 +1,11 @@
 {
   "purpose": "Prove current parallel authorities exist so later retirement cannot silently change outcomes",
   "wave5Note": "CanonicalPolicyRuntime is TARGET semantics for Policy Test + shadow; live UW authority unchanged",
+  "wave6Note": "Policy Test, Graph Test, TargetLiveCanonical, shadow canonical share CanonicalPolicyRuntime+CPES+explicit asOf; live UW still Frozen/legacy",
   "paths": [
     {
       "component": "CanonicalPolicyRuntime",
-      "role": "TARGET_POLICY_SEMANTICS_WAVE5",
+      "role": "TARGET_POLICY_SEMANTICS",
       "classification": "POLICY_SEMANTICS_AUTHORITY",
       "usesCpes": true,
       "usesExactGacatIds": true,
@@ -12,7 +13,27 @@
       "shadowCovered": true,
       "businessDecisionsDepend": false,
       "retirementWave": "N/A_TARGET",
-      "expectedToChangeInWaves": ["WAVE_5", "WAVE_10"]
+      "expectedToChangeInWaves": ["WAVE_5", "WAVE_6", "WAVE_10"]
+    },
+    {
+      "component": "TargetLiveCanonicalPolicyEvaluation",
+      "role": "TARGET_LIVE_CANONICAL_ENTRY_NOT_CUTOVER",
+      "classification": "POLICY_SEMANTICS_AUTHORITY",
+      "usesCpes": true,
+      "usesExactGacatIds": true,
+      "wallClock": false,
+      "shadowCovered": true,
+      "businessDecisionsDepend": false,
+      "retirementWave": "N/A_TARGET",
+      "expectedToChangeInWaves": ["WAVE_6", "WAVE_7"]
+    },
+    {
+      "component": "SharedCanonicalEvaluationSupport",
+      "role": "SHARED_CONTEXT_CONTRACT",
+      "classification": "COMPATIBILITY",
+      "usesCpes": false,
+      "wallClock": false,
+      "expectedToChangeInWaves": ["WAVE_6"]
     },
     {
       "component": "FrozenUnderwritingRuleEngine",
@@ -25,7 +46,7 @@
       "businessDecisionsDepend": true,
       "retirementWave": "WAVE_10_IF_GATE",
       "frozenRetirementReady": false,
-      "expectedToChangeInWaves": ["WAVE_5", "WAVE_10"]
+      "expectedToChangeInWaves": ["WAVE_5", "WAVE_6", "WAVE_10"]
     },
     {
       "component": "UnderwritingRuleEngine",
@@ -55,10 +76,10 @@
     },
     {
       "component": "ParameterExecutabilitySupport.runtimeFactAliases",
-      "role": "POLICY_TEST_ALIAS_FANOUT",
-      "classification": "KNOWN_GAP",
+      "role": "TRUE_COMPAT_ONLY_STAMP",
+      "classification": "ADDRESSED_WAVE_6",
       "expectedToChangeInWaves": ["WAVE_1", "WAVE_6"],
-      "dangerousExample": "bureau.recent_inquiries_90d ↔ BUREAU_ENQUIRIES_3M"
+      "dangerousExample": "bureau.recent_inquiries_90d ↔ BUREAU_ENQUIRIES_3M rejected"
     },
     {
       "component": "compat.* snapshot remaps",
@@ -68,16 +89,22 @@
     },
     {
       "component": "PolicyGraphPolicyTestService",
-      "role": "DSL_WITHOUT_SPINE",
-      "classification": "KNOWN_GAP",
-      "usesCpes": false,
-      "expectedToChangeInWaves": ["WAVE_6"]
+      "role": "GRAPH_TEST_VIA_CANONICAL_RUNTIME",
+      "classification": "TEST_ONLY",
+      "usesCpes": true,
+      "usesExactGacatIds": true,
+      "wallClock": false,
+      "shadowCovered": true,
+      "businessDecisionsDepend": false,
+      "retirementWave": "WAVE_10_IF_REDUNDANT",
+      "expectedToChangeInWaves": ["WAVE_6", "WAVE_10"]
     },
     {
       "component": "ShadowPolicyEngine",
-      "role": "FROZEN_MAP_DSL",
+      "role": "LEGACY_FROZEN_MAP_DSL",
       "classification": "KNOWN_GAP",
       "shadowCovered": true,
+      "note": "Canonical shadow uses CanonicalPolicyRuntime; this engine remains frozen-map path",
       "expectedToChangeInWaves": ["WAVE_5", "WAVE_10"]
     },
     {
@@ -85,7 +112,7 @@
       "role": "POLICY_TEST_USES_CANONICAL_RUNTIME",
       "classification": "TEST_ONLY",
       "usesCpes": true,
-      "expectedToChangeInWaves": ["WAVE_5"]
+      "expectedToChangeInWaves": ["WAVE_5", "WAVE_6"]
     },
     {
       "component": "BuiltInBankingMetricProducer.stagingFixture",
@@ -108,13 +135,28 @@
       "component": "PolicyDslInterpreterV1",
       "role": "TARGET_DSL_ENGINE_VIA_CANONICAL_RUNTIME",
       "classification": "MUST_PRESERVE_ENGINE",
-      "expectedToChangeInWaves": ["WAVE_5", "WAVE_10"]
+      "expectedToChangeInWaves": ["WAVE_5", "WAVE_6", "WAVE_10"]
     },
     {
       "component": "catalogue.implemented / production_ready",
       "role": "METADATA_NOT_RUNTIME_TRUTH",
       "classification": "ADDRESSED_WAVE_4_LEGACY_METADATA",
       "expectedToChangeInWaves": ["WAVE_1", "WAVE_8"]
+    },
+    {
+      "component": "ApplicationScorecardParameterResolver.ageYears",
+      "role": "AGE_REQUIRES_EXPLICIT_ASOF",
+      "classification": "ADDRESSED_WAVE_6",
+      "wallClock": false,
+      "expectedToChangeInWaves": ["WAVE_6"]
+    },
+    {
+      "component": "evaluation.EvaluationContextFactory",
+      "role": "DURABLE_CI_FREEZE_MAY_FALLBACK_NOW",
+      "classification": "KNOWN_GAP",
+      "wallClock": true,
+      "note": "Not spine canonical policy path",
+      "expectedToChangeInWaves": ["WAVE_10"]
     }
   ]
 }

@@ -572,7 +572,7 @@ public class PolicyStudioTestExperienceService {
             String product) {
 
         FixedEvaluationClock clock = FixedEvaluationClock.atLocalNoon(
-                LocalDate.of(2024, 6, 15), ZoneId.of("Asia/Kolkata"));
+                LocalDate.of(2026, 8, 1), ZoneId.of("Asia/Kolkata"));
 
         List<Map<String, Object>> ruleResults = new ArrayList<>();
         List<Map<String, Object>> compoundChildren = new ArrayList<>();
@@ -874,7 +874,9 @@ public class PolicyStudioTestExperienceService {
         if (expr == null || expr.isEmpty()) {
             return rule.getOnMissing() == null ? "DATA_INSUFFICIENT" : rule.getOnMissing();
         }
-        LocalDate asOf = clock == null ? LocalDate.of(2024, 6, 15) : clock.today();
+        LocalDate asOf = clock == null
+                ? com.los.core.creditintelligence.policystudio.runtime.SharedCanonicalEvaluationSupport.CANONICAL_POLICY_TEST_AS_OF
+                : clock.today();
         EvaluationContext.Builder b = EvaluationContext.builder()
                 .mode(EvaluationMode.POLICY_TEST)
                 .evaluationAsOf(asOf);
@@ -898,7 +900,9 @@ public class PolicyStudioTestExperienceService {
                 new CanonicalPolicyRuntime.RuleSpec(
                         rule.getSystemRuleId() == null ? rule.getId() == null ? "rule" : rule.getId().toString()
                                 : rule.getSystemRuleId(),
-                        expr),
+                        null,
+                        expr,
+                        rule.getOnMissing()),
                 b.build(),
                 asOf);
         String boolOutcome = switch (rr.result()) {
@@ -1543,7 +1547,8 @@ public class PolicyStudioTestExperienceService {
 
         EvaluationContext.Builder ctxBuilder = EvaluationContext.builder()
                 .mode(EvaluationMode.POLICY_TEST)
-                .evaluationAsOf(LocalDate.of(2026, 8, 1))
+                .evaluationAsOf(com.los.core.creditintelligence.policystudio.runtime
+                        .SharedCanonicalEvaluationSupport.CANONICAL_POLICY_TEST_AS_OF)
                 .tenantId(tenantId)
                 .documentId(documentId)
                 .facts(seedFacts == null ? Map.of() : seedFacts)
@@ -1641,12 +1646,18 @@ public class PolicyStudioTestExperienceService {
                 if (userOverlay || er.simulatedValue()) {
                     prov.put("status", "MANUAL_TEST_VALUE");
                     prov.put("simulationOnly", true);
+                    prov.put("valueSimulated", true);
+                    prov.put("realCapability", er.capability());
+                    prov.put("notExecutableInRealContext", !er.capability());
                     prov.put("simulatedValueDoesNotImplyExecutable", !er.capability());
+                    prov.put("simulationChangesRealCapability", false);
                     prov.put("sourceLabel", er.capability()
                             ? "Test value entered manually (via execution spine)"
                             : "Simulated test value — producer not executable (capability=false)");
                 } else {
                     prov.put("status", er.producerType() == null ? "SPINE" : er.producerType().name());
+                    prov.put("valueSimulated", false);
+                    prov.put("realCapability", er.capability());
                     prov.put("sourceLabel", er.exactProducerPath());
                 }
                 prov.put("executionStatus", er.status().name());

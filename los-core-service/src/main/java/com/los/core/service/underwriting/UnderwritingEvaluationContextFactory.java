@@ -22,7 +22,9 @@ public final class UnderwritingEvaluationContextFactory {
     private UnderwritingEvaluationContextFactory() {}
 
     public static EvaluationContext forUnderwriting(LoanApplication app, EffectiveUnderwritingContext uw) {
-        return build(EvaluationMode.UNDERWRITING, app, uw, null, null);
+        LocalDate asOf = com.los.core.creditintelligence.policystudio.lifecycle.ApplicationPolicyQueryFactory
+                .resolveEvaluationBusinessDate(app, null);
+        return build(EvaluationMode.UNDERWRITING, app, uw, asOf, null);
     }
 
     public static EvaluationContext forUnderwriting(
@@ -31,7 +33,9 @@ public final class UnderwritingEvaluationContextFactory {
     }
 
     public static EvaluationContext forPolicyTestParity(LoanApplication app, EffectiveUnderwritingContext uw) {
-        return build(EvaluationMode.POLICY_TEST, app, uw, LocalDate.of(2026, 8, 1), null);
+        return build(EvaluationMode.POLICY_TEST, app, uw,
+                com.los.core.creditintelligence.policystudio.runtime.SharedCanonicalEvaluationSupport
+                        .CANONICAL_POLICY_TEST_AS_OF, null);
     }
 
     /**

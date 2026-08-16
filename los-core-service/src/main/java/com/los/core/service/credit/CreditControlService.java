@@ -1294,7 +1294,10 @@ public class CreditControlService {
     private void applyApplicationScorecardParameters(
             LoanApplication app, Map<String, BigDecimal> sc, Map<String, String> provenance) {
         Map<String, Object> personal = app.getPersonalInfo() != null ? app.getPersonalInfo() : Map.of();
-        putIfNotNull(sc, provenance, "AGE", ApplicationScorecardParameterResolver.ageYears(personal));
+        putIfNotNull(sc, provenance, "AGE", ApplicationScorecardParameterResolver.ageYears(
+                personal,
+                com.los.core.creditintelligence.policystudio.lifecycle.ApplicationPolicyQueryFactory
+                        .resolveEvaluationBusinessDate(app, null)));
         if (app.getRequestedAmount() != null) {
             sc.put("REQUESTED_AMOUNT", app.getRequestedAmount());
             provenance.put("REQUESTED_AMOUNT",

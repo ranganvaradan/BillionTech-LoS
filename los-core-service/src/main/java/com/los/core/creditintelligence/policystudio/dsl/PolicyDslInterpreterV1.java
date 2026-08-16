@@ -116,7 +116,8 @@ public class PolicyDslInterpreterV1 {
         }
         EvalResult r = eval(expression, ctx);
         if (r.kind == Kind.DI) {
-            return DATA_INSUFFICIENT;
+            // Wave-6: honor explicit rule onMissing (PASS/FAIL/REFER/DI); default remains DI
+            return ctx.onMissing() == null ? DATA_INSUFFICIENT : ctx.onMissing();
         }
         if (r.kind == Kind.BOOL) {
             return Boolean.TRUE.equals(r.value) ? PASS : FAIL;

@@ -119,17 +119,20 @@ public final class CanonicalPolicyRuntime {
                     "CPES ERROR for operand(s)", provenance, List.of());
         }
 
-        // If operands exist and all unavailable → DI without treating as FAIL/false
+        String onMissing = rule.onMissing() == null
+                ? PolicyDslInterpreterV1.DATA_INSUFFICIENT : rule.onMissing();
+
+        // If operands exist and all unavailable → onMissing (default DI); never false/zero/PASS-by-collapse
         if (!operandIds.isEmpty() && anyUnavailable && !anyValueAvailable(execById)) {
+            CanonicalRuleResult.RuleOutcome mapped = CanonicalRuleResult.fromDslOutcome(onMissing);
             return new CanonicalRuleResult(
                     rule.ruleId(), rule.ruleVersion(), operandIds, primaryOperator(expr), null,
-                    primary, CanonicalRuleResult.RuleOutcome.DATA_INSUFFICIENT, asOf,
-                    "Canonical parameter value not available via CPES", provenance, List.of());
+                    primary, mapped, asOf,
+                    "Canonical parameter value not available via CPES; onMissing=" + onMissing,
+                    provenance, List.of());
         }
 
         FixedEvaluationClock clock = FixedEvaluationClock.atLocalNoon(asOf, ZoneId.of("Asia/Kolkata"));
-        String onMissing = rule.onMissing() == null
-                ? PolicyDslInterpreterV1.DATA_INSUFFICIENT : rule.onMissing();
         var dslCtx = new PolicyDslInterpreterV1.EvaluationContext(
                 metrics,
                 Map.copyOf(ctx.facts()),

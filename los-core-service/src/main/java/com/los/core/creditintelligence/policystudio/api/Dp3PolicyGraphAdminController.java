@@ -96,7 +96,11 @@ public class Dp3PolicyGraphAdminController {
         @SuppressWarnings("unchecked")
         Map<String, Object> facts = body != null && body.get("facts") instanceof Map<?, ?> m
                 ? (Map<String, Object>) m : Map.of();
-        return policyTestService.run(id, metrics, facts);
+        java.time.LocalDate evaluationAsOf = null;
+        if (body != null && body.get("evaluationAsOf") != null) {
+            evaluationAsOf = java.time.LocalDate.parse(String.valueOf(body.get("evaluationAsOf")).trim());
+        }
+        return policyTestService.run(id, metrics, facts, evaluationAsOf, null);
     }
 
     @PostMapping("/policies/{id}/link-scorecard/{scorecardId}")

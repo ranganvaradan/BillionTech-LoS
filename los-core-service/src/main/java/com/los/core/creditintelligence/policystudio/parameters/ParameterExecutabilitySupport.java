@@ -31,15 +31,18 @@ public final class ParameterExecutabilitySupport {
 
     private ParameterExecutabilitySupport() {}
 
-    /** Known PolicyDsl id ↔ snapshot/runtime fact-path aliases (same semantics). */
+    /** Known PolicyDsl id ↔ snapshot/runtime fact-path aliases with TRUE_COMPAT semantics only. */
     public static List<String> runtimeFactAliases(String canonicalParameterId) {
-        List<String> safe = new ArrayList<>(
-                com.los.core.creditintelligence.policystudio.parameters.execution.CanonicalCompatibilityRegistry
-                        .trueCompatAliases(canonicalParameterId));
-        // Surface dangerous aliases for inventory only — consumers must not treat as exact
-        safe.addAll(com.los.core.creditintelligence.policystudio.parameters.execution.CanonicalCompatibilityRegistry
-                .dangerousAliases(canonicalParameterId));
-        return List.copyOf(safe);
+        return List.copyOf(com.los.core.creditintelligence.policystudio.parameters.execution
+                .CanonicalCompatibilityRegistry.trueCompatAliases(canonicalParameterId));
+    }
+
+    /** Inventory-only: true-compat + dangerous (never stamp dangerous onto exact operands). */
+    public static List<String> inventoryFactAliases(String canonicalParameterId) {
+        List<String> all = new ArrayList<>(runtimeFactAliases(canonicalParameterId));
+        all.addAll(com.los.core.creditintelligence.policystudio.parameters.execution
+                .CanonicalCompatibilityRegistry.dangerousAliases(canonicalParameterId));
+        return List.copyOf(all);
     }
 
     public static Map<String, Object> evaluate(String parameterId) {
