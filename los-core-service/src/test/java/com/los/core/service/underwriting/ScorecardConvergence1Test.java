@@ -128,7 +128,7 @@ class ScorecardConvergence1Test {
         assertEquals(ScorecardCanonicalFactorMapper.NO_MATCH, by.get("LIVE_UNSECURED_LOAN_COUNT"));
         assertEquals(ScorecardCanonicalFactorMapper.EXACT, by.get("NTC_FLAG"));
         assertEquals(ScorecardCanonicalFactorMapper.NO_MATCH, by.get("LEVERAGE_RATIO"));
-        assertEquals(ScorecardCanonicalFactorMapper.NO_MATCH, by.get("LTV"));
+        assertEquals(ScorecardCanonicalFactorMapper.EXACT, by.get("LTV"));
         assertEquals(ScorecardCanonicalFactorMapper.NO_MATCH, by.get("PROPERTY_VALUE"));
         assertEquals(ScorecardCanonicalFactorMapper.NO_MATCH, by.get("INDUSTRY_RISK"));
         assertEquals(ScorecardCanonicalFactorMapper.NO_MATCH, by.get("SCF_AMOUNT_OVER_STANDARD"));

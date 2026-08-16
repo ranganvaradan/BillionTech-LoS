@@ -4,13 +4,13 @@ import com.los.core.creditintelligence.policystudio.domain.CiPolicyDocument;
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterDefinition;
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterRegistry;
 import com.los.core.creditintelligence.policystudio.parameters.PolicyStudioConvergencePresenter;
+import com.los.core.creditintelligence.policystudio.parameters.execution.CanonicalParameterCapabilityProjection;
 import com.los.core.creditintelligence.policystudio.parameters.derived.CiGacatDerivedCalculationDefinition;
 import com.los.core.creditintelligence.policystudio.parameters.derived.DerivedCalculationDefinitionService;
 import com.los.core.creditintelligence.policystudio.repository.CiPolicyDocumentRepository;
 import com.los.core.creditintelligence.policystudio.repository.CiPolicyRuleGraphNodeRepository;
 import com.los.core.creditintelligence.policystudio.repository.CiPolicyRuleGraphOperandRepository;
 import com.los.core.creditintelligence.policystudio.repository.CiPolicyRuleGraphRepository;
-import com.los.core.service.readiness.GacatParameterReadinessProjection;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
@@ -126,9 +126,11 @@ public class PolicyRuleGraphService {
                 m.put("ruleReferences", new ArrayList<String>());
                 m.put("sourceFamily", null);
                 m.put("productionReady", false);
+                m.put("productionCertified", false);
                 m.put("overallReadiness", null);
                 m.put("policyTestReady", false);
                 m.put("runtimeReady", false);
+                m.put("designable", true);
                 return m;
             });
             @SuppressWarnings("unchecked")
@@ -140,13 +142,22 @@ public class PolicyRuleGraphService {
             if (op.getCanonicalParameterId() != null) {
                 Optional<CanonicalParameterDefinition> def = registry.findById(op.getCanonicalParameterId());
                 if (def.isPresent()) {
-                    Map<String, Object> proj = GacatParameterReadinessProjection.project(def.get());
+                    Map<String, Object> proj = CanonicalParameterCapabilityProjection.project(def.get());
                     row.put("sourceFamily", def.get().evaluatedFrom());
                     row.put("businessName", def.get().businessName());
-                    row.put("productionReady", proj.get("productionReady"));
-                    row.put("overallReadiness", proj.get("overallReadiness"));
                     row.put("policyTestReady", proj.get("policyTestReady"));
                     row.put("runtimeReady", proj.get("runtimeReady"));
+                    row.put("productionReady", false);
+                    row.put("productionCertified", false);
+                    row.put("productionCertification", proj.get("productionCertification"));
+                    row.put("designable", proj.get("designable"));
+                    row.put("policyTest", proj.get("policyTest"));
+                    row.put("workflow", proj.get("workflow"));
+                    row.put("underwriting", proj.get("underwriting"));
+                    row.put("executionState", proj.get("executionState"));
+                    row.put("overallReadiness", Boolean.TRUE.equals(proj.get("policyTestReady"))
+                            ? "POLICY_TEST_READY" : "NOT_EXECUTABLE");
+                    row.put("legacyCatalogueClaims", proj.get("legacyCatalogueClaims"));
                     applyDerivedCalculationOverlay(row, def.get(), op.getCanonicalParameterId());
                 }
             }
@@ -258,9 +269,8 @@ public class PolicyRuleGraphService {
     }
 
     /**
-     * Overlay authored derived-calc status without collapsing production certification.
-     * DEFINED → calculation present, test not yet ready.
-     * TESTED / PRODUCTION_READY (definition) → policyTestReady true; catalogue productionReady unchanged.
+     * Overlay authored derived-calc metadata without inventing execution capability.
+     * policyTestReady remains spine-only ({@link CanonicalParameterCapabilityProjection}).
      */
     private void applyDerivedCalculationOverlay(
             Map<String, Object> row, CanonicalParameterDefinition def, String canonicalId) {
@@ -268,6 +278,7 @@ public class PolicyRuleGraphService {
         boolean implemented = def.capability() != null && def.capability().implemented();
         boolean calcRequired = derivationDefined && !implemented;
         row.put("calculationRequired", calcRequired);
+        row.put("legacyCatalogueImplemented", implemented);
 
         DerivedCalculationDefinitionService calcSvc = derivedCalculationDefinitionService.getIfAvailable();
         if (calcSvc == null) return;
@@ -281,17 +292,9 @@ public class PolicyRuleGraphService {
         row.put("calculationDefinitionStatus", d.getStatus());
         row.put("calculationDefinitionVersion", d.getVersionNo());
         row.put("calculationRequired", false);
-        if (DerivedCalculationDefinitionService.STATUS_TESTED.equals(d.getStatus())
-                || DerivedCalculationDefinitionService.STATUS_PRODUCTION_READY.equals(d.getStatus())) {
-            row.put("policyTestReady", true);
-            if (!Boolean.TRUE.equals(row.get("runtimeReady"))) {
-                // Authored tested calc enables Policy Test; runtime still depends on fulfilment path
-                row.put("overallReadiness", "POLICY_TEST_READY");
-            }
-        }
         if (DerivedCalculationDefinitionService.STATUS_PRODUCTION_READY.equals(d.getStatus())) {
             row.put("calculationProductionReady", true);
-            // Do not auto-set catalogue productionReady — promotion remains independent
+            // Do not auto-set production certification — promotion remains independent
         }
     }
 }

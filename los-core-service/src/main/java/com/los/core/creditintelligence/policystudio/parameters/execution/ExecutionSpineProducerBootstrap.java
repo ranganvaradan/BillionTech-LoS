@@ -5,6 +5,7 @@ import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -46,6 +47,13 @@ public class ExecutionSpineProducerBootstrap {
     /** Shared registration for Spring boot and focused unit tests. */
     public static void registerDefaults(
             ProducerRegistry registry, DerivedCalculationDefinitionService definitionService) {
+        registerDefaults(registry, definitionService == null
+                ? (id, t) -> Optional.empty()
+                : definitionService::latestFor);
+    }
+
+    public static void registerDefaults(
+            ProducerRegistry registry, AuthoredDerivedProducer.AuthoredDefinitionSource authored) {
         RawFactProducer raw = new RawFactProducer(RAW_FACT_IDS);
         for (String id : RAW_FACT_IDS) {
             registry.registerExact(id, raw);
@@ -60,14 +68,21 @@ public class ExecutionSpineProducerBootstrap {
         registry.registerExact(BuiltInBankingMetricProducer.EMI_BOUNCE, banking);
         registry.registerExact(BuiltInBankingMetricProducer.ADB_3M, banking);
 
-        registry.registerDynamic(new AuthoredDerivedProducer(definitionService));
+        registry.registerDynamic(new AuthoredDerivedProducer(authored));
         registry.registerDynamic(new ManualInputProducer());
     }
 
     public static CanonicalParameterExecutionService standalone(
             DerivedCalculationDefinitionService definitionService) {
+        return standalone(definitionService == null
+                ? (id, t) -> Optional.empty()
+                : definitionService::latestFor);
+    }
+
+    public static CanonicalParameterExecutionService standalone(
+            AuthoredDerivedProducer.AuthoredDefinitionSource authored) {
         ProducerRegistry registry = new ProducerRegistry();
-        registerDefaults(registry, definitionService);
+        registerDefaults(registry, authored);
         return new CanonicalParameterExecutionService(registry);
     }
 }

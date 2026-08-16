@@ -1,5 +1,6 @@
 package com.los.core.controller;
 
+import com.los.core.creditintelligence.policystudio.parameters.execution.CanonicalParameterCapabilityParityService;
 import com.los.core.creditintelligence.policystudio.service.PolicyStudioOrchestrator;
 import com.los.core.service.readiness.CustomerGoLiveReadinessValidator;
 import com.los.core.service.readiness.DataParametersAdminService;
@@ -40,10 +41,24 @@ public class LiveReadinessController {
     @Autowired(required = false)
     private PolicyStudioOrchestrator policyStudioOrchestrator;
 
+    @Autowired(required = false)
+    private CanonicalParameterCapabilityParityService parameterCapabilityParityService;
+
     @GetMapping("/data-parameters")
     @Operation(summary = "Administration → Data & Parameters overview")
     public ResponseEntity<Map<String, Object>> dataParameters() {
         return ResponseEntity.ok(dataParametersAdminService.overview());
+    }
+
+    @GetMapping("/parameter-capability-parity")
+    @Operation(summary = "Single-parameter truth: D&P vs Policy Studio vs spine execution capability")
+    public ResponseEntity<Map<String, Object>> parameterCapabilityParity() {
+        if (parameterCapabilityParityService == null) {
+            return ResponseEntity.ok(Map.of(
+                    "parityPass", false,
+                    "message", "CanonicalParameterCapabilityParityService unavailable"));
+        }
+        return ResponseEntity.ok(parameterCapabilityParityService.runParityCheck());
     }
 
     @GetMapping("/data-parameters/by-source")

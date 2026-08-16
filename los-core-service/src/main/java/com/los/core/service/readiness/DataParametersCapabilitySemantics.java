@@ -1,6 +1,7 @@
 package com.los.core.service.readiness;
 
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterDefinition;
+import com.los.core.creditintelligence.policystudio.parameters.execution.CanonicalParameterCapabilityProjection;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -69,11 +70,12 @@ public final class DataParametersCapabilitySemantics {
         String lender = resolveLenderSubscription(family, sourceType, platform, subscriptionProbe);
         ProductionPolicyAvailability avail = resolveProductionPolicyAvailability(
                 def, readiness, platform, support, lender);
-        PolicyDesignAvailability design = resolvePolicyDesignAvailability(platform, support);
+        // Platform/support remain descriptive; execution + design/cert from shared projection
+        Map<String, Object> spineView = CanonicalParameterCapabilityProjection.project(def);
         LiveUseAvailability live = resolveLiveUseAvailability(platform, support, lender, avail);
 
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("capabilityModel", "DATA-PARAMETERS-CAPABILITY-SEMANTICS-1");
+        out.put("capabilityModel", "DATA-PARAMETERS-CAPABILITY-SEMANTICS-2-SPINE");
         out.put("lenderUx", "DATA-PARAMETERS-LENDER-UX-CLEANUP-2");
         out.put("applicationDataStateExcluded", true);
         out.put("canonicalParameterId", def.id());
@@ -102,38 +104,55 @@ public final class DataParametersCapabilitySemantics {
         org.put("label", lenderLabel(lender));
         out.put("yourOrganisation", org);
 
-        Map<String, Object> designMap = new LinkedHashMap<>();
-        designMap.put("available", design.available());
-        designMap.put("label", design.label());
-        designMap.put("reason", design.reason());
+        // DESIGNABLE (GACAT) — separate from execution
+        @SuppressWarnings("unchecked")
+        Map<String, Object> designFromSpine = spineView.get("policyDesign") instanceof Map<?, ?> m
+                ? (Map<String, Object>) m : Map.of("available", true, "label", "Available");
+        Map<String, Object> designMap = new LinkedHashMap<>(designFromSpine);
         out.put("policyDesign", designMap);
+
+        // Execution capability — CanonicalParameterExecutionService only
+        out.put("policyTest", spineView.get("policyTest"));
+        out.put("workflow", spineView.get("workflow"));
+        out.put("underwriting", spineView.get("underwriting"));
+        out.put("policyTestExecutable", spineView.get("policyTestExecutable"));
+        out.put("policyTestReady", spineView.get("policyTestReady"));
+        out.put("runtimeReady", spineView.get("runtimeReady"));
+        out.put("executable", spineView.get("executable"));
+        out.put("executionState", spineView.get("executionState"));
+
+        // Production certification — never catalogue production_ready
+        out.put("productionCertification", spineView.get("productionCertification"));
+        out.put("productionReady", false);
+        out.put("productionCertified", false);
 
         Map<String, Object> liveMap = new LinkedHashMap<>();
         liveMap.put("status", live.status());
-        liveMap.put("available", live.available());
-        liveMap.put("label", live.label());
-        liveMap.put("reason", live.reason());
+        liveMap.put("available", false); // live production requires certification — not established
+        liveMap.put("label", "Not certified");
+        liveMap.put("reason", "Production certification not established; organisation subscription is separate");
+        liveMap.put("organisationSubscriptionStatus", live.status());
+        liveMap.put("organisationSubscriptionLabel", live.label());
         out.put("liveUse", liveMap);
 
-        // Compat: prior single "policy use" field now means live evaluation (not design)
         Map<String, Object> prod = new LinkedHashMap<>();
-        prod.put("available", live.available());
-        prod.put("label", live.label());
-        prod.put("reason", live.reason());
-        prod.put("means", "LIVE_EVALUATION_NOT_POLICY_DESIGN");
+        prod.put("available", false);
+        prod.put("label", "Not certified");
+        prod.put("reason", "Production certification not established");
+        prod.put("means", "PRODUCTION_CERTIFICATION_NOT_ESTABLISHED");
         out.put("availableForProductionPolicyUse", prod);
 
-        // BillionTech engineering can support?
         boolean canSupport = SUPPORT_SUPPORTED_RAW.equals(support.status())
                 || SUPPORT_SUPPORTED_DERIVED.equals(support.status())
                 || SUPPORT_NOT_APPLICABLE.equals(support.status());
         out.put("canBillionTechSupport", canSupport);
         out.put("canBillionTechSupportLabel", canSupport ? "Yes" : "No");
 
-        // Preserve legacy DP-1 overall for Advanced / compatibility — not primary lender status
         out.put("legacyOverallReadiness", readiness.get("overallReadiness"));
-        out.put("catalogueProductionReady", readiness.get("productionReady"));
+        out.put("legacyCatalogueClaims", spineView.get("legacyCatalogueClaims"));
+        out.put("catalogueProductionReady", readiness.get("legacyCatalogueProductionReadyClaim"));
         out.put("flagsMutated", false);
+        out.put("executionAuthority", "CanonicalParameterExecutionService");
         return out;
     }
 

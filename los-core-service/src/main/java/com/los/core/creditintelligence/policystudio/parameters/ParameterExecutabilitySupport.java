@@ -1,17 +1,21 @@
 package com.los.core.creditintelligence.policystudio.parameters;
 
+import com.los.core.creditintelligence.policystudio.parameters.execution.CanonicalParameterCapabilityProjection;
+import com.los.core.creditintelligence.policystudio.parameters.execution.ExecutionCapabilityAuthority;
+import com.los.core.creditintelligence.policystudio.parameters.execution.EvaluationMode;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
 /**
- * POLICY-STUDIO-GATE3 — one authoritative executability answer over GACAT
- * {@link CanonicalParameterDefinition.Capability}.
- * <p>
- * Does not create a parallel registry. Distinguishes Policy Test / Runtime / Production.
+ * POLICY-STUDIO-GATE3 facade — execution capability comes only from
+ * {@link com.los.core.creditintelligence.policystudio.parameters.execution.CanonicalParameterExecutionService}
+ * via {@link CanonicalParameterCapabilityProjection}.
+ *
+ * <p>Catalogue {@code implemented}/{@code production_ready} are never execution proof.
  */
 public final class ParameterExecutabilitySupport {
 
@@ -23,6 +27,7 @@ public final class ParameterExecutabilitySupport {
     public static final String MANUAL_AUTHORISED = "MANUAL_AUTHORISED";
     public static final String DATA_SOURCE_UNAVAILABLE = "DATA_SOURCE_UNAVAILABLE";
     public static final String NOT_APPLICABLE = "NOT_APPLICABLE";
+    public static final String NOT_EXECUTABLE = "NOT_EXECUTABLE";
 
     private ParameterExecutabilitySupport() {}
 
@@ -57,12 +62,10 @@ public final class ParameterExecutabilitySupport {
         }
         Optional<CanonicalParameterDefinition> opt = CanonicalParameterRegistry.shared().findById(parameterId.trim());
         if (opt.isEmpty()) {
-            // Authoring overlays (Gate-2 write-off helpers) — Policy-Test only unless seeded.
+            // Authoring overlays — capability only if spine has a producer for the exact ID
             if (BusinessConceptResolver.WRITEOFF_NON_CC.equals(parameterId)
                     || BusinessConceptResolver.WRITEOFF_CC.equals(parameterId)) {
-                return studioOverlay(parameterId,
-                        "BureauMetricService.computeWriteoffCounts",
-                        List.of("bureau.tradeline.write_off_amount", "bureau.tradeline.account_status"));
+                return evaluateOverlay(parameterId);
             }
             return unavailable(parameterId, "Not in GACAT / CanonicalParameterRegistry");
         }
@@ -70,6 +73,7 @@ public final class ParameterExecutabilitySupport {
     }
 
     public static Map<String, Object> evaluate(CanonicalParameterDefinition def) {
+        Map<String, Object> proj = CanonicalParameterCapabilityProjection.project(def);
         Map<String, Object> out = base(def.id());
         out.put("canonicalParameterId", def.id());
         out.put("businessName", def.businessName());
@@ -90,95 +94,61 @@ public final class ParameterExecutabilitySupport {
         out.put("missingDataBehaviour", cap.missingDataTreatment() != null
                 ? cap.missingDataTreatment()
                 : "DATA_INSUFFICIENT");
-        out.put("provenanceModel", provenanceModelFor(def, cap));
+        out.put("provenanceModel", provenanceModelFor(def, Boolean.TRUE.equals(proj.get("policyTestReady"))));
 
-        List<String> blockers = new ArrayList<>();
-        boolean manual = CanonicalParameterDefinition.MANUAL.equalsIgnoreCase(def.type());
-        boolean policyTestReady;
-        boolean runtimeReady;
-        boolean productionReady = cap.productionReady();
-        String executionState;
-
-        if (manual) {
-            executionState = MANUAL_AUTHORISED;
-            policyTestReady = true;
-            runtimeReady = true;
-            productionReady = true;
-            out.put("providerCapabilities", List.of(capRow("MANUAL",
-                    "Application / CAM capture — not provider-derived", null)));
-        } else if (productionReady && cap.implemented()) {
-            executionState = PRODUCTION_READY;
-            policyTestReady = true;
-            runtimeReady = true;
-            out.put("providerCapabilities", List.of(capRow("PRODUCTION", null,
-                    def.existingImplementationBinding())));
-        } else if (cap.implemented()) {
-            // Implemented calculator exists but not certified production.
-            // Some of these still run on runtime metric services (e.g. studio bureau helpers).
-            boolean knownRuntimeNonProd = isKnownRuntimeNonProd(def.id());
-            executionState = knownRuntimeNonProd ? RUNTIME_READY_NONPROD : POLICY_TEST_READY;
-            policyTestReady = true;
-            runtimeReady = knownRuntimeNonProd;
-            productionReady = false;
-            blockers.add("Not productionReady — Policy Test / studio path only until certified");
-            out.put("providerCapabilities", List.of(capRow("STUDIO_OR_NONPROD", null,
-                    def.existingImplementationBinding())));
-        } else if (cap.derivationDefined()) {
-            executionState = DERIVATION_DEFINED_NOT_IMPLEMENTED;
-            policyTestReady = false;
-            runtimeReady = false;
-            productionReady = false;
-            blockers.add("Derivation defined but calculator/binding not implemented");
-        } else if (cap.sourceAvailable() && !cap.normalized()) {
-            executionState = SOURCE_AVAILABLE_NOT_BOUND;
-            policyTestReady = false;
-            runtimeReady = false;
-            productionReady = false;
-            blockers.add("Source available but not normalized/bound to canonical fact");
-        } else if (cap.sourceAvailable()) {
-            executionState = SOURCE_AVAILABLE_NOT_BOUND;
-            policyTestReady = false;
-            runtimeReady = false;
-            productionReady = false;
-            blockers.add("Source flagged available without executable binding");
-        } else {
-            executionState = DATA_SOURCE_UNAVAILABLE;
-            policyTestReady = false;
-            runtimeReady = false;
-            productionReady = false;
-            blockers.add("No usable source currently");
-        }
-
-        out.put("executionState", executionState);
-        out.put("policyTestReady", policyTestReady);
-        out.put("runtimeReady", runtimeReady);
-        out.put("productionReady", productionReady);
-        out.put("executable", policyTestReady || runtimeReady || productionReady);
-        out.put("blockers", blockers);
+        out.put("executionState", proj.get("executionState"));
+        out.put("policyTestReady", proj.get("policyTestReady"));
+        out.put("runtimeReady", proj.get("runtimeReady"));
+        // Production certification not established — never promote catalogue boolean
+        out.put("productionReady", false);
+        out.put("legacyCatalogueProductionReadyClaim",
+                def.capability() != null && def.capability().productionReady());
+        out.put("executable", proj.get("executable"));
+        out.put("blockers", proj.get("blockers"));
+        out.put("productionCertification", proj.get("productionCertification"));
+        out.put("designable", proj.get("designable"));
+        out.put("executionAuthority", "CanonicalParameterExecutionService");
+        out.put("spineInstalled", ExecutionCapabilityAuthority.isInstalled());
         return out;
     }
 
-    /** Gate-2 authoring overlays that have Policy Test calculators but no production UW binding. */
+    /**
+     * Studio overlays without GACAT rows — still require spine capability; never catalogue invent.
+     */
     public static Map<String, Object> studioOverlay(String id, String calculator, List<String> ingredients) {
+        return evaluateOverlay(id, calculator, ingredients);
+    }
+
+    private static Map<String, Object> evaluateOverlay(String id) {
+        return evaluateOverlay(id, null, List.of());
+    }
+
+    private static Map<String, Object> evaluateOverlay(String id, String calculator, List<String> ingredients) {
+        boolean pt = ExecutionCapabilityAuthority.hasExecutionCapability(id, EvaluationMode.POLICY_TEST);
         Map<String, Object> out = base(id);
         out.put("canonicalParameterId", id);
         out.put("source", "Bureau");
         out.put("type", CanonicalParameterDefinition.DERIVED);
-        out.put("executionState", POLICY_TEST_READY);
-        out.put("policyTestReady", true);
+        out.put("executionState", pt ? POLICY_TEST_READY : NOT_EXECUTABLE);
+        out.put("policyTestReady", pt);
         out.put("runtimeReady", false);
         out.put("productionReady", false);
-        out.put("executable", true);
+        out.put("executable", pt);
         out.put("calculatorBinding", calculator);
         out.put("normalizedFactBinding", null);
         out.put("rawIngredients", ingredients);
         out.put("authoringOverlay", true);
         out.put("missingDataBehaviour", "DATA_INSUFFICIENT");
-        out.put("provenanceModel", "FIXTURE_OR_STUDIO_CALCULATOR");
+        out.put("provenanceModel", "SPINE_OR_UNREGISTERED");
         out.put("runtimeFactAliases", List.of());
-        out.put("blockers", List.of(
-                "Studio/authoring overlay — not productionReady; do not treat as Live UW binding"));
+        List<String> blockers = new ArrayList<>();
+        if (!pt) {
+            blockers.add("Authoring overlay without CanonicalParameterExecutionService producer");
+        }
+        blockers.add("Studio/authoring overlay — production certification not established");
+        out.put("blockers", blockers);
         out.put("allowCanonicalAuthority", false);
+        out.put("executionAuthority", "CanonicalParameterExecutionService");
         return out;
     }
 
@@ -192,43 +162,22 @@ public final class ParameterExecutabilitySupport {
         target.put("runtimeFactAliases", exec.get("runtimeFactAliases"));
         target.put("executabilityBlockers", exec.get("blockers"));
         target.put("provenanceModel", exec.get("provenanceModel"));
+        if (exec.get("productionCertification") != null) {
+            target.put("productionCertification", exec.get("productionCertification"));
+        }
+        if (exec.get("legacyCatalogueProductionReadyClaim") != null) {
+            target.put("legacyCatalogueProductionReadyClaim", exec.get("legacyCatalogueProductionReadyClaim"));
+        }
     }
 
-    private static Map<String, Object> capRow(String kind, String note, String binding) {
-        Map<String, Object> m = new LinkedHashMap<>();
-        m.put("kind", kind);
-        if (note != null) m.put("note", note);
-        if (binding != null) m.put("binding", binding);
-        return m;
-    }
-
-    private static boolean isKnownRuntimeNonProd(String id) {
-        if (id == null) return false;
-        // Studio bureau helpers that can run against normalized tradelines in staging/runtime helpers
-        // but are explicitly not productionReady in GACAT.
-        String x = id.toLowerCase(Locale.ROOT);
-        return x.startsWith("bureau.max_dpd_6m")
-                || x.startsWith("bureau.cc_overdue")
-                || x.startsWith("bureau.overdue.")
-                || x.startsWith("bureau.credit_after_overdue")
-                || x.startsWith("bureau.inquiries.current_month")
-                || x.equals("bureau.status_ntc")
-                || x.equals("bureau.accounts.writeoff_non_cc")
-                || x.equals("bureau.accounts.cc_writeoff");
-    }
-
-    private static String provenanceModelFor(
-            CanonicalParameterDefinition def, CanonicalParameterDefinition.Capability cap) {
+    private static String provenanceModelFor(CanonicalParameterDefinition def, boolean spineCapable) {
         if (CanonicalParameterDefinition.MANUAL.equalsIgnoreCase(def.type())) {
             return "MANUAL_AUTHORISED";
         }
-        if (cap.productionReady()) {
-            return "REAL_PROVIDER|DERIVED";
+        if (spineCapable) {
+            return "CANONICAL_PARAMETER_EXECUTION_SERVICE";
         }
-        if (cap.implemented()) {
-            return "FIXTURE|SANDBOX_PROVIDER|STUDIO_CALCULATOR";
-        }
-        return "MISSING_UNTIL_IMPLEMENTED";
+        return "NO_REGISTERED_PRODUCER";
     }
 
     private static Map<String, Object> base(String id) {
@@ -247,6 +196,7 @@ public final class ParameterExecutabilitySupport {
         out.put("executable", false);
         out.put("blockers", List.of(reason));
         out.put("allowCanonicalAuthority", false);
+        out.put("executionAuthority", "CanonicalParameterExecutionService");
         return out;
     }
 }

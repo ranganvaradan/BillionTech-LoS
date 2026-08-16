@@ -131,56 +131,13 @@ public final class PolicyAuthoringCompleteness {
         if (!(card.get("operands") instanceof List<?> ops) || ops.isEmpty()) {
             card.put("operands", PolicyExecutionReadiness.operandsOf(r));
         }
-        // Execution readiness on the card is authoritative for policyTestReady
-        boolean execReady = Boolean.TRUE.equals(card.get("executionReady"));
+        // Spine-backed lifecycle facts — policyTestReady from CanonicalParameterExecutionService only
         var facts = com.los.core.creditintelligence.policystudio.parameters.lifecycle
                 .PolicyRuleLifecycleProjection.factsFromCard(card, meta);
-        // Align with PolicyExecutionReadiness — never claim test-ready if executionReady is false
-        if (!execReady) {
-            facts = new com.los.core.creditintelligence.policystudio.parameters.lifecycle
-                    .PolicyRuleLifecycleProjection.Facts(
-                    facts.ruleAccepted(),
-                    facts.parameterResolved(),
-                    facts.calculationRequired()
-                            || PolicyExecutionReadiness.executionBlockingOperands(r).stream()
-                            .anyMatch(o -> Boolean.TRUE.equals(o.get("calculationRequired"))),
-                    facts.calculationDefined(),
-                    facts.calculationValidated(),
-                    facts.businessClarificationRequired(),
-                    facts.dataAvailableForPolicyDesign()
-                            && PolicyExecutionReadiness.unavailableOperands(r).isEmpty(),
-                    false,
-                    facts.runtimeReady(),
-                    facts.productionReady(),
-                    facts.includedExecutable(),
-                    facts.authoringComplete(),
-                    facts.knownExistingCalculationPending(),
-                    facts.newCalculationProposalPending());
-            // If execution blockers include unresolved/unavailable, reflect in facts
-            boolean unresolved = !PolicyExecutionReadiness.unresolvedOperands(r).isEmpty()
-                    || PolicyExecutionReadiness.executionBlockingOperands(r).stream()
-                    .anyMatch(o -> Boolean.TRUE.equals(o.get("unresolved"))
-                            || Boolean.TRUE.equals(o.get("needsConfiguration")));
-            boolean unavailable = !PolicyExecutionReadiness.unavailableOperands(r).isEmpty();
-            boolean calcReq = PolicyExecutionReadiness.executionBlockingOperands(r).stream()
-                    .anyMatch(o -> Boolean.TRUE.equals(o.get("calculationRequired")));
-            facts = new com.los.core.creditintelligence.policystudio.parameters.lifecycle
-                    .PolicyRuleLifecycleProjection.Facts(
-                    facts.ruleAccepted(),
-                    !unresolved,
-                    calcReq,
-                    facts.calculationDefined() && !calcReq,
-                    facts.calculationValidated() && !calcReq,
-                    facts.businessClarificationRequired(),
-                    !unavailable,
-                    false,
-                    facts.runtimeReady(),
-                    facts.productionReady(),
-                    facts.includedExecutable(),
-                    facts.authoringComplete(),
-                    false,
-                    false);
-        }
+        card.put("executionReady", facts.policyTestReady());
+        card.put("policyTestReady", facts.policyTestReady());
+        card.put("runtimeReady", facts.runtimeReady());
+        card.put("productionReady", false);
         String ruleId = r.getId() == null ? r.getSystemRuleId() : r.getId().toString();
         Map<String, Object> life = com.los.core.creditintelligence.policystudio.parameters.lifecycle
                 .PolicyRuleLifecycleProjection.project(ruleId, facts);
@@ -190,7 +147,7 @@ public final class PolicyAuthoringCompleteness {
                 ? (List<Map<String, Object>>) list
                 : List.of();
         operands.stream()
-                .map(o -> o.get("parameterId"))
+                .map(o -> o.get("parameterId") != null ? o.get("parameterId") : o.get("canonicalParameterId"))
                 .filter(p -> p != null && !String.valueOf(p).isBlank())
                 .findFirst()
                 .ifPresent(p -> life.put("parameterId", String.valueOf(p)));

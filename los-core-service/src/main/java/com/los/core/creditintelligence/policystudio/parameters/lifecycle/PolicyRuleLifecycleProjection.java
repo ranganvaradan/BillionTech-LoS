@@ -1,5 +1,9 @@
 package com.los.core.creditintelligence.policystudio.parameters.lifecycle;
 
+import com.los.core.creditintelligence.policystudio.parameters.execution.CanonicalParameterCapabilityProjection;
+import com.los.core.creditintelligence.policystudio.parameters.execution.ExecutionCapabilityAuthority;
+import com.los.core.creditintelligence.policystudio.parameters.execution.EvaluationMode;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -213,7 +217,6 @@ public final class PolicyRuleLifecycleProjection {
                 || (!calcRequired && operands.stream().anyMatch(o ->
                 String.valueOf(o.getOrDefault("availabilityLabel", "")).toLowerCase(Locale.ROOT)
                         .contains("derived")));
-        // If no operand needs calc, treat as defined/not-required
         if (!calcRequired && !operands.isEmpty()) {
             calcDefined = true;
         }
@@ -222,14 +225,53 @@ public final class PolicyRuleLifecycleProjection {
             return "TESTED".equals(st) || "PRODUCTION_READY".equals(st) || "DEFINED".equals(st);
         }) || (calcDefined && !calcRequired);
 
-        boolean policyTestReady = Boolean.TRUE.equals(card.get("executionReady"))
-                || Boolean.TRUE.equals(card.get("policyTestReady"));
-        boolean runtimeReady = Boolean.TRUE.equals(card.get("runtimeReady"));
-        boolean productionReady = Boolean.TRUE.equals(card.get("productionReady"));
+        // Execution capability — spine only for every required operand; never catalogue implemented
+        List<String> operandIds = new ArrayList<>();
+        for (Map<String, Object> o : operands) {
+            Object pid = o.get("canonicalParameterId");
+            if (pid == null) {
+                pid = o.get("parameterId");
+            }
+            if (pid == null) {
+                pid = o.get("resolvedParameterId");
+            }
+            if (pid != null && !String.valueOf(pid).isBlank()) {
+                operandIds.add(String.valueOf(pid).trim());
+            }
+        }
+        boolean spineOperandsCapable;
+        if (operands.isEmpty()) {
+            spineOperandsCapable = false;
+        } else if (operandIds.size() < operands.stream()
+                .filter(o -> !Boolean.TRUE.equals(o.get("unresolved"))).count()) {
+            // Some resolved-looking operands lack an id — not test-ready
+            spineOperandsCapable = false;
+        } else if (operandIds.isEmpty()) {
+            spineOperandsCapable = false;
+        } else {
+            spineOperandsCapable = true;
+            for (String id : operandIds) {
+                if (!ExecutionCapabilityAuthority.hasExecutionCapability(id, EvaluationMode.POLICY_TEST)) {
+                    spineOperandsCapable = false;
+                    break;
+                }
+            }
+        }
+
         boolean authoringComplete = !Boolean.FALSE.equals(card.get("authoringComplete"));
         if (card.containsKey("authoringComplete")) {
             authoringComplete = Boolean.TRUE.equals(card.get("authoringComplete"));
         }
+
+        boolean policyTestReady = spineOperandsCapable && !unresolved && authoringComplete;
+        // Runtime / production: spine workflow/underwriting; production cert not established
+        boolean runtimeReady = operandIds.stream().allMatch(id ->
+                ExecutionCapabilityAuthority.hasExecutionCapability(id, EvaluationMode.W6_ACQUISITION)
+                        || ExecutionCapabilityAuthority.hasExecutionCapability(id, EvaluationMode.UNDERWRITING));
+        if (operandIds.isEmpty()) {
+            runtimeReady = false;
+        }
+        boolean productionReady = false;
 
         boolean knownExisting = operands.stream().anyMatch(o ->
                 Boolean.TRUE.equals(o.get("knownExistingCalculation"))
@@ -241,12 +283,12 @@ public final class PolicyRuleLifecycleProjection {
         return new Facts(
                 ruleAccepted,
                 !unresolved,
-                calcRequired,
-                calcDefined || !calcRequired,
-                calcValidated || !calcRequired,
+                calcRequired && !spineOperandsCapable,
+                calcDefined || !calcRequired || spineOperandsCapable,
+                calcValidated || !calcRequired || spineOperandsCapable,
                 false,
                 !unavailable,
-                policyTestReady && !calcRequired && !unresolved && authoringComplete,
+                policyTestReady,
                 runtimeReady,
                 productionReady,
                 included,
@@ -254,5 +296,11 @@ public final class PolicyRuleLifecycleProjection {
                 knownExisting && !ruleAccepted && !calcRequired,
                 false
         );
+    }
+
+    /** Helper for inventory / tests — spine POLICY_TEST for one id. */
+    public static boolean parameterPolicyTestCapable(String canonicalParameterId) {
+        return CanonicalParameterCapabilityProjection.project(canonicalParameterId)
+                .get("policyTestReady") instanceof Boolean b && b;
     }
 }

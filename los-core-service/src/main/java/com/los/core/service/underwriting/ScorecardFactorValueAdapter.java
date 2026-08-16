@@ -18,6 +18,15 @@ public final class ScorecardFactorValueAdapter {
 
     private ScorecardFactorValueAdapter() {}
 
+    /**
+     * Runtime value path remains {@link ScorecardPolicyEngine} (legacy).
+     * Capability / certification display must use {@code CanonicalParameterCapabilityProjection};
+     * this adapter does not claim spine execution parity for values.
+     */
+    public static final String RUNTIME_AUTHORITY = "LEGACY_ScorecardPolicyEngine";
+    public static final String RUNTIME_NOTE =
+            "Scorecard factor values are not yet resolved through CanonicalParameterExecutionService";
+
     public record ResolvedValue(
             String canonicalParameterId,
             Integer canonicalDefinitionVersion,

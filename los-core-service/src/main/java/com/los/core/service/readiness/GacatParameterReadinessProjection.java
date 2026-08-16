@@ -48,15 +48,13 @@ public final class GacatParameterReadinessProjection {
 
         boolean implemented = cap.implemented();
         boolean sourceAvailable = cap.sourceAvailable();
+        // Execution capability — Gate3 facade over CanonicalParameterExecutionService only
         boolean policyTestReady = Boolean.TRUE.equals(gate3.get("policyTestReady"));
         boolean runtimeReady = Boolean.TRUE.equals(gate3.get("runtimeReady"));
-        // Catalogue productionReady is the certification fact (Gate3 may force MANUAL true).
-        boolean catalogueProductionReady = cap.productionReady();
+        // Production certification not established — catalogue boolean is legacy claim only
+        boolean catalogueProductionReadyClaim = cap.productionReady();
+        boolean productionReady = Boolean.TRUE.equals(gate3.get("productionReady")); // always false until cert authority
         boolean manual = CanonicalParameterDefinition.MANUAL.equalsIgnoreCase(def.type());
-        if (manual) {
-            // Gate3 MANUAL_AUTHORISED is production-authorised application capture.
-            catalogueProductionReady = Boolean.TRUE.equals(gate3.get("productionReady"));
-        }
 
         boolean workflowAvailable = Boolean.TRUE.equals(workflow.get("workflowAvailable"))
                 || Boolean.TRUE.equals(workflow.get("integrationAvailable"));
@@ -78,15 +76,19 @@ public final class GacatParameterReadinessProjection {
         String executionState = String.valueOf(gate3.getOrDefault("executionState", ""));
         List<String> reasons = new ArrayList<>();
         String overall = deriveOverall(
-                def, catalogueProductionReady, implemented, sourceAvailable, manual,
+                def, false, implemented, sourceAvailable, manual,
                 policyTestReady, runtimeReady, executionState, reasons);
+        if (catalogueProductionReadyClaim) {
+            reasons.add("Legacy catalogue production_ready claim present — not certification truth");
+        }
 
         Map<String, Object> facts = new LinkedHashMap<>();
         facts.put("implemented", implemented);
         facts.put("sourceAvailable", sourceAvailable);
         facts.put("policyTestReady", policyTestReady);
         facts.put("runtimeReady", runtimeReady);
-        facts.put("productionReady", catalogueProductionReady);
+        facts.put("productionReady", productionReady);
+        facts.put("legacyCatalogueProductionReadyClaim", catalogueProductionReadyClaim);
         facts.put("workflowAvailable", workflowAvailable);
         facts.put("providerBound", providerBound);
         facts.put("mappingAvailable", mappingAvailable);
@@ -106,7 +108,9 @@ public final class GacatParameterReadinessProjection {
         out.put("sourceAvailable", sourceAvailable);
         out.put("policyTestReady", policyTestReady);
         out.put("runtimeReady", runtimeReady);
-        out.put("productionReady", catalogueProductionReady);
+        out.put("productionReady", productionReady);
+        out.put("legacyCatalogueProductionReadyClaim", catalogueProductionReadyClaim);
+        out.put("productionCertification", gate3.get("productionCertification"));
         out.put("workflowAvailable", workflowAvailable);
         out.put("providerBound", providerBound);
         out.put("mappingAvailable", mappingAvailable);

@@ -1,8 +1,7 @@
 package com.los.core.service.readiness;
 
-import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterRegistry;
-import com.los.core.creditintelligence.policystudio.parameters.ParameterExecutabilitySupport;
-import com.los.core.creditintelligence.policystudio.parameters.PolicyStudioConvergencePresenter;
+import com.los.core.creditintelligence.policystudio.parameters.execution.EvaluationMode;
+import com.los.core.creditintelligence.policystudio.parameters.execution.ExecutionCapabilityAuthority;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -145,7 +144,7 @@ public final class WorkflowParameterProvidesCatalog {
         out.put("integrationsNotBoundToWorkflowSteps", integrations);
         out.put("allowCanonicalAuthority", false);
         out.put("readModelOnly", true);
-        out.put("gate3", "production provides filtered by ParameterExecutabilitySupport.productionReady");
+        out.put("gate3", "provides filtered by CanonicalParameterExecutionService capability");
         return out;
     }
 
@@ -160,23 +159,18 @@ public final class WorkflowParameterProvidesCatalog {
         return ids;
     }
 
-    /** Production-ready ids only — never promote studio overlays via workflow claims. */
+    /**
+     * Parameters the step can produce — spine-capable in W6 or UNDERWRITING (or POLICY_TEST for MANUAL).
+     * Never uses catalogue production_ready as truth.
+     */
     static List<String> filterProductionReady(List<String> ids) {
         if (ids == null || ids.isEmpty()) return List.of();
         List<String> out = new ArrayList<>();
-        CanonicalParameterRegistry registry = PolicyStudioConvergencePresenter.registry();
         for (String id : ids) {
             if (id == null || id.isBlank()) continue;
-            Map<String, Object> exec = ParameterExecutabilitySupport.evaluate(id);
-            if (Boolean.TRUE.equals(exec.get("productionReady"))) {
-                out.add(id);
-                continue;
-            }
-            var def = registry.findById(id);
-            if (def.isPresent() && "RAW".equalsIgnoreCase(def.get().type())
-                    && def.get().capability() != null
-                    && def.get().capability().sourceAvailable()
-                    && def.get().capability().normalized()) {
+            if (ExecutionCapabilityAuthority.hasExecutionCapability(id, EvaluationMode.W6_ACQUISITION)
+                    || ExecutionCapabilityAuthority.hasExecutionCapability(id, EvaluationMode.UNDERWRITING)
+                    || ExecutionCapabilityAuthority.hasExecutionCapability(id, EvaluationMode.POLICY_TEST)) {
                 out.add(id);
             }
         }

@@ -1,0 +1,190 @@
+package com.los.core.creditintelligence.policystudio.parameters.execution;
+
+import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterDefinition;
+import com.los.core.creditintelligence.policystudio.parameters.ParameterExecutabilitySupport;
+import com.los.core.creditintelligence.policystudio.parameters.PolicyStudioConvergencePresenter;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
+/**
+ * Single surface projection of the three authorities:
+ * <ul>
+ *   <li>GACAT — identity / designability</li>
+ *   <li>{@link CanonicalParameterExecutionService} — execution capability by mode</li>
+ *   <li>Production Certification — NOT ESTABLISHED until a durable cert authority exists</li>
+ * </ul>
+ *
+ * <p>Does not invent certification from catalogue {@code production_ready}.
+ */
+public final class CanonicalParameterCapabilityProjection {
+
+    public static final String PROD_CERT_NOT_ESTABLISHED = "NOT_ESTABLISHED";
+    public static final String PROD_CERT_NOT_APPLICABLE = "NOT_APPLICABLE";
+    public static final String EXEC_EXECUTABLE = "EXECUTABLE";
+    public static final String EXEC_NOT_EXECUTABLE = "NOT_EXECUTABLE";
+    public static final String EXEC_NOT_APPLICABLE = "NOT_APPLICABLE";
+    public static final String DESIGN_AVAILABLE = "AVAILABLE";
+    public static final String DESIGN_NOT_AVAILABLE = "NOT_AVAILABLE";
+
+    private CanonicalParameterCapabilityProjection() {}
+
+    public static Map<String, Object> project(String canonicalParameterId) {
+        if (canonicalParameterId == null || canonicalParameterId.isBlank()) {
+            return empty(canonicalParameterId, "Empty parameter id");
+        }
+        Optional<CanonicalParameterDefinition> opt =
+                PolicyStudioConvergencePresenter.registry().findById(canonicalParameterId.trim());
+        if (opt.isEmpty()) {
+            return empty(canonicalParameterId, "Not in GACAT");
+        }
+        return project(opt.get());
+    }
+
+    public static Map<String, Object> project(CanonicalParameterDefinition def) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("authorityModel", ParameterTruthAuthorities.INVARIANT);
+        out.put("canonicalParameterId", def.id());
+        out.put("businessName", def.businessName());
+        out.put("type", def.type());
+        out.put("sourceFamily", def.evaluatedFrom());
+        out.put("unit", def.unit());
+
+        boolean manual = CanonicalParameterDefinition.MANUAL.equalsIgnoreCase(def.type())
+                || "INPUT".equalsIgnoreCase(def.type())
+                || "APPLICATION_INPUT".equalsIgnoreCase(def.type());
+
+        // DESIGNABLE — GACAT identity exists; do not require spine producers
+        out.put("designAvailability", DESIGN_AVAILABLE);
+        out.put("designable", true);
+        out.put("policyDesign", Map.of(
+                "status", DESIGN_AVAILABLE,
+                "available", true,
+                "label", "Available for policy design",
+                "reason", "Present in GACAT — may be selected in Policy / Scorecard design"));
+
+        boolean pt = ExecutionCapabilityAuthority.hasExecutionCapability(def.id(), EvaluationMode.POLICY_TEST);
+        boolean w6 = ExecutionCapabilityAuthority.hasExecutionCapability(def.id(), EvaluationMode.W6_ACQUISITION);
+        boolean uw = ExecutionCapabilityAuthority.hasExecutionCapability(def.id(), EvaluationMode.UNDERWRITING);
+
+        out.put("policyTest", execBlock(pt, "Policy Test"));
+        out.put("workflow", execBlock(w6, "Workflow / W6"));
+        out.put("underwriting", execBlock(uw, "Underwriting"));
+
+        out.put("policyTestExecutable", pt);
+        out.put("workflowExecutable", w6);
+        out.put("underwritingExecutable", uw);
+        // Gate3 / inventory / lifecycle alias — spine POLICY_TEST only
+        out.put("policyTestReady", pt);
+        out.put("runtimeReady", w6 || uw);
+        out.put("executable", pt || w6 || uw);
+
+        String executionState;
+        if (manual && pt) {
+            executionState = ParameterExecutabilitySupport.MANUAL_AUTHORISED;
+        } else if (pt && (w6 || uw)) {
+            // Spine-capable beyond Policy Test, but production certification not established
+            executionState = ParameterExecutabilitySupport.RUNTIME_READY_NONPROD;
+        } else if (pt) {
+            executionState = ParameterExecutabilitySupport.POLICY_TEST_READY;
+        } else if (w6 || uw) {
+            executionState = ParameterExecutabilitySupport.RUNTIME_READY_NONPROD;
+        } else {
+            executionState = ParameterExecutabilitySupport.DATA_SOURCE_UNAVAILABLE;
+        }
+        out.put("executionState", executionState);
+
+        // Production Certification — never inherit catalogue production_ready
+        boolean catalogueClaim = def.capability() != null && def.capability().productionReady();
+        Map<String, Object> prod = new LinkedHashMap<>();
+        if (manual) {
+            prod.put("status", PROD_CERT_NOT_APPLICABLE);
+            prod.put("certified", false);
+            prod.put("label", "Not applicable");
+            prod.put("reason", "Manual / application input — not a provider production certification");
+        } else {
+            prod.put("status", PROD_CERT_NOT_ESTABLISHED);
+            prod.put("certified", false);
+            prod.put("label", "Not certified");
+            prod.put("reason", "Production certification authority not established — catalogue flag is not proof");
+        }
+        prod.put("legacyCatalogueProductionReadyClaim", catalogueClaim);
+        out.put("productionCertification", prod);
+        out.put("productionReady", false);
+        out.put("productionCertified", false);
+
+        // Advanced / internal legacy claims (descriptive only)
+        Map<String, Object> legacy = new LinkedHashMap<>();
+        if (def.capability() != null) {
+            legacy.put("catalogueImplemented", def.capability().implemented());
+            legacy.put("catalogueProductionReady", def.capability().productionReady());
+            legacy.put("catalogueDerivationDefined", def.capability().derivationDefined());
+            legacy.put("catalogueSourceAvailable", def.capability().sourceAvailable());
+        }
+        legacy.put("note", "Legacy catalogue claims — not execution or certification truth");
+        out.put("legacyCatalogueClaims", legacy);
+        out.put("runtimeFactAliases", ParameterExecutabilitySupport.runtimeFactAliases(def.id()));
+
+        List<String> blockers = new ArrayList<>();
+        if (!pt) {
+            blockers.add("No CanonicalParameterExecutionService producer capable in POLICY_TEST");
+        }
+        out.put("blockers", blockers);
+        out.put("executionAuthority", ParameterTruthAuthorities.EXECUTION_SPINE);
+        out.put("identityAuthority", ParameterTruthAuthorities.GACAT_IDENTITY);
+        out.put("productionCertificationAuthority", ParameterTruthAuthorities.PRODUCTION_CERTIFICATION);
+        return out;
+    }
+
+    /** True iff every non-blank id is spine-capable in POLICY_TEST. Empty list → false. */
+    public static boolean allPolicyTestCapable(Iterable<String> canonicalParameterIds) {
+        boolean any = false;
+        for (String id : canonicalParameterIds) {
+            if (id == null || id.isBlank()) {
+                return false;
+            }
+            any = true;
+            if (!ExecutionCapabilityAuthority.hasExecutionCapability(id.trim(), EvaluationMode.POLICY_TEST)) {
+                return false;
+            }
+        }
+        return any;
+    }
+
+    private static Map<String, Object> execBlock(boolean capable, String surface) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("status", capable ? EXEC_EXECUTABLE : EXEC_NOT_EXECUTABLE);
+        m.put("executable", capable);
+        m.put("label", capable ? "Executable" : "Not yet executable");
+        m.put("reason", capable
+                ? "CanonicalParameterExecutionService has a capable producer for " + surface
+                : "No capable producer registered for " + surface);
+        return m;
+    }
+
+    private static Map<String, Object> empty(String id, String reason) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("canonicalParameterId", id);
+        out.put("designable", false);
+        out.put("designAvailability", DESIGN_NOT_AVAILABLE);
+        out.put("policyTestExecutable", false);
+        out.put("workflowExecutable", false);
+        out.put("underwritingExecutable", false);
+        out.put("policyTestReady", false);
+        out.put("runtimeReady", false);
+        out.put("executable", false);
+        out.put("productionReady", false);
+        out.put("productionCertified", false);
+        out.put("executionState", ParameterExecutabilitySupport.DATA_SOURCE_UNAVAILABLE);
+        out.put("blockers", List.of(reason));
+        out.put("productionCertification", Map.of(
+                "status", PROD_CERT_NOT_ESTABLISHED,
+                "certified", false,
+                "label", "Not certified",
+                "reason", reason));
+        return out;
+    }
+}

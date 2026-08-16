@@ -52,8 +52,9 @@ class DataParametersCapabilitySemanticsTest {
         CanonicalParameterDefinition def = require("bureau.accounts.cc_writeoff");
         Map<String, Object> readiness = GacatParameterReadinessProjection.project(def);
         assertThat(readiness.get("productionReady")).isEqualTo(false);
-        assertThat(readiness.get("calculatorAvailable")).isEqualTo(true);
-        assertThat(readiness.get("runtimeReady")).isEqualTo(true);
+        assertThat(readiness.get("legacyCatalogueProductionReadyClaim")).isEqualTo(false);
+        // Spine capability — may be true when BuiltIn producer registered
+        assertThat(readiness.get("policyTestReady")).isIn(true, false);
 
         Map<String, Object> cap = DataParametersCapabilitySemantics.project(
                 def,
@@ -80,11 +81,9 @@ class DataParametersCapabilitySemanticsTest {
         assertThat(design.get("available")).isEqualTo(true);
         assertThat(String.valueOf(design.get("label"))).containsIgnoringCase("policy design");
         assertThat(live.get("available")).isEqualTo(false);
-        assertThat(live.get("status"))
-                .isEqualTo(DataParametersCapabilitySemantics.LIVE_SUBSCRIPTION_REQUIRED);
-        assertThat(String.valueOf(live.get("reason"))).containsIgnoringCase("Equifax");
+        assertThat(String.valueOf(live.get("label"))).containsIgnoringCase("Not certified");
         assertThat(cap.get("flagsMutated")).isEqualTo(false);
-        assertThat(cap.get("catalogueProductionReady")).isEqualTo(false);
+        assertThat(cap.get("productionReady")).isEqualTo(false);
     }
 
     @Test
@@ -102,8 +101,7 @@ class DataParametersCapabilitySemanticsTest {
                 .isEqualTo(DataParametersCapabilitySemantics.SOURCE_PLATFORM_PRODUCTION_READY);
         assertThat(design.get("available")).isEqualTo(true);
         assertThat(live.get("available")).isEqualTo(false);
-        assertThat(live.get("status"))
-                .isEqualTo(DataParametersCapabilitySemantics.LIVE_SUBSCRIPTION_REQUIRED);
+        assertThat(String.valueOf(live.get("label"))).containsIgnoringCase("Not certified");
     }
 
     @Test
@@ -229,9 +227,12 @@ class DataParametersCapabilitySemanticsTest {
         for (String id : sample) {
             Map<String, Object> cap = DataParametersCapabilitySemantics.project(require(id));
             assertThat(cap.get("flagsMutated")).as(id).isEqualTo(false);
-            // catalogue productionReady unchanged by projection
+            // production projection is never catalogue boolean; legacy claim may differ
             Map<String, Object> readiness = GacatParameterReadinessProjection.project(require(id));
-            assertThat(cap.get("catalogueProductionReady")).isEqualTo(readiness.get("productionReady"));
+            assertThat(cap.get("productionReady")).isEqualTo(false);
+            assertThat(readiness.get("productionReady")).isEqualTo(false);
+            assertThat(cap.get("catalogueProductionReady"))
+                    .isEqualTo(readiness.get("legacyCatalogueProductionReadyClaim"));
         }
     }
 

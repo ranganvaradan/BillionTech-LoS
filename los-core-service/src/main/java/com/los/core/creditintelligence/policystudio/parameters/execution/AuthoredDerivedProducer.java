@@ -27,10 +27,19 @@ public final class AuthoredDerivedProducer implements ParameterProducer {
 
     public static final String PRODUCER_ID = "AuthoredDerivedProducer";
 
-    private final DerivedCalculationDefinitionService definitionService;
+    private final AuthoredDefinitionSource definitions;
 
     public AuthoredDerivedProducer(DerivedCalculationDefinitionService definitionService) {
-        this.definitionService = definitionService;
+        this(definitionService::latestFor);
+    }
+
+    public AuthoredDerivedProducer(AuthoredDefinitionSource definitions) {
+        this.definitions = definitions == null ? (id, t) -> Optional.empty() : definitions;
+    }
+
+    @FunctionalInterface
+    public interface AuthoredDefinitionSource {
+        Optional<CiGacatDerivedCalculationDefinition> latestFor(String canonicalParameterId, java.util.UUID tenantId);
     }
 
     @Override
@@ -71,7 +80,7 @@ public final class AuthoredDerivedProducer implements ParameterProducer {
         if (opt.isEmpty()) {
             // Distinguish: definition exists but invalid vs absent
             Optional<CiGacatDerivedCalculationDefinition> raw =
-                    definitionService.latestFor(canonicalParameterId, ctx.tenantId());
+                    definitions.latestFor(canonicalParameterId, ctx.tenantId());
             if (raw.isPresent()) {
                 return ExecutionResult.calculationNotDefined(canonicalParameterId,
                         "Authored definition present but not executable (semantic/op mismatch): "
@@ -213,7 +222,7 @@ public final class AuthoredDerivedProducer implements ParameterProducer {
             return Optional.empty();
         }
         Optional<CiGacatDerivedCalculationDefinition> opt =
-                definitionService.latestFor(canonicalParameterId, tenantId);
+                definitions.latestFor(canonicalParameterId, tenantId);
         if (opt.isEmpty()) {
             return Optional.empty();
         }

@@ -3,6 +3,8 @@ package com.los.core.creditintelligence.policystudio.parameters;
 import com.los.core.creditintelligence.policystudio.domain.CiPolicyAmbiguity;
 import com.los.core.creditintelligence.policystudio.domain.CiPolicyRuleCandidate;
 import com.los.core.creditintelligence.policystudio.model.PolicyStudioSession;
+import com.los.core.creditintelligence.policystudio.parameters.execution.EvaluationMode;
+import com.los.core.creditintelligence.policystudio.parameters.execution.ExecutionCapabilityAuthority;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -173,7 +175,14 @@ public final class PolicyExecutionReadiness {
         if (Boolean.TRUE.equals(op.get("unresolved"))) return true;
         if (Boolean.TRUE.equals(op.get("unavailable"))) return true;
         if (Boolean.TRUE.equals(op.get("needsConfiguration"))) return true;
-        if (Boolean.TRUE.equals(op.get("calculationRequired"))) return true;
+        // calculationRequired is descriptive until spine proves capability — never execution proof by itself
+        if (Boolean.TRUE.equals(op.get("calculationRequired"))) {
+            String id = operandCanonicalId(op);
+            if (id == null || !ExecutionCapabilityAuthority.hasExecutionCapability(
+                    id, EvaluationMode.POLICY_TEST)) {
+                return true;
+            }
+        }
         String status = String.valueOf(op.getOrDefault("status", ""));
         String avail = String.valueOf(op.getOrDefault("availability", ""));
         // Needs configuration always blocks READY — even when auto-bound from GACAT catalogue.
@@ -186,6 +195,16 @@ public final class PolicyExecutionReadiness {
             return true;
         }
         return false;
+    }
+
+    static String operandCanonicalId(Map<String, Object> op) {
+        for (String k : List.of("canonicalParameterId", "parameterId", "resolvedParameterId", "id")) {
+            Object v = op.get(k);
+            if (v != null && !String.valueOf(v).isBlank()) {
+                return String.valueOf(v).trim();
+            }
+        }
+        return null;
     }
 
     /** MANUAL is valid only when capture path fields exist (existing model — no new engine). */

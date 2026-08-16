@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -67,22 +68,34 @@ class PolicyRuleLifecycleProjectionTest {
 
     @Test
     void factsFromCardRespectsCalculationDefinedOverlay() {
-        Map<String, Object> card = Map.of(
-                "includedForActivation", true,
-                "executionReady", true,
-                "authoringComplete", true,
-                "operands", java.util.List.of(Map.of(
-                        "parameterId", "bureau.credit_after_overdue.clean_history_months",
-                        "calculationRequired", false,
-                        "calculationDefined", true,
-                        "calculationDefinitionStatus", "DEFINED",
-                        "howCalculated", "Months since last overdue"
-                )));
+        // Authored calc metadata does not invent Ready-to-Test — spine must be capable
+        Map<String, Object> card = new LinkedHashMap<>();
+        card.put("includedForActivation", true);
+        card.put("authoringComplete", true);
+        card.put("operands", java.util.List.of(Map.of(
+                "parameterId", "bureau.credit_after_overdue.clean_history_months",
+                "canonicalParameterId", "bureau.credit_after_overdue.clean_history_months",
+                "calculationRequired", false,
+                "calculationDefined", true,
+                "calculationDefinitionStatus", "DEFINED",
+                "howCalculated", "Months since last overdue"
+        )));
         Map<String, Object> meta = Map.of("disposition", "ACCEPTED");
         var facts = PolicyRuleLifecycleProjection.factsFromCard(card, meta);
         assertTrue(facts.ruleAccepted());
         assertFalse(facts.calculationRequired());
         assertTrue(facts.calculationDefined());
+        // No AuthoredDerivedProducer capability without installed definition → not Ready to Test
+        assertFalse(facts.policyTestReady());
+
+        card.put("operands", java.util.List.of(Map.of(
+                "parameterId", "bureau.score",
+                "canonicalParameterId", "bureau.score",
+                "calculationRequired", false,
+                "calculationDefined", true,
+                "unresolved", false
+        )));
+        facts = PolicyRuleLifecycleProjection.factsFromCard(card, meta);
         assertTrue(facts.policyTestReady());
         assertEquals(PolicyRuleLenderState.ACCEPTED_READY_TO_TEST,
                 PolicyRuleLifecycleProjection.deriveState(facts));

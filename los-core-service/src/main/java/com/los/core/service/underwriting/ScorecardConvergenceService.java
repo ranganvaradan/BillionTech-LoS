@@ -3,6 +3,7 @@ package com.los.core.service.underwriting;
 import com.los.core.creditintelligence.policystudio.parameters.AuthoringValueTypes;
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterDefinition;
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterRegistry;
+import com.los.core.creditintelligence.policystudio.parameters.execution.CanonicalParameterCapabilityProjection;
 import com.los.core.model.entity.LoanApplication;
 import com.los.core.model.entity.UnderwritingScorecard;
 import com.los.core.model.enums.ApplicationStatus;
@@ -218,8 +219,8 @@ public class ScorecardConvergenceService {
     }
 
     private static boolean matches(CanonicalParameterDefinition d, String q) {
-        if (q.isEmpty()) return d.liveScorecardParameter() != null
-                || (d.capability() != null && d.capability().productionReady());
+        // Empty search: designable GACAT rows (do not require catalogue production_ready)
+        if (q.isEmpty()) return true;
         String hay = (d.id() + " " + d.businessName() + " " + d.evaluatedFrom() + " "
                 + String.join(" ", d.aliases() == null ? List.of() : d.aliases()) + " "
                 + (d.liveScorecardParameter() == null ? "" : d.liveScorecardParameter()) + " "
@@ -229,6 +230,7 @@ public class ScorecardConvergenceService {
     }
 
     private static Map<String, Object> toPickerItem(CanonicalParameterDefinition d) {
+        Map<String, Object> spine = CanonicalParameterCapabilityProjection.project(d);
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("canonicalParameterId", d.id());
         m.put("canonicalDefinitionVersion", 1);
@@ -239,7 +241,12 @@ public class ScorecardConvergenceService {
         m.put("availability", d.availability());
         m.put("howObtained", d.calculationSummary() != null ? d.calculationSummary()
                 : (d.existingImplementationBinding() != null ? "Via existing LOS path" : null));
-        m.put("productionReady", d.capability() != null && d.capability().productionReady());
+        m.put("designable", true);
+        m.put("policyTestReady", spine.get("policyTestReady"));
+        m.put("policyTestExecutable", spine.get("policyTestExecutable"));
+        m.put("productionReady", false);
+        m.put("productionCertified", false);
+        m.put("productionCertification", spine.get("productionCertification"));
         boolean calculationRequired = d.capability() != null
                 && d.capability().derivationDefined()
                 && !d.capability().implemented();
@@ -249,13 +256,20 @@ public class ScorecardConvergenceService {
         m.put("aliases", d.aliases());
         m.put("authoringValueType", AuthoringValueTypes.valueControl(d));
         m.put("allowedValues", AuthoringValueTypes.allowedValues(d.id()));
-        // Suggested runtime source for scorecard row
         m.put("suggestedScorecardSource", suggestSource(d));
         Map<String, Object> advanced = new LinkedHashMap<>();
         advanced.put("canonicalId", d.id());
         advanced.put("definitionVersion", 1);
         advanced.put("implementationBinding", d.existingImplementationBinding());
         advanced.put("liveScorecardParameter", d.liveScorecardParameter());
+        advanced.put("legacyCatalogueProductionReadyClaim",
+                d.capability() != null && d.capability().productionReady());
+        advanced.put("legacyCatalogueImplemented",
+                d.capability() != null && d.capability().implemented());
+        advanced.put("scorecardRuntimeAuthority", "LEGACY_ScorecardPolicyEngine");
+        advanced.put("scorecardRuntimeNote",
+                "Factor values still resolve via ScorecardPolicyEngine — not yet migrated to "
+                        + "CanonicalParameterExecutionService; capability display is spine-aligned.");
         m.put("advanced", advanced);
         return m;
     }
