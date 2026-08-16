@@ -7,7 +7,7 @@ Semantic registry / governance only. No Wave 5. No ID churn. No CPES capability 
 | Field | Value |
 |-------|-------|
 | SOURCE_START_SHA | `1d32d74cb4b1ea055ed20e8b940c8e4024c1cdaa` |
-| SOURCE_FINAL_SHA | *(set after content commit)* |
+| SOURCE_FINAL_SHA | `26864bd71d26c8fef9eed652c732663e381089a6` |
 | GITHUB_REMOTE_SHA | *(set after push)* |
 | DB_MIGRATION | **NONE** (code registry + JSON artifact; no schema change) |
 | SEMANTIC_VERSION | `GACAT-SEMANTIC-4.0.0` |
