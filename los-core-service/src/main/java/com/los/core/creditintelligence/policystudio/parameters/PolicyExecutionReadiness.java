@@ -721,12 +721,16 @@ public final class PolicyExecutionReadiness {
             card.put("executionReadinessLabel", "NEEDS RULE COMPLETION");
             card.put("boundaryIncomplete", true);
         } else if ("ACCEPTED".equalsIgnoreCase(disposition) && execReady) {
-            card.put("reviewBadge", "Accepted");
+            card.put("reviewBadge", "Accepted ✓");
+            card.put("executionReadinessLabel", "READY");
+        } else if ("EDITED".equalsIgnoreCase(disposition) && execReady) {
+            card.put("reviewBadge", "Edited ✓");
             card.put("executionReadinessLabel", "READY");
         } else if ("ACCEPTED".equalsIgnoreCase(disposition) || "EDITED".equalsIgnoreCase(disposition)) {
-            card.put("reviewBadge", disposition.equalsIgnoreCase("EDITED") ? "Edited" : "Accepted");
+            // POLICY-STUDIO-RULE-LIFECYCLE — do NOT show Accepted badge while still blocked
+            card.remove("reviewBadge");
             String cause = firstExecutionReadinessCause(blockers, r);
-            card.put("executionReadinessLabel", execReady ? "READY" : cause);
+            card.put("executionReadinessLabel", cause);
         }
         if (InwardReturnCompoundSupport.isIfExpression(r.getExpression())) {
             card.put("compoundEditable", true);

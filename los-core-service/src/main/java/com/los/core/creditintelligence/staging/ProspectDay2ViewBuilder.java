@@ -121,7 +121,25 @@ final class ProspectDay2ViewBuilder {
                 out.get("otherPolicyContent") instanceof List<?> o ? o.size() : 0);
         counts.put("openAmbiguities", openAmb);
         counts.put("missingMetrics", missingMetrics);
+        // POLICY-STUDIO-RULE-LIFECYCLE — authoritative aggregates from card.lifecycle
+        long lifeNeeds = ruleCards.stream().filter(r -> Boolean.TRUE.equals(r.get("lifecycleNeedsInput"))).count();
+        long lifeReady = ruleCards.stream().filter(r -> Boolean.TRUE.equals(r.get("lifecycleReadyToTest"))).count();
+        long lifeAccepted = ruleCards.stream()
+                .filter(r -> {
+                    Object life = r.get("lifecycle");
+                    if (!(life instanceof Map<?, ?> m)) return false;
+                    return Boolean.TRUE.equals(m.get("ruleAccepted"));
+                }).count();
+        long lifeConfirm = ruleCards.stream()
+                .filter(r -> "READY_FOR_CONFIRMATION".equals(String.valueOf(
+                        r.get("lifecycle") instanceof Map<?, ?> m ? m.get("lenderState") : ""))).count();
+        counts.put("lifecycleNeedsInput", lifeNeeds);
+        counts.put("lifecycleReadyToTest", lifeReady);
+        counts.put("lifecycleAccepted", lifeAccepted);
+        counts.put("lifecycleReadyForConfirmation", lifeConfirm);
+        counts.put("policyNeedsInput", lifeNeeds);
         out.put("counts", counts);
+        out.put("ruleLifecycleAuthority", "PolicyRuleLifecycleProjection");
 
         // POLICY-UX-2D ingestion binding summary for post-upload Rules landing
         Object ingestion = null;

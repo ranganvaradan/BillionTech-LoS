@@ -183,7 +183,15 @@ public final class RuleOperandPresenter {
             String key, String label, String registryId, Map<String, Object> resolutions) {
         Map<String, Object> stored = cast(resolutions.get(key));
         if (ParameterResolutionSupport.isResolved(stored)) {
-            return faceFromResolution(key, label, stored);
+            Map<String, Object> face = faceFromResolution(key, label, stored);
+            // Session resolutions may omit parameterId — still apply GACAT honesty for the bound id
+            if (face.get("parameterId") == null && registryId != null) {
+                face.put("parameterId", registryId);
+            }
+            registry().findById(registryId).ifPresent(def -> applyGacatHonestyFlags(face, def));
+            com.los.core.creditintelligence.policystudio.parameters.derived
+                    .AuthoredDerivedCalculationSupport.overlayOperand(face);
+            return face;
         }
         return registry().findById(registryId)
                 .map(def -> faceFromDefinition(key, label, def, true))
@@ -278,6 +286,9 @@ public final class RuleOperandPresenter {
         face.put("autoBoundFromRegistry", autoBound);
         face.put("persistence", "READ_MODEL");
         applyGacatHonestyFlags(face, def);
+        // POLICY-STUDIO-RULE-LIFECYCLE-AND-STATE-MODEL-CLOSURE-1 — authored defs clear calc-required
+        com.los.core.creditintelligence.policystudio.parameters.derived
+                .AuthoredDerivedCalculationSupport.overlayOperand(face);
         return face;
     }
 
@@ -343,6 +354,8 @@ public final class RuleOperandPresenter {
         if (pid != null) {
             registry().findById(String.valueOf(pid)).ifPresent(def -> applyGacatHonestyFlags(face, def));
         }
+        com.los.core.creditintelligence.policystudio.parameters.derived
+                .AuthoredDerivedCalculationSupport.overlayOperand(face);
         return face;
     }
 

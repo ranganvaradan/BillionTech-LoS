@@ -1002,6 +1002,11 @@ export function CiPolicyStudioPage() {
           setBusy={setBusy}
           onError={setError}
           onReview={reviewRule}
+          onRefresh={() =>
+            documentId
+              ? getPolicyStudioSession(documentId).then(setSession).catch(() => undefined)
+              : undefined
+          }
           onViewTests={() => selectWorkflowTab('simulation')}
           onCatalogueChanged={applyCatalogueSession}
           onSession={applyAuthoringSession}

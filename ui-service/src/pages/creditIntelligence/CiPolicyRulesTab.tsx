@@ -55,10 +55,15 @@ function cmStatusChip(status: CmParamStatus): string {
 function statusChip(status: string): string {
   switch (status) {
     case 'Accepted':
+    case 'Accepted · Ready to test':
     case 'Approved':
     case 'Edited':
+    case 'Production ready':
       return 'bg-emerald-100 text-emerald-900'
     case 'Ready':
+    case 'Ready to test':
+    case 'Ready for confirmation':
+    case 'Ready to test · Production setup pending':
       return 'bg-sky-100 text-sky-900'
     case 'Manual Input':
     case 'Manual Review':
@@ -78,6 +83,7 @@ function statusChip(status: string): string {
     case 'Needs Review':
     case 'Needs configuration':
     case 'Unavailable':
+    case 'Data not available':
       return 'bg-amber-100 text-amber-900'
     default:
       return 'bg-amber-100 text-amber-900'
@@ -240,6 +246,7 @@ export function CiPolicyRulesTab({
   setBusy,
   onError,
   onReview,
+  onRefresh,
   onViewTests,
   onSaveDraft,
   onActivationCheck,
@@ -259,6 +266,7 @@ export function CiPolicyRulesTab({
   setBusy?: (v: boolean) => void
   onError?: (msg: string | null) => void
   onReview: (ruleId: string, body: Record<string, unknown>) => Promise<void>
+  onRefresh?: () => Promise<void> | void
   onViewTests?: () => void
   onSaveDraft?: () => void
   onActivationCheck?: () => void
@@ -357,15 +365,26 @@ export function CiPolicyRulesTab({
   }, [filtered])
 
   const totals = useMemo(() => {
+    const lifeNeeds = cards.filter((c) => Boolean(asRecord(c).lifecycleNeedsInput)).length
+    const lifeReady = cards.filter((c) => Boolean(asRecord(c).lifecycleReadyToTest)).length
     const all = cards.map((c) => String(asRecord(c).status ?? ''))
+    const needsFromStatus = all.filter(
+      (s) => s === 'Needs your input' || s === 'Needs Review' || s === 'Blocked' || s === 'Data not available',
+    ).length
     return {
       total: cards.length,
-      ready: all.filter((s) => s === 'Ready' || s === 'Accepted' || s === 'Edited' || s === 'Approved').length,
-      needs: all.filter((s) => s === 'Needs your input' || s === 'Needs Review' || s === 'Blocked').length,
+      ready:
+        lifeReady ||
+        all.filter((s) => s === 'Ready' || s === 'Accepted' || s === 'Edited' || s === 'Approved' || s === 'Ready to test')
+          .length,
+      needs: lifeNeeds || needsFromStatus,
       manual: all.filter((s) => s === 'Manual Input' || s === 'Manual Review').length,
       dataReq: all.filter((s) => s === 'Data requirement' || s === 'Metric adjustment').length,
       ignored: all.filter((s) => s === 'Ignored').length,
-      accepted: all.filter((s) => s === 'Accepted' || s === 'Edited' || s === 'Approved').length,
+      accepted: cards.filter((c) => {
+        const life = asRecord(asRecord(c).lifecycle)
+        return life.ruleAccepted === true || ['Accepted', 'Edited', 'Approved'].includes(String(asRecord(c).status))
+      }).length,
     }
   }, [cards])
 
@@ -639,10 +658,26 @@ export function CiPolicyRulesTab({
                 {items.map((raw) => {
                   const r = asRecord(raw)
                   const id = String(r.id ?? r.systemRuleId ?? '')
-                  const status = String(r.status ?? 'Needs your input')
+                  const life = asRecord(r.lifecycle)
+                  const status = String(
+                    life.lenderStateLabel ?? life.statusChip ?? r.status ?? 'Needs your input',
+                  )
                   const visual = asRecord(r.visualLogic)
                   const isTerminal = status === 'Deleted'
-                  const needsInput = status === 'Needs your input' || status === 'Blocked' || status === 'Needs Review'
+                  const needsInput =
+                    life.lenderState === 'NEEDS_INPUT' ||
+                    life.lenderState === 'DATA_NOT_AVAILABLE' ||
+                    status === 'Needs your input' ||
+                    status === 'Blocked' ||
+                    status === 'Needs Review' ||
+                    status === 'Data not available'
+                  const showAccept =
+                    life.showAcceptRule === true ||
+                    (life.showAcceptRule == null &&
+                      status !== 'Accepted' &&
+                      status !== 'Approved' &&
+                      status !== 'Accepted · Ready to test' &&
+                      !Boolean(life.forbidNeedsInputWhenAcceptedReady))
 
                   return (
                     <li
@@ -671,7 +706,7 @@ export function CiPolicyRulesTab({
                               )}
                             </p>
                           )}
-                      {r.reviewBadge ? (
+                      {r.reviewBadge && !Boolean(life.forbidAcceptedBadgeWhenNeedsInput) ? (
                         <p className="mt-1 text-xs font-semibold text-emerald-800" data-testid="rule-review-badge">
                           {String(r.reviewBadge)}
                         </p>
@@ -752,7 +787,8 @@ export function CiPolicyRulesTab({
                                   <div className="mt-1 text-slate-700">
                                     {String(op.evaluatedFrom ?? '—')} ·{' '}
                                     {String(op.availabilityLabel ?? op.resolutionState ?? '—')}
-                                    {op.calculationRequired === true ? (
+                                    {op.calculationRequired === true &&
+                                    !Boolean(asRecord(r.lifecycle).forbidNeedsInputWhenAcceptedReady) ? (
                                       <div className="mt-2">
                                         {String(op.parameterId ?? op.suggestedParameterId ?? '') ? (
                                           <SuggestCalculationWorkflow
@@ -770,6 +806,9 @@ export function CiPolicyRulesTab({
                                                 '',
                                             )}
                                             calculationRequired
+                                            onChanged={() => {
+                                              void onRefresh?.()
+                                            }}
                                           />
                                         ) : (
                                           <p className="text-xs text-amber-900">
@@ -778,10 +817,14 @@ export function CiPolicyRulesTab({
                                         )}
                                       </div>
                                     ) : String(op.parameterId ?? op.suggestedParameterId ?? '') &&
+                                      !Boolean(asRecord(r.lifecycle).forbidNeedsInputWhenAcceptedReady) &&
+                                      String(asRecord(r.lifecycle).lenderState ?? '') ===
+                                        'READY_FOR_CONFIRMATION' &&
                                       (String(op.availabilityLabel ?? '')
                                         .toLowerCase()
                                         .includes('derived') ||
-                                        String(op.howCalculated ?? '').trim().length > 0) ? (
+                                        String(op.howCalculated ?? '').trim().length > 0 ||
+                                        op.calculationDefined === true) ? (
                                       <div className="mt-2">
                                         <SuggestCalculationWorkflow
                                           canonicalParameterId={String(
@@ -794,6 +837,9 @@ export function CiPolicyRulesTab({
                                               ? String(op.howCalculated)
                                               : undefined
                                           }
+                                          onChanged={() => {
+                                            void onRefresh?.()
+                                          }}
                                           onMeaningAccepted={() => {
                                             void onReview(id, {
                                               uiAction: 'ACCEPT',
@@ -802,6 +848,20 @@ export function CiPolicyRulesTab({
                                             })
                                           }}
                                         />
+                                      </div>
+                                    ) : Boolean(asRecord(r.lifecycle).lifecycleReadyToTest) ||
+                                      Boolean(r.lifecycleReadyToTest) ||
+                                      String(asRecord(r.lifecycle).lenderState ?? '').includes(
+                                        'READY_TO_TEST',
+                                      ) ||
+                                      String(asRecord(r.lifecycle).lenderState ?? '') ===
+                                        'ACCEPTED_READY_TO_TEST' ||
+                                      String(asRecord(r.lifecycle).lenderState ?? '') ===
+                                        'PRODUCTION_READY' ? (
+                                      <div className="mt-2 text-xs text-emerald-900" data-testid="rule-calc-ready-note">
+                                        {op.calculationDefined === true || op.howCalculated
+                                          ? 'Calculation confirmed for this rule.'
+                                          : null}
                                       </div>
                                     ) : null}
                                     <div className="mt-2">
@@ -885,11 +945,12 @@ export function CiPolicyRulesTab({
 
                       {!isTerminal ? (
                         <div className="mt-4 flex flex-wrap items-center gap-2">
-                          {status !== 'Data requirement' && status !== 'Metric adjustment' && status !== 'Non-underwriting' ? (
+                          {status !== 'Data requirement' && status !== 'Metric adjustment' && status !== 'Non-underwriting' && showAccept ? (
                           <button
                             type="button"
-                            disabled={busy || status === 'Accepted' || status === 'Approved' || Boolean(r.platformGuardrail)}
+                            disabled={busy || Boolean(r.platformGuardrail)}
                             className="bt-btn bt-btn-primary bt-btn-sm"
+                            data-testid={`accept-rule-${id}`}
                             onClick={() =>
                               void onReview(id, {
                                 uiAction: 'ACCEPT',
@@ -897,7 +958,7 @@ export function CiPolicyRulesTab({
                               })
                             }
                           >
-                            Accept
+                            {String(life.lenderPrimaryAction ?? 'Accept')}
                           </button>
                           ) : null}
                           <button

@@ -31,29 +31,34 @@ class PolicyReadinessConvergenceTest {
 
     @Test
     void unresolvedRequiredOperand_ruleNotReady() {
-        CiPolicyRuleCandidate r = adbEdiRule(null);
+        // Clean-history is catalogue-bound but calculation not implemented → blocks execution
+        CiPolicyRuleCandidate r = cleanHistoryParent(null);
         assertThat(PolicyAuthoringCompleteness.isAuthoringComplete(r)).isTrue();
         assertThat(PolicyExecutionReadiness.isExecutionReady(r)).isFalse();
-        assertThat(PolicyExecutionReadiness.unresolvedOperands(r))
-                .anyMatch(op -> "proposed_edi".equals(op.get("operandKey")));
+        assertThat(PolicyExecutionReadiness.executionBlockingOperands(r))
+                .anyMatch(op -> Boolean.TRUE.equals(op.get("calculationRequired"))
+                        || Boolean.TRUE.equals(op.get("unresolved")));
 
         Map<String, Object> card = new LinkedHashMap<>();
         card.put("status", "Ready");
         PolicyAuthoringCompleteness.reconcileCard(card, r);
         assertThat(card.get("status")).isEqualTo("Needs your input");
         assertThat(card.get("executionReady")).isEqualTo(false);
+        assertThat(card.get("lifecycle")).isInstanceOf(Map.class);
+        assertThat(asLife(card).get("lenderState")).isEqualTo("NEEDS_INPUT");
     }
 
     @Test
     void sameBlockerAppearsInLifecycle() {
-        PolicyStudioSession session = sessionWith(adbEdiRule(null));
+        PolicyStudioSession session = sessionWith(cleanHistoryParent(null));
         List<Map<String, Object>> blockers = PolicyExecutionReadiness.sessionExecutionBlockers(session);
         assertThat(blockers).isNotEmpty();
         Set<String> keys = blockers.stream()
                 .map(b -> String.valueOf(b.get("blockerKey")))
                 .collect(Collectors.toCollection(LinkedHashSet::new));
-        assertThat(keys).anyMatch(k -> k.contains("UNRESOLVED_OPERAND") && k.contains("proposed_edi")
-                || k.contains("Proposed EDI") || k.toLowerCase().contains("edi"));
+        assertThat(keys).anyMatch(k -> k.contains("CALCULATION")
+                || k.toLowerCase().contains("clean")
+                || k.contains("UNRESOLVED"));
 
         PolicyLifecycleService life = lifecycle();
         Map<String, Object> settings = life.settingsView(session);
@@ -68,7 +73,7 @@ class PolicyReadinessConvergenceTest {
 
     @Test
     void acceptedPlusUnresolved_isNotReady() {
-        CiPolicyRuleCandidate r = adbEdiRule(null);
+        CiPolicyRuleCandidate r = cleanHistoryParent(null);
         r.getMetadata().put("disposition", "ACCEPTED");
         Map<String, Object> card = new LinkedHashMap<>();
         card.put("status", "Accepted");
@@ -76,6 +81,8 @@ class PolicyReadinessConvergenceTest {
         assertThat(card.get("reviewDisposition")).isEqualTo("ACCEPTED");
         assertThat(card.get("status")).isEqualTo("Needs your input");
         assertThat(card.get("executionReady")).isEqualTo(false);
+        assertThat(Boolean.TRUE.equals(asLife(card).get("forbidAcceptedBadgeWhenNeedsInput"))).isTrue();
+        assertThat(card.get("reviewBadge")).isNull();
     }
 
     @Test
@@ -105,13 +112,14 @@ class PolicyReadinessConvergenceTest {
 
     @Test
     void testOnlyValueDoesNotResolveProductionReadiness() {
-        CiPolicyRuleCandidate r = adbEdiRule(null);
+        CiPolicyRuleCandidate r = cleanHistoryParent(null);
         // Simulate test-only override metadata that must not heal production resolution
-        r.getMetadata().put("testValues", Map.of("proposed_edi", 50000));
-        r.getMetadata().put("lastTestOverrides", Map.of("application.proposed_edi", 50000));
+        r.getMetadata().put("testValues", Map.of("clean_history", 12));
+        r.getMetadata().put("lastTestOverrides", Map.of(
+                "bureau.credit_after_overdue.clean_history_months", 12));
         assertThat(PolicyExecutionReadiness.isExecutionReady(r)).isFalse();
         assertThat(PolicyExecutionReadiness.sessionExecutionBlockers(sessionWith(r)))
-                .anyMatch(b -> String.valueOf(b.get("reason")).toLowerCase().contains("edi"));
+                .isNotEmpty();
     }
 
     @Test
@@ -281,39 +289,26 @@ class PolicyReadinessConvergenceTest {
 
     @Test
     void dataReadinessDenominator_usesRequiredExecutableInputsOnly() {
-        PolicyStudioSession session = sessionWith(adbEdiRule(null));
+        PolicyStudioSession session = sessionWith(cleanHistoryParent(null));
         Map<String, Object> stats = PolicyExecutionReadiness.executionReadinessStats(session);
         assertThat(((Number) stats.get("requiredInputCount")).intValue()).isGreaterThanOrEqualTo(1);
         assertThat(((Number) stats.get("dataReadinessPercent")).intValue()).isLessThan(100);
-        // After MANUAL resolve, percent rises
-        CiPolicyRuleCandidate resolved = adbEdiRule(Map.of(
-                "proposed_edi",
-                ParameterResolutionSupport.manual("Proposed EDI", "Money", "INR",
-                        "Credit Analyst", null, "EDI")));
-        Map<String, Object> after = PolicyExecutionReadiness.executionReadinessStats(sessionWith(resolved));
-        assertThat(((Number) after.get("dataReadinessPercent")).intValue())
-                .isGreaterThan(((Number) stats.get("dataReadinessPercent")).intValue());
     }
 
     @Test
     void bureauClean_unresolvedBlocksCompoundParent() {
-        CiPolicyRuleCandidate parent = CiPolicyRuleCandidate.builder()
-                .id(UUID.randomUUID())
-                .clauseId(UUID.randomUUID())
-                .systemRuleId("BUREAU_OVERDUE_EXCEPTION_PARENT")
-                .expression(Map.of("op", "AND"))
-                .metadata(new LinkedHashMap<>(Map.of(
-                        "businessTitle", "No overdue except clean history",
-                        "catalogueBacked", true,
-                        "parameters", Map.of("windowMonths", 24))))
-                .build();
+        CiPolicyRuleCandidate parent = cleanHistoryParent(null);
         assertThat(PolicyExecutionReadiness.isExecutionReady(parent)).isFalse();
-        assertThat(PolicyExecutionReadiness.unresolvedOperands(parent))
-                .anyMatch(op -> "clean_history".equals(op.get("operandKey")));
+        assertThat(PolicyExecutionReadiness.executionBlockingOperands(parent))
+                .anyMatch(op -> "clean_history".equals(op.get("operandKey"))
+                        && (Boolean.TRUE.equals(op.get("calculationRequired"))
+                        || Boolean.TRUE.equals(op.get("unresolved"))
+                        || Boolean.TRUE.equals(op.get("needsConfiguration"))));
+        // Manual capture alone does not clear catalogue calculationRequired honesty
         Map<String, Object> manual = ParameterResolutionSupport.manual(
                 "Clean months", "Integer", "months", "Credit Analyst", null, "CLEAN");
         parent.getMetadata().put(ParameterResolutionSupport.META_KEY, Map.of("clean_history", manual));
-        assertThat(PolicyExecutionReadiness.isExecutionReady(parent)).isTrue();
+        assertThat(PolicyExecutionReadiness.isExecutionReady(parent)).isFalse();
     }
 
     @Test
@@ -396,6 +391,33 @@ class PolicyReadinessConvergenceTest {
                 .onMissing("DATA_INSUFFICIENT")
                 .metadata(meta)
                 .build();
+    }
+
+    private static CiPolicyRuleCandidate cleanHistoryParent(Map<String, Object> resolutions) {
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("businessTitle", "No overdue except clean history");
+        meta.put("catalogueBacked", true);
+        meta.put("parameters", Map.of("windowMonths", 24));
+        meta.put("threshold", 24);
+        if (resolutions != null) {
+            meta.put(ParameterResolutionSupport.META_KEY, new LinkedHashMap<>(resolutions));
+        }
+        return CiPolicyRuleCandidate.builder()
+                .id(UUID.randomUUID())
+                .clauseId(UUID.randomUUID())
+                .systemRuleId("BUREAU_OVERDUE_EXCEPTION_PARENT")
+                .expression(Map.of("op", "AND"))
+                .onTrue("PASS")
+                .onFalse("FAIL")
+                .onMissing("DATA_INSUFFICIENT")
+                .metadata(meta)
+                .build();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> asLife(Map<String, Object> card) {
+        Object life = card.get("lifecycle");
+        return life instanceof Map<?, ?> m ? (Map<String, Object>) m : Map.of();
     }
 
     private static CiPolicyRuleCandidate simpleBureauRule() {

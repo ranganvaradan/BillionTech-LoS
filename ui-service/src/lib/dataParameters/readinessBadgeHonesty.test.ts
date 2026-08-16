@@ -172,6 +172,19 @@ describe('POLICY-DERIVED-CALCULATION-BUSINESS-ASSISTANT-1', () => {
     )
     expect(resolver).not.toContain('executability-modes-advanced')
   })
+
+  it('rules tab prefers lifecycle projection over local badge heuristics', () => {
+    const rules = readFileSync(
+      resolve(__dirname, '../../pages/creditIntelligence/CiPolicyRulesTab.tsx'),
+      'utf8',
+    )
+    expect(rules).toContain('lenderStateLabel')
+    expect(rules).toContain('forbidAcceptedBadgeWhenNeedsInput')
+    expect(rules).toContain('forbidNeedsInputWhenAcceptedReady')
+    expect(rules).toContain('showAcceptRule')
+    expect(rules).toContain('onRefresh')
+    expect(rules).toContain('lifecycleNeedsInput')
+  })
 })
 
 describe('POLICY-STUDIO-LENDER-UX-SIMPLIFICATION-1', () => {

@@ -121,6 +121,101 @@ public final class PolicyAuthoringCompleteness {
         card.put("runtimeValueRequired", false); // never required for policy authoring readiness
         // Canonical execution readiness — may demote Ready/Accepted → Needs your input
         PolicyExecutionReadiness.applyToCard(card, r);
+        // POLICY-STUDIO-RULE-LIFECYCLE-AND-STATE-MODEL-CLOSURE-1 — single lender projection
+        attachLifecycle(card, r);
+    }
+
+    private static void attachLifecycle(Map<String, Object> card, CiPolicyRuleCandidate r) {
+        Map<String, Object> meta = r.getMetadata() == null ? Map.of() : r.getMetadata();
+        // Prefer card operands; if absent (unit tests / partial cards), rebuild from rule
+        if (!(card.get("operands") instanceof List<?> ops) || ops.isEmpty()) {
+            card.put("operands", PolicyExecutionReadiness.operandsOf(r));
+        }
+        // Execution readiness on the card is authoritative for policyTestReady
+        boolean execReady = Boolean.TRUE.equals(card.get("executionReady"));
+        var facts = com.los.core.creditintelligence.policystudio.parameters.lifecycle
+                .PolicyRuleLifecycleProjection.factsFromCard(card, meta);
+        // Align with PolicyExecutionReadiness — never claim test-ready if executionReady is false
+        if (!execReady) {
+            facts = new com.los.core.creditintelligence.policystudio.parameters.lifecycle
+                    .PolicyRuleLifecycleProjection.Facts(
+                    facts.ruleAccepted(),
+                    facts.parameterResolved(),
+                    facts.calculationRequired()
+                            || PolicyExecutionReadiness.executionBlockingOperands(r).stream()
+                            .anyMatch(o -> Boolean.TRUE.equals(o.get("calculationRequired"))),
+                    facts.calculationDefined(),
+                    facts.calculationValidated(),
+                    facts.businessClarificationRequired(),
+                    facts.dataAvailableForPolicyDesign()
+                            && PolicyExecutionReadiness.unavailableOperands(r).isEmpty(),
+                    false,
+                    facts.runtimeReady(),
+                    facts.productionReady(),
+                    facts.includedExecutable(),
+                    facts.authoringComplete(),
+                    facts.knownExistingCalculationPending(),
+                    facts.newCalculationProposalPending());
+            // If execution blockers include unresolved/unavailable, reflect in facts
+            boolean unresolved = !PolicyExecutionReadiness.unresolvedOperands(r).isEmpty()
+                    || PolicyExecutionReadiness.executionBlockingOperands(r).stream()
+                    .anyMatch(o -> Boolean.TRUE.equals(o.get("unresolved"))
+                            || Boolean.TRUE.equals(o.get("needsConfiguration")));
+            boolean unavailable = !PolicyExecutionReadiness.unavailableOperands(r).isEmpty();
+            boolean calcReq = PolicyExecutionReadiness.executionBlockingOperands(r).stream()
+                    .anyMatch(o -> Boolean.TRUE.equals(o.get("calculationRequired")));
+            facts = new com.los.core.creditintelligence.policystudio.parameters.lifecycle
+                    .PolicyRuleLifecycleProjection.Facts(
+                    facts.ruleAccepted(),
+                    !unresolved,
+                    calcReq,
+                    facts.calculationDefined() && !calcReq,
+                    facts.calculationValidated() && !calcReq,
+                    facts.businessClarificationRequired(),
+                    !unavailable,
+                    false,
+                    facts.runtimeReady(),
+                    facts.productionReady(),
+                    facts.includedExecutable(),
+                    facts.authoringComplete(),
+                    false,
+                    false);
+        }
+        String ruleId = r.getId() == null ? r.getSystemRuleId() : r.getId().toString();
+        Map<String, Object> life = com.los.core.creditintelligence.policystudio.parameters.lifecycle
+                .PolicyRuleLifecycleProjection.project(ruleId, facts);
+        // Primary parameter id for Advanced
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> operands = card.get("operands") instanceof List<?> list
+                ? (List<Map<String, Object>>) list
+                : List.of();
+        operands.stream()
+                .map(o -> o.get("parameterId"))
+                .filter(p -> p != null && !String.valueOf(p).isBlank())
+                .findFirst()
+                .ifPresent(p -> life.put("parameterId", String.valueOf(p)));
+        card.put("lifecycle", life);
+        // Converge visible status chip to lifecycle (single authority)
+        String chip = String.valueOf(life.getOrDefault("statusChip", card.get("status")));
+        if (!Set.of("Ignored", "Deleted", "Data requirement", "Metric adjustment", "Non-underwriting",
+                "Policy requirement", "Manual Input", "Manual Review").contains(String.valueOf(card.get("status")))) {
+            card.put("status", chip);
+        }
+        if (Boolean.TRUE.equals(life.get("forbidAcceptedBadgeWhenNeedsInput"))) {
+            card.remove("reviewBadge");
+        }
+        card.put("lenderState", life.get("lenderState"));
+        card.put("outstandingAction", life.get("outstandingAction"));
+        card.put("lenderPrimaryAction", life.get("lenderPrimaryAction"));
+        // Policy-level aggregation helpers
+        card.put("lifecycleNeedsInput",
+                "NEEDS_INPUT".equals(life.get("lenderState"))
+                        || "DATA_NOT_AVAILABLE".equals(life.get("lenderState")));
+        card.put("lifecycleReadyToTest",
+                "READY_TO_TEST".equals(life.get("lenderState"))
+                        || "ACCEPTED_READY_TO_TEST".equals(life.get("lenderState"))
+                        || "PRODUCTION_BLOCKED".equals(life.get("lenderState"))
+                        || "PRODUCTION_READY".equals(life.get("lenderState")));
     }
 
     /**
