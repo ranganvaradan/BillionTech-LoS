@@ -289,28 +289,38 @@ public final class BusinessCalculationAssistant {
                     : List.of(
                             Map.of("parameterId", "bureau.tradeline.credit_card", "displayName", "Credit-card accounts", "role", "Account type filter"),
                             Map.of("parameterId", OVERDUE_AMOUNT, "displayName", "Current overdue amount", "role", "Overdue amount field"));
-            String explanation = "I'll add the overdue amount across the applicable credit-card accounts.";
+            // Wave-2 honesty: FILTER+SUM is now platform-capable, but catalogue "implemented"
+            // / CONFIRM_EXISTING is NOT executable capability. Do not claim CAN_CALCULATE
+            // without an authored SafeDerived expression (and Wave 2 does not auto-author
+            // production definitions for cc_overdue).
+            evidence.add("wave2:FILTER_SUM_platform_capable=true");
+            evidence.add("wave2:executable_definition=false");
+            evidence.add("wave2:confirm_existing_is_not_execution_authority=true");
+            String explanation = "I can't treat this as executable yet.\n\n"
+                    + "The platform can express credit-card overdue as FILTER + PROJECT + SUM over tradelines, "
+                    + "but no executable authored SafeDerived definition is configured for this parameter. "
+                    + "Catalogue implemented / Confirm Existing is not execution proof.";
             return new AssistantResult(
-                    OUTCOME_CAN_CALCULATE,
-                    DerivedCalculationResearchService.STATUS_READY_FOR_REVIEW,
+                    OUTCOME_MISSING_DATA,
+                    DerivedCalculationResearchService.STATUS_NEEDS_INPUT,
                     "HIGH",
                     explanation,
                     null,
                     data,
-                    List.of(),
+                    List.of("Executable authored FILTER+SUM definition for credit-card overdue"),
                     List.of(
-                            "Uses catalogue-declared credit-card overdue amount semantics",
-                            "Closed/written-off account filters are not applied unless confirmed under Change"),
+                            "Generic FILTER+SUM is supported by SafeDerived (Wave 2)",
+                            "Production definition authoring is deferred (not Wave 2)"),
                     List.of(
-                            "Studio helper also exposes a related max metric under a different key; "
-                                    + "lender-facing meaning follows catalogue sum of CC overdue amounts"),
+                            "Do not interpret CONFIRM_EXISTING / catalogue implemented as CAN_CALCULATE",
+                            "Studio helper related max metrics are not substitutes"),
                     evidence,
                     List.of(),
-                    "Sum current overdue amounts on tradelines flagged as credit-card.",
+                    "Sum overdue amounts on CREDIT_CARD tradelines via generic collection operators — not yet authored.",
                     EVAL_DATE_AUTHORITY,
                     false,
                     KIND_CONFIRM_EXISTING,
-                    true,
+                    false,
                     List.of());
         }
         String summary = target.calculationSummary() == null

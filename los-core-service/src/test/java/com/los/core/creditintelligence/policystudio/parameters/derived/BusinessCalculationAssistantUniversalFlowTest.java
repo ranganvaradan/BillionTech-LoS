@@ -10,6 +10,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BusinessCalculationAssistantUniversalFlowTest {
@@ -77,11 +78,13 @@ class BusinessCalculationAssistantUniversalFlowTest {
                 .findById("bureau.cc_overdue_amount").orElseThrow();
         var r = BusinessCalculationAssistant.investigate(
                 target, PolicyStudioConvergencePresenter.registry(), "", Map.of()).orElseThrow();
-        assertEquals(BusinessCalculationAssistant.OUTCOME_CAN_CALCULATE, r.businessOutcome());
-        assertTrue(r.knownExistingCalculation());
+        assertEquals(BusinessCalculationAssistant.OUTCOME_MISSING_DATA, r.businessOutcome());
+        assertFalse(r.knownExistingCalculation());
         assertEquals(BusinessCalculationAssistant.KIND_CONFIRM_EXISTING, r.proposalKind());
-        assertTrue(r.humanExplanation().toLowerCase().contains("credit-card")
-                || r.humanExplanation().toLowerCase().contains("overdue"));
+        assertNull(r.proposedExpression());
+        assertTrue(r.humanExplanation().toLowerCase().contains("filter")
+                || r.humanExplanation().toLowerCase().contains("executable")
+                || r.humanExplanation().toLowerCase().contains("credit-card"));
     }
 
     @Test

@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * AUTHORED_DERIVED producer: active definition → recursive deps via spine →
@@ -174,6 +175,7 @@ public final class AuthoredDerivedProducer implements ParameterProducer {
         prov.put("definitionId", def.getId() == null ? null : def.getId().toString());
         prov.put("definitionStatus", def.getStatus());
         prov.put("definitionVersion", def.getVersionNo());
+        prov.put("operatorChain", SafeDerivedExpressionEvaluator.operatorChain(expr));
         prov.put("dependencyProvenance", depProv);
         if (ctx.evaluationAsOf() != null) {
             prov.put("asOf", ctx.evaluationAsOf().toString());
@@ -268,15 +270,16 @@ public final class AuthoredDerivedProducer implements ParameterProducer {
                 BusinessCalculationAssistant.extractTargetSemantics(target, null, Map.of());
         String intent = semantics.intent();
         if ("COUNT_DPD_MONTHS".equals(intent)) {
-            return isOp(expr, "COUNT_PERIODS_MATCHING");
+            return isOp(expr, "COUNT_PERIODS_MATCHING")
+                    || (containsAnyOp(expr, Set.of("COUNT"))
+                    && containsAnyOp(expr, Set.of("FILTER", "TRAILING_WINDOW")));
         }
         if ("MONTHS_SINCE_OVERDUE".equals(intent)) {
             return isOp(expr, "MONTHS_SINCE_LAST_MATCH");
         }
         if ("SUM_CC_OVERDUE".equals(intent) || "bureau.cc_overdue_amount".equals(canonicalParameterId)) {
-            // No SafeDerived SUM producer registered via this path without a real sum expression
-            String op = String.valueOf(expr.getOrDefault("op", "")).trim().toUpperCase(Locale.ROOT);
-            return "ADD".equals(op) || "SUM".equals(op) || "REF".equals(op);
+            // Wave-2: generic FILTER/SUM/PROJECT/ADD/REF — no evaluator ID branch
+            return containsAnyOp(expr, Set.of("SUM", "ADD", "FILTER", "PROJECT", "REF"));
         }
         DerivedCalculationSemanticCompatibility.Result compat =
                 DerivedCalculationSemanticCompatibility.assessExpression(
@@ -295,6 +298,11 @@ public final class AuthoredDerivedProducer implements ParameterProducer {
         if (expression == null || expression.isEmpty()) return false;
         String op = String.valueOf(expression.getOrDefault("op", "")).trim().toUpperCase(Locale.ROOT);
         return expectedOp.equals(op);
+    }
+
+    private static boolean containsAnyOp(Map<String, Object> expression, Set<String> ops) {
+        if (expression == null || ops == null || ops.isEmpty()) return false;
+        return SafeDerivedExpressionEvaluator.operatorChain(expression).stream().anyMatch(ops::contains);
     }
 
     private static List<String> dependencyIds(CiGacatDerivedCalculationDefinition def) {

@@ -1,0 +1,25 @@
+{
+  "wave": "PLATFORM-CONVERGENCE-WAVE-2-GENERIC-CALCULATION-ENGINE",
+  "recordedAtUtc": "2026-08-16T16:30:00Z",
+  "branch": "reconcile/laptop-layout-2026-08",
+  "SOURCE_START_SHA": "61e2f5de2f1feef914c25ccb2496ab44db7cc1ce",
+  "SOURCE_FINAL_SHA_NOTE": "Set after Wave-2 commit",
+  "GITHUB_REMOTE": "https://github.com/ranganvaradan/BillionTech-LoS.git",
+  "Internal_deployed_SOURCE_SHA": "3da1ad4316eeda581975da41e6a23b2a258d4029",
+  "Client_deployed_SOURCE_SHA": "3da1ad4316eeda581975da41e6a23b2a258d4029",
+  "SAME_ARTIFACT_INTERNAL_CLIENT": true,
+  "DB_MIGRATION_WAVE2": "NONE",
+  "SAFE_DERIVED_ENGINE_REUSED": true,
+  "GACAT_MUTATED": false,
+  "VIKASAM_MUTATED": false,
+  "PRODUCTION_DEFINITIONS_CREATED": "NONE",
+  "POLICY_RUNTIME_CHANGED": false,
+  "SCORECARD_LOGIC_CHANGED": false,
+  "PARAMETER_SPECIFIC_EXECUTION_BRANCHES_ADDED": false,
+  "KNOWN_UNTRACKED_ARTIFACTS_PRESERVED": true,
+  "notes": [
+    "Extends SafeDerivedExpressionEvaluator with generic collection operators.",
+    "Does not materialize production collections into EvaluationContext (Wave 3).",
+    "Does not create/approve cc_overdue / overdue.* production definitions."
+  ]
+}
