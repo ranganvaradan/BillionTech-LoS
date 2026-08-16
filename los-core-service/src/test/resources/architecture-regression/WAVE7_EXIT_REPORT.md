@@ -7,8 +7,8 @@
 | Field | Value |
 |-------|-------|
 | SOURCE_START_SHA | `4783e14175bb88fe5cced3cea3695e5b7061c0e7` |
-| SOURCE_FINAL_SHA | *(content commit)* |
-| GITHUB_REMOTE_SHA | *(after push)* |
+| SOURCE_FINAL_SHA | `cb003d22235e75ff932e27a618e1fb8953fad054` |
+| GITHUB_REMOTE_SHA | `cb003d22235e75ff932e27a618e1fb8953fad054` |
 | DB_MIGRATION | **NONE** |
 
 ## TARGET_UNDERWRITING_ORCHESTRATION
