@@ -7,7 +7,7 @@ Extension of existing `SafeDerivedExpressionEvaluator` only. No second engine. N
 | Field | Value |
 |-------|-------|
 | SOURCE_START_SHA | `61e2f5de2f1feef914c25ccb2496ab44db7cc1ce` |
-| SOURCE_FINAL_SHA | *(set on commit)* |
+| SOURCE_FINAL_SHA | `6aadf8db709d24ed667c80cd752f705978f70c4c` |
 | DB_MIGRATION | **NONE** |
 | WORKING_TREE_TRACKED_CLEAN_BEFORE | YES |
 | KNOWN_UNTRACKED_ARTIFACTS_PRESERVED | YES (docs/, tmp-*, policy-studio-resolutions/, scripts/) |
