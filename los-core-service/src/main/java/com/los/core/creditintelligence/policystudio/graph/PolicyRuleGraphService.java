@@ -224,9 +224,31 @@ public class PolicyRuleGraphService {
 
     @Transactional
     public Map<String, Object> ensureMaterialized(UUID policyDocumentId) {
-        if (latestGraph(policyDocumentId).isEmpty()) {
+        Optional<CiPolicyRuleGraph> latest = latestGraph(policyDocumentId);
+        if (latest.isEmpty()) {
             return materializer.materializeDocument(policyDocumentId);
         }
-        return Map.of("action", "ALREADY_PRESENT", "policyDocumentId", policyDocumentId);
+        CiPolicyRuleGraph graph = latest.get();
+        if (graph.isImmutable()) {
+            return Map.of(
+                    "action", "ALREADY_PRESENT",
+                    "policyDocumentId", policyDocumentId,
+                    "immutable", true);
+        }
+        String currentHash = materializer.currentSnapshotContentHash(policyDocumentId);
+        String storedHash = graph.getSourceSnapshotHash();
+        boolean hashDrift = currentHash != null && storedHash != null && !currentHash.equals(storedHash);
+        int snapshotRules = materializer.currentSnapshotRuleCount(policyDocumentId);
+        Integer graphRuleCount = graph.getRuleCount();
+        int graphRules = graphRuleCount == null ? 0 : graphRuleCount;
+        boolean emptyStale = graphRules == 0 && snapshotRules > 0;
+        if (hashDrift || emptyStale || storedHash == null) {
+            return materializer.materializeDocument(policyDocumentId);
+        }
+        return Map.of(
+                "action", "ALREADY_PRESENT",
+                "policyDocumentId", policyDocumentId,
+                "graphId", graph.getId(),
+                "ruleCount", graphRules);
     }
 }

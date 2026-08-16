@@ -113,7 +113,13 @@ public class PolicyRuleGraphMaterializer {
             nodes.add(node);
 
             String usage = usageFromRuleType(node.getRuleType());
-            for (PolicyDslOperandExtractor.ExtractedOperand op : PolicyDslOperandExtractor.extract(expr, registry)) {
+            List<PolicyDslOperandExtractor.ExtractedOperand> extracted =
+                    PolicyDslOperandExtractor.extract(expr, registry);
+            if (extracted.isEmpty()) {
+                // CM authoring often stores exact GACAT IDs in metadata when the AST is structural.
+                extracted = PolicyDslOperandExtractor.extractFromRuleMetadata(rule.getMetadata(), registry);
+            }
+            for (PolicyDslOperandExtractor.ExtractedOperand op : extracted) {
                 if (CiPolicyRuleGraphOperand.UNRESOLVED_CANONICAL_PARAMETER.equals(op.resolutionStatus())) {
                     unresolved++;
                 }
@@ -284,6 +290,15 @@ public class PolicyRuleGraphMaterializer {
         return snapshotRepository.findById(policyDocumentId)
                 .map(s -> sha256(stableJson(s.getPayload())))
                 .orElse(null);
+    }
+
+    /** Public for ensureMaterialized hash-drift checks. */
+    public String currentSnapshotContentHash(UUID policyDocumentId) {
+        return snapshotContentHash(policyDocumentId);
+    }
+
+    public int currentSnapshotRuleCount(UUID policyDocumentId) {
+        return loadRuleCandidates(policyDocumentId).size();
     }
 
     private static boolean isGovernedImmutable(CiPolicyDocument doc) {

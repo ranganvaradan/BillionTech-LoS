@@ -173,11 +173,11 @@ public final class PolicyExecutionReadiness {
         if (Boolean.TRUE.equals(op.get("unresolved"))) return true;
         if (Boolean.TRUE.equals(op.get("unavailable"))) return true;
         if (Boolean.TRUE.equals(op.get("needsConfiguration"))) return true;
+        if (Boolean.TRUE.equals(op.get("calculationRequired"))) return true;
         String status = String.valueOf(op.getOrDefault("status", ""));
         String avail = String.valueOf(op.getOrDefault("availability", ""));
-        // Incomplete derivation/config — not auto-bound registry faces that are already MAPPED
+        // Needs configuration always blocks READY — even when auto-bound from GACAT catalogue.
         if (ParameterResolutionSupport.AVAIL_NEEDS_CONFIG.equals(avail)
-                && !Boolean.TRUE.equals(op.get("autoBoundFromRegistry"))
                 && !ParameterResolutionSupport.STATUS_MANUAL.equals(status)) {
             return true;
         }
@@ -725,7 +725,8 @@ public final class PolicyExecutionReadiness {
             card.put("executionReadinessLabel", "READY");
         } else if ("ACCEPTED".equalsIgnoreCase(disposition) || "EDITED".equalsIgnoreCase(disposition)) {
             card.put("reviewBadge", disposition.equalsIgnoreCase("EDITED") ? "Edited" : "Accepted");
-            card.put("executionReadinessLabel", execReady ? "READY" : "NEEDS RULE COMPLETION");
+            String cause = firstExecutionReadinessCause(blockers, r);
+            card.put("executionReadinessLabel", execReady ? "READY" : cause);
         }
         if (InwardReturnCompoundSupport.isIfExpression(r.getExpression())) {
             card.put("compoundEditable", true);
@@ -758,6 +759,30 @@ public final class PolicyExecutionReadiness {
             if (rid != null && rid.equals(String.valueOf(b.get("ruleId")))) return true;
         }
         return false;
+    }
+
+    private static String firstExecutionReadinessCause(
+            List<Map<String, Object>> blockers, CiPolicyRuleCandidate r) {
+        for (Map<String, Object> op : executionBlockingOperands(r)) {
+            Object cause = op.get("executionReadinessCause");
+            if (cause != null && !String.valueOf(cause).isBlank()) {
+                return String.valueOf(cause).replace('_', ' ');
+            }
+            if (Boolean.TRUE.equals(op.get("calculationRequired"))) {
+                return "CALCULATION REQUIRED";
+            }
+            if (Boolean.TRUE.equals(op.get("unresolved"))) {
+                return "NEEDS PARAMETER MAPPING";
+            }
+            if (Boolean.TRUE.equals(op.get("needsConfiguration"))) {
+                return "NEEDS PARAMETER MAPPING";
+            }
+        }
+        if (blockers != null && !blockers.isEmpty()) {
+            Object t = blockers.get(0).get("blockerType");
+            if (t != null) return String.valueOf(t).replace('_', ' ');
+        }
+        return "NEEDS RULE COMPLETION";
     }
 
     private static Map<String, Object> blocker(

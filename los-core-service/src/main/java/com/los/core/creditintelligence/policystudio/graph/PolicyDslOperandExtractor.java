@@ -107,4 +107,48 @@ public final class PolicyDslOperandExtractor {
         if (expression == null) return Map.of();
         return new LinkedHashMap<>(expression);
     }
+
+    /**
+     * Fallback when PolicyDsl AST has no metric/fact tokens — CM authoring stores exact GACAT IDs
+     * on rule metadata ({@code parameterId}, {@code rightParameterId}, {@code mappedParameters}).
+     * Exact IDs only; no fuzzy mapping.
+     */
+    public static List<ExtractedOperand> extractFromRuleMetadata(
+            Map<String, Object> metadata, CanonicalParameterRegistry registry) {
+        List<ExtractedOperand> out = new ArrayList<>();
+        if (metadata == null || metadata.isEmpty() || registry == null) return out;
+        LinkedHashMap<String, String> tokens = new LinkedHashMap<>();
+        addMetaToken(tokens, metadata.get("parameterId"), "METADATA.parameterId");
+        addMetaToken(tokens, metadata.get("rightParameterId"), "METADATA.rightParameterId");
+        Object mapped = metadata.get("mappedParameters");
+        if (mapped instanceof Map<?, ?> m) {
+            for (Map.Entry<?, ?> e : m.entrySet()) {
+                addMetaToken(tokens, e.getValue(), "METADATA.mappedParameters." + e.getKey());
+            }
+        } else if (mapped instanceof List<?> list) {
+            int i = 0;
+            for (Object o : list) {
+                addMetaToken(tokens, o, "METADATA.mappedParameters[" + (i++) + "]");
+            }
+        }
+        for (Map.Entry<String, String> e : tokens.entrySet()) {
+            String token = e.getKey();
+            String path = e.getValue();
+            if (registry.findById(token).isPresent()) {
+                out.add(new ExtractedOperand(path, token, "METADATA", token, CiPolicyRuleGraphOperand.RESOLVED));
+            } else {
+                out.add(new ExtractedOperand(
+                        path, token, "METADATA", null, CiPolicyRuleGraphOperand.UNRESOLVED_CANONICAL_PARAMETER));
+            }
+        }
+        return out;
+    }
+
+    private static void addMetaToken(LinkedHashMap<String, String> tokens, Object raw, String path) {
+        if (raw == null) return;
+        String token = String.valueOf(raw).trim();
+        if (token.isEmpty() || "null".equalsIgnoreCase(token)) return;
+        if (!token.contains(".")) return;
+        tokens.putIfAbsent(token, path);
+    }
 }

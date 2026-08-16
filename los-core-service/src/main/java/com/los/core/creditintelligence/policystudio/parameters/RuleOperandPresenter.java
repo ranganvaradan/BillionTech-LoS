@@ -76,18 +76,22 @@ public final class RuleOperandPresenter {
 
         boolean overdueParent = sys.contains("OVERDUE_EXCEPTION_PARENT") || sys.contains("NO_OVERDUE_EXCEPT");
         if (overdueParent || (visualLogic != null && "EXCEPTION_ALL".equals(String.valueOf(visualLogic.get("kind"))))) {
-            Map<String, Object> cleanOp = unresolvedOrMapped(
+            // Bind exact GACAT id — vocabulary-gated stub must not appear Execution READY.
+            Map<String, Object> cleanOp = resolvedOrRegistry(
                     "clean_history",
-                    "Clean credit history",
-                    resolutions,
-                    "bureau.credit_after_overdue.clean_history_months");
+                    "Clean history months (post-overdue)",
+                    "bureau.credit_after_overdue.clean_history_months",
+                    resolutions);
             if (!ParameterResolutionSupport.isResolved(cleanOp)
                     && meta != null && meta.get(CleanHistoryDefinitionSupport.META_KEY) instanceof Map<?, ?> legacy) {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> leg = (Map<String, Object>) legacy;
                 String st = String.valueOf(leg.getOrDefault("status", CleanHistoryDefinitionSupport.STATUS_UNRESOLVED));
                 if (!CleanHistoryDefinitionSupport.STATUS_UNRESOLVED.equals(st)) {
-                    cleanOp = fromLegacyClean(leg);
+                    Map<String, Object> legacyFace = fromLegacyClean(leg);
+                    registry().findById("bureau.credit_after_overdue.clean_history_months")
+                            .ifPresent(def -> applyGacatHonestyFlags(legacyFace, def));
+                    cleanOp = legacyFace;
                 }
             }
             operands.add(cleanOp);
@@ -231,6 +235,13 @@ public final class RuleOperandPresenter {
         face.put("resolveAction", false);
         face.put("howCalculated", leg.get("notes"));
         face.put("persistence", "SESSION_DRAFT_ONLY");
+        Object linked = leg.get("linkedParameterId");
+        if (linked != null) {
+            registry().findById(String.valueOf(linked)).ifPresent(def -> applyGacatHonestyFlags(face, def));
+        } else {
+            registry().findById("bureau.credit_after_overdue.clean_history_months")
+                    .ifPresent(def -> applyGacatHonestyFlags(face, def));
+        }
         return face;
     }
 
@@ -266,7 +277,41 @@ public final class RuleOperandPresenter {
         face.put("resolveAction", false);
         face.put("autoBoundFromRegistry", autoBound);
         face.put("persistence", "READ_MODEL");
+        applyGacatHonestyFlags(face, def);
         return face;
+    }
+
+    /**
+     * Catalogue inclusion ≠ executable calculation. Surface truthful readiness blockers
+     * when derivation is vocabulary-gated, not implemented, or not production-capable.
+     */
+    private static void applyGacatHonestyFlags(Map<String, Object> face, CanonicalParameterDefinition def) {
+        if (face == null || def == null) return;
+        CanonicalParameterDefinition.Capability cap = def.capability();
+        String missing = cap != null ? cap.missingDataTreatment() : null;
+        String binding = def.existingImplementationBinding() == null
+                ? "" : def.existingImplementationBinding().toLowerCase(Locale.ROOT);
+        String summary = def.calculationSummary() == null ? "" : def.calculationSummary().toLowerCase(Locale.ROOT);
+        boolean needsConfig = (missing != null && missing.toUpperCase(Locale.ROOT).contains("NEEDS_CONFIGURATION"))
+                || binding.contains("vocabulary-gated")
+                || summary.contains("must be confirmed")
+                || summary.contains("customer-defined");
+        boolean calcMissing = cap != null && cap.derivationDefined() && !cap.implemented();
+        if (calcMissing) {
+            face.put("calculationRequired", true);
+            face.put("needsConfiguration", true);
+            face.put("executionReadinessCause", "CALCULATION_REQUIRED");
+            face.put("message", "Calculation is defined in the catalogue but not yet implemented.");
+            face.put("availability", ParameterResolutionSupport.AVAIL_NEEDS_CONFIG);
+            face.put("availabilityLabel", availabilityCmLabel(ParameterResolutionSupport.AVAIL_NEEDS_CONFIG));
+        } else if (needsConfig) {
+            face.put("needsConfiguration", true);
+            face.put("executionReadinessCause", "NEEDS_PARAMETER_MAPPING");
+            face.put("message", missing != null ? missing
+                    : "Parameter requires configuration before it can execute.");
+            face.put("availability", ParameterResolutionSupport.AVAIL_NEEDS_CONFIG);
+            face.put("availabilityLabel", availabilityCmLabel(ParameterResolutionSupport.AVAIL_NEEDS_CONFIG));
+        }
     }
 
     private static Map<String, Object> faceFromResolution(String key, String label, Map<String, Object> res) {
@@ -294,6 +339,10 @@ public final class RuleOperandPresenter {
         if (res.get("dataType") != null) face.put("dataType", res.get("dataType"));
         if (res.get("factSource") != null) face.put("factSource", res.get("factSource"));
         if (res.get("guidance") != null) face.put("guidance", res.get("guidance"));
+        Object pid = res.get("parameterId");
+        if (pid != null) {
+            registry().findById(String.valueOf(pid)).ifPresent(def -> applyGacatHonestyFlags(face, def));
+        }
         return face;
     }
 

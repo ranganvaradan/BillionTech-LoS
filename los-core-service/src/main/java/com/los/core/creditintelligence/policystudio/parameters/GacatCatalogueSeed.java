@@ -325,10 +325,11 @@ final class GacatCatalogueSeed {
                 "PolicyBureauMetricService.cleanHistoryMonths (vocabulary-gated)",
                 List.of("clean history", "clean credit history", "clean string", "6 months clean"),
                 null, "REPAYMENT_HISTORY",
-                Capability.of("BUREAU_RETAIL", true, true, true, true, false, "SCALAR", null,
-                        "NEEDS_CONFIGURATION until CM vocabulary resolved",
+                // Raw primitives exist; executable months derivation is not certified (stub/vocabulary-gated).
+                Capability.of("BUREAU_RETAIL", true, true, true, false, false, "SCALAR", null,
+                        "NEEDS_CONFIGURATION until CM vocabulary resolved; CALCULATION_NOT_IMPLEMENTED",
                         "Customer-defined clean-history vocabulary", null, null),
-                true, true, true, true, false);
+                true, true, true, false, false);
 
         // Defined from docs / common UW use — not pretending live
         derivedDefined(p, "bureau.dpd_30_plus_count_6m", "Count of 30+ DPD months (6m)", BR,

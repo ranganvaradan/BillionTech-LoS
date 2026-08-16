@@ -3,8 +3,11 @@ package com.los.core.requirement;
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterDefinition;
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterRegistry;
 import com.los.core.creditintelligence.policystudio.parameters.PolicyStudioConvergencePresenter;
+import com.los.core.creditintelligence.policystudio.parameters.derived.DerivedCalculationDefinitionService;
 import com.los.core.service.readiness.GacatParameterReadinessProjection;
 import com.los.core.service.readiness.WorkflowParameterProvidesCatalog;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -15,6 +18,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Supplier;
 
 /**
  * Deterministic fulfilment-path planner for one Policy canonical parameter.
@@ -22,6 +26,19 @@ import java.util.Set;
  */
 @Component
 public class FulfilmentPathResolver {
+
+    private final Supplier<DerivedCalculationDefinitionService> derivedCalculationDefinitionService;
+
+    @Autowired
+    public FulfilmentPathResolver(
+            ObjectProvider<DerivedCalculationDefinitionService> derivedCalculationDefinitionService) {
+        this.derivedCalculationDefinitionService = derivedCalculationDefinitionService::getIfAvailable;
+    }
+
+    /** Test wiring when derived-calc bean is absent. */
+    public FulfilmentPathResolver() {
+        this.derivedCalculationDefinitionService = () -> null;
+    }
 
     public record Resolution(
             RequirementClass requirementClass,
@@ -156,6 +173,29 @@ public class FulfilmentPathResolver {
             sourceHints.put("calculatorAvailable", true);
             if (defOpt.isPresent() && defOpt.get().existingImplementationBinding() != null) {
                 sourceHints.put("calculatorBinding", defOpt.get().existingImplementationBinding());
+            }
+            // Exact GACAT dependency list for W4/W6 planning (primitives and/or authored definition).
+            LinkedHashSet<String> deps = new LinkedHashSet<>();
+            if (defOpt.isPresent() && defOpt.get().requiredPrimitives() != null) {
+                deps.addAll(defOpt.get().requiredPrimitives());
+            }
+            try {
+                var calcSvc = derivedCalculationDefinitionService.get();
+                if (calcSvc != null) {
+                    calcSvc.latestFor(id, null).ifPresent(def -> {
+                        if (def.getDependencyIds() != null) {
+                            deps.addAll(def.getDependencyIds());
+                        }
+                        sourceHints.put("derivedCalculationStatus", def.getStatus());
+                        sourceHints.put("derivedCalculationVersion", def.getVersionNo());
+                    });
+                }
+            } catch (Exception ignored) {
+                // Optional wiring — never break planning
+            }
+            if (!deps.isEmpty()) {
+                sourceHints.put("derivationDependsOn", List.copyOf(deps));
+                sourceHints.put("dependsOn", List.copyOf(deps));
             }
         } else if (paths.automatic) {
             preferred = FulfilmentMode.AUTOMATIC_SOURCE;
@@ -307,7 +347,20 @@ public class FulfilmentPathResolver {
         boolean derivationDefined = def != null && def.capability() != null && def.capability().derivationDefined();
         boolean derivedType = def != null && CanonicalParameterDefinition.DERIVED.equalsIgnoreCase(def.type());
         Set<String> forceDerivation = stringSet(hints.get("derivationParameterIds"));
+        boolean authoredSafeCalc = false;
+        try {
+            var calcSvc = derivedCalculationDefinitionService.get();
+            if (calcSvc != null) {
+                authoredSafeCalc = calcSvc.latestFor(id, null)
+                        .filter(d -> DerivedCalculationDefinitionService.STATUS_TESTED.equals(d.getStatus())
+                                || DerivedCalculationDefinitionService.STATUS_PRODUCTION_READY.equals(d.getStatus()))
+                        .isPresent();
+            }
+        } catch (Exception ignored) {
+            // optional
+        }
         a.derivation = forceDerivation.contains(id)
+                || authoredSafeCalc
                 || ((derivedType || derivationDefined) && calculatorAvailable
                 && !Boolean.FALSE.equals(hintBool(hints, "enableDerivation", true)));
 

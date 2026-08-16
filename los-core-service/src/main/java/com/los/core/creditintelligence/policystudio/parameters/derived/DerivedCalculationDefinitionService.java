@@ -1,0 +1,232 @@
+package com.los.core.creditintelligence.policystudio.parameters.derived;
+
+import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterDefinition;
+import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterRegistry;
+import com.los.core.creditintelligence.policystudio.parameters.PolicyStudioConvergencePresenter;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+
+/**
+ * Author / validate / activate safe derived calculations attached to exact GACAT IDs.
+ * Lender scope uses tenant_id; never overwrites PLATFORM canonical semantics by mutating GACAT rows.
+ */
+@Service
+@RequiredArgsConstructor
+public class DerivedCalculationDefinitionService {
+
+    public static final String SCOPE_PLATFORM = "PLATFORM";
+    public static final String SCOPE_LENDER = "LENDER";
+    public static final String STATUS_DEFINED = "DEFINED";
+    public static final String STATUS_TESTED = "TESTED";
+    public static final String STATUS_PRODUCTION_READY = "PRODUCTION_READY";
+    public static final String STATUS_RETIRED = "RETIRED";
+
+    private final CiGacatDerivedCalculationDefinitionRepository repository;
+
+    private CanonicalParameterRegistry registry() {
+        return PolicyStudioConvergencePresenter.registry();
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<CiGacatDerivedCalculationDefinition> latestFor(
+            String canonicalParameterId, UUID tenantId) {
+        if (canonicalParameterId == null || canonicalParameterId.isBlank()) return Optional.empty();
+        if (tenantId != null) {
+            Optional<CiGacatDerivedCalculationDefinition> lender =
+                    repository.findFirstByCanonicalParameterIdAndTenantIdAndStatusNotOrderByVersionNoDesc(
+                            canonicalParameterId, tenantId, STATUS_RETIRED);
+            if (lender.isPresent()) return lender;
+        }
+        return repository.findFirstByCanonicalParameterIdAndTenantIdIsNullAndStatusNotOrderByVersionNoDesc(
+                canonicalParameterId, STATUS_RETIRED);
+    }
+
+    @Transactional
+    public Map<String, Object> saveDraft(Map<String, Object> body, UUID tenantId, String actor) {
+        String canonicalId = str(body.get("canonicalParameterId"));
+        if (canonicalId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "canonicalParameterId required");
+        }
+        String scope = str(body.getOrDefault("scope", SCOPE_PLATFORM)).toUpperCase();
+        if (!SCOPE_PLATFORM.equals(scope) && !SCOPE_LENDER.equals(scope)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "scope must be PLATFORM or LENDER");
+        }
+        if (SCOPE_LENDER.equals(scope) && tenantId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "tenantId required for LENDER scope");
+        }
+        if (SCOPE_PLATFORM.equals(scope)) {
+            // Attach to existing canonical — do not invent a second global id.
+            if (registry().findById(canonicalId).isEmpty()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Unknown GACAT parameter: " + canonicalId);
+            }
+        } else {
+            // Lender metrics: require tenant-prefixed identity to avoid polluting global namespace.
+            if (!canonicalId.startsWith("lender.") && !canonicalId.contains(".lender.")) {
+                // Allow vikasam.* style tenant codes
+                if (!canonicalId.matches("^[a-z][a-z0-9_]*\\.[a-z0-9_.]+$")) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "Lender derived parameter id must be namespaced (e.g. vikasam.adjusted_monthly_income)");
+                }
+            }
+        }
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> expression = body.get("expression") instanceof Map<?, ?> m
+                ? new LinkedHashMap<>((Map<String, Object>) m)
+                : Map.of();
+        Set<String> allowed = allKnownCanonicalIds();
+        // Lender may depend on platform GACAT inputs
+        List<String> errors = SafeDerivedExpressionEvaluator.validate(expression, allowed);
+        if (!errors.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, String.join("; ", errors));
+        }
+        Set<String> deps = SafeDerivedExpressionEvaluator.collectDependencies(expression);
+        detectCycle(canonicalId, deps, tenantId, scope);
+
+        int nextVer = repository.findByCanonicalParameterIdOrderByVersionNoDesc(canonicalId).stream()
+                .filter(d -> scopeEquals(d, scope, tenantId))
+                .map(CiGacatDerivedCalculationDefinition::getVersionNo)
+                .findFirst()
+                .orElse(0) + 1;
+
+        CiGacatDerivedCalculationDefinition row = CiGacatDerivedCalculationDefinition.builder()
+                .tenantId(SCOPE_LENDER.equals(scope) ? tenantId : null)
+                .canonicalParameterId(canonicalId)
+                .scope(scope)
+                .status(STATUS_DEFINED)
+                .resultType(str(body.getOrDefault("resultType", "NUMBER")))
+                .unit(blankToNull(str(body.get("unit"))))
+                .description(blankToNull(str(body.get("description"))))
+                .expressionJson(expression)
+                .dependencyIds(new ArrayList<>(deps))
+                .versionNo(nextVer)
+                .createdBy(actor)
+                .createdAt(Instant.now())
+                .updatedAt(Instant.now())
+                .metadata(Map.of("arbitraryCodeAllowed", false))
+                .build();
+        row = repository.save(row);
+        return toView(row);
+    }
+
+    @Transactional
+    public Map<String, Object> testWithSample(UUID id, Map<String, Object> sampleInputs) {
+        CiGacatDerivedCalculationDefinition row = repository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "definition not found"));
+        SafeDerivedExpressionEvaluator.EvalResult result =
+                SafeDerivedExpressionEvaluator.evaluate(row.getExpressionJson(), sampleInputs);
+        if (SafeDerivedExpressionEvaluator.STATUS_OK.equals(result.status())
+                && STATUS_DEFINED.equals(row.getStatus())) {
+            row.setStatus(STATUS_TESTED);
+            row.setUpdatedAt(Instant.now());
+            repository.save(row);
+        }
+        Map<String, Object> out = toView(row);
+        out.put("evaluation", result.toMap());
+        return out;
+    }
+
+    @Transactional
+    public Map<String, Object> markProductionReady(UUID id) {
+        CiGacatDerivedCalculationDefinition row = repository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "definition not found"));
+        if (!STATUS_TESTED.equals(row.getStatus()) && !STATUS_PRODUCTION_READY.equals(row.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Definition must be TESTED before PRODUCTION_READY");
+        }
+        row.setStatus(STATUS_PRODUCTION_READY);
+        row.setUpdatedAt(Instant.now());
+        repository.save(row);
+        return toView(row);
+    }
+
+    @Transactional(readOnly = true)
+    public SafeDerivedExpressionEvaluator.EvalResult evaluateCanonical(
+            String canonicalParameterId, UUID tenantId, Map<String, Object> inputs) {
+        return latestFor(canonicalParameterId, tenantId)
+                .filter(d -> STATUS_TESTED.equals(d.getStatus()) || STATUS_PRODUCTION_READY.equals(d.getStatus()))
+                .map(d -> SafeDerivedExpressionEvaluator.evaluate(d.getExpressionJson(), inputs))
+                .orElseGet(() -> new SafeDerivedExpressionEvaluator.EvalResult(
+                        SafeDerivedExpressionEvaluator.STATUS_DATA_INSUFFICIENT,
+                        null,
+                        "No tested/production derived calculation for " + canonicalParameterId));
+    }
+
+    private void detectCycle(
+            String targetId, Set<String> deps, UUID tenantId, String scope) {
+        Set<String> visiting = new HashSet<>();
+        visiting.add(targetId);
+        for (String dep : deps) {
+            walkCycle(dep, tenantId, visiting, new HashSet<>());
+        }
+    }
+
+    private void walkCycle(String id, UUID tenantId, Set<String> stack, Set<String> seen) {
+        if (!stack.add(id)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Cycle detected involving " + id);
+        }
+        if (!seen.add(id)) {
+            stack.remove(id);
+            return;
+        }
+        latestFor(id, tenantId).ifPresent(def -> {
+            for (String dep : def.getDependencyIds() == null ? List.<String>of() : def.getDependencyIds()) {
+                walkCycle(dep, tenantId, stack, seen);
+            }
+        });
+        stack.remove(id);
+    }
+
+    private Set<String> allKnownCanonicalIds() {
+        Set<String> ids = new HashSet<>();
+        for (CanonicalParameterDefinition d : registry().all()) {
+            ids.add(d.id());
+        }
+        return ids;
+    }
+
+    private static boolean scopeEquals(CiGacatDerivedCalculationDefinition d, String scope, UUID tenantId) {
+        if (!scope.equalsIgnoreCase(d.getScope())) return false;
+        if (SCOPE_PLATFORM.equals(scope)) return d.getTenantId() == null;
+        return tenantId != null && tenantId.equals(d.getTenantId());
+    }
+
+    public Map<String, Object> toView(CiGacatDerivedCalculationDefinition row) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("id", row.getId());
+        m.put("canonicalParameterId", row.getCanonicalParameterId());
+        m.put("scope", row.getScope());
+        m.put("status", row.getStatus());
+        m.put("resultType", row.getResultType());
+        m.put("unit", row.getUnit());
+        m.put("description", row.getDescription());
+        m.put("expression", row.getExpressionJson());
+        m.put("dependencies", row.getDependencyIds());
+        m.put("versionNo", row.getVersionNo());
+        m.put("arbitraryCodeAllowed", false);
+        m.put("productionReadyImpliesTested", true);
+        return m;
+    }
+
+    private static String str(Object o) {
+        return o == null ? "" : String.valueOf(o).trim();
+    }
+
+    private static String blankToNull(String s) {
+        return s == null || s.isBlank() ? null : s;
+    }
+}

@@ -336,7 +336,12 @@ public final class ExistingSourceAcquisitionAdapters {
 
     @Slf4j
     @Component
+    @RequiredArgsConstructor
     public static class DerivationAcquisitionAdapter implements AcquisitionExecutorPort {
+        private final org.springframework.beans.factory.ObjectProvider<
+                com.los.core.creditintelligence.policystudio.parameters.derived.DerivedCalculationDefinitionService>
+                derivedCalculationDefinitionService;
+
         @Override
         public String sourceKey() {
             return AcquisitionSourceResolver.DERIVATION;
@@ -348,6 +353,7 @@ public final class ExistingSourceAcquisitionAdapters {
         }
 
         @Override
+        @SuppressWarnings("unchecked")
         public AcquisitionDtos.ExecutorOutcome execute(ExecutionContext ctx) {
             Map<String, Object> summary = new LinkedHashMap<>();
             summary.put("orchestratedBy", "W6");
@@ -368,6 +374,35 @@ public final class ExistingSourceAcquisitionAdapters {
                 summary.put("calculatorVersion", ctx.item().getSourceHints() != null
                         ? ctx.item().getSourceHints().get("calculatorVersion") : null);
                 return AcquisitionDtos.ExecutorOutcome.succeeded("DERIVATION", facts, summary);
+            }
+            // Safe typed GACAT derived calculation (if defined + tested/production-ready)
+            var calcSvc = derivedCalculationDefinitionService.getIfAvailable();
+            if (calcSvc != null && param != null && !param.isBlank()) {
+                Map<String, Object> inputs = new LinkedHashMap<>();
+                if (ctx.item().getSourceHints() != null
+                        && ctx.item().getSourceHints().get("inputs") instanceof Map<?, ?> rawInputs) {
+                    for (Map.Entry<?, ?> e : rawInputs.entrySet()) {
+                        if (e.getKey() != null) {
+                            inputs.put(String.valueOf(e.getKey()), e.getValue());
+                        }
+                    }
+                }
+                var eval = calcSvc.evaluateCanonical(param, null, inputs);
+                summary.put("derivedCalculationEvaluation", eval.toMap());
+                if (com.los.core.creditintelligence.policystudio.parameters.derived.SafeDerivedExpressionEvaluator
+                        .STATUS_OK.equals(eval.status())) {
+                    Map<String, Boolean> facts = Map.of(param, true);
+                    summary.put("derivedValue", eval.value());
+                    return AcquisitionDtos.ExecutorOutcome.succeeded("DERIVATION", facts, summary);
+                }
+                if (com.los.core.creditintelligence.policystudio.parameters.derived.SafeDerivedExpressionEvaluator
+                        .STATUS_DATA_INSUFFICIENT.equals(eval.status())) {
+                    // Fail closed — never invent zero defaults
+                    return new AcquisitionDtos.ExecutorOutcome(
+                            SourceAcquisitionState.IN_PROGRESS,
+                            "DERIVATION", null, null, eval.reason(),
+                            summary, Map.of(), true);
+                }
             }
             // Do not invent default values when calculator output absent
             return new AcquisitionDtos.ExecutorOutcome(

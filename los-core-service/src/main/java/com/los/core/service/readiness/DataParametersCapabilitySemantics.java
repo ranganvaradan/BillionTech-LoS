@@ -337,9 +337,21 @@ public final class DataParametersCapabilitySemantics {
         String binding = def.existingImplementationBinding() == null ? "" : def.existingImplementationBinding();
         boolean definedNotImplemented = "DEFINED_NOT_IMPLEMENTED".equalsIgnoreCase(binding)
                 || (def.calculationSummary() != null && def.calculationSummary().contains("DEFINED_NOT_IMPLEMENTED"));
-        boolean hasCalculator = Boolean.TRUE.equals(readiness.get("calculatorAvailable"));
+        String bindingLower = binding.toLowerCase(Locale.ROOT);
+        String summaryLower = def.calculationSummary() == null ? "" : def.calculationSummary().toLowerCase(Locale.ROOT);
+        String missingTreat = cap != null && cap.missingDataTreatment() != null
+                ? cap.missingDataTreatment().toUpperCase(Locale.ROOT) : "";
+        // Vocabulary-gated stubs are not executable calculators — surface Define calculation.
+        boolean vocabularyGatedStub = bindingLower.contains("vocabulary-gated")
+                || missingTreat.contains("NEEDS_CONFIGURATION")
+                || summaryLower.contains("must be confirmed")
+                || summaryLower.contains("customer-defined");
+        boolean hasCalculator = Boolean.TRUE.equals(readiness.get("calculatorAvailable")) && !vocabularyGatedStub;
         String path = cap == null || cap.providerFieldPath() == null ? "" : cap.providerFieldPath().trim();
         List<String> primitives = def.requiredPrimitives() == null ? List.of() : def.requiredPrimitives();
+        if (vocabularyGatedStub && CanonicalParameterDefinition.DERIVED.equalsIgnoreCase(type)) {
+            definedNotImplemented = true;
+        }
 
         if (GacatParameterReadinessProjection.SOURCE_APPLICATION_INPUT.equals(sourceType)
                 || GacatParameterReadinessProjection.SOURCE_MANUAL.equals(sourceType)

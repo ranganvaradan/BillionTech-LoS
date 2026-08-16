@@ -8,11 +8,13 @@ import com.los.core.creditintelligence.policystudio.domain.CiPolicyParameter;
 import com.los.core.creditintelligence.policystudio.domain.CiPolicySimulationRun;
 import com.los.core.creditintelligence.policystudio.domain.CiPolicyStudioSessionSnapshot;
 import com.los.core.creditintelligence.policystudio.domain.CiPolicyVocabulary;
+import com.los.core.creditintelligence.policystudio.graph.PolicyRuleGraphMaterializer;
 import com.los.core.creditintelligence.policystudio.model.PolicyStudioSession;
 import com.los.core.creditintelligence.policystudio.repository.CiPolicyDocumentRepository;
 import com.los.core.creditintelligence.policystudio.repository.CiPolicyStudioSessionSnapshotRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -57,6 +59,7 @@ public class PolicyStudioPersistenceService {
     private CiPolicyStudioSessionSnapshotRepository sessionSnapshotRepository;
     /** Optional — independent TX writer; null in unit-test constructors. */
     private PolicyStudioSessionDurableWriter durableWriter;
+    private ObjectProvider<PolicyRuleGraphMaterializer> policyRuleGraphMaterializer;
 
     public PolicyStudioPersistenceService() {
         this(new PolicyStudioDurableResolutionStore("./data/policy-studio-resolutions"));
@@ -102,6 +105,11 @@ public class PolicyStudioPersistenceService {
         this.durableWriter = durableWriter;
     }
 
+    @Autowired(required = false)
+    public void setPolicyRuleGraphMaterializer(ObjectProvider<PolicyRuleGraphMaterializer> policyRuleGraphMaterializer) {
+        this.policyRuleGraphMaterializer = policyRuleGraphMaterializer;
+    }
+
     @Transactional
     public void saveSessionSnapshot(PolicyStudioSession session) {
         if (session == null || session.getDocument() == null || session.getDocument().getId() == null) {
@@ -124,6 +132,23 @@ public class PolicyStudioPersistenceService {
         cacheByDocumentId.put(docId, session);
         durableStore.saveFromSession(session);
         persistDurableSession(copy);
+        rematerializePolicyGraphQuietly(docId);
+    }
+
+    /** DP-3 — keep persisted Policy Graph in lockstep with saved authoring snapshot. */
+    private void rematerializePolicyGraphQuietly(UUID policyDocumentId) {
+        if (policyRuleGraphMaterializer == null || policyDocumentId == null) {
+            return;
+        }
+        try {
+            PolicyRuleGraphMaterializer m = policyRuleGraphMaterializer.getIfAvailable();
+            if (m != null) {
+                m.materializeDocument(policyDocumentId);
+            }
+        } catch (Exception e) {
+            log.warn("DP-3 rematerialize after snapshot save failed for {}: {}",
+                    policyDocumentId, e.getMessage());
+        }
     }
 
     public PolicyStudioSession loadSession(UUID documentId) {

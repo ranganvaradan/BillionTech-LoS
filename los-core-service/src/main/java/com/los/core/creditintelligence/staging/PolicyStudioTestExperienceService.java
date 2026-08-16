@@ -458,7 +458,9 @@ public class PolicyStudioTestExperienceService {
     // ─── Required parameters ───────────────────────────────────────────────
 
     List<Map<String, Object>> requiredParameters(PolicyStudioSession session) {
-        Map<String, Map<String, Object>> byKey = new LinkedHashMap<>();
+        // Prefer exact GACAT identity for dedupe so the same parameter used by multiple rules
+        // appears once (Test / inventory / Scorecard parity).
+        Map<String, Map<String, Object>> byCanonical = new LinkedHashMap<>();
         for (CiPolicyRuleCandidate r : session.getRuleCandidates()) {
             if (PolicyStudioConvergencePresenter.isCompoundChild(r.getSystemRuleId())) continue;
             if (isDataCalculationOnly(r)) continue;
@@ -470,33 +472,33 @@ public class PolicyStudioTestExperienceService {
             List<Map<String, Object>> operands = RuleOperandPresenter.buildOperands(
                     r.getSystemRuleId(), dataUsed, meta, visual);
             for (Map<String, Object> op : operands) {
-                mergeParam(byKey, fromOperand(op));
+                mergeParamByCanonical(byCanonical, fromOperand(op));
             }
             for (String path : dataUsed) {
-                mergeParam(byKey, fromMetricPath(path, meta));
+                mergeParamByCanonical(byCanonical, fromMetricPath(path, meta));
             }
             // Known business params from system ids when expression is structural
             String sys = r.getSystemRuleId() == null ? "" : r.getSystemRuleId().toUpperCase(Locale.ROOT);
             if (sys.contains("BUREAU_SCORE") || sys.contains("SCORE_OR_NTC")) {
-                mergeParam(byKey, fromMetricPath("bureau.score", meta));
+                mergeParamByCanonical(byCanonical, fromMetricPath("bureau.score", meta));
             }
             if (sys.contains("INQUIR")) {
-                mergeParam(byKey, fromMetricPath("bureau.inquiries.current_month", meta));
+                mergeParamByCanonical(byCanonical, fromMetricPath("bureau.inquiries.current_month", meta));
             }
             if (sys.contains("DPD")) {
-                mergeParam(byKey, fromMetricPath("bureau.max_dpd_6m", meta));
+                mergeParamByCanonical(byCanonical, fromMetricPath("bureau.max_dpd_6m", meta));
             }
             if (sys.contains("TXN") || sys.contains("SETTLEMENT_COUNT")) {
-                mergeParam(byKey, fromMetricPath(
+                mergeParamByCanonical(byCanonical, fromMetricPath(
                         sys.contains("SETTLEMENT")
                                 ? "banking.settlement.count_monthly_avg_3m"
                                 : "banking.txn_count_3m", meta));
             }
             if (sys.contains("INWARD")) {
-                mergeParam(byKey, fromMetricPath("banking.inward_return_count_3m", meta));
+                mergeParamByCanonical(byCanonical, fromMetricPath("banking.inward_return_count_3m", meta));
             }
         }
-        return new ArrayList<>(byKey.values());
+        return new ArrayList<>(byCanonical.values());
     }
 
     private Map<String, Object> fromOperand(Map<String, Object> op) {
@@ -508,10 +510,16 @@ public class PolicyStudioTestExperienceService {
         p.put("metricId", pid);
         boolean unresolved = Boolean.TRUE.equals(op.get("unresolved"))
                 || ParameterResolutionSupport.STATUS_UNRESOLVED.equals(op.get("status"));
+        boolean calcRequired = Boolean.TRUE.equals(op.get("calculationRequired"))
+                || Boolean.TRUE.equals(op.get("needsConfiguration"));
         String resState = String.valueOf(op.getOrDefault("resolutionState", op.get("status")));
         if (unresolved) {
             p.put("status", "UNRESOLVED");
             p.put("sourceLabel", "Unresolved — resolve in Rules or enter temporary test value");
+        } else if (calcRequired) {
+            p.put("status", "UNRESOLVED");
+            p.put("sourceLabel", String.valueOf(op.getOrDefault("message",
+                    "Calculation / configuration required before this parameter can be evaluated")));
         } else if (CanonicalParameterDefinition.DERIVED.equals(resState)
                 || "DERIVED".equalsIgnoreCase(resState)) {
             p.put("status", "AUTOMATIC_DERIVED");
@@ -600,6 +608,27 @@ public class PolicyStudioTestExperienceService {
         String ns = String.valueOf(p.get("status"));
         if ("UNRESOLVED".equals(ns) || ("MANUAL_INPUT".equals(ns) && !"UNRESOLVED".equals(es))) {
             byKey.put(key, p);
+        }
+    }
+
+    /** Deduplicate by exact canonical parameter id (fallback to parameterKey). */
+    private void mergeParamByCanonical(Map<String, Map<String, Object>> byCanonical, Map<String, Object> p) {
+        if (p == null) return;
+        Object metricId = p.get("metricId");
+        String key = metricId != null && !String.valueOf(metricId).isBlank() && !"null".equals(String.valueOf(metricId))
+                ? String.valueOf(metricId)
+                : String.valueOf(p.get("parameterKey"));
+        Map<String, Object> existing = byCanonical.get(key);
+        if (existing == null) {
+            byCanonical.put(key, p);
+            return;
+        }
+        String es = String.valueOf(existing.get("status"));
+        String ns = String.valueOf(p.get("status"));
+        if ("UNRESOLVED".equals(ns)
+                || "CALCULATION_REQUIRED".equals(ns)
+                || ("MANUAL_INPUT".equals(ns) && !"UNRESOLVED".equals(es) && !"CALCULATION_REQUIRED".equals(es))) {
+            byCanonical.put(key, p);
         }
     }
 
