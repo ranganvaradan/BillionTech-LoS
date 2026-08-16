@@ -37,9 +37,9 @@ describe('readiness badge honesty', () => {
 })
 
 describe('POLICY-DERIVED-CALCULATION-BUSINESS-ASSISTANT-1', () => {
-  it('maps calculation-required to Needs your input', () => {
+  it('maps calculation-required to Calculation needs setup', () => {
     const s = lenderPrimaryStatus({ calculationRequired: true, policyTestReady: false })
-    expect(s.label).toBe('Needs your input')
+    expect(s.label).toBe('Calculation needs setup')
     expect(lenderSupportLabel('CALCULATION_NOT_IMPLEMENTED')).toBe('Needs your input')
   })
 
@@ -189,6 +189,6 @@ describe('POLICY-DERIVED-CALCULATION-BUSINESS-ASSISTANT-1', () => {
 
 describe('POLICY-STUDIO-LENDER-UX-SIMPLIFICATION-1', () => {
   it('keeps readiness honesty helpers', () => {
-    expect(lenderPrimaryStatus({ calculationRequired: true }).label).toBe('Needs your input')
+    expect(lenderPrimaryStatus({ calculationRequired: true }).label).toBe('Calculation needs setup')
   })
 })

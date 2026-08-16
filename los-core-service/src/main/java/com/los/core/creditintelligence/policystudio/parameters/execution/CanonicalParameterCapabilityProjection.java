@@ -97,24 +97,63 @@ public final class CanonicalParameterCapabilityProjection {
         }
         out.put("executionState", executionState);
 
-        // Production Certification — never inherit catalogue production_ready
+        // Production Certification — Wave-8 ledger when installed; never catalogue production_ready
         boolean catalogueClaim = def.capability() != null && def.capability().productionReady();
         Map<String, Object> prod = new LinkedHashMap<>();
+        var certSvc = com.los.core.creditintelligence.policystudio.certification
+                .ProductionCertificationAuthority.get();
+        String certStatus = PROD_CERT_NOT_ESTABLISHED;
+        boolean certified = false;
+        String certId = null;
         if (manual) {
             prod.put("status", PROD_CERT_NOT_APPLICABLE);
             prod.put("certified", false);
             prod.put("label", "Not applicable");
             prod.put("reason", "Manual / application input — not a provider production certification");
+            certStatus = PROD_CERT_NOT_APPLICABLE;
+        } else if (certSvc != null) {
+            Map<String, Object> proj = certSvc.projectionFor(
+                    com.los.core.creditintelligence.policystudio.certification.CertifiableArtifactType
+                            .CANONICAL_PARAMETER_PRODUCER,
+                    def.id(), "1",
+                    com.los.core.creditintelligence.policystudio.certification.CertificationScopeType.PLATFORM,
+                    null);
+            if (!"CERTIFIED".equals(String.valueOf(proj.get("certificationStatus")))) {
+                Map<String, Object> authored = certSvc.projectionFor(
+                        com.los.core.creditintelligence.policystudio.certification.CertifiableArtifactType
+                                .AUTHORED_CALCULATION_DEFINITION,
+                        def.id(), "1",
+                        com.los.core.creditintelligence.policystudio.certification.CertificationScopeType.PLATFORM,
+                        null);
+                if ("CERTIFIED".equals(String.valueOf(authored.get("certificationStatus")))) {
+                    proj = authored;
+                }
+            }
+            certStatus = String.valueOf(proj.getOrDefault("certificationStatus",
+                    com.los.core.creditintelligence.policystudio.certification.CertificationStatus.UNCERTIFIED.name()));
+            certified = "CERTIFIED".equals(certStatus);
+            certId = proj.get("certificationId") == null ? null : String.valueOf(proj.get("certificationId"));
+            prod.put("status", certified ? "CERTIFIED" : certStatus);
+            prod.put("certificationStatus", certStatus);
+            prod.put("certificationId", certId);
+            prod.put("certified", certified);
+            prod.put("label", certified ? "Approved for live use" : "Not approved for live use");
+            prod.put("reason", certified
+                    ? "Exact artifact certified in production certification ledger"
+                    : "Certification ledger has no CERTIFIED grant — catalogue flag is not proof");
         } else {
             prod.put("status", PROD_CERT_NOT_ESTABLISHED);
+            prod.put("certificationStatus",
+                    com.los.core.creditintelligence.policystudio.certification.CertificationStatus.UNCERTIFIED.name());
             prod.put("certified", false);
             prod.put("label", "Not certified");
-            prod.put("reason", "Production certification authority not established — catalogue flag is not proof");
+            prod.put("reason", "Production certification authority not installed — catalogue flag is not proof");
         }
         prod.put("legacyCatalogueProductionReadyClaim", catalogueClaim);
         out.put("productionCertification", prod);
         out.put("productionReady", false);
-        out.put("productionCertified", false);
+        out.put("productionCertified", certified);
+        out.put("certificationStatus", certStatus);
 
         // Advanced / internal legacy claims (descriptive only)
         Map<String, Object> legacy = new LinkedHashMap<>();
@@ -137,7 +176,6 @@ public final class CanonicalParameterCapabilityProjection {
         out.put("identityAuthority", ParameterTruthAuthorities.GACAT_IDENTITY);
         out.put("productionCertificationAuthority", ParameterTruthAuthorities.PRODUCTION_CERTIFICATION);
         out.put("catalogueFlagsAreNotExecutionAuthority", true);
-        out.put("certificationStatus", PROD_CERT_NOT_ESTABLISHED);
         // Wave-1: expose empty-context contract sample for POLICY_TEST (capability vs value)
         try {
             CanonicalParameterExecutionService spine = ExecutionCapabilityAuthority.orNull();

@@ -7,6 +7,8 @@ import com.los.core.creditintelligence.policystudio.parameters.CanonicalParamete
 import com.los.core.creditintelligence.policystudio.parameters.GacatCatalogueAuthority;
 import com.los.core.creditintelligence.policystudio.parameters.GacatCatalogueRepository;
 import com.los.core.creditintelligence.policystudio.parameters.PolicyStudioConvergencePresenter;
+import com.los.core.creditintelligence.policystudio.truth.CanonicalParameterTruthProjection;
+import com.los.core.creditintelligence.policystudio.truth.SurfaceCanonicalTruthFacade;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -295,12 +297,29 @@ public class DataParametersAdminService {
         Map<String, Object> m = new LinkedHashMap<>(d.toBusinessView());
         m.put("source", d.evaluatedFrom());
         m.put("lineage", lineage(d));
+        // Wave-9: single truth projection — D&P is a pure view over GACAT + CPES + certification
+        Map<String, Object> truth = CanonicalParameterTruthProjection.project(d.id());
+        Map<String, Object> surface = SurfaceCanonicalTruthFacade.forSurface(
+                SurfaceCanonicalTruthFacade.DATA_PARAMETERS, d.id());
+        m.put("canonicalTruth", truth);
+        m.put("truthSurface", surface);
+        m.put("primaryStatus", truth.get("primaryStatus"));
+        m.put("primaryStatusLabel", truth.get("primaryStatusLabel"));
+        m.put("nextAction", truth.get("nextAction"));
+        m.put("calculationExplanation", truth.get("calculationExplanation"));
+        m.put("parameterClassLabel", truth.get("parameterClassLabel"));
+        m.put("executionLabel", truth.get("executionLabel"));
+        m.put("certificationLabel", truth.get("certificationLabel"));
+
         Map<String, Object> readiness = GacatParameterReadinessProjection.project(d);
         m.put("readiness", readiness);
         m.put("sourceType", readiness.get("sourceType"));
         m.put("sourceFamily", readiness.get("sourceFamily"));
-        m.put("overallReadiness", readiness.get("overallReadiness"));
-        m.put("overallReadinessReasons", readiness.get("overallReadinessReasons"));
+        // Primary lender status from truth — legacy overall under Advanced only
+        m.put("overallReadiness", truth.get("primaryStatus"));
+        m.put("overallReadinessReasons", List.of(
+                "Wave-9 primaryStatus from CanonicalParameterTruthProjection",
+                String.valueOf(truth.get("primaryStatusLabel"))));
         m.put("provider", readiness.get("provider"));
         m.put("workflow", readiness.get("workflow"));
         m.put("consumers", readiness.get("consumers"));
@@ -319,15 +338,28 @@ public class DataParametersAdminService {
         m.put("parameterSupport", capability.get("parameterSupport"));
         m.put("yourOrganisation", capability.get("yourOrganisation"));
         m.put("policyDesign", capability.get("policyDesign"));
-        m.put("liveUse", capability.get("liveUse"));
-        m.put("availableForProductionPolicyUse", capability.get("availableForProductionPolicyUse"));
+        // Live use ONLY from certification ledger via truth projection
+        @SuppressWarnings("unchecked")
+        Map<String, Object> liveFromTruth = truth.get("liveUseDisplay") instanceof Map<?, ?>
+                ? (Map<String, Object>) truth.get("liveUseDisplay")
+                : Map.of("available", false, "status", "UNCERTIFIED", "label", "Not approved for live use");
+        m.put("liveUse", liveFromTruth);
+        m.put("availableForProductionPolicyUse", liveFromTruth);
         m.put("canBillionTechSupport", capability.get("canBillionTechSupport"));
         m.put("canBillionTechSupportLabel", capability.get("canBillionTechSupportLabel"));
         m.put("applicationDataStateExcluded", true);
         m.put("capabilitySemantics", true);
+        m.put("catalogueImplementedIsNotReadiness", true);
+        m.put("catalogueProductionReadyIsNotLiveStatus", true);
+        // Ensure section liveUse mirrors certification truth (not catalogue)
+        capability.put("liveUse", liveFromTruth);
+        capability.put("availableForProductionPolicyUse", liveFromTruth);
+        capability.put("productionReady", false);
+        capability.put("productionCertified",
+                "CERTIFIED".equals(String.valueOf(liveFromTruth.get("status"))));
 
         Map<String, Object> legacySections = GacatParameterReadinessProjection.detailSections(d, readiness);
-        Map<String, Object> sections = lenderFacingSections(d, readiness, capability, legacySections);
+        Map<String, Object> sections = lenderFacingSections(d, readiness, capability, legacySections, truth);
         m.put("sections", sections);
         Map<String, Object> version = dbCataloguePresent()
                 ? catalogueRepository.parameterVersionView(d.id()) : Map.of();
@@ -374,15 +406,19 @@ public class DataParametersAdminService {
         advanced.put("legacyOverallReadiness", readiness.get("overallReadiness"));
         advanced.put("legacyOverallReadinessReasons", readiness.get("overallReadinessReasons"));
         advanced.put("legacyDetailSections", legacySections);
+        advanced.put("canonicalTruth", truth);
         advanced.put("policyTestReady", readiness.get("policyTestReady"));
         advanced.put("runtimeReady", readiness.get("runtimeReady"));
-        advanced.put("productionReady", readiness.get("productionReady"));
+        advanced.put("productionReady", false); // never catalogue claim as live authority
+        advanced.put("catalogueProductionReadyLegacyClaim", readiness.get("legacyCatalogueProductionReadyClaim"));
+        advanced.put("certification", truth.get("certification"));
+        advanced.put("execution", truth.get("execution"));
         advanced.put("providerBound", readiness.get("providerBound"));
         advanced.put("mappingAvailable", readiness.get("mappingAvailable"));
         advanced.put("calculatorAvailable", readiness.get("calculatorAvailable"));
         advanced.put("workflowAvailable", readiness.get("workflowAvailable"));
         advanced.put("provenanceAvailable", readiness.get("provenanceAvailable"));
-        advanced.put("note", "Engineering evidence preserved — not primary lender status model");
+        advanced.put("note", "Single Advanced block — engineering evidence; primary status is primaryStatusLabel");
         m.put("advanced", advanced);
         m.put("catalogueAuthority", registry().authority());
         m.put("dp1", true);
@@ -396,19 +432,23 @@ public class DataParametersAdminService {
             CanonicalParameterDefinition d,
             Map<String, Object> readiness,
             Map<String, Object> capability,
-            Map<String, Object> legacySections) {
+            Map<String, Object> legacySections,
+            Map<String, Object> truth) {
         Map<String, Object> sections = new LinkedHashMap<>();
 
         Map<String, Object> definition = new LinkedHashMap<>();
         definition.put("canonicalId", d.id());
         definition.put("displayName", d.businessName());
-        definition.put("description", d.calculationSummary());
+        definition.put("description", truth.get("calculationExplanation") != null
+                ? truth.get("calculationExplanation")
+                : d.calculationSummary());
         if (d.capability() != null) {
             definition.put("datatype", d.capability().schema());
         }
         definition.put("unit", d.unit());
         definition.put("period", d.period());
         definition.put("parameterKind", d.type());
+        definition.put("parameterClassLabel", truth.get("parameterClassLabel"));
         sections.put("definition", definition);
 
         @SuppressWarnings("unchecked")
@@ -423,6 +463,12 @@ public class DataParametersAdminService {
         Map<String, Object> live = (Map<String, Object>) capability.get("liveUse");
 
         Map<String, Object> lenderCapability = new LinkedHashMap<>();
+        lenderCapability.put("primaryStatus", truth.get("primaryStatus"));
+        lenderCapability.put("primaryStatusLabel", truth.get("primaryStatusLabel"));
+        lenderCapability.put("nextAction", truth.get("nextAction"));
+        lenderCapability.put("executionLabel", truth.get("executionLabel"));
+        lenderCapability.put("certificationLabel", truth.get("certificationLabel"));
+        lenderCapability.put("calculationExplanation", truth.get("calculationExplanation"));
         lenderCapability.put("canBillionTechSupport", capability.get("canBillionTechSupportLabel"));
         lenderCapability.put("source", d.evaluatedFrom());
         lenderCapability.put("sourceType", readiness.get("sourceType"));
@@ -431,7 +477,9 @@ public class DataParametersAdminService {
         lenderCapability.put("providerLabel", platform == null ? null : platform.get("providerLabel"));
         lenderCapability.put("parameterSupport", support == null ? null : support.get("businessLabel"));
         lenderCapability.put("parameterSupportStatus", support == null ? null : support.get("status"));
-        lenderCapability.put("how", support == null ? null : support.get("businessHow"));
+        lenderCapability.put("how", truth.get("calculationExplanation") != null
+                ? truth.get("calculationExplanation")
+                : (support == null ? null : support.get("businessHow")));
         lenderCapability.put("yourOrganisation", org == null ? null : org.get("label"));
         lenderCapability.put("yourOrganisationStatus", org == null ? null : org.get("status"));
         lenderCapability.put("policyDesign", design == null ? null : design.get("label"));

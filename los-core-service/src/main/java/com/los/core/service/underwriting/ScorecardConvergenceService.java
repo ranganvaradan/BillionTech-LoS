@@ -4,6 +4,8 @@ import com.los.core.creditintelligence.policystudio.parameters.AuthoringValueTyp
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterDefinition;
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterRegistry;
 import com.los.core.creditintelligence.policystudio.parameters.execution.CanonicalParameterCapabilityProjection;
+import com.los.core.creditintelligence.policystudio.truth.CanonicalParameterTruthProjection;
+import com.los.core.creditintelligence.policystudio.truth.SurfaceCanonicalTruthFacade;
 import com.los.core.model.entity.LoanApplication;
 import com.los.core.model.entity.UnderwritingScorecard;
 import com.los.core.model.enums.ApplicationStatus;
@@ -36,14 +38,22 @@ public class ScorecardConvergenceService {
     public Map<String, Object> factorCatalogue(String q) {
         CanonicalParameterRegistry registry = CanonicalParameterRegistry.shared();
         String query = q == null ? "" : q.trim().toLowerCase(Locale.ROOT);
+        boolean includeAdvanced = query.startsWith("advanced:") || "include:ingredient".equals(query);
+        String effectiveQuery = query.startsWith("advanced:") ? query.substring("advanced:".length()).trim() : query;
+        if ("include:ingredient".equals(effectiveQuery)) effectiveQuery = "";
         List<Map<String, Object>> items = new ArrayList<>();
         for (CanonicalParameterDefinition d : registry.all()) {
-            if (!matches(d, query)) continue;
-            items.add(toPickerItem(d));
+            if (!matches(d, effectiveQuery)) continue;
+            Map<String, Object> item = toPickerItem(d);
+            if (!includeAdvanced && Boolean.TRUE.equals(item.get("advancedOnly"))) {
+                continue; // ingredients hidden from ordinary lender picker
+            }
+            items.add(item);
         }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("allowCanonicalAuthority", false);
         out.put("catalogueAuthority", registry.authority());
+        out.put("ingredientsHiddenByDefault", true);
         out.put("count", items.size());
         out.put("parameters", items);
         return out;
@@ -231,6 +241,9 @@ public class ScorecardConvergenceService {
 
     private static Map<String, Object> toPickerItem(CanonicalParameterDefinition d) {
         Map<String, Object> spine = CanonicalParameterCapabilityProjection.project(d);
+        Map<String, Object> truth = CanonicalParameterTruthProjection.project(d.id());
+        Map<String, Object> surface = SurfaceCanonicalTruthFacade.forSurface(
+                SurfaceCanonicalTruthFacade.SCORECARD_PICKER, d.id());
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("canonicalParameterId", d.id());
         m.put("canonicalDefinitionVersion", 1);
@@ -239,18 +252,40 @@ public class ScorecardConvergenceService {
         m.put("type", d.type());
         m.put("unit", d.unit());
         m.put("availability", d.availability());
-        m.put("howObtained", d.calculationSummary() != null ? d.calculationSummary()
-                : (d.existingImplementationBinding() != null ? "Via existing LOS path" : null));
-        m.put("designable", true);
+        m.put("howObtained", truth.get("calculationExplanation") != null
+                ? truth.get("calculationExplanation")
+                : (d.calculationSummary() != null ? d.calculationSummary()
+                : (d.existingImplementationBinding() != null ? "Via existing LOS path" : null)));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> semantic = truth.get("semantic") instanceof Map<?, ?>
+                ? (Map<String, Object>) truth.get("semantic") : Map.of();
+        boolean designSelectable = !Boolean.FALSE.equals(semantic.get("policySelectableDefault"));
+        // Hide ingredients from ordinary picker by default
+        boolean ingredient = "INGREDIENT".equals(String.valueOf(semantic.get("parameterClass")));
+        m.put("designable", designSelectable && !ingredient);
+        m.put("policySelectableDefault", semantic.get("policySelectableDefault"));
+        m.put("parameterClass", semantic.get("parameterClass"));
+        m.put("parameterClassLabel", truth.get("parameterClassLabel"));
+        m.put("advancedOnly", ingredient);
         m.put("policyTestReady", spine.get("policyTestReady"));
         m.put("policyTestExecutable", spine.get("policyTestExecutable"));
         m.put("productionReady", false);
-        m.put("productionCertified", false);
+        m.put("productionCertified", "CERTIFIED".equals(SurfaceCanonicalTruthFacade.certStatus(truth)));
         m.put("productionCertification", spine.get("productionCertification"));
-        boolean calculationRequired = d.capability() != null
-                && d.capability().derivationDefined()
-                && !d.capability().implemented();
+        boolean capable = SurfaceCanonicalTruthFacade.capability(truth);
+        boolean calculationRequired = Boolean.TRUE.equals(
+                truth.get("calculation") instanceof Map<?, ?> calc
+                        ? ((Map<?, ?>) calc).get("required") : false);
         m.put("calculationRequired", calculationRequired);
+        m.put("setupIncomplete", !capable);
+        m.put("designabilityDoesNotImplyExecutability", true);
+        m.put("canonicalTruth", truth);
+        m.put("truthSurface", surface);
+        m.put("primaryStatus", truth.get("primaryStatus"));
+        m.put("primaryStatusLabel", truth.get("primaryStatusLabel"));
+        m.put("nextAction", truth.get("nextAction"));
+        m.put("certificationLabel", truth.get("certificationLabel"));
+        m.put("executionLabel", truth.get("executionLabel"));
         m.put("legacyScorecardKey", d.liveScorecardParameter());
         m.put("liveRuleParameter", d.liveRuleParameter());
         m.put("aliases", d.aliases());
@@ -266,6 +301,7 @@ public class ScorecardConvergenceService {
                 d.capability() != null && d.capability().productionReady());
         advanced.put("legacyCatalogueImplemented",
                 d.capability() != null && d.capability().implemented());
+        advanced.put("canonicalTruth", truth);
         advanced.put("scorecardRuntimeAuthority", CanonicalScorecardValueResolver.AUTHORITY);
         advanced.put("scorecardRuntimeNote",
                 "Factor values resolve through CanonicalParameterExecutionService; "

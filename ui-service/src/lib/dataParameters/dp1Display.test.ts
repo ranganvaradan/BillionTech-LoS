@@ -14,8 +14,11 @@ describe('dp1Display lender UX cleanup-2', () => {
     expect(parameterSupportBusinessLabel('SUPPORTED_DERIVED')).toBe('Calculated by BillionTech')
     expect(parameterSupportBusinessLabel('CALCULATION_NOT_IMPLEMENTED')).toBe('Needs your input')
     expect(parameterSupportBusinessLabel('SUPPORTED_RAW')).toBe('Provided directly')
-    expect(platformIntegrationLabel('PRODUCTION_READY')).toBe('Production Ready')
-    expect(overallReadinessLabel('RUNTIME_READY_NONPROD')).toBe('Runtime Ready — Non-Production')
+    expect(platformIntegrationLabel('PRODUCTION_READY')).toBe('Connected')
+    expect(overallReadinessLabel('RUNTIME_READY_NONPROD')).toBe('Ready to test')
+    expect(overallReadinessLabel('PRODUCTION_READY')).toBe('Listed — not certification')
+    expect(overallReadinessLabel('APPROVED_FOR_LIVE_USE')).toBe('Approved for live use')
+    expect(overallReadinessLabel('CALCULATION_NEEDS_SETUP')).toBe('Calculation needs setup')
     expect(sourceTypeLabel('APPLICATION_INPUT')).toBe('Application input')
   })
 

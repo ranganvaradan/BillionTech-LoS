@@ -1,11 +1,20 @@
 /** Data & Parameters lender-facing display helpers (capability semantics + UX cleanup-2). */
 
 export const OVERALL_READINESS_LABELS: Record<string, string> = {
-  PRODUCTION_READY: 'Production Ready',
-  RUNTIME_READY_NONPROD: 'Runtime Ready — Non-Production',
-  POLICY_TEST_ONLY: 'Policy Test Only',
-  CATALOGUE_ONLY: 'Catalogue Only',
-  READINESS_UNKNOWN: 'Readiness Unknown',
+  // Wave-9 primary vocabulary (preferred)
+  APPROVED_FOR_LIVE_USE: 'Approved for live use',
+  READY_TO_TEST: 'Ready to test',
+  CALCULATION_NEEDS_SETUP: 'Calculation needs setup',
+  CAN_CALCULATE_WHEN_DATA_AVAILABLE: 'Can calculate when data is available',
+  NEEDS_MANUAL_INPUT: 'Needs your input',
+  NOT_YET_SUPPORTED: 'Not yet supported',
+  APPROVAL_REVOKED: 'Approval revoked',
+  // Legacy overall codes — never imply live certification
+  PRODUCTION_READY: 'Listed — not certification',
+  RUNTIME_READY_NONPROD: 'Ready to test',
+  POLICY_TEST_ONLY: 'Ready to test',
+  CATALOGUE_ONLY: 'Listed — setup incomplete',
+  READINESS_UNKNOWN: 'Needs review',
 }
 
 export const SOURCE_TYPE_LABELS: Record<string, string> = {
@@ -19,7 +28,7 @@ export const SOURCE_TYPE_LABELS: Record<string, string> = {
 }
 
 export const PLATFORM_INTEGRATION_LABELS: Record<string, string> = {
-  PRODUCTION_READY: 'Production Ready',
+  PRODUCTION_READY: 'Connected',
   NOT_INTEGRATED: 'Not Integrated',
   NOT_APPLICABLE: 'Not applicable',
 }

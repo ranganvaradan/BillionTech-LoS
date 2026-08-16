@@ -11,7 +11,10 @@ export type LenderSetupState =
   | 'NEEDS_REVIEW'
   | 'READY'
 
-/** Single primary status for lender surfaces (Rules / Inventory / Test / Scorecard). */
+/** Single primary status for lender surfaces (Rules / Inventory / Test / Scorecard).
+ * Wave-9: prefer backend canonicalTruth.primaryStatus via lenderTruthDisplay.lenderPrimaryFromTruth.
+ * Local flag derivation is a compatibility fallback only — not capability authority.
+ */
 export function lenderPrimaryStatus(flags: {
   calculationRequired?: boolean | null
   policyTestReady?: boolean | null
@@ -19,7 +22,19 @@ export function lenderPrimaryStatus(flags: {
   productionReady?: boolean | null
   unresolved?: boolean | null
   unavailable?: boolean | null
-}): { state: LenderSetupState; label: string; detail?: string } {
+  primaryStatusLabel?: string | null
+  primaryStatus?: string | null
+  calculationExplanation?: string | null
+  nextAction?: string | null
+}): { state: LenderSetupState | string; label: string; detail?: string } {
+  if (flags.primaryStatusLabel) {
+    return {
+      state: (flags.primaryStatus as LenderSetupState) || 'READY_TO_TEST',
+      label: String(flags.primaryStatusLabel),
+      detail: flags.calculationExplanation ? String(flags.calculationExplanation) : undefined,
+    }
+  }
+  // productionReady flag must NEVER imply certified live use
   if (flags.unavailable) {
     return {
       state: 'DATA_NOT_AVAILABLE',
@@ -37,7 +52,7 @@ export function lenderPrimaryStatus(flags: {
   if (flags.calculationRequired === true) {
     return {
       state: 'NEEDS_YOUR_INPUT',
-      label: 'Needs your input',
+      label: 'Calculation needs setup',
       detail:
         'I have related data, but I need to understand how you want this calculated before I can apply the rule.',
     }
@@ -52,8 +67,8 @@ export function lenderPrimaryStatus(flags: {
   if (flags.runtimeReady === true) {
     return {
       state: 'READY',
-      label: 'Ready',
-      detail: 'Available for evaluation when data is present.',
+      label: 'Ready to test',
+      detail: 'Available for evaluation when data is present. Live use requires certification.',
     }
   }
   return {
@@ -88,9 +103,24 @@ export function lenderSupportLabel(supportStatus: unknown): string {
 export function lenderOverallReadinessLabel(code: unknown): string {
   switch (String(code ?? '')) {
     case 'PRODUCTION_READY':
-      return 'Certified for production'
+      // Wave-9: never present catalogue PRODUCTION_READY as live approval
+      return 'Listed — not certification'
+    case 'APPROVED_FOR_LIVE_USE':
+      return 'Approved for live use'
+    case 'READY_TO_TEST':
+      return 'Ready to test'
+    case 'CALCULATION_NEEDS_SETUP':
+      return 'Calculation needs setup'
+    case 'CAN_CALCULATE_WHEN_DATA_AVAILABLE':
+      return 'Can calculate when data is available'
+    case 'NEEDS_MANUAL_INPUT':
+      return 'Needs your input'
+    case 'NOT_YET_SUPPORTED':
+      return 'Not yet supported'
+    case 'APPROVAL_REVOKED':
+      return 'Approval revoked'
     case 'RUNTIME_READY_NONPROD':
-      return 'Ready (non-production)'
+      return 'Ready to test'
     case 'POLICY_TEST_ONLY':
       return 'Ready to test'
     case 'CATALOGUE_ONLY':

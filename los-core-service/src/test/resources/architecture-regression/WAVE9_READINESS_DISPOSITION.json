@@ -1,0 +1,131 @@
+{
+  "wave" : 9,
+  "unclassifiedAllowed" : false,
+  "projections" : [ {
+    "name" : "CanonicalParameterTruthProjection",
+    "axis" : "EXECUTION_TRUTH",
+    "disposition" : "KEEP_AS_FACADE",
+    "note" : "Wave-9 single truth authority"
+  }, {
+    "name" : "LenderTruthDisplayMapper",
+    "axis" : "DISPLAY_ONLY",
+    "disposition" : "KEEP_AS_FACADE",
+    "note" : "Shared lender copy from truth axes"
+  }, {
+    "name" : "SurfaceCanonicalTruthFacade",
+    "axis" : "DISPLAY_ONLY",
+    "disposition" : "KEEP_AS_FACADE",
+    "note" : "Thin surface overlays"
+  }, {
+    "name" : "GacatSemanticRegistry/Projection",
+    "axis" : "SEMANTIC_METADATA",
+    "disposition" : "KEEP_AS_FACADE",
+    "note" : "Wave-4 semantic authority"
+  }, {
+    "name" : "CanonicalParameterExecutionService/ExecutionResult",
+    "axis" : "EXECUTION_TRUTH",
+    "disposition" : "KEEP_AS_FACADE",
+    "note" : "CPES — consumed, not duplicated"
+  }, {
+    "name" : "ExecutionCapabilityAuthority",
+    "axis" : "EXECUTION_TRUTH",
+    "disposition" : "KEEP_AS_FACADE",
+    "note" : "Spine capability holder"
+  }, {
+    "name" : "CanonicalParameterCapabilityProjection",
+    "axis" : "EXECUTION_TRUTH",
+    "disposition" : "KEEP_AS_FACADE",
+    "note" : "Spine capability view; cert via Wave-8"
+  }, {
+    "name" : "ParameterExecutabilitySupport",
+    "axis" : "EXECUTION_TRUTH",
+    "disposition" : "KEEP_AS_FACADE",
+    "note" : "Gate3 compatibility facade over spine"
+  }, {
+    "name" : "ProductionCertificationService",
+    "axis" : "CERTIFICATION_STATE",
+    "disposition" : "KEEP_AS_FACADE",
+    "note" : "Wave-8 certification ledger"
+  }, {
+    "name" : "GacatParameterReadinessProjection",
+    "axis" : "LEGACY_DUPLICATE",
+    "disposition" : "REWIRE_TO_CANONICAL_PROJECTION",
+    "note" : "Source/workflow facts kept; overall ladder demoted under Advanced"
+  }, {
+    "name" : "DataParametersCapabilitySemantics",
+    "axis" : "LEGACY_DUPLICATE",
+    "disposition" : "REWIRE_TO_CANONICAL_PROJECTION",
+    "note" : "liveUse/primary overridden by truth in D&P enrich"
+  }, {
+    "name" : "DataParametersAdminService.enrich",
+    "axis" : "DISPLAY_ONLY",
+    "disposition" : "REWIRE_TO_CANONICAL_PROJECTION",
+    "note" : "Attaches canonicalTruth"
+  }, {
+    "name" : "PolicyAuthoringCompleteness",
+    "axis" : "POLICY_STATE",
+    "disposition" : "KEEP_AS_FACADE",
+    "note" : "Rule completeness; operands via spine"
+  }, {
+    "name" : "PolicyExecutionReadiness",
+    "axis" : "POLICY_STATE",
+    "disposition" : "KEEP_AS_FACADE",
+    "note" : "Rule readiness; Gate3 via ParameterExecutabilitySupport"
+  }, {
+    "name" : "PolicyRuleLifecycleProjection",
+    "axis" : "POLICY_STATE",
+    "disposition" : "KEEP_AS_FACADE",
+    "note" : "Rule lifecycle display"
+  }, {
+    "name" : "RuleOperandPresenter",
+    "axis" : "DISPLAY_ONLY",
+    "disposition" : "REWIRE_TO_CANONICAL_PROJECTION",
+    "note" : "Prefer truth primary labels"
+  }, {
+    "name" : "ScorecardConvergenceService.toPickerItem",
+    "axis" : "DISPLAY_ONLY",
+    "disposition" : "REWIRE_TO_CANONICAL_PROJECTION",
+    "note" : "Consumes canonicalTruth"
+  }, {
+    "name" : "WorkflowParameterProvidesCatalog",
+    "axis" : "ACQUISITION_STATE",
+    "disposition" : "KEEP_AS_FACADE",
+    "note" : "Acquisition/provides only — not capability"
+  }, {
+    "name" : "dp1Display.ts OVERALL_READINESS_LABELS",
+    "axis" : "DISPLAY_ONLY",
+    "disposition" : "REWIRE_TO_CANONICAL_PROJECTION",
+    "note" : "Prefer primaryStatusLabel"
+  }, {
+    "name" : "lenderUxCopy.lenderPrimaryStatus",
+    "axis" : "DANGEROUS_PARALLEL_AUTHORITY",
+    "disposition" : "REWIRE_TO_CANONICAL_PROJECTION",
+    "note" : "Must prefer backend primaryStatus; local flags are fallback only"
+  }, {
+    "name" : "GacatFactorPicker productionReady badge",
+    "axis" : "DANGEROUS_PARALLEL_AUTHORITY",
+    "disposition" : "REWIRE_TO_CANONICAL_PROJECTION",
+    "note" : "Use certificationLabel / primaryStatus"
+  }, {
+    "name" : "catalogue.implemented as readiness",
+    "axis" : "DANGEROUS_PARALLEL_AUTHORITY",
+    "disposition" : "RETIRE_IN_WAVE10",
+    "note" : "Must not drive readiness"
+  }, {
+    "name" : "catalogue.production_ready as live status",
+    "axis" : "DANGEROUS_PARALLEL_AUTHORITY",
+    "disposition" : "RETIRE_IN_WAVE10",
+    "note" : "Must not drive live / Production Ready"
+  }, {
+    "name" : "definition TESTED as certification",
+    "axis" : "DANGEROUS_PARALLEL_AUTHORITY",
+    "disposition" : "RETIRE_IN_WAVE10",
+    "note" : "TESTED ≠ CERTIFIED"
+  }, {
+    "name" : "policy ACTIVE as live certification",
+    "axis" : "DANGEROUS_PARALLEL_AUTHORITY",
+    "disposition" : "RETIRE_IN_WAVE10",
+    "note" : "ACTIVE ≠ CERTIFIED"
+  } ],
+  "count" : 25
+}

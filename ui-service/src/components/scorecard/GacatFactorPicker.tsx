@@ -13,6 +13,8 @@ export type GacatFactorPick = {
   availability: string | null
   howObtained: string | null
   productionReady: boolean
+  productionCertified?: boolean
+  primaryStatusLabel?: string | null
   authoringValueType: string | null
   type: string | null
 }
@@ -65,7 +67,10 @@ export function GacatFactorPicker({ onPick, disabled }: Props) {
       unit: selected.unit != null ? String(selected.unit) : null,
       availability: selected.availability != null ? String(selected.availability) : null,
       howObtained: selected.howObtained != null ? String(selected.howObtained) : null,
-      productionReady: Boolean(selected.productionReady),
+      productionReady: false,
+      productionCertified: Boolean(selected.productionCertified),
+      primaryStatusLabel:
+        selected.primaryStatusLabel != null ? String(selected.primaryStatusLabel) : null,
       authoringValueType: selected.authoringValueType != null ? String(selected.authoringValueType) : null,
       type: selected.type != null ? String(selected.type) : null,
     })
@@ -115,16 +120,25 @@ export function GacatFactorPicker({ onPick, disabled }: Props) {
             {selected.unit ? ` · Unit: ${String(selected.unit)}` : ''}
           </div>
           <div>Availability: {String(selected.availability ?? '—')}</div>
-          <div>How obtained: {String(selected.howObtained ?? 'Automatic / existing LOS path')}</div>
+          <div>How obtained: {String(selected.howObtained ?? selected.calculationExplanation ?? '—')}</div>
           <div>
-            Production-ready:{' '}
-            {selected.productionReady === true ? (
-              <span className="text-emerald-700">Yes</span>
-            ) : (
-              <span className="text-amber-800">Not production-ready</span>
-            )}
+            Status:{' '}
+            <span className="font-medium text-slate-800">
+              {String(selected.primaryStatusLabel ?? selected.executionLabel ?? '—')}
+            </span>
           </div>
-          {selected.calculationRequired === true ? (
+          <div>
+            Live use:{' '}
+            <span className="text-slate-700">
+              {String(
+                selected.certificationLabel ??
+                  (selected.productionCertified === true
+                    ? 'Approved for live use'
+                    : 'Not approved for live use'),
+              )}
+            </span>
+          </div>
+          {selected.setupIncomplete === true || selected.calculationRequired === true ? (
             <SuggestCalculationWorkflow
               canonicalParameterId={String(selected.canonicalParameterId)}
               businessName={String(selected.businessName ?? selected.canonicalParameterId)}
@@ -137,6 +151,8 @@ export function GacatFactorPicker({ onPick, disabled }: Props) {
               <div>canonical: {String(selected.canonicalParameterId)}</div>
               <div>definition version: {String(selected.canonicalDefinitionVersion ?? 1)}</div>
               <div>legacy key: {String(selected.legacyScorecardKey ?? '—')}</div>
+              <div>parameter class: {String(selected.parameterClass ?? '—')}</div>
+              <div>primary status: {String(selected.primaryStatus ?? '—')}</div>
             </div>
           </details>
         </div>
