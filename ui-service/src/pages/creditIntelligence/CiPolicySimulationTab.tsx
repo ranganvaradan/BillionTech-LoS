@@ -260,17 +260,11 @@ export function CiPolicySimulationTab({
                 ) : null}
                 {p.calculationRequired === true &&
                 String(p.canonicalParameterId ?? p.parameterId ?? '') ? (
-                  <div className="mt-2 rounded border border-amber-200 bg-amber-50/70 p-2">
-                    <p className="text-[11px] font-medium text-amber-950">Needs your input</p>
-                    <p className="text-[10px] text-amber-900 mb-1">
-                      Complete setup before this parameter can be tested.
-                    </p>
-                    <SuggestCalculationWorkflow
-                      canonicalParameterId={String(p.canonicalParameterId ?? p.parameterId)}
-                      businessName={String(p.businessName ?? '')}
-                      calculationRequired
-                    />
-                  </div>
+                  <SuggestCalculationWorkflow
+                    canonicalParameterId={String(p.canonicalParameterId ?? p.parameterId)}
+                    businessName={String(p.businessName ?? '')}
+                    calculationRequired
+                  />
                 ) : null}
                 {unresolved && onResolveParameter ? (
                   <button

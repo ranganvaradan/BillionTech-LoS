@@ -1,5 +1,8 @@
 package com.los.core.creditintelligence.policystudio.parameters.derived;
 
+import java.time.LocalDate;
+import java.time.YearMonth;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -10,7 +13,8 @@ import java.util.Set;
 
 /**
  * Safe typed expression evaluator for GACAT derived parameters.
- * No arbitrary code — only REF / CONST / arithmetic / compare / IF over exact GACAT IDs.
+ * No arbitrary code — only REF / CONST / arithmetic / compare / IF /
+ * EVAL_AS_OF / MONTHS_SINCE_LAST_MATCH over exact GACAT IDs.
  * Missing inputs → DATA_INSUFFICIENT (never default to zero).
  */
 public final class SafeDerivedExpressionEvaluator {
@@ -18,6 +22,9 @@ public final class SafeDerivedExpressionEvaluator {
     public static final String STATUS_OK = "OK";
     public static final String STATUS_DATA_INSUFFICIENT = "DATA_INSUFFICIENT";
     public static final String STATUS_INVALID = "INVALID_EXPRESSION";
+
+    /** Convention: evaluation-date authority supplied by runtime (never silent wall-clock). */
+    public static final String INPUT_EVAL_AS_OF = "__eval_as_of";
 
     private SafeDerivedExpressionEvaluator() {}
 
@@ -48,6 +55,9 @@ public final class SafeDerivedExpressionEvaluator {
                 String s = String.valueOf(id).trim();
                 if (!s.isEmpty()) deps.add(s);
             }
+            return;
+        }
+        if ("EVAL_AS_OF".equals(op)) {
             return;
         }
         for (Object v : m.values()) {
@@ -86,6 +96,8 @@ public final class SafeDerivedExpressionEvaluator {
             case "ADD", "SUB", "MUL", "DIV" -> evalArithmetic(op, m, inputs);
             case "GT", "GTE", "LT", "LTE", "EQ" -> evalCompare(op, m, inputs);
             case "IF" -> evalIf(m, inputs);
+            case "EVAL_AS_OF" -> evalAsOf(inputs);
+            case "MONTHS_SINCE_LAST_MATCH" -> evalMonthsSinceLastMatch(m, inputs);
             default -> throw new IllegalArgumentException("Unsupported op: " + op);
         };
     }
@@ -97,6 +109,112 @@ public final class SafeDerivedExpressionEvaluator {
             return new Missing("Missing input: " + id);
         }
         return inputs.get(id);
+    }
+
+    private static Object evalAsOf(Map<String, Object> inputs) {
+        Object v = inputs.get(INPUT_EVAL_AS_OF);
+        if (v == null) v = inputs.get("evalAsOf");
+        if (v == null) v = inputs.get("evaluationDate");
+        if (v == null) {
+            return new Missing("Missing evaluation date (EVAL_AS_OF / " + INPUT_EVAL_AS_OF + ")");
+        }
+        return parseYearMonth(v);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Object evalMonthsSinceLastMatch(Map<String, Object> m, Map<String, Object> inputs) {
+        Object historyNode = m.get("history");
+        Object historyVal = evalNode(historyNode, inputs);
+        if (historyVal instanceof Missing) return historyVal;
+
+        Object asOfNode = m.get("asOf");
+        Object asOfVal = asOfNode == null
+                ? evalAsOf(inputs)
+                : evalNode(asOfNode, inputs);
+        if (asOfVal instanceof Missing) return asOfVal;
+        YearMonth asOf = asOfVal instanceof YearMonth ym ? ym : parseYearMonth(asOfVal);
+
+        String matchField = String.valueOf(m.getOrDefault("matchField", "dpd")).trim();
+        String dateField = String.valueOf(m.getOrDefault("dateField", "month")).trim();
+        String matchOp = String.valueOf(m.getOrDefault("matchOp", "GT")).trim().toUpperCase(Locale.ROOT);
+        double matchValue = toDouble(m.get("matchValue"));
+
+        List<?> rows;
+        if (historyVal instanceof List<?> list) {
+            rows = list;
+        } else if (historyVal instanceof Map<?, ?> single) {
+            rows = List.of(single);
+        } else {
+            throw new IllegalArgumentException("MONTHS_SINCE_LAST_MATCH history must be a list of observations");
+        }
+
+        YearMonth latestMatch = null;
+        for (Object rowObj : rows) {
+            if (!(rowObj instanceof Map<?, ?> rowRaw)) continue;
+            Map<String, Object> row = (Map<String, Object>) rowRaw;
+            Object matchRaw = firstPresent(row, matchField, "DaysPastDue", "dpd", "DPD");
+            Object dateRaw = firstPresent(row, dateField, "YearMonth", "month", "observationMonth", "period");
+            if (matchRaw == null || dateRaw == null) continue;
+            double dpd = toDouble(matchRaw);
+            if (!compareMatch(matchOp, dpd, matchValue)) continue;
+            YearMonth ym = parseYearMonth(dateRaw);
+            if (latestMatch == null || ym.isAfter(latestMatch)) {
+                latestMatch = ym;
+            }
+        }
+        if (latestMatch == null) {
+            // No overdue observation → treat as large clean history from earliest unknown: DATA_INSUFFICIENT
+            // is safer than inventing infinity. Callers may supply sentinel; we report insufficient.
+            return new Missing("No matching overdue observation in payment history");
+        }
+        long months = ChronoUnit.MONTHS.between(latestMatch, asOf);
+        return Math.max(0L, months);
+    }
+
+    private static boolean compareMatch(String op, double left, double right) {
+        int cmp = Double.compare(left, right);
+        return switch (op) {
+            case "GT" -> cmp > 0;
+            case "GTE" -> cmp >= 0;
+            case "LT" -> cmp < 0;
+            case "LTE" -> cmp <= 0;
+            case "EQ" -> cmp == 0;
+            default -> throw new IllegalArgumentException("Unsupported matchOp: " + op);
+        };
+    }
+
+    private static Object firstPresent(Map<String, Object> row, String... keys) {
+        for (String k : keys) {
+            if (k == null || k.isBlank()) continue;
+            if (row.containsKey(k) && row.get(k) != null) return row.get(k);
+            for (Map.Entry<String, Object> e : row.entrySet()) {
+                if (e.getKey() != null && e.getKey().equalsIgnoreCase(k) && e.getValue() != null) {
+                    return e.getValue();
+                }
+            }
+        }
+        return null;
+    }
+
+    private static YearMonth parseYearMonth(Object v) {
+        if (v instanceof YearMonth ym) return ym;
+        if (v instanceof LocalDate ld) return YearMonth.from(ld);
+        if (v instanceof java.util.Date d) {
+            return YearMonth.from(d.toInstant().atZone(java.time.ZoneOffset.UTC).toLocalDate());
+        }
+        String s = String.valueOf(v).trim();
+        if (s.length() >= 7 && s.charAt(4) == '-') {
+            try {
+                return YearMonth.parse(s.substring(0, 7));
+            } catch (Exception ignored) {
+                // fall through
+            }
+        }
+        try {
+            return YearMonth.from(LocalDate.parse(s.substring(0, Math.min(10, s.length()))));
+        } catch (Exception ex) {
+            throw new IllegalArgumentException("Not a month/date: " + v);
+        }
     }
 
     private static Object evalArithmetic(String op, Map<String, Object> m, Map<String, Object> inputs) {
@@ -200,6 +318,23 @@ public final class SafeDerivedExpressionEvaluator {
                 evalShape(m.get("when"));
                 evalShape(m.get("then"));
                 evalShape(m.get("else"));
+            }
+            case "EVAL_AS_OF" -> {
+                // leaf — evaluation date supplied by runtime inputs
+            }
+            case "MONTHS_SINCE_LAST_MATCH" -> {
+                if (m.get("history") == null) {
+                    throw new IllegalArgumentException("MONTHS_SINCE_LAST_MATCH requires history");
+                }
+                evalShape(m.get("history"));
+                if (m.get("asOf") != null) evalShape(m.get("asOf"));
+                if (!m.containsKey("matchValue")) {
+                    throw new IllegalArgumentException("MONTHS_SINCE_LAST_MATCH requires matchValue");
+                }
+                String mop = String.valueOf(m.getOrDefault("matchOp", "GT")).trim().toUpperCase(Locale.ROOT);
+                if (!Set.of("GT", "GTE", "LT", "LTE", "EQ").contains(mop)) {
+                    throw new IllegalArgumentException("Unsupported matchOp: " + mop);
+                }
             }
             default -> throw new IllegalArgumentException("Unsupported op: " + op);
         }

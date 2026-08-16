@@ -753,43 +753,29 @@ export function CiPolicyRulesTab({
                                     {String(op.evaluatedFrom ?? '—')} ·{' '}
                                     {String(op.availabilityLabel ?? op.resolutionState ?? '—')}
                                     {op.calculationRequired === true ? (
-                                      <div className="mt-2 rounded border border-amber-200 bg-amber-50/80 p-2">
-                                        <p className="text-xs font-medium text-amber-950">
-                                          Needs your input
-                                        </p>
-                                        <p className="text-[11px] text-amber-900">
-                                          Complete setup so this rule can be tested.
-                                        </p>
+                                      <div className="mt-2">
                                         {String(op.parameterId ?? op.suggestedParameterId ?? '') ? (
-                                          <div className="mt-2">
-                                            <SuggestCalculationWorkflow
-                                              canonicalParameterId={String(
-                                                op.parameterId ?? op.suggestedParameterId,
-                                              )}
-                                              businessName={String(
-                                                op.businessName ?? op.label ?? '',
-                                              )}
-                                              ruleStatement={String(
-                                                r.businessRule ||
-                                                  [r.parameterName, r.operatorValueLabel]
-                                                    .filter(Boolean)
-                                                    .join(' ') ||
-                                                  '',
-                                              )}
-                                              calculationRequired
-                                            />
-                                          </div>
-                                        ) : null}
-                                        {r.executionReadinessLabel ? (
-                                          <details className="mt-2">
-                                            <summary className="cursor-pointer text-[10px] text-slate-500">
-                                              Advanced details
-                                            </summary>
-                                            <p className="mt-1 text-[10px] text-slate-500">
-                                              Execution: {String(r.executionReadinessLabel)}
-                                            </p>
-                                          </details>
-                                        ) : null}
+                                          <SuggestCalculationWorkflow
+                                            canonicalParameterId={String(
+                                              op.parameterId ?? op.suggestedParameterId,
+                                            )}
+                                            businessName={String(
+                                              op.businessName ?? op.label ?? '',
+                                            )}
+                                            ruleStatement={String(
+                                              r.businessRule ||
+                                                [r.parameterName, r.operatorValueLabel]
+                                                  .filter(Boolean)
+                                                  .join(' ') ||
+                                                '',
+                                            )}
+                                            calculationRequired
+                                          />
+                                        ) : (
+                                          <p className="text-xs text-amber-900">
+                                            Complete setup so this rule can be tested.
+                                          </p>
+                                        )}
                                       </div>
                                     ) : null}
                                     {op.howCalculated ? (

@@ -22,6 +22,8 @@ type Props = {
   primitives?: string[]
   /** Optional rule statement for lender context */
   ruleStatement?: string
+  /** When true, parent already shows the parameter title — avoid duplicate heading */
+  hideTitle?: boolean
   onChanged?: () => void
 }
 
@@ -32,13 +34,20 @@ type Dep = {
   parameterKind?: string
   readiness?: string
   reasonSelected?: string
+  role?: string
+}
+
+type ClarificationChoice = { id?: string; label?: string }
+type ClarificationQuestion = {
+  id?: string
+  prompt?: string
+  choices?: ClarificationChoice[]
 }
 
 /**
- * POLICY-STUDIO-LENDER-UX-SIMPLIFICATION-1
- * Lender Layer-1: business language + Work it out for me.
- * Technical expression / IDs / typed ops live under Advanced details.
- * Accept remains the explicit human approval boundary (no auto-approve).
+ * POLICY-DERIVED-CALCULATION-BUSINESS-ASSISTANT-1
+ * One primary working card. Business language by default; Advanced for diagnostics.
+ * "Use this calculation" remains the only approval boundary.
  */
 export function SuggestCalculationWorkflow({
   canonicalParameterId,
@@ -47,6 +56,7 @@ export function SuggestCalculationWorkflow({
   calculationRequired,
   primitives = [],
   ruleStatement,
+  hideTitle = false,
   onChanged,
 }: Props) {
   const needsSuggest =
@@ -64,21 +74,38 @@ export function SuggestCalculationWorkflow({
   const [definition, setDefinition] = useState<Record<string, unknown> | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const [businessDefinition, setBusinessDefinition] = useState('')
+  const [clarificationAnswers, setClarificationAnswers] = useState<Record<string, string>>({})
   const [phase, setPhase] = useState<'idle' | 'research' | 'done'>('idle')
   const [showChange, setShowChange] = useState(false)
 
   const selected = options[selectedIdx] ?? proposal
   const deps = (Array.isArray(selected?.candidateDependencies)
     ? selected!.candidateDependencies
-    : []) as Dep[]
+    : Array.isArray(selected?.dataICanUse)
+      ? selected!.dataICanUse
+      : []) as Dep[]
 
   const proposalStatus = String(selected?.proposalStatus ?? '')
+  const businessOutcome = String(selected?.businessOutcome ?? '')
   const hasExpression = selected?.proposedExpression != null
-  const needsClarification =
-    selected != null &&
-    (selected.unableToRecommend === true ||
-      proposalStatus === 'NEEDS_INPUT' ||
-      !hasExpression)
+  const clarificationQuestions = (Array.isArray(selected?.clarificationQuestions)
+    ? selected!.clarificationQuestions
+    : []) as ClarificationQuestion[]
+
+  const isCanCalculate =
+    businessOutcome === 'CAN_CALCULATE' ||
+    (hasExpression && proposalStatus === 'READY_FOR_REVIEW')
+  const isNeedsClarification =
+    businessOutcome === 'NEEDS_CLARIFICATION' ||
+    (clarificationQuestions.length > 0 && !hasExpression)
+  const isMissingData =
+    businessOutcome === 'MISSING_DATA' ||
+    (!isCanCalculate &&
+      !isNeedsClarification &&
+      selected != null &&
+      (selected.unableToRecommend === true ||
+        proposalStatus === 'NEEDS_INPUT' ||
+        !hasExpression))
 
   const plainExplanation = useMemo(() => {
     const raw = String(selected?.humanExplanation ?? msg ?? '')
@@ -86,18 +113,23 @@ export function SuggestCalculationWorkflow({
   }, [selected, msg])
 
   const dataICanUse = deps
-    .map((d) => String(d.displayName || '').trim())
+    .map((d) => String(d.displayName || d.role || '').trim())
     .filter(Boolean)
 
   if (!canonicalParameterId) return null
 
-  async function onWorkItOut() {
+  async function runResearch(answers?: Record<string, string>) {
     setBusy(true)
     setError(null)
     setMsg(null)
     setPhase('research')
     try {
-      const res = await suggestDerivedCalculation(canonicalParameterId)
+      const merged = { ...clarificationAnswers, ...(answers ?? {}) }
+      setClarificationAnswers(merged)
+      const res = await suggestDerivedCalculation(canonicalParameterId, {
+        businessDescription: businessDefinition.trim() || undefined,
+        clarificationAnswers: Object.keys(merged).length ? merged : undefined,
+      })
       const opts = Array.isArray(res.options) ? (res.options as Array<Record<string, unknown>>) : [res]
       setOptions(opts)
       setProposal(opts[0] ?? res)
@@ -105,7 +137,7 @@ export function SuggestCalculationWorkflow({
       if (res.unableToRecommend === true) {
         setMsg(
           sanitizeLenderTechnicalPhrase(
-            String(res.humanExplanation ?? 'I need more information before I can propose a calculation.'),
+            String(res.humanExplanation ?? "I can't calculate this yet."),
           ),
         )
       }
@@ -115,6 +147,14 @@ export function SuggestCalculationWorkflow({
     } finally {
       setBusy(false)
     }
+  }
+
+  async function onWorkItOut() {
+    await runResearch()
+  }
+
+  async function onClarificationChoice(questionId: string, choiceId: string) {
+    await runResearch({ [questionId]: choiceId })
   }
 
   async function onAccept() {
@@ -158,6 +198,7 @@ export function SuggestCalculationWorkflow({
       setOptions([])
       setPhase('idle')
       setShowChange(false)
+      setClarificationAnswers({})
     } catch (e) {
       setError(e instanceof ApiError ? e.message : String(e))
     } finally {
@@ -185,210 +226,286 @@ export function SuggestCalculationWorkflow({
   }
 
   const showHowCalculated = definition != null && definition.found !== false
+  const showAssistant = needsSuggest && !showHowCalculated
 
   return (
     <div
       className="mt-3 space-y-3 rounded-lg border border-slate-200 bg-white p-3"
       data-testid="suggest-calculation-workflow"
       data-lender-ux="layer-1"
+      data-business-assistant="1"
     >
-      <div>
-        <div className="text-sm font-semibold text-slate-900">{displayName}</div>
-        {ruleStatement ? (
-          <p className="mt-1 text-xs leading-relaxed text-slate-700">{ruleStatement}</p>
-        ) : null}
-      </div>
+      {!hideTitle ? (
+        <div>
+          <div className="text-sm font-semibold text-slate-900">{displayName}</div>
+          {ruleStatement ? (
+            <p className="mt-1 text-xs leading-relaxed text-slate-700">{ruleStatement}</p>
+          ) : null}
+        </div>
+      ) : null}
 
-      {needsSuggest && !showHowCalculated && phase === 'idle' ? (
+      {showAssistant ? (
         <div
           className="rounded-md border border-amber-200 bg-amber-50/60 p-3 text-sm text-amber-950"
           data-testid="lender-needs-input-panel"
         >
           <div className="font-medium">Needs your input</div>
-          <p className="mt-1 text-xs leading-relaxed">
-            I have related bureau or application data, but I need to understand what you mean by
-            “{displayName}” before I can apply this rule.
-          </p>
-          <label className="mt-3 block text-xs font-medium text-amber-950">
-            How should I calculate it?
-          </label>
-          <textarea
-            className="bt-input mt-1 min-h-[72px] text-xs"
-            placeholder="Describe it in your own words…"
-            value={businessDefinition}
-            onChange={(e) => setBusinessDefinition(e.target.value)}
-            data-testid="lender-business-definition"
-          />
-          <p className="mt-1 text-[11px] text-amber-800/90">
-            Example: {LENDER_SETUP_EXAMPLE}
-          </p>
-          <button
-            type="button"
-            className="bt-btn bt-btn-primary bt-btn-sm mt-3"
-            disabled={busy}
-            onClick={() => void onWorkItOut()}
-            data-testid="suggest-calculation-btn"
-          >
-            Work it out for me
-          </button>
-        </div>
-      ) : null}
 
-      {error ? <p className="text-xs text-rose-700">{error}</p> : null}
-      {msg && phase !== 'research' ? <p className="text-xs text-slate-700">{msg}</p> : null}
-
-      {selected && !showHowCalculated && phase === 'research' ? (
-        <div
-          className="space-y-3 rounded-md border border-slate-200 p-3"
-          data-testid="suggested-derivation-panel"
-        >
-          {options.length > 1 ? (
-            <div className="flex flex-wrap gap-2">
-              {options.map((o, i) => (
-                <button
-                  key={String(o.id ?? i)}
-                  type="button"
-                  className={`rounded border px-2 py-1 text-[11px] ${
-                    i === selectedIdx ? 'border-sky-400 bg-sky-50' : 'border-slate-200'
-                  }`}
-                  onClick={() => {
-                    setSelectedIdx(i)
-                    setProposal(o)
-                  }}
-                >
-                  Option {String(o.optionIndex ?? i + 1)}
-                  {o.recommended === true ? ' · Recommended' : ''}
-                </button>
-              ))}
-            </div>
+          {phase === 'idle' ? (
+            <>
+              <p className="mt-1 text-xs leading-relaxed">
+                I have related bureau or application data, but I need to understand what you mean by
+                “{displayName}” before I can apply this rule.
+              </p>
+              <label className="mt-3 block text-xs font-medium text-amber-950">
+                How should I calculate it?
+              </label>
+              <textarea
+                className="bt-input mt-1 min-h-[72px] text-xs"
+                placeholder="Describe it in your own words…"
+                value={businessDefinition}
+                onChange={(e) => setBusinessDefinition(e.target.value)}
+                data-testid="lender-business-definition"
+              />
+              <p className="mt-1 text-[11px] text-amber-800/90">
+                Example: {LENDER_SETUP_EXAMPLE}
+              </p>
+              <button
+                type="button"
+                className="bt-btn bt-btn-primary bt-btn-sm mt-3"
+                disabled={busy}
+                onClick={() => void onWorkItOut()}
+                data-testid="suggest-calculation-btn"
+              >
+                Work it out for me
+              </button>
+            </>
           ) : null}
 
-          {needsClarification ? (
-            <div data-testid="lender-clarification-panel">
-              <div className="text-sm font-semibold text-slate-900">I need one more detail</div>
-              <p className="mt-2 text-xs leading-relaxed text-slate-700 whitespace-pre-wrap">
-                {plainExplanation ||
-                  'I could not safely determine a calculation from the information available.'}
-              </p>
-              {businessDefinition.trim() ? (
-                <p className="mt-2 text-[11px] text-slate-600">
-                  Your description: <em>{businessDefinition.trim()}</em>
-                </p>
-              ) : null}
-              {Array.isArray(selected.missingDependencies) &&
-              (selected.missingDependencies as unknown[]).length > 0 ? (
-                <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-slate-700">
-                  {(selected.missingDependencies as unknown[]).map((m, i) => (
-                    <li key={i}>{sanitizeLenderTechnicalPhrase(String(m))}</li>
-                  ))}
-                </ul>
-              ) : null}
-              <p className="mt-2 text-xs text-slate-600">
-                Please refine your description above, or ask your credit-policy lead to confirm the
-                business meaning — I will not invent a proxy calculation.
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  className="bt-btn bt-btn-secondary bt-btn-sm"
-                  disabled={busy}
-                  onClick={() => {
-                    setPhase('idle')
-                    setProposal(null)
-                    setOptions([])
-                  }}
-                >
-                  Revise description
-                </button>
-                <button
-                  type="button"
-                  className="bt-btn bt-btn-secondary bt-btn-sm"
-                  disabled={busy}
-                  onClick={() => void onReject()}
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div data-testid="lender-proposal-panel">
-              <div className="text-sm font-semibold text-slate-900">
-                Here is how I propose to calculate it
-              </div>
-              <p className="mt-2 text-xs leading-relaxed text-slate-700 whitespace-pre-wrap">
-                {plainExplanation}
-              </p>
-              {dataICanUse.length > 0 ? (
-                <details className="mt-3 rounded border border-slate-100 bg-slate-50/80 p-2">
-                  <summary className="cursor-pointer text-xs font-medium text-slate-800">
-                    How will this work?
-                  </summary>
-                  <div className="mt-2 text-xs text-slate-700">
-                    <div className="font-medium">Information available / Data I can use</div>
-                    <ul className="mt-1 list-disc pl-4">
-                      {dataICanUse.map((name) => (
-                        <li key={name}>{name}</li>
-                      ))}
-                    </ul>
-                    <p className="mt-2 text-[11px] text-slate-500">
-                      Research candidates only — not confirmed dependencies until you approve the
-                      calculation.
-                    </p>
-                  </div>
-                </details>
-              ) : null}
+          {error ? <p className="mt-2 text-xs text-rose-700">{error}</p> : null}
 
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  className="bt-btn bt-btn-primary bt-btn-sm"
-                  disabled={busy || !hasExpression}
-                  onClick={() => void onAccept()}
-                  data-testid="accept-create-calculation"
-                >
-                  Use this calculation
-                </button>
-                <button
-                  type="button"
-                  className="bt-btn bt-btn-secondary bt-btn-sm"
-                  disabled={busy}
-                  onClick={() => setShowChange((v) => !v)}
-                >
-                  Change it
-                </button>
-                <button
-                  type="button"
-                  className="bt-btn bt-btn-secondary bt-btn-sm"
-                  disabled={busy}
-                  onClick={() => void onReject()}
-                >
-                  Reject
-                </button>
-              </div>
-
-              {showChange ? (
-                <div className="mt-3 space-y-2 rounded border border-slate-200 bg-slate-50 p-2">
-                  <p className="text-[11px] text-slate-600">
-                    Prefer to describe the change in business terms and ask me to work it out again,
-                    or use Advanced details below if you need a technical edit.
+          {selected && phase === 'research' ? (
+            <div className="mt-3 space-y-3" data-testid="suggested-derivation-panel">
+              {isCanCalculate ? (
+                <div data-testid="lender-proposal-panel">
+                  <div className="text-sm font-semibold text-slate-900">I can calculate this</div>
+                  <p className="mt-2 text-xs leading-relaxed text-slate-800 whitespace-pre-wrap">
+                    {plainExplanation}
                   </p>
-                  <button
-                    type="button"
-                    className="bt-btn bt-btn-secondary bt-btn-sm"
-                    disabled={busy}
-                    onClick={() => {
-                      setPhase('idle')
-                      setProposal(null)
-                      setOptions([])
-                      setShowChange(false)
-                    }}
-                  >
-                    Describe again
-                  </button>
+                  {dataICanUse.length > 0 ? (
+                    <div className="mt-3 text-xs text-slate-800">
+                      <div className="font-medium">I'll use</div>
+                      <ul className="mt-1 list-disc pl-4">
+                        {dataICanUse.map((name) => (
+                          <li key={name}>{name}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="bt-btn bt-btn-primary bt-btn-sm"
+                      disabled={busy || !hasExpression}
+                      onClick={() => void onAccept()}
+                      data-testid="accept-create-calculation"
+                    >
+                      Use this calculation
+                    </button>
+                    <button
+                      type="button"
+                      className="bt-btn bt-btn-secondary bt-btn-sm"
+                      disabled={busy}
+                      onClick={() => setShowChange((v) => !v)}
+                    >
+                      Change
+                    </button>
+                  </div>
+                  {showChange ? (
+                    <div className="mt-3 space-y-2 rounded border border-amber-100 bg-white/80 p-2">
+                      <button
+                        type="button"
+                        className="bt-btn bt-btn-secondary bt-btn-sm"
+                        disabled={busy}
+                        onClick={() => {
+                          setPhase('idle')
+                          setProposal(null)
+                          setOptions([])
+                          setShowChange(false)
+                        }}
+                      >
+                        Describe again
+                      </button>
+                      <button
+                        type="button"
+                        className="bt-btn bt-btn-secondary bt-btn-sm ml-2"
+                        disabled={busy}
+                        onClick={() => void onReject()}
+                      >
+                        Discard
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {isNeedsClarification ? (
+                <div data-testid="lender-clarification-panel">
+                  <div className="text-sm font-semibold text-slate-900">I need one detail</div>
+                  <p className="mt-2 text-xs leading-relaxed text-slate-800 whitespace-pre-wrap">
+                    {clarificationQuestions[0]?.prompt
+                      ? sanitizeLenderTechnicalPhrase(String(clarificationQuestions[0].prompt))
+                      : plainExplanation}
+                  </p>
+                  {clarificationQuestions[0]?.choices &&
+                  clarificationQuestions[0].choices.length > 0 ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {clarificationQuestions[0].choices.map((c) => (
+                        <button
+                          key={String(c.id)}
+                          type="button"
+                          className="bt-btn bt-btn-secondary bt-btn-sm"
+                          disabled={busy}
+                          data-testid={`clarification-choice-${c.id}`}
+                          onClick={() =>
+                            void onClarificationChoice(
+                              String(clarificationQuestions[0].id ?? 'overdue_threshold'),
+                              String(c.id ?? ''),
+                            )
+                          }
+                        >
+                          {c.label}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        className="bt-btn bt-btn-secondary bt-btn-sm"
+                        disabled={busy}
+                        onClick={() => {
+                          setPhase('idle')
+                          setProposal(null)
+                          setOptions([])
+                        }}
+                      >
+                        Revise description
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : null}
+
+              {isMissingData && !isNeedsClarification && !isCanCalculate ? (
+                <div data-testid="lender-missing-data-panel">
+                  <div className="text-sm font-semibold text-slate-900">
+                    I can&apos;t calculate this yet
+                  </div>
+                  <p className="mt-2 text-xs leading-relaxed text-slate-800 whitespace-pre-wrap">
+                    {plainExplanation}
+                  </p>
+                  {Array.isArray(selected.missingDependencies) &&
+                  (selected.missingDependencies as unknown[]).length > 0 ? (
+                    <div className="mt-3 text-xs text-slate-800">
+                      <div className="font-medium">To calculate this I need</div>
+                      <ul className="mt-1 list-disc pl-4">
+                        {(selected.missingDependencies as unknown[]).map((m, i) => (
+                          <li key={i}>{sanitizeLenderTechnicalPhrase(String(m))}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      className="bt-btn bt-btn-secondary bt-btn-sm"
+                      disabled={busy}
+                      onClick={() => {
+                        setPhase('idle')
+                        setProposal(null)
+                        setOptions([])
+                      }}
+                    >
+                      Revise description
+                    </button>
+                    <button
+                      type="button"
+                      className="bt-btn bt-btn-secondary bt-btn-sm"
+                      disabled={busy}
+                      onClick={() => void onReject()}
+                    >
+                      Cancel
+                    </button>
+                  </div>
                 </div>
               ) : null}
             </div>
-          )}
+          ) : null}
+
+          <details className="mt-3" data-testid="lender-advanced-details">
+            <summary className="cursor-pointer text-xs font-medium text-slate-600">Advanced</summary>
+            <div className="mt-2 space-y-2 text-[11px] text-slate-600">
+              <div>
+                Canonical parameter ID:{' '}
+                <span className="font-mono text-slate-800">{canonicalParameterId}</span>
+              </div>
+              {selected ? (
+                <>
+                  <div>
+                    Business outcome: {String(selected.businessOutcome ?? '—')} · Status:{' '}
+                    {String(selected.proposalStatus ?? '—')} · Confidence:{' '}
+                    {String(selected.confidence ?? '—')}
+                  </div>
+                  {selected.evaluationDateAuthority ? (
+                    <div>Evaluation date: {String(selected.evaluationDateAuthority)}</div>
+                  ) : null}
+                  <div className="font-medium text-slate-800">Candidate inputs</div>
+                  <ul className="space-y-1">
+                    {deps.map((d) => (
+                      <li key={d.parameterId} className="rounded bg-white/80 px-2 py-1">
+                        <span className="font-medium">{d.displayName || d.parameterId}</span>
+                        <div className="font-mono text-[10px] text-slate-400">{d.parameterId}</div>
+                      </li>
+                    ))}
+                    {deps.length === 0 ? <li>None</li> : null}
+                  </ul>
+                  {selected.proposedExpression ? (
+                    <pre className="overflow-x-auto rounded bg-slate-900/90 p-2 text-[10px] text-slate-100">
+                      {JSON.stringify(selected.proposedExpression, null, 2)}
+                    </pre>
+                  ) : (
+                    <div className="space-y-1">
+                      <div className="text-amber-800">No complete expression yet.</div>
+                      <textarea
+                        className="bt-input min-h-[80px] font-mono text-[11px]"
+                        placeholder='{"op":"REF","id":"exact.parameter.id"}'
+                        value={editExpr}
+                        onChange={(e) => setEditExpr(e.target.value)}
+                      />
+                      <button
+                        type="button"
+                        className="bt-btn bt-btn-secondary bt-btn-sm"
+                        disabled={busy || !editExpr.trim()}
+                        onClick={() => void onEditSave()}
+                      >
+                        Save expression edit
+                      </button>
+                    </div>
+                  )}
+                </>
+              ) : null}
+              <DefineDerivedCalculationPanel
+                canonicalParameterId={canonicalParameterId}
+                primitives={
+                  primitives.length
+                    ? primitives
+                    : deps.map((d) => String(d.parameterId ?? '')).filter(Boolean)
+                }
+                supportStatus={needsSuggest ? 'CALCULATION_NOT_IMPLEMENTED' : supportStatus}
+              />
+            </div>
+          </details>
         </div>
       ) : null}
 
@@ -401,67 +518,9 @@ export function SuggestCalculationWorkflow({
           <p className="mt-1 text-xs text-emerald-900">
             This rule is ready to test. Production use still requires separate certification.
           </p>
-        </div>
-      ) : null}
-
-      <details className="rounded-md border border-slate-200 p-3" data-testid="lender-advanced-details">
-        <summary className="cursor-pointer text-xs font-medium text-slate-600">
-          Advanced details
-        </summary>
-        <div className="mt-2 space-y-2 text-[11px] text-slate-600">
-          <div>
-            Canonical parameter ID:{' '}
-            <span className="font-mono text-slate-800">{canonicalParameterId}</span>
-          </div>
-          {selected ? (
-            <>
-              <div>
-                Proposal status: {String(selected.proposalStatus ?? '—')} · Confidence:{' '}
-                {String(selected.confidence ?? '—')}
-              </div>
-              <div className="font-medium text-slate-800">Research candidates (not confirmed deps)</div>
-              <ul className="space-y-1">
-                {deps.map((d) => (
-                  <li key={d.parameterId} className="rounded bg-slate-50 px-2 py-1">
-                    <span className="font-medium">{d.displayName || d.parameterId}</span>
-                    <span className="text-slate-500">
-                      {' '}
-                      · {d.parameterKind} · {d.source} · {d.readiness}
-                    </span>
-                    <div className="font-mono text-[10px] text-slate-400">{d.parameterId}</div>
-                  </li>
-                ))}
-                {deps.length === 0 ? <li>None</li> : null}
-              </ul>
-              {selected.proposedExpression ? (
-                <pre className="overflow-x-auto rounded bg-slate-900/90 p-2 text-[10px] text-slate-100">
-                  {JSON.stringify(selected.proposedExpression, null, 2)}
-                </pre>
-              ) : (
-                <div className="space-y-1">
-                  <div className="text-amber-800">
-                    No complete typed expression yet — edit only if authorized.
-                  </div>
-                  <textarea
-                    className="bt-input min-h-[80px] font-mono text-[11px]"
-                    placeholder='{"op":"REF","id":"exact.parameter.id"}'
-                    value={editExpr}
-                    onChange={(e) => setEditExpr(e.target.value)}
-                  />
-                  <button
-                    type="button"
-                    className="bt-btn bt-btn-secondary bt-btn-sm"
-                    disabled={busy || !editExpr.trim()}
-                    onClick={() => void onEditSave()}
-                  >
-                    Save expression edit
-                  </button>
-                </div>
-              )}
-            </>
-          ) : null}
-          {showHowCalculated ? (
-            <div className="space-y-1 border-t border-slate-100 pt-2">
+          <details className="mt-3" data-testid="lender-advanced-details">
+            <summary className="cursor-pointer text-xs font-medium text-slate-600">Advanced</summary>
+            <div className="mt-2 space-y-1 text-[11px] text-slate-600">
               <div>
                 Definition status: <strong>{String(definition?.status ?? '—')}</strong>
               </div>
@@ -469,30 +528,13 @@ export function SuggestCalculationWorkflow({
                 Version: v{String(definition?.versionNo ?? '—')} · Scope:{' '}
                 {String(definition?.scope ?? '—')}
               </div>
-              <div>Confirmed dependencies:</div>
-              <ul className="list-disc pl-4 font-mono text-[10px]">
-                {(Array.isArray(definition?.dependencies) ? definition!.dependencies : []).map(
-                  (d) => (
-                    <li key={String(d)}>{String(d)}</li>
-                  ),
-                )}
-              </ul>
               <pre className="overflow-x-auto rounded bg-slate-50 p-2 text-[10px]">
                 {JSON.stringify(definition?.expression ?? {}, null, 2)}
               </pre>
             </div>
-          ) : null}
-          <DefineDerivedCalculationPanel
-            canonicalParameterId={canonicalParameterId}
-            primitives={
-              primitives.length
-                ? primitives
-                : deps.map((d) => String(d.parameterId ?? '')).filter(Boolean)
-            }
-            supportStatus={needsSuggest ? 'CALCULATION_NOT_IMPLEMENTED' : supportStatus}
-          />
+          </details>
         </div>
-      </details>
+      ) : null}
     </div>
   )
 }

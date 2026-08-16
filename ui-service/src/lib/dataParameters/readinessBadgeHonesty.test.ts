@@ -33,7 +33,7 @@ describe('readiness badge honesty', () => {
   })
 })
 
-describe('POLICY-STUDIO-LENDER-UX-SIMPLIFICATION-1', () => {
+describe('POLICY-DERIVED-CALCULATION-BUSINESS-ASSISTANT-1', () => {
   it('maps calculation-required to Needs your input', () => {
     const s = lenderPrimaryStatus({ calculationRequired: true, policyTestReady: false })
     expect(s.label).toBe('Needs your input')
@@ -42,7 +42,7 @@ describe('POLICY-STUDIO-LENDER-UX-SIMPLIFICATION-1', () => {
 
   it('sanitizes technical jargon from lender copy', () => {
     const out = sanitizeLenderTechnicalPhrase(
-      'GACAT REF RAW DERIVED NEEDS_INPUT CALCULATION_NOT_IMPLEMENTED typed expression',
+      'GACAT REF RAW DERIVED NEEDS_INPUT CALCULATION_NOT_IMPLEMENTED typed expression vocabulary configuration semantic compatibility',
     )
     expect(out).not.toMatch(/\bGACAT\b/)
     expect(out).not.toMatch(/\bREF\b/)
@@ -51,28 +51,34 @@ describe('POLICY-STUDIO-LENDER-UX-SIMPLIFICATION-1', () => {
     expect(out).not.toMatch(/NEEDS_INPUT/)
     expect(out).not.toMatch(/CALCULATION_NOT_IMPLEMENTED/)
     expect(out).not.toMatch(/typed expression/i)
+    expect(out).not.toMatch(/vocabulary configuration/i)
+    expect(out).not.toMatch(/semantic compatibility/i)
   })
 
-  it('lender workflow hides typed expression / GACAT from default Layer-1 copy', () => {
+  it('lender workflow hides technical terms and keeps a single Advanced section', () => {
     const src = readFileSync(
       resolve(__dirname, '../../components/dataParameters/SuggestCalculationWorkflow.tsx'),
       'utf8',
     )
-    // Default CTA / confirmation are business language
     expect(src).toContain('Needs your input')
     expect(src).toContain('Work it out for me')
     expect(src).toContain('Use this calculation')
-    expect(src).toContain('Here is how I propose to calculate it')
-    expect(src).toContain('Information available')
-    // Technical expression editing is under Advanced only
-    expect(src).toContain('Advanced details')
+    expect(src).toContain('I can calculate this')
+    expect(src).toContain('I need one detail')
+    expect(src).toContain("I can't calculate this yet")
     expect(src).toContain('data-lender-ux="layer-1"')
-    // Candidates must not be labelled Dependencies in Layer-1
-    const layer1Block = src.slice(0, src.indexOf('Advanced details'))
-    expect(layer1Block).not.toMatch(/>\s*Dependencies\s*</)
-    expect(layer1Block).not.toContain('exact GACAT')
-    expect(layer1Block).not.toContain('Suggest calculation')
-    expect(layer1Block).not.toContain('Accept &amp; create calculation')
+    expect(src).toContain('data-business-assistant="1"')
+    // Exactly one Advanced summary in the needs-input card path (plus optional ready-state)
+    const advancedMatches = src.match(/>Advanced</g) ?? []
+    expect(advancedMatches.length).toBeLessThanOrEqual(2)
+    expect(src).not.toContain('Advanced details')
+    const layer1Idle = src.slice(0, src.indexOf('data-testid="lender-advanced-details"'))
+    expect(layer1Idle).not.toMatch(/>\s*Dependencies\s*</)
+    expect(layer1Idle).not.toContain('exact GACAT')
+    expect(layer1Idle).not.toContain('Suggest calculation')
+    expect(layer1Idle).not.toContain('Accept &amp; create calculation')
+    expect(layer1Idle).not.toContain('vocabulary configuration')
+    expect(layer1Idle).not.toContain('typed expression')
   })
 
   it('inventory default title drops GACAT jargon', () => {
@@ -84,5 +90,28 @@ describe('POLICY-STUDIO-LENDER-UX-SIMPLIFICATION-1', () => {
     expect(src).not.toContain('Policy parameter inventory (GACAT)')
     expect(src).toContain('Complete setup')
     expect(src).toContain('Advanced details')
+  })
+
+  it('rules/resolver do not nest duplicate Advanced outside the assistant card', () => {
+    const rules = readFileSync(
+      resolve(__dirname, '../../pages/creditIntelligence/CiPolicyRulesTab.tsx'),
+      'utf8',
+    )
+    const calcBlock = rules.slice(
+      rules.indexOf('SuggestCalculationWorkflow'),
+      rules.indexOf('SuggestCalculationWorkflow') + 800,
+    )
+    expect(calcBlock).not.toContain('Advanced details')
+    const resolver = readFileSync(
+      resolve(__dirname, '../../pages/creditIntelligence/CiParameterResolverPanel.tsx'),
+      'utf8',
+    )
+    expect(resolver).not.toContain('executability-modes-advanced')
+  })
+})
+
+describe('POLICY-STUDIO-LENDER-UX-SIMPLIFICATION-1', () => {
+  it('keeps readiness honesty helpers', () => {
+    expect(lenderPrimaryStatus({ calculationRequired: true }).label).toBe('Needs your input')
   })
 })

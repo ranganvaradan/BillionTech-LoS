@@ -114,21 +114,72 @@ class DerivedCalculationResearchServiceTest {
     }
 
     @Test
-    void cleanHistorySuggestIsNeedsInputNotProxyRef() {
+    void cleanHistorySuggestIsNeedsClarificationNotProxyRef() {
         Map<String, Object> res = research.suggest(TARGET, null, "tester");
         assertEquals("NEEDS_INPUT", res.get("proposalStatus"));
+        assertEquals("NEEDS_CLARIFICATION", res.get("businessOutcome"));
         assertNull(res.get("proposedExpression"));
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> deps = (List<Map<String, Object>>) res.get("candidateDependencies");
         assertFalse(deps.isEmpty());
         assertTrue(deps.stream().anyMatch(d ->
                 "bureau.tradeline.payment_history".equals(d.get("parameterId"))));
+        assertTrue(deps.stream().noneMatch(d ->
+                String.valueOf(d.get("parameterId")).contains("max_dpd")));
         @SuppressWarnings("unchecked")
         List<String> limitations = (List<String>) res.get("limitations");
         assertNotNull(limitations);
         assertTrue(limitations.stream().anyMatch(l ->
-                l.toLowerCase().contains("max_dpd") || l.toLowerCase().contains("rejected")
-                        || l.toLowerCase().contains("overlap")));
+                l.toLowerCase().contains("max_dpd") || l.toLowerCase().contains("rejected")));
+        String explanation = String.valueOf(res.get("humanExplanation")).toLowerCase();
+        assertFalse(explanation.contains("vocabulary configuration"));
+        assertFalse(explanation.contains("catalogue metadata"));
+        assertFalse(explanation.contains("semantically compatible"));
+    }
+
+    @Test
+    void goldenBusinessDescriptionYieldsCanCalculateWithoutCreatingDefinition() {
+        String desc = "find the last date one or more accounts were overdue, ie DPD > 0 "
+                + "and check whether last date is < 6 months from current date";
+        Map<String, Object> res = research.suggest(TARGET, null, "tester", desc, Map.of());
+        assertEquals("CAN_CALCULATE", res.get("businessOutcome"));
+        assertEquals("READY_FOR_REVIEW", res.get("proposalStatus"));
+        assertNotNull(res.get("proposedExpression"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> expr = (Map<String, Object>) res.get("proposedExpression");
+        assertEquals("MONTHS_SINCE_LAST_MATCH", expr.get("op"));
+        assertTrue(definitions.isEmpty());
+        assertEquals(true, res.get("advisoryOnly"));
+        assertEquals(true, res.get("maxDpdProxyRejected"));
+    }
+
+    @Test
+    void clarificationAnswerContinuesResearchWithoutRewritingDescription() {
+        Map<String, Object> first = research.suggest(
+                TARGET, null, "tester", "months of clean history after last overdue", Map.of());
+        assertEquals("NEEDS_CLARIFICATION", first.get("businessOutcome"));
+        Map<String, Object> second = research.suggest(
+                TARGET, null, "tester",
+                "months of clean history after last overdue",
+                Map.of("overdue_threshold", "dpd_gt_0"));
+        assertEquals("CAN_CALCULATE", second.get("businessOutcome"));
+        assertNotNull(second.get("proposedExpression"));
+        assertTrue(definitions.isEmpty());
+    }
+
+    @Test
+    void acceptReusesCanonicalAndCreatesDefinitionOnlyOnApproval() {
+        Map<String, Object> res = research.suggest(
+                TARGET, null, "tester",
+                "find the last date one or more accounts were overdue, ie DPD > 0",
+                Map.of());
+        assertTrue(definitions.isEmpty());
+        UUID proposalId = UUID.fromString(String.valueOf(res.get("id")));
+        Map<String, Object> accepted = research.accept(proposalId, "approver");
+        assertEquals(false, accepted.get("duplicateParameterCreated"));
+        assertEquals(true, accepted.get("targetCanonicalParameterReused"));
+        assertFalse(definitions.isEmpty());
+        assertEquals(TARGET, definitions.get(0).getCanonicalParameterId());
     }
 
     @Test

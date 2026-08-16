@@ -125,17 +125,11 @@ export function GacatFactorPicker({ onPick, disabled }: Props) {
             )}
           </div>
           {selected.calculationRequired === true ? (
-            <div className="mt-2 rounded border border-amber-200 bg-amber-50/60 p-2">
-              <p className="text-[11px] font-medium text-amber-950">Needs your input</p>
-              <p className="text-[10px] text-amber-900 mb-1">
-                Complete setup for this existing parameter — do not create a duplicate.
-              </p>
-              <SuggestCalculationWorkflow
-                canonicalParameterId={String(selected.canonicalParameterId)}
-                businessName={String(selected.businessName ?? selected.canonicalParameterId)}
-                calculationRequired
-              />
-            </div>
+            <SuggestCalculationWorkflow
+              canonicalParameterId={String(selected.canonicalParameterId)}
+              businessName={String(selected.businessName ?? selected.canonicalParameterId)}
+              calculationRequired
+            />
           ) : null}
           <details className="mt-1">
             <summary className="cursor-pointer text-slate-500">Advanced</summary>

@@ -257,29 +257,11 @@ export function CiParameterResolverPanel({
                 String(suggestion.executionState ?? '').includes('CALCULATION') ||
                 String(suggestion.supportStatus ?? '') === 'CALCULATION_NOT_IMPLEMENTED') &&
               suggestion.canonicalParameter ? (
-                <div className="mt-2 rounded border border-amber-200 bg-white/70 p-2">
-                  <p className="text-xs font-medium text-amber-950">Needs your input</p>
-                  <SuggestCalculationWorkflow
-                    canonicalParameterId={String(suggestion.canonicalParameter)}
-                    businessName={String(suggestion.businessName ?? suggestion.canonicalParameter)}
-                    calculationRequired
-                  />
-                  <details className="mt-2">
-                    <summary className="cursor-pointer text-[10px] text-slate-500">
-                      Advanced details
-                    </summary>
-                    <p className="mt-1 text-[10px] text-slate-500" data-testid="executability-modes-advanced">
-                      Policy Test: {suggestion.policyTestReady === true ? 'READY' : 'NOT READY'}
-                      {' · '}
-                      Runtime: {suggestion.runtimeReady === true ? 'READY' : 'NOT READY'}
-                      {' · '}
-                      Production: {suggestion.productionReady === true ? 'READY' : 'NOT READY'}
-                      {suggestion.executionState
-                        ? ` · (${String(suggestion.executionState)})`
-                        : ''}
-                    </p>
-                  </details>
-                </div>
+                <SuggestCalculationWorkflow
+                  canonicalParameterId={String(suggestion.canonicalParameter)}
+                  businessName={String(suggestion.businessName ?? suggestion.canonicalParameter)}
+                  calculationRequired
+                />
               ) : null}
               {suggestion.productionReady !== true && suggestion.policyTestReady === true ? (
                 <p className="text-xs text-amber-800 mt-1">

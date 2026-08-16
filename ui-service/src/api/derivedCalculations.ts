@@ -58,13 +58,24 @@ export async function markDerivedCalculationProductionReady(
 
 export async function suggestDerivedCalculation(
   canonicalParameterId: string,
-  opts?: { tenantId?: string },
+  opts?: {
+    tenantId?: string
+    businessDescription?: string
+    clarificationAnswers?: Record<string, string>
+  },
 ): Promise<Record<string, unknown>> {
   const q = opts?.tenantId ? `?tenantId=${encodeURIComponent(opts.tenantId)}` : ''
-  const { data } = await http.post<Record<string, unknown>>(`${BASE}/research/suggest${q}`, {
+  const body: Record<string, unknown> = {
     targetParameterId: canonicalParameterId,
     canonicalParameterId,
-  })
+  }
+  if (opts?.businessDescription?.trim()) {
+    body.businessDescription = opts.businessDescription.trim()
+  }
+  if (opts?.clarificationAnswers && Object.keys(opts.clarificationAnswers).length > 0) {
+    body.clarificationAnswers = opts.clarificationAnswers
+  }
+  const { data } = await http.post<Record<string, unknown>>(`${BASE}/research/suggest${q}`, body)
   return data
 }
 

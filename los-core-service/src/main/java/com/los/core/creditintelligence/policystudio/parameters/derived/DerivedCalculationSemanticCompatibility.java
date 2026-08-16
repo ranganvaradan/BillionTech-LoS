@@ -118,11 +118,16 @@ public final class DerivedCalculationSemanticCompatibility {
 
     /**
      * Validate every REF leaf in an expression against the target's semantic identity.
+     * Constructed ops (MONTHS_SINCE_LAST_MATCH) are validated as history→months transforms,
+     * not as direct REF equivalence to HISTORY unit.
      */
     public static Result assessExpression(
             CanonicalParameterDefinition target,
             Map<String, Object> expression,
             java.util.function.Function<String, CanonicalParameterDefinition> resolve) {
+        if (isMonthsSinceLastMatch(expression)) {
+            return assessMonthsSinceLastMatch(target, expression, resolve);
+        }
         Set<String> deps = SafeDerivedExpressionEvaluator.collectDependencies(expression);
         boolean directRef = isDirectRef(expression);
         List<String> failures = new ArrayList<>();
@@ -148,6 +153,65 @@ public final class DerivedCalculationSemanticCompatibility {
         // Multi-op expressions still need unit-compatible leaves; direct REF already gated above.
         boolean compatible = failures.isEmpty();
         return new Result(compatible, compatible && directRef, failures, evidence);
+    }
+
+    static boolean isMonthsSinceLastMatch(Map<String, Object> expression) {
+        if (expression == null || expression.isEmpty()) return false;
+        String op = String.valueOf(expression.getOrDefault("op", "")).trim().toUpperCase(Locale.ROOT);
+        return "MONTHS_SINCE_LAST_MATCH".equals(op);
+    }
+
+    private static Result assessMonthsSinceLastMatch(
+            CanonicalParameterDefinition target,
+            Map<String, Object> expression,
+            java.util.function.Function<String, CanonicalParameterDefinition> resolve) {
+        List<String> failures = new ArrayList<>();
+        List<String> evidence = new ArrayList<>();
+        String tu = dimFamily(target.unit());
+        if (!"DURATION_CALENDAR".equals(tu) && !"COUNT".equals(tu) && !tu.isBlank()) {
+            failures.add("MONTHS_SINCE_LAST_MATCH requires MONTHS (or count) target unit; got "
+                    + norm(target.unit()));
+        } else {
+            evidence.add("Target unit compatible with months-since transform: " + norm(target.unit()));
+        }
+        Set<String> deps = SafeDerivedExpressionEvaluator.collectDependencies(expression);
+        if (deps.isEmpty()) {
+            failures.add("MONTHS_SINCE_LAST_MATCH requires a history REF dependency");
+        }
+        for (String depId : deps) {
+            if (BusinessCalculationAssistant.isMaxDpdProxyId(depId)) {
+                failures.add("max_dpd proxy rejected as clean-history input: " + depId);
+                continue;
+            }
+            CanonicalParameterDefinition src = resolve.apply(depId);
+            if (src == null) {
+                failures.add("Unknown dependency: " + depId);
+                continue;
+            }
+            String su = dimFamily(src.unit());
+            if (!"HISTORY_SERIES".equals(su) && !"DURATION_DAYS".equals(su)
+                    && !"COUNT".equals(su) && !su.isBlank()) {
+                failures.add(depId + ": expected HISTORY (dated DPD series), got " + norm(src.unit()));
+            } else {
+                evidence.add(depId + ": acceptable history/observation input (" + norm(src.unit()) + ")");
+            }
+            boolean impl = src.capability() != null && src.capability().implemented();
+            if (!impl) {
+                failures.add(depId + ": input is not implemented in catalogue");
+            }
+        }
+        Object asOf = expression.get("asOf");
+        if (!(asOf instanceof Map<?, ?> asOfMap)
+                || !"EVAL_AS_OF".equalsIgnoreCase(String.valueOf(asOfMap.get("op")))) {
+            failures.add("MONTHS_SINCE_LAST_MATCH requires asOf EVAL_AS_OF (deterministic evaluation date)");
+        } else {
+            evidence.add("Evaluation date authority: EVAL_AS_OF");
+        }
+        if (!expression.containsKey("matchValue")) {
+            failures.add("matchValue required");
+        }
+        boolean compatible = failures.isEmpty();
+        return new Result(compatible, false, failures, evidence);
     }
 
     public static boolean isDirectRef(Map<String, Object> expression) {

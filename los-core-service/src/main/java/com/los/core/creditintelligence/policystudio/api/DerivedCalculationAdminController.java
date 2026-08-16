@@ -75,7 +75,23 @@ public class DerivedCalculationAdminController {
                 ? ""
                 : String.valueOf(body.getOrDefault("targetParameterId",
                 body.getOrDefault("canonicalParameterId", ""))).trim();
-        return researchService.suggest(target, tenantId, actor);
+        String businessDescription = body.get("businessDescription") == null
+                ? (body.get("description") == null ? null : String.valueOf(body.get("description")))
+                : String.valueOf(body.get("businessDescription"));
+        Map<String, String> clarifications = new java.util.LinkedHashMap<>();
+        Object rawAnswers = body.get("clarificationAnswers");
+        if (rawAnswers instanceof Map<?, ?> m) {
+            for (Map.Entry<?, ?> e : m.entrySet()) {
+                if (e.getKey() != null && e.getValue() != null) {
+                    clarifications.put(String.valueOf(e.getKey()), String.valueOf(e.getValue()));
+                }
+            }
+        }
+        // Single clarification convenience fields
+        if (body.get("overdue_threshold") != null) {
+            clarifications.putIfAbsent("overdue_threshold", String.valueOf(body.get("overdue_threshold")));
+        }
+        return researchService.suggest(target, tenantId, actor, businessDescription, clarifications);
     }
 
     @GetMapping("/research/proposals/{id}")

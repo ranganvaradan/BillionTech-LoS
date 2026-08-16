@@ -44,6 +44,16 @@ public class DerivedCalculationResearchService {
 
     @Transactional
     public Map<String, Object> suggest(String targetParameterId, UUID tenantId, String actor) {
+        return suggest(targetParameterId, tenantId, actor, null, Map.of());
+    }
+
+    @Transactional
+    public Map<String, Object> suggest(
+            String targetParameterId,
+            UUID tenantId,
+            String actor,
+            String businessDescription,
+            Map<String, String> clarificationAnswers) {
         if (targetParameterId == null || targetParameterId.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "targetParameterId required");
         }
@@ -62,7 +72,19 @@ public class DerivedCalculationResearchService {
             }
         }
 
-        List<Map<String, Object>> options = buildOptions(target, tenantId);
+        List<Map<String, Object>> options = new ArrayList<>();
+        Optional<BusinessCalculationAssistant.AssistantResult> assistant =
+                BusinessCalculationAssistant.investigate(
+                        target,
+                        registry(),
+                        businessDescription,
+                        clarificationAnswers == null ? Map.of() : clarificationAnswers);
+        if (assistant.isPresent()) {
+            options.add(assistantOption(assistant.get()));
+        } else {
+            options.addAll(buildOptions(target, tenantId));
+        }
+
         if (options.isEmpty()) {
             CiGacatDerivedCalculationProposal empty = CiGacatDerivedCalculationProposal.builder()
                     .tenantId(tenantId)
@@ -72,13 +94,18 @@ public class DerivedCalculationResearchService {
                     .proposalStatus(STATUS_NEEDS_INPUT)
                     .confidence("LOW")
                     .humanExplanation(
-                            "Unable to recommend a calculation from the currently available canonical parameters.")
+                            "I can't calculate this yet from the information currently available.")
                     .missingDependencies(List.of(
-                            "No exact GACAT dependencies with sufficient metadata to form a safe expression"))
+                            "Required source fields for this calculation are not available"))
                     .evidence(List.of("catalogue_scan", "requiredPrimitives", "source_family"))
                     .createdBy(actor)
                     .recommended(false)
                     .optionIndex(1)
+                    .metadata(Map.of(
+                            "advisoryOnly", true,
+                            "arbitraryCodeAllowed", false,
+                            "llmRuntimeForbidden", true,
+                            "businessOutcome", BusinessCalculationAssistant.OUTCOME_MISSING_DATA))
                     .build();
             empty = proposalRepository.save(empty);
             Map<String, Object> out = toView(empty);
@@ -110,6 +137,35 @@ public class DerivedCalculationResearchService {
             List<String> evidence = opt.get("evidence") instanceof List<?> l
                     ? l.stream().map(String::valueOf).toList() : List.of();
 
+            Map<String, Object> meta = new LinkedHashMap<>();
+            meta.put("advisoryOnly", true);
+            meta.put("arbitraryCodeAllowed", false);
+            meta.put("llmRuntimeForbidden", true);
+            if (opt.get("businessOutcome") != null) {
+                meta.put("businessOutcome", opt.get("businessOutcome"));
+            }
+            if (opt.get("businessInterpretation") != null) {
+                meta.put("businessInterpretation", opt.get("businessInterpretation"));
+            }
+            if (opt.get("evaluationDateAuthority") != null) {
+                meta.put("evaluationDateAuthority", opt.get("evaluationDateAuthority"));
+            }
+            if (opt.get("maxDpdProxyRejected") != null) {
+                meta.put("maxDpdProxyRejected", opt.get("maxDpdProxyRejected"));
+            }
+            if (opt.get("clarificationQuestions") != null) {
+                meta.put("clarificationQuestions", opt.get("clarificationQuestions"));
+            }
+            if (opt.get("dataICanUse") != null) {
+                meta.put("dataICanUse", opt.get("dataICanUse"));
+            }
+            if (businessDescription != null && !businessDescription.isBlank()) {
+                meta.put("businessDescription", businessDescription.trim());
+            }
+            if (clarificationAnswers != null && !clarificationAnswers.isEmpty()) {
+                meta.put("clarificationAnswers", clarificationAnswers);
+            }
+
             CiGacatDerivedCalculationProposal row = CiGacatDerivedCalculationProposal.builder()
                     .tenantId(tenantId)
                     .targetParameterId(target.id())
@@ -127,10 +183,7 @@ public class DerivedCalculationResearchService {
                     .optionIndex(idx)
                     .recommended(Boolean.TRUE.equals(opt.get("recommended")) || idx == 1)
                     .createdBy(actor)
-                    .metadata(Map.of(
-                            "advisoryOnly", true,
-                            "arbitraryCodeAllowed", false,
-                            "llmRuntimeForbidden", true))
+                    .metadata(meta)
                     .build();
             row = proposalRepository.save(row);
             if (primaryId == null) primaryId = row.getId();
@@ -144,6 +197,54 @@ public class DerivedCalculationResearchService {
         primary.put("unableToRecommend", false);
         primary.put("primaryProposalId", primaryId);
         return primary;
+    }
+
+    private static Map<String, Object> assistantOption(BusinessCalculationAssistant.AssistantResult r) {
+        List<Map<String, Object>> deps = new ArrayList<>();
+        if (r.dataICanUse() != null) {
+            for (Map<String, Object> d : r.dataICanUse()) {
+                Map<String, Object> view = new LinkedHashMap<>(d);
+                view.putIfAbsent("reasonSelected", String.valueOf(d.getOrDefault("role", "Schema-supported input")));
+                deps.add(view);
+            }
+        }
+        // Never surface max_dpd as a candidate dependency for clean-history assistant path
+        deps.removeIf(d -> BusinessCalculationAssistant.isMaxDpdProxyId(
+                String.valueOf(d.getOrDefault("parameterId", ""))));
+
+        List<Map<String, Object>> questions = new ArrayList<>();
+        if (r.clarificationQuestions() != null) {
+            for (BusinessCalculationAssistant.ClarificationQuestion q : r.clarificationQuestions()) {
+                Map<String, Object> qm = new LinkedHashMap<>();
+                qm.put("id", q.id());
+                qm.put("prompt", q.prompt());
+                List<Map<String, Object>> choices = new ArrayList<>();
+                for (BusinessCalculationAssistant.ClarificationChoice c : q.choices()) {
+                    choices.add(Map.of("id", c.id(), "label", c.label()));
+                }
+                qm.put("choices", choices);
+                questions.add(qm);
+            }
+        }
+
+        Map<String, Object> opt = baseOption(
+                r.proposalStatus(),
+                r.confidence(),
+                r.humanExplanation(),
+                r.proposedExpression(),
+                deps,
+                r.assumptions() == null ? List.of() : r.assumptions(),
+                r.limitations() == null ? List.of() : r.limitations(),
+                r.missingInputs() == null ? List.of() : r.missingInputs(),
+                r.evidence() == null ? List.of() : r.evidence(),
+                true);
+        opt.put("businessOutcome", r.businessOutcome());
+        opt.put("businessInterpretation", r.businessInterpretation());
+        opt.put("evaluationDateAuthority", r.evaluationDateAuthority());
+        opt.put("maxDpdProxyRejected", r.maxDpdProxyRejected());
+        opt.put("clarificationQuestions", questions);
+        opt.put("dataICanUse", r.dataICanUse());
+        return opt;
     }
 
     /**
@@ -247,23 +348,24 @@ public class DerivedCalculationResearchService {
             }
             List<String> missingOut = new ArrayList<>(missing);
             if (needsConfig) {
-                missingOut.add("Customer-defined / vocabulary configuration for executable derivation");
+                missingOut.add("Business definition of how this value should be calculated");
             }
             if (primitiveDeps.isEmpty() && missingOut.isEmpty()) {
-                missingOut.add("No exact GACAT dependencies with sufficient metadata to form a safe expression");
+                missingOut.add("Required source fields for this calculation are not available");
             }
             String explanation;
             if (needsConfig) {
-                explanation = "Candidate inputs were identified from catalogue metadata, but no semantically "
-                        + "compatible typed expression can be completed until configuration / vocabulary is "
-                        + "confirmed. A direct REF to a related metric (for example max DPD) is not a valid "
-                        + "substitute for " + target.businessName() + ".";
+                explanation = "I need one more detail.\n\n"
+                        + "I can see related bureau data, but I need you to confirm what this metric "
+                        + "means in business terms before I can propose a calculation. "
+                        + "I will not substitute a related metric such as maximum DPD.";
             } else if (primitiveDeps.isEmpty()) {
-                explanation = "Unable to recommend a calculation from the currently available canonical parameters.";
+                explanation = "I can't calculate this yet from the information currently available.";
             } else {
-                explanation = "Unable to form a complete safe, semantically compatible expression from catalogue "
-                        + "metadata alone. Edit only if you can supply a supported typed expression whose "
-                        + "dependencies match the target's unit, temporal window, aggregation, and business meaning.";
+                explanation = "I need one more detail.\n\n"
+                        + "I could not safely determine a complete calculation from the available "
+                        + "data alone. Please clarify the business meaning, or ask your credit-policy "
+                        + "lead to confirm it.";
             }
             Map<String, Object> opt = baseOption(
                     STATUS_NEEDS_INPUT,
@@ -535,6 +637,27 @@ public class DerivedCalculationResearchService {
         m.put("resultingDefinitionId", row.getResultingDefinitionId());
         m.put("arbitraryCodeAllowed", false);
         m.put("advisoryOnly", true);
+        Map<String, Object> meta = row.getMetadata() == null ? Map.of() : row.getMetadata();
+        if (meta.get("businessOutcome") != null) {
+            m.put("businessOutcome", meta.get("businessOutcome"));
+        }
+        if (meta.get("businessInterpretation") != null) {
+            m.put("businessInterpretation", meta.get("businessInterpretation"));
+        }
+        if (meta.get("evaluationDateAuthority") != null) {
+            m.put("evaluationDateAuthority", meta.get("evaluationDateAuthority"));
+        }
+        if (meta.get("maxDpdProxyRejected") != null) {
+            m.put("maxDpdProxyRejected", meta.get("maxDpdProxyRejected"));
+        }
+        if (meta.get("clarificationQuestions") != null) {
+            m.put("clarificationQuestions", meta.get("clarificationQuestions"));
+        }
+        if (meta.get("dataICanUse") != null) {
+            m.put("dataICanUse", meta.get("dataICanUse"));
+        } else if (row.getCandidateDependencies() != null) {
+            m.put("dataICanUse", row.getCandidateDependencies());
+        }
         return m;
     }
 }

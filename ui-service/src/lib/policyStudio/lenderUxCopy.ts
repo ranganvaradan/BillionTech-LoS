@@ -115,6 +115,14 @@ export function sanitizeLenderTechnicalPhrase(text: string): string {
     .replace(/\bRUNTIME_READY\b/g, 'runtime ready')
     .replace(/\bDATA_INSUFFICIENT\b/g, 'not enough data')
     .replace(/\btyped expression\b/gi, 'calculation')
+    .replace(/\bsemantic(ally)? compatible\b/gi, 'suitable')
+    .replace(/\bsemantic compatibility\b/gi, 'fit')
+    .replace(/\bvocabulary configuration\b/gi, 'business definition')
+    .replace(/\bexecutable derivation\b/gi, 'calculation')
+    .replace(/\bcatalogue metadata\b/gi, 'available data')
+    .replace(/\bdependency graphs?\b/gi, 'inputs')
+    .replace(/\bJSON expressions?\b/gi, 'calculation')
+    .replace(/\bCustomer-defined\b/gi, 'Business-defined')
 }
 
 export const LENDER_SETUP_EXAMPLE =
