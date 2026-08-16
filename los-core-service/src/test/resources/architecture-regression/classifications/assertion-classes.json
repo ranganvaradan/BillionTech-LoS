@@ -1,0 +1,46 @@
+{
+  "classes": {
+    "MUST_PRESERVE": "Behaviour that convergence must not break (normalize fidelity, spine exact-ID discipline, SafeDerived closed VM, DSL DI semantics).",
+    "KNOWN_GAP": "Current defect or dual-authority captured honestly; not asserted as correct business truth.",
+    "EXPECTED_TO_CHANGE_IN_WAVE_X": "Baseline records current value; later waves may change intentionally under exit criteria."
+  },
+  "examples": [
+    {
+      "item": "Equifax→CiBureau* normalize field fidelity",
+      "class": "MUST_PRESERVE"
+    },
+    {
+      "item": "Exact GACAT ID spine resolution (no related-ID substitution)",
+      "class": "MUST_PRESERVE"
+    },
+    {
+      "item": "SafeDerived never uses wall-clock",
+      "class": "MUST_PRESERVE"
+    },
+    {
+      "item": "Policy Test vs Frozen disagreement",
+      "class": "KNOWN_GAP",
+      "expectedToChangeInWaves": ["WAVE_5", "WAVE_6"]
+    },
+    {
+      "item": "W6 LocalDate.now()",
+      "class": "KNOWN_GAP",
+      "expectedToChangeInWaves": ["WAVE_6", "WAVE_10"]
+    },
+    {
+      "item": "catalogue production_ready as cert",
+      "class": "KNOWN_GAP",
+      "expectedToChangeInWaves": ["WAVE_8"]
+    },
+    {
+      "item": "cc_overdue / overdue.* NOT_EXECUTABLE",
+      "class": "KNOWN_GAP",
+      "expectedToChangeInWaves": ["WAVE_2"]
+    },
+    {
+      "item": "payment_history not production-materialized by default",
+      "class": "KNOWN_GAP",
+      "expectedToChangeInWaves": ["WAVE_3"]
+    }
+  ]
+}

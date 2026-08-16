@@ -1,0 +1,27 @@
+{
+  "wave": "PLATFORM-CONVERGENCE-WAVE-0-GOLDEN-BASELINE",
+  "recordedAtUtc": "2026-08-16T15:20:00Z",
+  "branch": "reconcile/laptop-layout-2026-08",
+  "SOURCE_START_SHA": "3da1ad4316eeda581975da41e6a23b2a258d4029",
+  "GITHUB_REMOTE": "https://github.com/ranganvaradan/BillionTech-LoS.git",
+  "GITHUB_REMOTE_SHA_NOTE": "origin tracking branch tip at freeze matched local HEAD when present; remote may lag unpushed commits",
+  "Internal_deployed_SOURCE_SHA": "3da1ad4316eeda581975da41e6a23b2a258d4029",
+  "Client_deployed_SOURCE_SHA": "3da1ad4316eeda581975da41e6a23b2a258d4029",
+  "SAME_ARTIFACT_INTERNAL_CLIENT": true,
+  "UI_bundle": {
+    "FRONTEND_MAIN_JS": "index-kYNxXm7g.js",
+    "FRONTEND_JS_SHA256": "f883343b05655ef567f4513497636b08a5705ea6f1da756a430e01cc460ae83b"
+  },
+  "core_image": "billiontechlos-core:staging",
+  "DB_migration_head_in_repo": "V141__gacat_derived_calculation_proposal.sql",
+  "DB_MIGRATION_WAVE0": "NONE",
+  "GACAT_MUTATED": false,
+  "VIKASAM_POLICY_ID": "4543e643-c3a0-4a57-a92c-370dff8b2fa9",
+  "VIKASAM_MUTATED": false,
+  "BUSINESS_BEHAVIOUR_INTENTIONALLY_CHANGED": false,
+  "notes": [
+    "Wave 0 freezes CURRENT behaviour including known gaps.",
+    "No production DB records created for baselines.",
+    "Harness uses deterministic fixtures and fixed asOf for POLICY_TEST."
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "datasetId": "banking-golden-v0",
+  "asOf": "2026-08-01",
+  "account": {
+    "accountNumberMasked": "XXXX1234",
+    "bankName": "Golden Bank",
+    "accountType": "SAVINGS",
+    "currency": "INR"
+  },
+  "transactions": [
+    { "date": "2026-05-02", "amount": 50000, "type": "CREDIT", "narration": "SALARY" },
+    { "date": "2026-05-05", "amount": -12500, "type": "DEBIT", "narration": "EMI AUTO" },
+    { "date": "2026-05-10", "amount": -2000, "type": "DEBIT", "narration": "ATM" },
+    { "date": "2026-06-02", "amount": 50000, "type": "CREDIT", "narration": "SALARY" },
+    { "date": "2026-06-05", "amount": -12500, "type": "DEBIT", "narration": "EMI BOUNCE RETRY", "bounce": true },
+    { "date": "2026-06-15", "amount": -8000, "type": "DEBIT", "narration": "UPI" },
+    { "date": "2026-07-02", "amount": 52000, "type": "CREDIT", "narration": "SALARY" },
+    { "date": "2026-07-05", "amount": -12500, "type": "DEBIT", "narration": "EMI AUTO" },
+    { "date": "2026-07-20", "amount": -1500, "type": "DEBIT", "narration": "POS" }
+  ],
+  "balances": {
+    "min": -2500,
+    "max": 85000,
+    "negativeBalanceDays": 2
+  },
+  "precomputedMetrics": {
+    "banking.avg_daily_balance_3m": 42000,
+    "banking.emi_bounce_count_3m": 1,
+    "banking.txn_count_3m": 9
+  },
+  "missingTransactionCase": {
+    "accountPresent": true,
+    "transactions": []
+  }
+}

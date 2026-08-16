@@ -1,0 +1,21 @@
+{
+  "datasetId": "gst-golden-v0",
+  "asOf": "2026-08-01",
+  "periods": [
+    { "periodYyyyMm": "2025-08", "taxableValue": 120000, "filed": true },
+    { "periodYyyyMm": "2025-09", "taxableValue": 110000, "filed": true },
+    { "periodYyyyMm": "2025-10", "taxableValue": 130000, "filed": true },
+    { "periodYyyyMm": "2025-11", "taxableValue": 125000, "filed": true },
+    { "periodYyyyMm": "2025-12", "taxableValue": 140000, "filed": true },
+    { "periodYyyyMm": "2026-01", "taxableValue": 135000, "filed": true },
+    { "periodYyyyMm": "2026-02", "taxableValue": 128000, "filed": true },
+    { "periodYyyyMm": "2026-03", "taxableValue": 150000, "filed": true },
+    { "periodYyyyMm": "2026-04", "taxableValue": 145000, "filed": true },
+    { "periodYyyyMm": "2026-05", "taxableValue": 142000, "filed": true },
+    { "periodYyyyMm": "2026-06", "taxableValue": 148000, "filed": true },
+    { "periodYyyyMm": "2026-07", "taxableValue": null, "filed": false, "missingPeriod": true }
+  ],
+  "precomputedMetrics": {
+    "gst.turnover.trailing_12m": 1473000
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "purpose": "Prove current parallel authorities exist so later retirement cannot silently change outcomes",
+  "paths": [
+    {
+      "component": "FrozenUnderwritingRuleEngine",
+      "role": "LEGACY_PRIMARY_LIVE",
+      "classification": "KNOWN_GAP",
+      "expectedToChangeInWaves": ["WAVE_5", "WAVE_10"]
+    },
+    {
+      "component": "CreditControlService",
+      "role": "LEGACY_FOIR_AND_SCORECARD_PREP",
+      "classification": "KNOWN_GAP",
+      "expectedToChangeInWaves": ["WAVE_7"]
+    },
+    {
+      "component": "ScorecardPolicyEngine.FormulaEvaluator",
+      "role": "SCORECARD_FORMULAS",
+      "classification": "MUST_PRESERVE_AS_SCORECARD_LAYER"
+    },
+    {
+      "component": "ParameterExecutabilitySupport.runtimeFactAliases",
+      "role": "POLICY_TEST_ALIAS_FANOUT",
+      "classification": "KNOWN_GAP",
+      "expectedToChangeInWaves": ["WAVE_1", "WAVE_6"],
+      "dangerousExample": "bureau.recent_inquiries_90d ↔ BUREAU_ENQUIRIES_3M"
+    },
+    {
+      "component": "compat.* snapshot remaps",
+      "role": "UnderwritingFactSnapshotBuilder PATH_REMAP",
+      "classification": "KNOWN_GAP",
+      "expectedToChangeInWaves": ["WAVE_3"]
+    },
+    {
+      "component": "PolicyGraphPolicyTestService",
+      "role": "DSL_WITHOUT_SPINE",
+      "classification": "KNOWN_GAP",
+      "expectedToChangeInWaves": ["WAVE_6"]
+    },
+    {
+      "component": "ShadowPolicyEngine",
+      "role": "FROZEN_MAP_DSL",
+      "classification": "KNOWN_GAP",
+      "expectedToChangeInWaves": ["WAVE_5"]
+    },
+    {
+      "component": "BuiltInBankingMetricProducer.stagingFixture",
+      "role": "FIXTURE_IN_SPINE_PATH",
+      "classification": "KNOWN_GAP",
+      "expectedToChangeInWaves": ["WAVE_3"]
+    },
+    {
+      "component": "PolicyBureauMetricService",
+      "role": "STUDIO_HELPER_NOT_SPINE",
+      "classification": "MUST_PRESERVE_ABSENCE_FROM_SPINE"
+    },
+    {
+      "component": "DerivedCalculationDefinitionService.latestFor",
+      "role": "LATEST_NON_RETIRED_DEF",
+      "classification": "KNOWN_GAP",
+      "expectedToChangeInWaves": ["WAVE_10"]
+    },
+    {
+      "component": "PolicyDslInterpreterV1",
+      "role": "STUDIO_SHADOW_DSL_NEVER_PRODUCTION_ACTIVE_TODAY",
+      "classification": "MUST_PRESERVE_ENGINE",
+      "expectedToChangeInWaves": ["WAVE_5"]
+    },
+    {
+      "component": "catalogue.implemented / production_ready",
+      "role": "METADATA_NOT_RUNTIME_TRUTH",
+      "classification": "KNOWN_GAP",
+      "expectedToChangeInWaves": ["WAVE_1", "WAVE_8"]
+    }
+  ]
+}

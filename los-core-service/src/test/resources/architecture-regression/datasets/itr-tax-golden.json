@@ -1,0 +1,12 @@
+{
+  "datasetId": "itr-tax-golden-v0",
+  "asOf": "2026-08-01",
+  "periods": [
+    { "fy": "2023-24", "totalIncome": 850000, "present": true },
+    { "fy": "2024-25", "totalIncome": 920000, "present": true },
+    { "fy": "2025-26", "totalIncome": null, "present": false, "missingPeriod": true }
+  ],
+  "facts": {
+    "itr.income.total": 920000
+  }
+}

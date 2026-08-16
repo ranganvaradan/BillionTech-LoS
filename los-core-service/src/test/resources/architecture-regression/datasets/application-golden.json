@@ -1,0 +1,12 @@
+{
+  "datasetId": "application-golden-v0",
+  "facts": {
+    "application.requested_amount": 500000,
+    "application.tenure_months": 36,
+    "application.declared_income": 920000,
+    "application.proposed_edi": 18500,
+    "application.business_vintage_months": 48,
+    "application.foir": 42.5,
+    "obligation.ratio": 42.5
+  }
+}

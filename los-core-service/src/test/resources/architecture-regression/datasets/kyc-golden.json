@@ -1,0 +1,8 @@
+{
+  "datasetId": "kyc-golden-v0",
+  "cases": [
+    { "caseId": "pan_verified", "facts": { "kyc.pan.verified": true, "kyc.quality": 0.95 } },
+    { "caseId": "identity_verified", "facts": { "kyc.aadhaar.verified": true, "kyc.quality": 0.9 } },
+    { "caseId": "unknown_missing", "facts": {}, "notes": "missing KYC results — spine may INPUT_REQUIRED or DATA_NOT_AVAILABLE" }
+  ]
+}
