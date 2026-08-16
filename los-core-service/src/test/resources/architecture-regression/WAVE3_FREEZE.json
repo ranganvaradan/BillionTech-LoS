@@ -3,7 +3,7 @@
   "recordedAtUtc": "2026-08-16T16:15:00Z",
   "branch": "reconcile/laptop-layout-2026-08",
   "SOURCE_START_SHA": "4d5d2289217416b91d01f672c3dc80db764a4777",
-  "SOURCE_FINAL_SHA": "PENDING_CONTENT_COMMIT",
+  "SOURCE_FINAL_SHA": "cece016f9cbd4f52f19b55fae6f762274b86120a",
   "GITHUB_REMOTE": "https://github.com/ranganvaradan/BillionTech-LoS.git",
   "GITHUB_REMOTE_SHA_NOTE": "Push reconcile/laptop-layout-2026-08; remote HEAD must match freeze tip after docs commit",
   "Internal_deployed_SOURCE_SHA": "3da1ad4316eeda581975da41e6a23b2a258d4029",
