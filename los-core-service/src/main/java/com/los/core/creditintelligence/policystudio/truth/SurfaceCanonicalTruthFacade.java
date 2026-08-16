@@ -20,10 +20,14 @@ public final class SurfaceCanonicalTruthFacade {
     private SurfaceCanonicalTruthFacade() {}
 
     public static Map<String, Object> forSurface(String surface, String canonicalId) {
-        Map<String, Object> truth = CanonicalParameterTruthProjection.project(canonicalId);
+        // FINAL-CANONICAL-PARAMETER-STATE — route through sole state service
+        Map<String, Object> truth = CanonicalParameterStateService.state(canonicalId);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("surface", surface);
-        out.put("truthAuthority", CanonicalParameterTruthProjection.AUTHORITY);
+        out.put("truthAuthority", CanonicalParameterStateService.AUTHORITY);
+        out.put("parameterStateAuthority", CanonicalParameterStateService.AUTHORITY);
+        out.put("parameterStateContract", CanonicalParameterStateService.CONTRACT);
+        out.put("canonicalParameterState", truth);
         out.put("canonicalId", truth.get("canonicalId"));
         out.put("found", truth.get("found"));
         out.put("executionCapability", capability(truth));
@@ -42,6 +46,8 @@ public final class SurfaceCanonicalTruthFacade {
         out.put("calculation", truth.get("calculation"));
         out.put("certification", truth.get("certification"));
         out.put("acquisition", truth.get("acquisition"));
+        out.put("data", truth.get("data"));
+        out.put("presentation", truth.get("presentation"));
         out.put("policy", truth.get("policy"));
         out.put("advanced", advanced(truth));
         // Surface-specific presentation hints (not alternate truth)

@@ -3,7 +3,7 @@ package com.los.core.service.readiness;
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterDefinition;
 import com.los.core.creditintelligence.policystudio.parameters.derived.AuthoredDerivedCalculationSupport;
 import com.los.core.creditintelligence.policystudio.parameters.execution.CanonicalParameterCapabilityProjection;
-import com.los.core.creditintelligence.policystudio.truth.CanonicalParameterTruthProjection;
+import com.los.core.creditintelligence.policystudio.truth.CanonicalParameterStateService;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -177,8 +177,9 @@ public final class DataParametersCapabilitySemantics {
         String lender = resolveLenderSubscription(family, "", platform, subscriptionProbe);
 
         int raw = 0, derived = 0, noSupport = 0, calcMissing = 0, sourceMissing = 0, na = 0, other = 0;
-        int canonicalDirect = 0, canonicalCalculated = 0, canonicalManual = 0;
+        int canonicalDirect = 0, canonicalCalculated = 0, canonicalManual = 0, canonicalIngredient = 0;
         int readyToTest = 0, setupRequired = 0, liveApproved = 0, canWhenData = 0;
+        int businessParameters = 0;
         for (CanonicalParameterDefinition def : parameters) {
             Map<String, Object> cap = project(def, subscriptionProbe);
             @SuppressWarnings("unchecked")
@@ -193,13 +194,19 @@ public final class DataParametersCapabilitySemantics {
                 case SUPPORT_NOT_APPLICABLE -> na++;
                 default -> other++;
             }
-            Map<String, Object> truth = CanonicalParameterTruthProjection.project(def.id());
+            Map<String, Object> truth = CanonicalParameterStateService.state(def.id());
             String primary = String.valueOf(truth.getOrDefault("primaryStatus", ""));
             @SuppressWarnings("unchecked")
             Map<String, Object> semantic = truth.get("semantic") instanceof Map<?, ?>
                     ? (Map<String, Object>) truth.get("semantic") : Map.of();
             String calcMode = String.valueOf(semantic.getOrDefault("calculationMode", ""));
             String paramClass = String.valueOf(semantic.getOrDefault("parameterClass", ""));
+            if ("INGREDIENT".equals(paramClass)) {
+                canonicalIngredient++;
+                // Never count source ingredients toward calculation-setup required
+                continue;
+            }
+            businessParameters++;
             if ("MANUAL_INPUT".equals(paramClass) || "MANUAL".equalsIgnoreCase(calcMode)) {
                 canonicalManual++;
             } else if ("RAW".equalsIgnoreCase(calcMode)) {
@@ -234,8 +241,10 @@ public final class DataParametersCapabilitySemantics {
         counts.put("parametersAvailable", available);
         // Wave 10A — honest canonical aggregates (lender primary)
         Map<String, Object> canonicalCounts = new LinkedHashMap<>();
-        canonicalCounts.put("authority", CanonicalParameterTruthProjection.AUTHORITY);
+        canonicalCounts.put("authority", CanonicalParameterStateService.AUTHORITY);
         canonicalCounts.put("catalogueListed", parameters.size());
+        canonicalCounts.put("businessParameters", businessParameters);
+        canonicalCounts.put("sourceIngredients", canonicalIngredient);
         canonicalCounts.put("directlyProvided", canonicalDirect);
         canonicalCounts.put("calculated", canonicalCalculated);
         canonicalCounts.put("manual", canonicalManual);
@@ -256,11 +265,14 @@ public final class DataParametersCapabilitySemantics {
             lenderFacing.put("summaryLine", "Integration not yet available");
         } else {
             lenderFacing.put("summaryLine",
-                    parameters.size() + " catalogue parameters · "
+                    businessParameters + " business parameters · "
+                            + canonicalIngredient + " source ingredients · "
                             + readyToTest + " ready to test · "
                             + setupRequired + " setup required");
         }
         Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("businessParameters", businessParameters);
+        detail.put("sourceIngredients", canonicalIngredient);
         detail.put("directlyProvided", canonicalDirect);
         detail.put("calculatedByBillionTech", canonicalCalculated);
         detail.put("manual", canonicalManual);
@@ -276,7 +288,7 @@ public final class DataParametersCapabilitySemantics {
         detail.put("integrationNotYetAvailable", sourceMissing);
         detail.put("notApplicable", na);
         lenderFacing.put("expandableDetail", detail);
-        lenderFacing.put("countAuthority", "CanonicalParameterTruthProjection");
+        lenderFacing.put("countAuthority", CanonicalParameterStateService.AUTHORITY);
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("source", family);

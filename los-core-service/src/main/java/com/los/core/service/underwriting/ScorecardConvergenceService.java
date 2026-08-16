@@ -3,8 +3,7 @@ package com.los.core.service.underwriting;
 import com.los.core.creditintelligence.policystudio.parameters.AuthoringValueTypes;
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterDefinition;
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterRegistry;
-import com.los.core.creditintelligence.policystudio.parameters.execution.CanonicalParameterCapabilityProjection;
-import com.los.core.creditintelligence.policystudio.truth.CanonicalParameterTruthProjection;
+import com.los.core.creditintelligence.policystudio.truth.CanonicalParameterStateService;
 import com.los.core.creditintelligence.policystudio.truth.SurfaceCanonicalTruthFacade;
 import com.los.core.model.entity.LoanApplication;
 import com.los.core.model.entity.UnderwritingScorecard;
@@ -240,8 +239,7 @@ public class ScorecardConvergenceService {
     }
 
     private static Map<String, Object> toPickerItem(CanonicalParameterDefinition d) {
-        Map<String, Object> spine = CanonicalParameterCapabilityProjection.project(d);
-        Map<String, Object> truth = CanonicalParameterTruthProjection.project(d.id());
+        Map<String, Object> truth = CanonicalParameterStateService.state(d.id());
         Map<String, Object> surface = SurfaceCanonicalTruthFacade.forSurface(
                 SurfaceCanonicalTruthFacade.SCORECARD_PICKER, d.id());
         Map<String, Object> m = new LinkedHashMap<>();
@@ -267,12 +265,11 @@ public class ScorecardConvergenceService {
         m.put("parameterClass", semantic.get("parameterClass"));
         m.put("parameterClassLabel", truth.get("parameterClassLabel"));
         m.put("advancedOnly", ingredient);
-        m.put("policyTestReady", spine.get("policyTestReady"));
-        m.put("policyTestExecutable", spine.get("policyTestExecutable"));
+        boolean capable = SurfaceCanonicalTruthFacade.capability(truth);
+        m.put("policyTestReady", capable);
+        m.put("policyTestExecutable", capable);
         m.put("productionReady", false);
         m.put("productionCertified", "CERTIFIED".equals(SurfaceCanonicalTruthFacade.certStatus(truth)));
-        m.put("productionCertification", spine.get("productionCertification"));
-        boolean capable = SurfaceCanonicalTruthFacade.capability(truth);
         boolean calculationRequired = Boolean.TRUE.equals(
                 truth.get("calculation") instanceof Map<?, ?> calc
                         ? ((Map<?, ?>) calc).get("required") : false);
@@ -280,6 +277,8 @@ public class ScorecardConvergenceService {
         m.put("setupIncomplete", !capable);
         m.put("designabilityDoesNotImplyExecutability", true);
         m.put("canonicalTruth", truth);
+        m.put("canonicalParameterState", truth);
+        m.put("parameterStateAuthority", CanonicalParameterStateService.AUTHORITY);
         m.put("truthSurface", surface);
         m.put("primaryStatus", truth.get("primaryStatus"));
         m.put("primaryStatusLabel", truth.get("primaryStatusLabel"));

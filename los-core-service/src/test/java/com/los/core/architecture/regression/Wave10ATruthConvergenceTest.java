@@ -8,6 +8,7 @@ import com.los.core.creditintelligence.policystudio.parameters.execution.Evaluat
 import com.los.core.creditintelligence.policystudio.parameters.execution.ExecutionCapabilityAuthority;
 import com.los.core.creditintelligence.policystudio.parameters.execution.ExecutionSpineProducerBootstrap;
 import com.los.core.creditintelligence.policystudio.parameters.lifecycle.PolicyRuleLifecycleProjection;
+import com.los.core.creditintelligence.policystudio.truth.CanonicalParameterStateService;
 import com.los.core.creditintelligence.policystudio.truth.CanonicalParameterTruthProjection;
 import com.los.core.creditintelligence.policystudio.truth.LenderTruthDisplayMapper;
 import com.los.core.creditintelligence.policystudio.truth.SurfaceCanonicalTruthFacade;
@@ -209,13 +210,15 @@ class Wave10ATruthConvergenceTest {
         Map<String, Object> facing = (Map<String, Object>) summary.get("lenderFacing");
         @SuppressWarnings("unchecked")
         Map<String, Object> canonical = (Map<String, Object>) summary.get("canonicalCounts");
-        assertThat(facing.get("countAuthority")).isEqualTo(CanonicalParameterTruthProjection.AUTHORITY);
-        assertThat(canonical.get("authority")).isEqualTo(CanonicalParameterTruthProjection.AUTHORITY);
+        assertThat(facing.get("countAuthority")).isEqualTo(CanonicalParameterStateService.AUTHORITY);
+        assertThat(canonical.get("authority")).isEqualTo(CanonicalParameterStateService.AUTHORITY);
         String line = String.valueOf(facing.get("summaryLine"));
         assertThat(line).doesNotContain("parameters available");
         assertThat(line).doesNotContain("calculations not yet implemented");
-        assertThat(line).containsIgnoringCase("catalogue parameters");
+        assertThat(line).containsIgnoringCase("business parameters");
         assertThat(line).containsIgnoringCase("ready to test");
+        assertThat(canonical.get("sourceIngredients")).isNotNull();
+        assertThat(canonical.get("businessParameters")).isNotNull();
     }
 
     @Test

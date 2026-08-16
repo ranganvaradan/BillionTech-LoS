@@ -29,18 +29,52 @@ public final class LenderTruthDisplayMapper {
         boolean calcRequired = Boolean.TRUE.equals(calculation.get("required"));
         String status = execution.get("status") == null ? null : String.valueOf(execution.get("status"));
         String certStatus = firstCertStatus(certification);
+        String paramClass = String.valueOf(semantic.getOrDefault("parameterClass", ""));
 
         String primary;
         String label;
         String next;
 
-        if (calcRequired || ExecutionStatus.CALCULATION_NOT_DEFINED.name().equals(status)
+        // SOURCE_INGREDIENT / CONFIGURATION / DECISION_OUTPUT — calculation setup never applies
+        if ("INGREDIENT".equals(paramClass)) {
+            if (capability && valueAvailable) {
+                primary = "READY_TO_TEST";
+                label = "Source available";
+                next = null;
+            } else if (capability) {
+                primary = "CAN_CALCULATE_WHEN_DATA_AVAILABLE";
+                label = "Data unavailable";
+                next = "Get data / Complete source step";
+            } else {
+                primary = "DATA_SOURCE_REQUIRED";
+                label = "Source not connected";
+                next = "Connect source / Subscribe";
+            }
+            Map<String, Object> m = baseDisplay(primary, label, next, semantic, certification, capability,
+                    valueAvailable, status, false);
+            m.put("calculationSetup", "NOT_APPLICABLE");
+            m.put("calculationExplanation", "Source ingredient — not a lender calculation setup item.");
+            return m;
+        }
+        if ("CONFIGURATION".equals(paramClass) || "DECISION_OUTPUT".equals(paramClass)) {
+            primary = "NOT_YET_SUPPORTED";
+            label = "CONFIGURATION".equals(paramClass) ? "Configuration" : "Decision output";
+            next = null;
+            Map<String, Object> m = baseDisplay(primary, label, next, semantic, certification, capability,
+                    valueAvailable, status, false);
+            m.put("calculationSetup", "NOT_APPLICABLE");
+            return m;
+        }
+
+        if (isManualClass(semantic) && (!capability || !valueAvailable
+                || ExecutionStatus.INPUT_REQUIRED.name().equals(status)
+                || calcRequired)) {
+            primary = "NEEDS_MANUAL_INPUT";
+            label = "Needs manual input";
+            next = "Provide manual input";
+        } else if (calcRequired || ExecutionStatus.CALCULATION_NOT_DEFINED.name().equals(status)
                 || ExecutionStatus.NOT_EXECUTABLE.name().equals(status) && !capability) {
-            if (isManualClass(semantic)) {
-                primary = "NEEDS_MANUAL_INPUT";
-                label = "Needs manual input";
-                next = "Enter value";
-            } else if (!capability) {
+            if (!capability) {
                 primary = "CALCULATION_NEEDS_SETUP";
                 label = "Calculation needs setup";
                 next = "Set up calculation";
@@ -52,7 +86,7 @@ public final class LenderTruthDisplayMapper {
         } else if (ExecutionStatus.INPUT_REQUIRED.name().equals(status) || isManualClass(semantic) && !valueAvailable) {
             primary = "NEEDS_MANUAL_INPUT";
             label = "Needs manual input";
-            next = "Enter value";
+            next = "Provide manual input";
         } else if (capability && CertificationStatus.CERTIFIED.name().equals(certStatus)) {
             // Live approval is primary when executable + certified (data availability is secondary)
             primary = "APPROVED_FOR_LIVE_USE";
@@ -89,15 +123,31 @@ public final class LenderTruthDisplayMapper {
             label = label + " (certified artifact — check execution)";
         }
 
+        Map<String, Object> m = baseDisplay(primary, label, next, semantic, certification, capability,
+                valueAvailable, status, calcRequired);
+        m.put("calculationExplanation", calculation.get("explanation"));
+        return m;
+    }
+
+    private static Map<String, Object> baseDisplay(
+            String primary,
+            String label,
+            String next,
+            Map<String, Object> semantic,
+            Map<String, Object> certification,
+            boolean capability,
+            boolean valueAvailable,
+            String status,
+            boolean calcRequired) {
+        String certStatus = firstCertStatus(certification);
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("primaryStatus", primary);
         m.put("primaryStatusLabel", label);
         m.put("nextAction", next);
         m.put("parameterClassLabel", parameterClassLabel(semantic));
         m.put("liveUseDisplay", liveUseDisplay(certStatus, capability));
-        m.put("executionLabel", executionLabel(capability, valueAvailable, status, calcRequired));
+        m.put("executionLabel", executionLabel(capability, valueAvailable, status, calcRequired, semantic));
         m.put("certificationLabel", certificationLabel(certStatus));
-        m.put("calculationExplanation", calculation.get("explanation"));
         m.put("neverUseCatalogueProductionReadyAsLive", true);
         return m;
     }
@@ -109,6 +159,9 @@ public final class LenderTruthDisplayMapper {
             boolean calcRequired,
             boolean manual,
             boolean raw) {
+        if ("INGREDIENT".equals(String.valueOf(semantic.get("parameterClass")))) {
+            return "Source ingredient — not a lender calculation setup item.";
+        }
         if (manual) {
             return "Entered by the lender or application intake.";
         }
@@ -146,7 +199,7 @@ public final class LenderTruthDisplayMapper {
             Map<String, Object> certification) {
         String cert = firstCertStatus(certification);
         if (calcRequired || !capability) return "Set up calculation";
-        if (er != null && er.status() == ExecutionStatus.INPUT_REQUIRED) return "Enter value";
+        if (er != null && er.status() == ExecutionStatus.INPUT_REQUIRED) return "Provide manual input";
         if (er != null && !er.valueAvailable() && capability) return "Get data / Complete source step";
         if (CertificationStatus.CERTIFIED.name().equals(cert)) return null;
         if (CertificationStatus.REVOKED.name().equals(cert)) return "Re-certify via authorized admin";
@@ -154,7 +207,19 @@ public final class LenderTruthDisplayMapper {
     }
 
     private static String executionLabel(
-            boolean capability, boolean valueAvailable, String status, boolean calcRequired) {
+            boolean capability,
+            boolean valueAvailable,
+            String status,
+            boolean calcRequired,
+            Map<String, Object> semantic) {
+        if ("INGREDIENT".equals(String.valueOf(semantic.get("parameterClass")))) {
+            if (capability && valueAvailable) return "Source available";
+            if (capability) return "Data unavailable";
+            return "Source not connected";
+        }
+        if (isManualClass(semantic)) {
+            return "Needs manual input";
+        }
         if (calcRequired || ExecutionStatus.CALCULATION_NOT_DEFINED.name().equals(status)) {
             return "Calculation needs setup";
         }

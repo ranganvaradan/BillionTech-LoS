@@ -34,8 +34,10 @@ export type PolicyStudioOperandPresentation = {
 }
 
 export function truthFromOperand(op: Record<string, unknown>): CanonicalTruthLike {
-  const nested = asRecord(op.canonicalTruth)
+  const nested = asRecord(op.canonicalParameterState)
   if (Object.keys(nested).length) return nested as CanonicalTruthLike
+  const legacy = asRecord(op.canonicalTruth)
+  if (Object.keys(legacy).length) return legacy as CanonicalTruthLike
   return {
     primaryStatus: op.primaryStatus != null ? String(op.primaryStatus) : null,
     primaryStatusLabel: op.primaryStatusLabel != null ? String(op.primaryStatusLabel) : null,
@@ -48,8 +50,8 @@ export function truthFromOperand(op: Record<string, unknown>): CanonicalTruthLik
 }
 
 /**
- * Derive parameter readiness + which existing resolver path to show.
- * Does not invent capability — prefers backend canonicalTruth.
+ * Derive resolver presentation from CanonicalParameterState + PolicyRuleState context.
+ * Frontend must not invent primary status — only map enum → actions/copy.
  */
 export function derivePolicyStudioOperandPresentation(
   op: Record<string, unknown>,
@@ -60,8 +62,11 @@ export function derivePolicyStudioOperandPresentation(
 ): PolicyStudioOperandPresentation {
   const truth = truthFromOperand(op)
   const execution = asRecord(truth.execution)
+  const semantic = asRecord((truth as Record<string, unknown>).semantic)
+  const paramClass = String(semantic.parameterClass ?? '')
   const capability =
     execution.capability === true ||
+    Boolean(asRecord(asRecord(op.canonicalParameterState).execution).capability) ||
     Boolean(asRecord(asRecord(op.canonicalTruth).execution).capability) ||
     (op.policyTestReady === true && op.calculationRequired !== true)
 
@@ -77,6 +82,21 @@ export function derivePolicyStudioOperandPresentation(
     primaryStatus === 'NEEDS_MANUAL_INPUT' ||
     op.manualInput === true ||
     String(op.availability ?? '').toUpperCase() === 'MANUAL'
+
+  // SOURCE_INGREDIENT — never calculation setup
+  if (paramClass === 'INGREDIENT' || String(op.parameterClassLabel ?? '').includes('Source ingredient')) {
+    return {
+      case: 'EXECUTABLE',
+      parameterLabel: primary.label || 'Source ingredient',
+      parameterState: primaryStatus || 'DATA_SOURCE_REQUIRED',
+      showCalculationResolver: false,
+      showManualResolver: false,
+      showMapResolver: false,
+      resolverActionLabel: null,
+      explanation: 'Source ingredient — calculation setup not applicable',
+      capability,
+    }
+  }
 
   if (op.unresolved === true) {
     return {

@@ -69,6 +69,7 @@ public final class CanonicalParameterTruthProjection {
 
         boolean manual = isManual(def);
         boolean authored = isAuthored(def, semantic);
+        boolean ingredient = "INGREDIENT".equals(String.valueOf(semantic.get("parameterClass")));
         boolean raw = "RAW".equalsIgnoreCase(String.valueOf(semantic.get("calculationMode")))
                 || (def.capability() != null && !def.capability().derivationDefined()
                 && def.capability().implemented() && !manual);
@@ -111,7 +112,7 @@ public final class CanonicalParameterTruthProjection {
             execution.put("executionContract", er.toCanonicalContractMap());
         } else {
             execution.put("status", capability ? ExecutionStatus.DATA_NOT_AVAILABLE.name()
-                    : (authored && !capability ? ExecutionStatus.CALCULATION_NOT_DEFINED.name()
+                    : (authored && !capability && !ingredient ? ExecutionStatus.CALCULATION_NOT_DEFINED.name()
                     : ExecutionStatus.NOT_EXECUTABLE.name()));
             execution.put("valueAvailable", false);
             execution.put("simulatedValue", false);
@@ -122,7 +123,7 @@ public final class CanonicalParameterTruthProjection {
         Map<String, Object> calculation = new LinkedHashMap<>();
         boolean derivationDefined = def.capability() != null && def.capability().derivationDefined();
         boolean authoredHowPresent = AuthoredDerivedCalculationSupport.latestExecutableHow(def.id()).isPresent();
-        boolean calcRequired = authored && !capability;
+        boolean calcRequired = !ingredient && authored && !capability;
         calculation.put("required", calcRequired);
         calculation.put("definitionPresent", capability || authoredHowPresent);
         calculation.put("definitionId", (capability || authoredHowPresent) ? def.id() : null);
@@ -131,6 +132,7 @@ public final class CanonicalParameterTruthProjection {
         calculation.put("explanation", LenderTruthDisplayMapper.calculationExplanation(
                 def, semantic, capability, calcRequired, manual, raw));
         calculation.put("catalogueDerivationDefinedLegacy", derivationDefined);
+        calculation.put("setupNotApplicable", ingredient);
         out.put("calculation", calculation);
 
         // --- certification (Wave-8) ---

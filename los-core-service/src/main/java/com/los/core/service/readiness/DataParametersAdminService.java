@@ -7,7 +7,7 @@ import com.los.core.creditintelligence.policystudio.parameters.CanonicalParamete
 import com.los.core.creditintelligence.policystudio.parameters.GacatCatalogueAuthority;
 import com.los.core.creditintelligence.policystudio.parameters.GacatCatalogueRepository;
 import com.los.core.creditintelligence.policystudio.parameters.PolicyStudioConvergencePresenter;
-import com.los.core.creditintelligence.policystudio.truth.CanonicalParameterTruthProjection;
+import com.los.core.creditintelligence.policystudio.truth.CanonicalParameterStateService;
 import com.los.core.creditintelligence.policystudio.truth.SurfaceCanonicalTruthFacade;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -297,12 +297,14 @@ public class DataParametersAdminService {
         Map<String, Object> m = new LinkedHashMap<>(d.toBusinessView());
         m.put("source", d.evaluatedFrom());
         m.put("lineage", lineage(d));
-        // Wave-9: single truth projection — D&P is a pure view over GACAT + CPES + certification
-        Map<String, Object> truth = CanonicalParameterTruthProjection.project(d.id());
+        // FINAL-CANONICAL-PARAMETER-STATE — D&P is a pure consumer of CanonicalParameterState
+        Map<String, Object> truth = CanonicalParameterStateService.state(d.id());
         Map<String, Object> surface = SurfaceCanonicalTruthFacade.forSurface(
                 SurfaceCanonicalTruthFacade.DATA_PARAMETERS, d.id());
         m.put("canonicalTruth", truth);
+        m.put("canonicalParameterState", truth);
         m.put("truthSurface", surface);
+        m.put("parameterStateAuthority", CanonicalParameterStateService.AUTHORITY);
         m.put("primaryStatus", truth.get("primaryStatus"));
         m.put("primaryStatusLabel", truth.get("primaryStatusLabel"));
         m.put("nextAction", truth.get("nextAction"));
@@ -315,10 +317,10 @@ public class DataParametersAdminService {
         m.put("readiness", readiness);
         m.put("sourceType", readiness.get("sourceType"));
         m.put("sourceFamily", readiness.get("sourceFamily"));
-        // Primary lender status from truth — legacy overall under Advanced only
+        // Primary lender status from state — legacy overall under Advanced only
         m.put("overallReadiness", truth.get("primaryStatus"));
         m.put("overallReadinessReasons", List.of(
-                "Wave-9 primaryStatus from CanonicalParameterTruthProjection",
+                "primaryStatus from CanonicalParameterStateService",
                 String.valueOf(truth.get("primaryStatusLabel"))));
         m.put("provider", readiness.get("provider"));
         m.put("workflow", readiness.get("workflow"));

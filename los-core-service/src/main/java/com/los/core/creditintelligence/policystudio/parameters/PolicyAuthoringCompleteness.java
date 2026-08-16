@@ -152,6 +152,14 @@ public final class PolicyAuthoringCompleteness {
                 .findFirst()
                 .ifPresent(p -> life.put("parameterId", String.valueOf(p)));
         card.put("lifecycle", life);
+        List<String> paramIds = operands.stream()
+                .map(o -> o.get("parameterId") != null ? o.get("parameterId") : o.get("canonicalParameterId"))
+                .filter(p -> p != null && !String.valueOf(p).isBlank())
+                .map(String::valueOf)
+                .distinct()
+                .toList();
+        card.put("policyRuleState", com.los.core.creditintelligence.policystudio.parameters.lifecycle
+                .PolicyRuleState.fromLifecycle(life, ruleId, paramIds, card));
         // Converge visible status chip to lifecycle (single authority)
         String chip = String.valueOf(life.getOrDefault("statusChip", card.get("status")));
         if (!Set.of("Ignored", "Deleted", "Data requirement", "Metric adjustment", "Non-underwriting",

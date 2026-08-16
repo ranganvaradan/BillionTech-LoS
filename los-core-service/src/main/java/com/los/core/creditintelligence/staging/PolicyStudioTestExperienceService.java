@@ -15,6 +15,7 @@ import com.los.core.creditintelligence.policystudio.parameters.CanonicalParamete
 import com.los.core.creditintelligence.policystudio.parameters.ParameterResolutionSupport;
 import com.los.core.creditintelligence.policystudio.parameters.PolicyStudioConvergencePresenter;
 import com.los.core.creditintelligence.policystudio.parameters.RuleOperandPresenter;
+import com.los.core.creditintelligence.policystudio.truth.CanonicalParameterStateService;
 import com.los.core.creditintelligence.policystudio.parameters.execution.BuiltInBankingMetricProducer;
 import com.los.core.creditintelligence.policystudio.parameters.execution.CanonicalParameterExecutionService;
 import com.los.core.creditintelligence.policystudio.parameters.execution.EvaluationContext;
@@ -353,8 +354,7 @@ public class PolicyStudioTestExperienceService {
     // ─── Required parameters ───────────────────────────────────────────────
 
     List<Map<String, Object>> requiredParameters(PolicyStudioSession session) {
-        // Prefer exact GACAT identity for dedupe so the same parameter used by multiple rules
-        // appears once (Test / inventory / Scorecard parity).
+        // Distinct canonical IDs → one PolicyTestInput stamped from CanonicalParameterStateService.
         Map<String, Map<String, Object>> byCanonical = new LinkedHashMap<>();
         for (CiPolicyRuleCandidate r : session.getRuleCandidates()) {
             if (PolicyStudioConvergencePresenter.isCompoundChild(r.getSystemRuleId())) continue;
@@ -380,9 +380,7 @@ public class PolicyStudioTestExperienceService {
             if (sys.contains("INQUIR")) {
                 mergeParamByCanonical(byCanonical, fromMetricPath("bureau.inquiries.current_month", meta));
             }
-            if (sys.contains("DPD")) {
-                mergeParamByCanonical(byCanonical, fromMetricPath("bureau.max_dpd_6m", meta));
-            }
+            // DPD: never invent bureau.max_dpd_6m — only use operand / expression canonical IDs
             if (sys.contains("TXN") || sys.contains("SETTLEMENT_COUNT")) {
                 mergeParamByCanonical(byCanonical, fromMetricPath(
                         sys.contains("SETTLEMENT")
@@ -403,87 +401,116 @@ public class PolicyStudioTestExperienceService {
         p.put("businessName", op.getOrDefault("businessName", op.get("label")));
         Object pid = op.get("parameterId");
         p.put("metricId", pid);
-        boolean unresolved = Boolean.TRUE.equals(op.get("unresolved"))
-                || ParameterResolutionSupport.STATUS_UNRESOLVED.equals(op.get("status"));
-        boolean calcRequired = Boolean.TRUE.equals(op.get("calculationRequired"))
-                || Boolean.TRUE.equals(op.get("needsConfiguration"));
-        String resState = String.valueOf(op.getOrDefault("resolutionState", op.get("status")));
-        if (unresolved) {
-            p.put("status", "UNRESOLVED");
-            p.put("sourceLabel", "Unresolved — resolve in Rules or enter temporary test value");
-        } else if (calcRequired) {
-            p.put("status", "UNRESOLVED");
-            p.put("sourceLabel", String.valueOf(op.getOrDefault("message",
-                    "Calculation / configuration required before this parameter can be evaluated")));
-        } else if (CanonicalParameterDefinition.DERIVED.equals(resState)
-                || "DERIVED".equalsIgnoreCase(resState)) {
-            p.put("status", "AUTOMATIC_DERIVED");
-            p.put("sourceLabel", "Derived from " + String.valueOf(op.getOrDefault("evaluatedFrom", "source data")));
-            attachLineage(p, pid == null ? null : String.valueOf(pid));
-            p.put("defaultHint", defaultHint(key, pid == null ? null : String.valueOf(pid)));
-        } else if (CanonicalParameterDefinition.RAW.equals(resState) || "RAW".equalsIgnoreCase(resState)) {
-            p.put("status", "AUTOMATIC_DERIVED");
-            p.put("sourceLabel", "Available from " + String.valueOf(op.getOrDefault("evaluatedFrom", "source data")));
-            p.put("defaultHint", defaultHint(key, pid == null ? null : String.valueOf(pid)));
-        } else if ("MANUAL".equalsIgnoreCase(resState) || String.valueOf(op.get("evaluatedFrom")).contains("Manual")) {
-            p.put("status", "MANUAL_INPUT");
-            p.put("sourceLabel", "Manual input");
-        } else {
-            p.put("status", "AUTOMATIC_DERIVED");
-            p.put("defaultHint", defaultHint(key, pid == null ? null : String.valueOf(pid)));
-        }
+        p.put("canonicalParameterId", pid);
+        applyCanonicalTestStatus(p, pid == null ? null : String.valueOf(pid), op);
         p.put("unit", op.get("unit"));
         p.put("inputType", guessInputType(key, pid == null ? null : String.valueOf(pid)));
         return p;
+    }
+
+    /**
+     * Map CanonicalParameterState → PolicyTestInput status. Never invent UNRESOLVED for executable params.
+     */
+    private void applyCanonicalTestStatus(Map<String, Object> p, String canonicalId, Map<String, Object> op) {
+        if (canonicalId == null || canonicalId.isBlank() || "null".equals(canonicalId)) {
+            boolean unresolved = op != null && (Boolean.TRUE.equals(op.get("unresolved"))
+                    || ParameterResolutionSupport.STATUS_UNRESOLVED.equals(op.get("status")));
+            p.put("status", unresolved ? "UNRESOLVED" : "AUTOMATIC_DERIVED");
+            if (unresolved) {
+                p.put("sourceLabel", "Unresolved — resolve in Rules or enter temporary test value");
+            }
+            return;
+        }
+        Map<String, Object> state = CanonicalParameterStateService.state(canonicalId.trim());
+        p.put("parameterState", state);
+        p.put("canonicalParameterState", state);
+        p.put("parameterStateAuthority", CanonicalParameterStateService.AUTHORITY);
+        p.put("primaryStatus", state.get("primaryStatus"));
+        p.put("primaryStatusLabel", state.get("primaryStatusLabel"));
+        String primary = String.valueOf(state.getOrDefault("primaryStatus", ""));
+        switch (primary) {
+            case "CALCULATION_NEEDS_SETUP" -> {
+                p.put("status", "CALCULATION_REQUIRED");
+                p.put("sourceLabel", "Calculation needs setup — simulate only, or set up calculation");
+            }
+            case "NEEDS_MANUAL_INPUT" -> {
+                p.put("status", "MANUAL_INPUT");
+                p.put("sourceLabel", "Needs manual input");
+            }
+            case "NOT_YET_SUPPORTED" -> {
+                p.put("status", "UNAVAILABLE");
+                p.put("sourceLabel", "Not yet supported");
+            }
+            case "DATA_SOURCE_REQUIRED" -> {
+                p.put("status", "DATA_REQUIRED");
+                p.put("sourceLabel", "Data source required");
+            }
+            case "CAN_CALCULATE_WHEN_DATA_AVAILABLE" -> {
+                p.put("status", "AUTOMATIC_DERIVED");
+                p.put("sourceLabel", "Can calculate when data is available — enter temporary test value if needed");
+                p.put("defaultHint", defaultHint(String.valueOf(p.get("parameterKey")), canonicalId));
+            }
+            case "READY_TO_TEST", "APPROVED_FOR_LIVE_USE" -> {
+                p.put("status", "AUTOMATIC_DERIVED");
+                p.put("sourceLabel", String.valueOf(state.getOrDefault("primaryStatusLabel", "Ready to test")));
+                attachLineage(p, canonicalId);
+                p.put("defaultHint", defaultHint(String.valueOf(p.get("parameterKey")), canonicalId));
+            }
+            default -> {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> exec = state.get("execution") instanceof Map<?, ?>
+                        ? (Map<String, Object>) state.get("execution") : Map.of();
+                if (Boolean.TRUE.equals(exec.get("capability"))) {
+                    p.put("status", "AUTOMATIC_DERIVED");
+                    p.put("sourceLabel", String.valueOf(state.getOrDefault("primaryStatusLabel", "Ready")));
+                    p.put("defaultHint", defaultHint(String.valueOf(p.get("parameterKey")), canonicalId));
+                } else {
+                    p.put("status", "CALCULATION_REQUIRED");
+                    p.put("sourceLabel", String.valueOf(state.getOrDefault("primaryStatusLabel",
+                            "Calculation needs setup")));
+                }
+            }
+        }
+        // EDI still needs explicit resolution for test when not bound — data axis, not calc invent
+        if (canonicalId.contains("proposed_edi") && "AUTOMATIC_DERIVED".equals(p.get("status"))) {
+            // keep derived if capable
+        }
     }
 
     private Map<String, Object> fromMetricPath(String path, Map<String, Object> meta) {
         Map<String, Object> p = new LinkedHashMap<>();
         var defOpt = registry().findById(path);
         String key = path.contains(".") ? path.substring(path.lastIndexOf('.') + 1) : path;
-        // normalize known keys
         if (path.contains("proposed_edi")) key = "proposed_edi";
         if (path.contains("avg_daily_balance")) key = "average_daily_balance";
         if (path.equals("bureau.score")) key = "bureau_score";
         if (path.contains("clean_history")) key = "clean_history";
         p.put("parameterKey", key);
         p.put("metricId", path);
+        p.put("canonicalParameterId", path);
         if (defOpt.isPresent()) {
-            CanonicalParameterDefinition def = defOpt.get();
-            p.put("businessName", def.businessName());
-            if (CanonicalParameterDefinition.MANUAL.equals(def.type())) {
-                p.put("status", "MANUAL_INPUT");
-                p.put("sourceLabel", "Manual input");
-            } else {
-                p.put("status", "AUTOMATIC_DERIVED");
-                p.put("sourceLabel", "From " + def.evaluatedFrom());
-                attachLineage(p, path);
-                p.put("defaultHint", defaultHint(key, path));
-            }
+            p.put("businessName", defOpt.get().businessName());
         } else {
             p.put("businessName", friendlyPath(path));
-            p.put("status", "AUTOMATIC_DERIVED");
-            p.put("defaultHint", defaultHint(key, path));
         }
-        // EDI / CLEAN stay unresolved unless CM resolved in meta
+        applyCanonicalTestStatus(p, path, null);
+        // EDI / CLEAN: only when not resolved in meta AND state says setup/manual — keep explicit
         if (path.contains("proposed_edi") || path.contains("clean_history")) {
             Map<String, Object> resolutions = ParameterResolutionSupport.resolutionsOf(meta);
             String opKey = path.contains("edi") ? "proposed_edi" : "clean_history";
             Map<String, Object> stored = cast(resolutions.get(opKey));
             if (!ParameterResolutionSupport.isResolved(stored)) {
-                // Only mark unresolved for EDI/CLEAN when not resolved — do not invent
-                if (path.contains("proposed_edi") || path.contains("clean_history")) {
-                    // For EDI: registry may have the id but resolver must not auto-bind
-                    if (path.contains("proposed_edi")) {
-                        p.put("status", "UNRESOLVED");
-                        p.put("sourceLabel", "Unresolved — enter temporary test value or resolve in Rules");
-                        p.remove("defaultHint");
+                String primary = String.valueOf(p.getOrDefault("primaryStatus", ""));
+                if ("READY_TO_TEST".equals(primary) || "CAN_CALCULATE_WHEN_DATA_AVAILABLE".equals(primary)
+                        || "APPROVED_FOR_LIVE_USE".equals(primary)) {
+                    // Capable — allow temporary test value, do not call "unresolved calculation"
+                    if ("CAN_CALCULATE_WHEN_DATA_AVAILABLE".equals(primary)) {
+                        p.put("sourceLabel", "Data required / Can calculate when data is available");
                     }
-                    if (path.contains("clean_history")) {
-                        p.put("status", "UNRESOLVED");
-                        p.put("sourceLabel", "Unresolved — cannot invent clean history");
-                        p.remove("defaultHint");
-                    }
+                } else if (path.contains("proposed_edi") && !"MANUAL_INPUT".equals(p.get("status"))) {
+                    p.put("status", "MANUAL_INPUT");
+                    p.put("sourceLabel", "Needs manual input — enter temporary test value or resolve in Rules");
+                    p.remove("defaultHint");
                 }
             }
         }
@@ -541,9 +568,15 @@ public class PolicyStudioTestExperienceService {
                     manual++;
                     needs.add(Map.of("businessName", p.get("businessName"), "issue", "manual_input_required"));
                 }
-                case "UNRESOLVED" -> {
+                case "UNRESOLVED", "CALCULATION_REQUIRED" -> {
                     unresolved++;
-                    needs.add(Map.of("businessName", p.get("businessName"), "issue", "unresolved"));
+                    needs.add(Map.of("businessName", p.get("businessName"), "issue",
+                            "CALCULATION_REQUIRED".equals(st) ? "calculation_needs_setup" : "unresolved"));
+                }
+                case "DATA_REQUIRED", "UNAVAILABLE" -> {
+                    unavailable++;
+                    needs.add(Map.of("businessName", p.get("businessName"), "issue",
+                            "DATA_REQUIRED".equals(st) ? "data_required" : "unavailable"));
                 }
                 default -> {
                     unavailable++;

@@ -2,7 +2,7 @@ package com.los.core.creditintelligence.policystudio.parameters;
 
 import com.los.core.creditintelligence.policystudio.parameters.execution.EvaluationMode;
 import com.los.core.creditintelligence.policystudio.parameters.execution.ExecutionCapabilityAuthority;
-import com.los.core.creditintelligence.policystudio.truth.CanonicalParameterTruthProjection;
+import com.los.core.creditintelligence.policystudio.truth.CanonicalParameterStateService;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -303,31 +303,14 @@ public final class RuleOperandPresenter {
     }
 
     /**
-     * Wave 10A — operand faces carry the same canonical truth authority as D&P.
-     * calculationRequired follows CPES + truth projection, never catalogue alone.
+     * FINAL-CANONICAL-PARAMETER-STATE — operand faces carry CanonicalParameterState only.
      */
     private static void attachCanonicalTruth(Map<String, Object> face, String canonicalId) {
         if (face == null || canonicalId == null || canonicalId.isBlank()) return;
-        Map<String, Object> truth = CanonicalParameterTruthProjection.project(canonicalId.trim());
-        face.put("canonicalTruth", truth);
-        face.put("primaryStatus", truth.get("primaryStatus"));
-        face.put("primaryStatusLabel", truth.get("primaryStatusLabel"));
-        face.put("nextAction", truth.get("nextAction"));
-        face.put("calculationExplanation", truth.get("calculationExplanation"));
-        @SuppressWarnings("unchecked")
-        Map<String, Object> execution = truth.get("execution") instanceof Map<?, ?>
-                ? (Map<String, Object>) truth.get("execution") : Map.of();
-        @SuppressWarnings("unchecked")
-        Map<String, Object> calculation = truth.get("calculation") instanceof Map<?, ?>
-                ? (Map<String, Object>) truth.get("calculation") : Map.of();
-        boolean capability = Boolean.TRUE.equals(execution.get("capability"));
-        boolean calcRequired = Boolean.TRUE.equals(calculation.get("required"));
-        if (capability) {
-            face.put("calculationRequired", false);
-            face.put("policyTestReady", true);
-        } else if (calcRequired) {
-            face.put("calculationRequired", true);
-        }
+        CanonicalParameterStateService.stamp(face, canonicalId.trim());
+        Map<String, Object> state = CanonicalParameterStateService.state(canonicalId.trim());
+        face.put("canonicalTruth", state);
+        face.put("canonicalParameterState", state);
     }
 
     /**

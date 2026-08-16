@@ -1,8 +1,8 @@
 package com.los.core.creditintelligence.policystudio.parameters.lifecycle;
 
-import com.los.core.creditintelligence.policystudio.parameters.execution.CanonicalParameterCapabilityProjection;
 import com.los.core.creditintelligence.policystudio.parameters.execution.ExecutionCapabilityAuthority;
 import com.los.core.creditintelligence.policystudio.parameters.execution.EvaluationMode;
+import com.los.core.creditintelligence.policystudio.truth.CanonicalParameterStateService;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -326,9 +326,10 @@ public final class PolicyRuleLifecycleProjection {
         );
     }
 
-    /** Helper for inventory / tests — spine POLICY_TEST for one id. */
+    /** Helper for inventory / tests — CanonicalParameterState POLICY_TEST capability. */
     public static boolean parameterPolicyTestCapable(String canonicalParameterId) {
-        return CanonicalParameterCapabilityProjection.project(canonicalParameterId)
-                .get("policyTestReady") instanceof Boolean b && b;
+        Map<String, Object> state = CanonicalParameterStateService.state(canonicalParameterId);
+        Object exec = state.get("execution");
+        return exec instanceof Map<?, ?> m && Boolean.TRUE.equals(m.get("capability"));
     }
 }

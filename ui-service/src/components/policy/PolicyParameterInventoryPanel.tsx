@@ -82,7 +82,11 @@ export function PolicyParameterInventoryPanel({ documentId }: { documentId: stri
     unresolvedCount,
   })
   const unresolved = unresolvedTokens(rows)
-  const needsSetup = rows.filter((r) => r.calculationRequired === true).length
+  const needsSetup = rows.filter(
+    (r) =>
+      r.primaryStatus === 'CALCULATION_NEEDS_SETUP' ||
+      (r.calculationRequired === true && !r.primaryStatusLabel),
+  ).length
 
   return (
     <section
@@ -140,12 +144,22 @@ export function PolicyParameterInventoryPanel({ documentId }: { documentId: stri
             <tbody>
               {rows.map((r, i) => {
                 const primary = lenderPrimaryStatus({
+                  primaryStatusLabel: r.primaryStatusLabel,
+                  primaryStatus: r.primaryStatus,
+                  calculationExplanation: r.calculationExplanation,
+                  nextAction: r.nextAction,
                   calculationRequired: r.calculationRequired === true,
                   policyTestReady: r.policyTestReady === true,
                   runtimeReady: r.runtimeReady === true,
                   productionReady: r.productionReady === true,
                   unresolved: !r.canonicalParameterId,
                 })
+                const setupAction =
+                  r.primaryStatus === 'CALCULATION_NEEDS_SETUP' ||
+                  (r.calculationRequired === true &&
+                    r.primaryStatus !== 'READY_TO_TEST' &&
+                    r.primaryStatus !== 'CAN_CALCULATE_WHEN_DATA_AVAILABLE' &&
+                    r.primaryStatus !== 'APPROVED_FOR_LIVE_USE')
                 return (
                   <tr
                     key={`${r.canonicalParameterId ?? r.originalToken}-${i}`}
@@ -159,15 +173,20 @@ export function PolicyParameterInventoryPanel({ documentId }: { documentId: stri
                     <td className="py-2 pr-3">
                       <span
                         className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                          primary.state === 'NEEDS_YOUR_INPUT' || primary.state === 'DATA_NOT_AVAILABLE'
+                          primary.state === 'NEEDS_YOUR_INPUT' ||
+                          primary.state === 'CALCULATION_NEEDS_SETUP' ||
+                          primary.state === 'DATA_NOT_AVAILABLE'
                             ? 'bg-amber-50 text-amber-900'
-                            : primary.state === 'READY_TO_TEST' || primary.state === 'READY'
+                            : primary.state === 'READY_TO_TEST' ||
+                                primary.state === 'READY' ||
+                                primary.state === 'APPROVED_FOR_LIVE_USE' ||
+                                primary.state === 'CAN_CALCULATE_WHEN_DATA_AVAILABLE'
                               ? 'bg-emerald-50 text-emerald-900'
                               : 'bg-slate-100 text-slate-600'
                         }`}
                         data-testid="inventory-primary-status"
                       >
-                        {r.calculationRequired === true ? 'Needs your input' : primary.label}
+                        {primary.label}
                       </span>
                       {/* Honesty guards retained for contract tests / Advanced honesty */}
                       <span className="sr-only">
@@ -179,7 +198,7 @@ export function PolicyParameterInventoryPanel({ documentId }: { documentId: stri
                       {r.productionReady === true ? null : null}
                     </td>
                     <td className="py-2 pr-3">
-                      {r.calculationRequired === true && r.canonicalParameterId ? (
+                      {setupAction && r.canonicalParameterId ? (
                         <button
                           type="button"
                           className="text-[11px] font-medium text-sky-700 underline"
@@ -191,7 +210,7 @@ export function PolicyParameterInventoryPanel({ documentId }: { documentId: stri
                             )
                           }
                         >
-                          Complete setup
+                          {r.nextAction || 'Complete setup'}
                         </button>
                       ) : (
                         <span className="text-slate-400">—</span>

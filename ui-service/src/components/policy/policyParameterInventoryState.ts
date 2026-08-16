@@ -12,6 +12,11 @@ export type InvRow = {
   calculationDefinitionStatus?: string
   sourceFamily?: string
   businessName?: string
+  primaryStatus?: string | null
+  primaryStatusLabel?: string | null
+  calculationExplanation?: string | null
+  nextAction?: string | null
+  parameterStateAuthority?: string | null
 }
 
 export type InventoryLoadState =

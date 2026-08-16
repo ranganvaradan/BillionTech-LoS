@@ -4,9 +4,9 @@ import com.los.core.creditintelligence.policystudio.domain.CiPolicyDocument;
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterDefinition;
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterRegistry;
 import com.los.core.creditintelligence.policystudio.parameters.PolicyStudioConvergencePresenter;
-import com.los.core.creditintelligence.policystudio.parameters.execution.CanonicalParameterCapabilityProjection;
 import com.los.core.creditintelligence.policystudio.parameters.derived.CiGacatDerivedCalculationDefinition;
 import com.los.core.creditintelligence.policystudio.parameters.derived.DerivedCalculationDefinitionService;
+import com.los.core.creditintelligence.policystudio.truth.CanonicalParameterStateService;
 import com.los.core.creditintelligence.policystudio.repository.CiPolicyDocumentRepository;
 import com.los.core.creditintelligence.policystudio.repository.CiPolicyRuleGraphNodeRepository;
 import com.los.core.creditintelligence.policystudio.repository.CiPolicyRuleGraphOperandRepository;
@@ -142,23 +142,13 @@ public class PolicyRuleGraphService {
             if (op.getCanonicalParameterId() != null) {
                 Optional<CanonicalParameterDefinition> def = registry.findById(op.getCanonicalParameterId());
                 if (def.isPresent()) {
-                    Map<String, Object> proj = CanonicalParameterCapabilityProjection.project(def.get());
                     row.put("sourceFamily", def.get().evaluatedFrom());
                     row.put("businessName", def.get().businessName());
-                    row.put("policyTestReady", proj.get("policyTestReady"));
-                    row.put("runtimeReady", proj.get("runtimeReady"));
-                    row.put("productionReady", false);
-                    row.put("productionCertified", false);
-                    row.put("productionCertification", proj.get("productionCertification"));
-                    row.put("designable", proj.get("designable"));
-                    row.put("policyTest", proj.get("policyTest"));
-                    row.put("workflow", proj.get("workflow"));
-                    row.put("underwriting", proj.get("underwriting"));
-                    row.put("executionState", proj.get("executionState"));
-                    row.put("overallReadiness", Boolean.TRUE.equals(proj.get("policyTestReady"))
-                            ? "POLICY_TEST_READY" : "NOT_EXECUTABLE");
-                    row.put("legacyCatalogueClaims", proj.get("legacyCatalogueClaims"));
+                    // FINAL-CANONICAL-PARAMETER-STATE — sole readiness authority
+                    CanonicalParameterStateService.stamp(row, op.getCanonicalParameterId());
                     applyDerivedCalculationOverlay(row, def.get(), op.getCanonicalParameterId());
+                    // Stamp again so overlay cannot override primary status
+                    CanonicalParameterStateService.stamp(row, op.getCanonicalParameterId());
                 }
             }
         }
@@ -270,7 +260,7 @@ public class PolicyRuleGraphService {
 
     /**
      * Overlay authored derived-calc metadata without inventing execution capability.
-     * policyTestReady remains spine-only ({@link CanonicalParameterCapabilityProjection}).
+     * Readiness remains {@link CanonicalParameterStateService} only.
      */
     private void applyDerivedCalculationOverlay(
             Map<String, Object> row, CanonicalParameterDefinition def, String canonicalId) {
