@@ -16,10 +16,11 @@
     },
     {
       "name": "W6EvaluationContextFactory_evaluationAsOf",
-      "location": "W6EvaluationContextFactory.build",
-      "value": "LocalDate.now()",
-      "kind": "WALL_CLOCK",
-      "classification": "KNOWN_GAP"
+      "location": "W6EvaluationContextFactory.build / CanonicalFactMaterializer.resolveEvaluationAsOf",
+      "value": "explicit → bureau reportDate → latest payment_history month → null (never LocalDate.now())",
+      "kind": "EXPLICIT_OR_REPORT_OR_HISTORY_OR_NULL",
+      "classification": "FIXED_IN_WAVE_3",
+      "wave3Note": "Wall-clock removed; evaluationAsOfMissing or evaluationAsOfDerivedFromPaymentHistory when applicable"
     },
     {
       "name": "BureauMetricService_asOf_fallback",

@@ -138,6 +138,9 @@ public class UnderwritingFactSnapshotBuilder {
     private final CiForm26AsSummaryRepository form26AsSummaryRepository;
     private final TaxIngestionService taxIngestionService;
     private final ReconciliationIngestionService reconciliationIngestionService;
+    private final com.los.core.creditintelligence.bureau.repository.CiBureauTradelineRepository tradelineRepository;
+    private final com.los.core.creditintelligence.bureau.repository.CiBureauPaymentHistoryRepository paymentHistoryRepository;
+    private final com.los.core.creditintelligence.bureau.repository.CiBureauInquiryRepository inquiryRepository;
 
     public record FoundationPrep(CiFactSnapshot snapshot, List<CiUnderwritingFact> facts) {
     }
@@ -403,6 +406,12 @@ public class UnderwritingFactSnapshotBuilder {
                     FactClassification.DECLARED.name(),
                     List.of(sourceIds.get("APPLICATION")),
                     meta("LoanApplication", "financialInfo.annualIncome", false, false)));
+            Map<String, Object> incomeExact = meta("LoanApplication", "financialInfo.annualIncome", false, false);
+            incomeExact.put("exactCanonicalDualWrite", true);
+            pending.add(fact("application.declared_income", "DECIMAL", declaredAnnual,
+                    FactClassification.DECLARED.name(),
+                    List.of(sourceIds.get("APPLICATION")),
+                    incomeExact));
         }
         if (ctx.effectiveIncome() != null) {
             BigDecimal verifiedAnnual = ctx.effectiveIncome().multiply(BigDecimal.valueOf(12));
@@ -422,6 +431,10 @@ public class UnderwritingFactSnapshotBuilder {
         pending.add(fact("kyc.pan_verified", "BOOLEAN", ctx.kycPassEffective(),
                 kycClass, List.of(sourceIds.get("KYC")),
                 meta("CreditControlService", "kycPassEffective", kycDefaulted, false)));
+        Map<String, Object> panExact = meta("CreditControlService", "kycPassEffective", kycDefaulted, false);
+        panExact.put("exactCanonicalDualWrite", true);
+        pending.add(fact("kyc.pan.verified", "BOOLEAN", ctx.kycPassEffective(),
+                kycClass, List.of(sourceIds.get("KYC")), panExact));
         pending.add(fact("kyc.identity_verified", "BOOLEAN", ctx.kycPassEffective(),
                 kycClass, List.of(sourceIds.get("KYC")),
                 meta("CreditControlService", "kycPassEffective", kycDefaulted, false)));
@@ -448,6 +461,11 @@ public class UnderwritingFactSnapshotBuilder {
         pending.add(fact("bureau.consumer.score", "INTEGER", ctx.effectiveBureauScore(),
                 bureauClass, List.of(sourceIds.get("BUREAU")),
                 meta("CreditControlService", "effectiveBureauScore", bureauDefaulted, bureauDefaulted)));
+        // Wave-3 exact GACAT dual-write
+        Map<String, Object> scoreExactMeta = meta("CreditControlService", "effectiveBureauScore", bureauDefaulted, bureauDefaulted);
+        scoreExactMeta.put("exactCanonicalDualWrite", true);
+        pending.add(fact("bureau.score", "INTEGER", ctx.effectiveBureauScore(),
+                bureauClass, List.of(sourceIds.get("BUREAU")), scoreExactMeta));
         pending.add(fact("bureau.source_available", "BOOLEAN",
                 !"DEMO_FALLBACK".equalsIgnoreCase(ctx.bureauSource())
                         && !"PROVIDER_GAP".equalsIgnoreCase(ctx.bureauSource()),
@@ -456,6 +474,7 @@ public class UnderwritingFactSnapshotBuilder {
                 meta("UnderwritingFactSnapshotBuilder", "bureauSource", false, false)));
 
         emitCanonicalBureauMetricFacts(pending, sourceIds, canonicalBureau);
+        emitCanonicalBureauCollectionFacts(pending, sourceIds, canonicalBureau);
         emitCanonicalGstFacts(pending, sourceIds, canonicalGst);
 
         if (sc.get("LIVE_UNSECURED_LOAN_COUNT") != null && !canonicalBureau.hasAvailableLiveUnsecured()) {
@@ -670,6 +689,16 @@ public class UnderwritingFactSnapshotBuilder {
                     FactClassification.DERIVED.name(),
                     bureauSourceId != null ? List.of(bureauSourceId) : List.of(),
                     meta));
+            // Wave-3 dual-write: exact GACAT metricCode alongside legacy remapped path
+            if (!path.equals(m.getMetricCode()) && m.getMetricCode() != null) {
+                Map<String, Object> exactMeta = new LinkedHashMap<>(meta);
+                exactMeta.put("exactCanonicalDualWrite", true);
+                exactMeta.put("legacyRemappedPath", path);
+                pending.add(fact(m.getMetricCode(), valueType, insufficient ? null : value,
+                        FactClassification.DERIVED.name(),
+                        bureauSourceId != null ? List.of(bureauSourceId) : List.of(),
+                        exactMeta));
+            }
         }
         if (canonical.report() != null) {
             Map<String, Object> availMeta = meta("BureauNormalizationService", "report", false, false);
@@ -803,6 +832,61 @@ public class UnderwritingFactSnapshotBuilder {
         }
         // Metric codes already align with fact paths for GST
         return metricCode;
+    }
+
+    private void emitCanonicalBureauCollectionFacts(
+            List<PendingFact> pending, Map<String, UUID> sourceIds, CanonicalBureauFacts canonical) {
+        if (canonical == null || canonical.report() == null || canonical.report().getId() == null) {
+            return;
+        }
+        UUID reportId = canonical.report().getId();
+        UUID bureauSourceId = sourceIds.get("BUREAU");
+        List<com.los.core.creditintelligence.bureau.domain.CiBureauTradeline> tradelines =
+                tradelineRepository.findByBureauReportId(reportId);
+        List<com.los.core.creditintelligence.bureau.domain.CiBureauPaymentHistory> histories = new ArrayList<>();
+        for (var t : tradelines) {
+            if (t.getId() != null) {
+                histories.addAll(paymentHistoryRepository.findByTradelineIdOrderByMonthDesc(t.getId()));
+            }
+        }
+        List<com.los.core.creditintelligence.bureau.domain.CiBureauInquiry> inquiries =
+                inquiryRepository.findByBureauReportId(reportId);
+        var bundle = com.los.core.creditintelligence.policystudio.parameters.execution.CanonicalFactMaterializer
+                .fromBureauEntities(canonical.report(), tradelines, histories, inquiries);
+        Map<String, Object> baseMeta = new LinkedHashMap<>();
+        baseMeta.put("originService", "CanonicalFactMaterializer");
+        baseMeta.put("wave", "WAVE_3");
+        baseMeta.put("bureauReportId", reportId.toString());
+        if (bundle.tradelinesSourcePresent()) {
+            Map<String, Object> m = new LinkedHashMap<>(baseMeta);
+            m.put("rowCount", bundle.tradelines().size());
+            pending.add(fact(
+                    com.los.core.creditintelligence.policystudio.parameters.execution.CanonicalFactMaterializer.TRADELINES,
+                    "COLLECTION", bundle.tradelines(),
+                    FactClassification.EXTRACTED.name(),
+                    bureauSourceId != null ? List.of(bureauSourceId) : List.of(),
+                    m));
+        }
+        if (bundle.paymentHistorySourcePresent()) {
+            Map<String, Object> m = new LinkedHashMap<>(baseMeta);
+            m.put("rowCount", bundle.paymentHistory().size());
+            pending.add(fact(
+                    com.los.core.creditintelligence.policystudio.parameters.execution.CanonicalFactMaterializer.PAYMENT_HISTORY,
+                    "COLLECTION", bundle.paymentHistory(),
+                    FactClassification.EXTRACTED.name(),
+                    bureauSourceId != null ? List.of(bureauSourceId) : List.of(),
+                    m));
+        }
+        if (bundle.inquiriesSourcePresent()) {
+            Map<String, Object> m = new LinkedHashMap<>(baseMeta);
+            m.put("rowCount", bundle.inquiries().size());
+            pending.add(fact(
+                    com.los.core.creditintelligence.policystudio.parameters.execution.CanonicalFactMaterializer.INQUIRIES,
+                    "COLLECTION", bundle.inquiries(),
+                    FactClassification.EXTRACTED.name(),
+                    bureauSourceId != null ? List.of(bureauSourceId) : List.of(),
+                    m));
+        }
     }
 
     private CanonicalBureauFacts loadCanonicalBureauFacts(UUID applicationId) {
@@ -946,6 +1030,26 @@ public class UnderwritingFactSnapshotBuilder {
                     FactClassification.DERIVED.name(),
                     bankSourceId != null ? List.of(bankSourceId) : List.of(),
                     meta));
+            // Wave-3 dual-write exact banking GACAT IDs used by BuiltInBankingMetricProducer
+            if (BankingMetricService.ADB_3M.equals(m.getMetricCode())
+                    && !"banking.avg_daily_balance_3m".equals(path)) {
+                Map<String, Object> exactMeta = new LinkedHashMap<>(meta);
+                exactMeta.put("exactCanonicalDualWrite", true);
+                exactMeta.put("legacyRemappedPath", path);
+                pending.add(fact("banking.avg_daily_balance_3m", valueType, value,
+                        FactClassification.DERIVED.name(),
+                        bankSourceId != null ? List.of(bankSourceId) : List.of(),
+                        exactMeta));
+            } else if (BankingMetricService.EMI_BOUNCE_3M.equals(m.getMetricCode())
+                    && !"banking.emi_bounce_count_3m".equals(path)) {
+                Map<String, Object> exactMeta = new LinkedHashMap<>(meta);
+                exactMeta.put("exactCanonicalDualWrite", true);
+                exactMeta.put("legacyRemappedPath", path);
+                pending.add(fact("banking.emi_bounce_count_3m", valueType, value,
+                        FactClassification.DERIVED.name(),
+                        bankSourceId != null ? List.of(bankSourceId) : List.of(),
+                        exactMeta));
+            }
         }
         Map<String, Object> availMeta = meta("BankingNormalizationService", "accounts", false, false);
         pending.add(fact("banking.account.count", "INTEGER", canonical.accounts().size(),

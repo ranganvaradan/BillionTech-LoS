@@ -1,5 +1,6 @@
 package com.los.core.creditintelligence.policystudio.parameters.execution;
 
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -8,6 +9,7 @@ import java.util.Set;
 /**
  * RAW producer — reads the exact canonical ID from {@link EvaluationContext#facts()}.
  * Does not manufacture catalogue defaults.
+ * Empty collections are VALUE_AVAILABLE (present but empty); missing keys are DATA_NOT_AVAILABLE.
  */
 public final class RawFactProducer implements ParameterProducer {
 
@@ -61,33 +63,56 @@ public final class RawFactProducer implements ParameterProducer {
                     .exactProducerPath("RawFactProducer ← inputs[" + canonicalParameterId + "]")
                     .build();
         }
-        if (!ctx.facts().containsKey(canonicalParameterId) || ctx.facts().get(canonicalParameterId) == null) {
-            return ExecutionResult.builder(canonicalParameterId)
-                    .status(ExecutionStatus.DATA_NOT_AVAILABLE)
-                    .producerType(ProducerType.RAW)
-                    .producerId(PRODUCER_ID)
-                    .capability(true)
-                    .reason("Exact RAW fact not present in EvaluationContext: " + canonicalParameterId)
-                    .missingReason("Exact RAW fact not present in EvaluationContext: " + canonicalParameterId)
-                    .exactProducerPath("RawFactProducer ← facts[" + canonicalParameterId + "] (missing)")
-                    .build();
+        if (!ctx.facts().containsKey(canonicalParameterId)) {
+            return missing(canonicalParameterId);
         }
-        Object fact = ctx.facts().get(canonicalParameterId);
+        Object factVal = ctx.facts().get(canonicalParameterId);
+        // Null scalar: absent value. Empty Collection: present empty (VALUE_AVAILABLE).
+        if (factVal == null) {
+            return missing(canonicalParameterId);
+        }
         Map<String, Object> prov = new LinkedHashMap<>();
         prov.put("sourceType", "RAW_FACT");
         prov.put("producerId", PRODUCER_ID);
+        if (factVal instanceof Collection<?> c) {
+            prov.put("rowCount", c.size());
+        }
         if (ctx.evaluationAsOf() != null) {
             prov.put("asOf", ctx.evaluationAsOf().toString());
         }
+        Object snap = ctx.entities().get(CanonicalFactMaterializer.ENTITY_SOURCE_SNAPSHOT_VERSION);
+        if (snap != null) {
+            prov.put("sourceSnapshotVersion", String.valueOf(snap));
+        }
+        Object mat = ctx.entities().get(CanonicalFactMaterializer.ENTITY_MATERIALIZATION_PROVENANCE);
+        if (mat != null) {
+            prov.put("materialization", mat);
+        }
+        Object br = ctx.entities().get(CanonicalFactMaterializer.ENTITY_BUREAU_REPORT_ID);
+        if (br != null) {
+            prov.put("bureauReportId", String.valueOf(br));
+        }
         return ExecutionResult.builder(canonicalParameterId)
                 .status(ExecutionStatus.VALUE_AVAILABLE)
-                .value(fact)
+                .value(factVal)
                 .producerType(ProducerType.RAW)
                 .producerId(PRODUCER_ID)
                 .dependencies(List.of())
                 .capability(true)
                 .provenance(prov)
                 .exactProducerPath("RawFactProducer ← facts[" + canonicalParameterId + "]")
+                .build();
+    }
+
+    private static ExecutionResult missing(String canonicalParameterId) {
+        return ExecutionResult.builder(canonicalParameterId)
+                .status(ExecutionStatus.DATA_NOT_AVAILABLE)
+                .producerType(ProducerType.RAW)
+                .producerId(PRODUCER_ID)
+                .capability(true)
+                .reason("Exact RAW fact not present in EvaluationContext: " + canonicalParameterId)
+                .missingReason("Exact RAW fact not present in EvaluationContext: " + canonicalParameterId)
+                .exactProducerPath("RawFactProducer ← facts[" + canonicalParameterId + "] (missing)")
                 .build();
     }
 }

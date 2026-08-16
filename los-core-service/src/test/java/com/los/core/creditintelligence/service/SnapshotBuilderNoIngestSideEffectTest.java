@@ -27,6 +27,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -65,7 +66,10 @@ class SnapshotBuilderNoIngestSideEffectTest {
                 gstRegistrationRepository, gstIngestionService,
                 bankAccountRepository, bankingIngestionService,
                 itrReturnRepository, aisSummaryRepository, form26AsSummaryRepository, taxIngestionService,
-                reconciliationIngestionService);
+                reconciliationIngestionService,
+                mock(com.los.core.creditintelligence.bureau.repository.CiBureauTradelineRepository.class),
+                mock(com.los.core.creditintelligence.bureau.repository.CiBureauPaymentHistoryRepository.class),
+                mock(com.los.core.creditintelligence.bureau.repository.CiBureauInquiryRepository.class));
 
         org.mockito.Mockito.lenient().when(bureauReportRepository.findFirstByApplicationIdOrderByCreatedAtDesc(any()))
                 .thenReturn(Optional.empty());

@@ -75,6 +75,10 @@ class W6ExecutionSpineClosureAcceptanceTest {
 
     @Mock CiFactSnapshotRepository snapshotRepository;
     @Mock CiUnderwritingFactRepository factRepository;
+    @Mock com.los.core.creditintelligence.bureau.repository.CiBureauReportRepository bureauReportRepository;
+    @Mock com.los.core.creditintelligence.bureau.repository.CiBureauTradelineRepository tradelineRepository;
+    @Mock com.los.core.creditintelligence.bureau.repository.CiBureauPaymentHistoryRepository paymentHistoryRepository;
+    @Mock com.los.core.creditintelligence.bureau.repository.CiBureauInquiryRepository inquiryRepository;
     @Mock RequirementItemRepository itemRepository;
     @Mock RequirementStateTransitionRepository transitionRepository;
 
@@ -136,7 +140,10 @@ class W6ExecutionSpineClosureAcceptanceTest {
         when(itemRepository.findByIdAndPlanId(any(), any())).thenAnswer(inv -> Optional.empty());
         when(itemRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        evalFactory = new W6EvaluationContextFactory(snapshotRepository, factRepository);
+        evalFactory = new W6EvaluationContextFactory(
+                snapshotRepository, factRepository,
+                bureauReportRepository, tradelineRepository,
+                paymentHistoryRepository, inquiryRepository);
         executor = new W6CanonicalParameterExecutor();
         transitionService = new RequirementItemTransitionService(itemRepository, transitionRepository);
         reconciler = new CanonicalFactReadinessReconciler(

@@ -68,6 +68,12 @@ public final class BuiltInBankingMetricProducer implements ParameterProducer {
                 if (fact != null) return value(canonicalParameterId, fact, "facts");
                 return dataMissing(canonicalParameterId, "EMI bounce binding not enabled on policy");
             }
+            // Wave-3: stagingFixture is POLICY_TEST only — never invent live/W6/UW values.
+            if (ctx.mode() != EvaluationMode.POLICY_TEST) {
+                if (fact != null) return value(canonicalParameterId, fact, "facts");
+                return dataMissing(canonicalParameterId,
+                        "EMI bounce calculator fixture refused outside POLICY_TEST; facts absent");
+            }
             EmiBounceCountCalculator.Config config = resolveEmiConfig(ctx.entities().get(ENTITY_EMI_CONFIG));
             Map<String, Object> eval = EmiBounceCountCalculator.evaluate(
                     EmiBounceCountCalculator.stagingFixture(), config, asOf);
@@ -75,6 +81,7 @@ public final class BuiltInBankingMetricProducer implements ParameterProducer {
                 Map<String, Object> prov = new LinkedHashMap<>();
                 prov.put("sourceType", "BUILT_IN");
                 prov.put("calculator", "EmiBounceCountCalculator.V1");
+                prov.put("fixtureAuthority", "POLICY_TEST_ONLY");
                 prov.put("howCalculated", eval.get("calculation"));
                 return ExecutionResult.builder(canonicalParameterId)
                         .status(ExecutionStatus.VALUE_AVAILABLE)
@@ -92,6 +99,11 @@ public final class BuiltInBankingMetricProducer implements ParameterProducer {
 
         if (ADB_3M.equals(canonicalParameterId)) {
             if (Boolean.TRUE.equals(ctx.entities().get(ENTITY_ADB_ENABLED))) {
+                if (ctx.mode() != EvaluationMode.POLICY_TEST) {
+                    if (fact != null) return value(canonicalParameterId, fact, "facts");
+                    return dataMissing(canonicalParameterId,
+                            "ADB calculator fixture refused outside POLICY_TEST; facts absent");
+                }
                 AdbBulkDepositAdjustmentCalculator.Config config =
                         resolveAdbConfig(ctx.entities().get(ENTITY_ADB_CONFIG));
                 Map<String, Object> eval = AdbBulkDepositAdjustmentCalculator.evaluate(
@@ -101,6 +113,7 @@ public final class BuiltInBankingMetricProducer implements ParameterProducer {
                     Map<String, Object> prov = new LinkedHashMap<>();
                     prov.put("sourceType", "BUILT_IN");
                     prov.put("calculator", "AdbBulkDepositAdjustmentCalculator.V1");
+                    prov.put("fixtureAuthority", "POLICY_TEST_ONLY");
                     prov.put("baseAdb", eval.get("baseAdb"));
                     prov.put("adjustedAdb", eval.get("adjustedAdb"));
                     return ExecutionResult.builder(canonicalParameterId)

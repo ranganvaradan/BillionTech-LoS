@@ -1,9 +1,18 @@
 package com.los.core.requirement;
 
+import com.los.core.creditintelligence.bureau.domain.CiBureauInquiry;
+import com.los.core.creditintelligence.bureau.domain.CiBureauPaymentHistory;
+import com.los.core.creditintelligence.bureau.domain.CiBureauReport;
+import com.los.core.creditintelligence.bureau.domain.CiBureauTradeline;
+import com.los.core.creditintelligence.bureau.repository.CiBureauInquiryRepository;
+import com.los.core.creditintelligence.bureau.repository.CiBureauPaymentHistoryRepository;
+import com.los.core.creditintelligence.bureau.repository.CiBureauReportRepository;
+import com.los.core.creditintelligence.bureau.repository.CiBureauTradelineRepository;
 import com.los.core.creditintelligence.domain.CiFactSnapshot;
 import com.los.core.creditintelligence.domain.CiUnderwritingFact;
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterRegistry;
 import com.los.core.creditintelligence.policystudio.parameters.PolicyStudioConvergencePresenter;
+import com.los.core.creditintelligence.policystudio.parameters.execution.CanonicalFactMaterializer;
 import com.los.core.creditintelligence.policystudio.parameters.execution.EvaluationContext;
 import com.los.core.creditintelligence.policystudio.parameters.execution.EvaluationMode;
 import com.los.core.creditintelligence.repository.CiFactSnapshotRepository;
@@ -13,6 +22,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,8 +31,7 @@ import java.util.UUID;
 
 /**
  * Builds the shared spine {@link EvaluationContext} after W6 source acquisition.
- * Does not invent a parallel W6 fact model — loads CiUnderwritingFact values and
- * overlays acquisition outcome / sourceHints onto exact canonical IDs.
+ * Wave-3: projects exact GACAT IDs, materializes collections, does not use wall-clock asOf.
  */
 @Component
 @RequiredArgsConstructor
@@ -30,31 +39,85 @@ public class W6EvaluationContextFactory {
 
     private final CiFactSnapshotRepository snapshotRepository;
     private final CiUnderwritingFactRepository factRepository;
+    private final CiBureauReportRepository bureauReportRepository;
+    private final CiBureauTradelineRepository tradelineRepository;
+    private final CiBureauPaymentHistoryRepository paymentHistoryRepository;
+    private final CiBureauInquiryRepository inquiryRepository;
 
     public EvaluationContext build(
             UUID applicationId,
             RequirementItemEntity item,
             AcquisitionDtos.ExecutorOutcome outcome) {
+        return build(applicationId, item, outcome, null);
+    }
+
+    /**
+     * @param evaluationAsOf explicit business date; when null, bureau report date is used if present.
+     *                       Never falls back to {@code LocalDate.now()}.
+     */
+    public EvaluationContext build(
+            UUID applicationId,
+            RequirementItemEntity item,
+            AcquisitionDtos.ExecutorOutcome outcome,
+            LocalDate evaluationAsOf) {
+        Optional<CiFactSnapshot> snap = applicationId == null
+                ? Optional.empty()
+                : snapshotRepository.findTopByApplicationIdOrderBySnapshotVersionDesc(applicationId);
+
+        Map<String, Object> remapped = loadSnapshotFactsRaw(snap);
+        overlayOutcome(remapped, outcome);
+        overlayHints(remapped, item);
+
+        CanonicalFactMaterializer.CollectionBundle collections = loadCollections(applicationId);
+        Map<String, Object> facts = CanonicalFactMaterializer.materializeExecutionFacts(remapped, collections);
+
+        CiBureauReport report = null;
+        if (collections.provenance() != null && collections.provenance().get("bureauReportId") != null) {
+            try {
+                report = bureauReportRepository.findById(
+                        UUID.fromString(String.valueOf(collections.provenance().get("bureauReportId"))))
+                        .orElse(null);
+            } catch (Exception ignored) {
+                report = null;
+            }
+        }
+        LocalDate asOf = CanonicalFactMaterializer.resolveEvaluationAsOf(evaluationAsOf, report, facts);
+
         EvaluationContext.Builder b = EvaluationContext.builder()
                 .mode(EvaluationMode.W6_ACQUISITION)
                 .applicationId(applicationId)
-                .evaluationAsOf(LocalDate.now());
-
-        Map<String, Object> facts = loadSnapshotFacts(applicationId);
-        overlayOutcome(facts, outcome);
-        overlayHints(facts, item);
+                .evaluationAsOf(asOf);
         facts.forEach(b::fact);
+        Map<String, Object> extras = CanonicalFactMaterializer.provenanceEntityExtras(
+                snap.map(CiFactSnapshot::getId).orElse(null),
+                snap.map(CiFactSnapshot::getSnapshotVersion).orElse(null),
+                collections);
+        extras.put("acquisitionSuccessDoesNotImplyValueAvailable", true);
+        if (asOf == null) {
+            extras.put("evaluationAsOfMissing", true);
+            extras.put("evaluationAsOfGap",
+                    "No explicit asOf, reportDate, or payment_history month — asOf left null");
+        } else if (evaluationAsOf == null
+                && (report == null || report.getReportDate() == null)
+                && CanonicalFactMaterializer.deriveAsOfFromPaymentHistory(facts) != null) {
+            extras.put("evaluationAsOfDerivedFromPaymentHistory", true);
+        }
+        extras.forEach(b::entity);
         return b.build();
     }
 
-    /** All acceptable snapshot facts as exact canonical path → unwrapped value. */
+    /** All acceptable snapshot facts as stored path → unwrapped value (may be remapped). */
     public Map<String, Object> loadSnapshotFacts(UUID applicationId) {
+        Optional<CiFactSnapshot> snap = applicationId == null
+                ? Optional.empty()
+                : snapshotRepository.findTopByApplicationIdOrderBySnapshotVersionDesc(applicationId);
+        Map<String, Object> remapped = loadSnapshotFactsRaw(snap);
+        CanonicalFactMaterializer.CollectionBundle collections = loadCollections(applicationId);
+        return CanonicalFactMaterializer.materializeExecutionFacts(remapped, collections);
+    }
+
+    private Map<String, Object> loadSnapshotFactsRaw(Optional<CiFactSnapshot> snap) {
         Map<String, Object> out = new LinkedHashMap<>();
-        if (applicationId == null) {
-            return out;
-        }
-        Optional<CiFactSnapshot> snap =
-                snapshotRepository.findTopByApplicationIdOrderBySnapshotVersionDesc(applicationId);
         if (snap.isEmpty()) {
             return out;
         }
@@ -74,6 +137,28 @@ public class W6EvaluationContextFactory {
         return out;
     }
 
+    private CanonicalFactMaterializer.CollectionBundle loadCollections(UUID applicationId) {
+        if (applicationId == null) {
+            return CanonicalFactMaterializer.fromBureauEntities(null, List.of(), List.of(), List.of());
+        }
+        Optional<CiBureauReport> reportOpt =
+                bureauReportRepository.findFirstByApplicationIdOrderByCreatedAtDesc(applicationId);
+        if (reportOpt.isEmpty()) {
+            // Try any latest report without application linkage helpers
+            return CanonicalFactMaterializer.fromBureauEntities(null, List.of(), List.of(), List.of());
+        }
+        CiBureauReport report = reportOpt.get();
+        List<CiBureauTradeline> tradelines = tradelineRepository.findByBureauReportId(report.getId());
+        List<CiBureauPaymentHistory> histories = new ArrayList<>();
+        for (CiBureauTradeline t : tradelines) {
+            if (t.getId() != null) {
+                histories.addAll(paymentHistoryRepository.findByTradelineIdOrderByMonthDesc(t.getId()));
+            }
+        }
+        List<CiBureauInquiry> inquiries = inquiryRepository.findByBureauReportId(report.getId());
+        return CanonicalFactMaterializer.fromBureauEntities(report, tradelines, histories, inquiries);
+    }
+
     /**
      * Resolve requirement item parameter to a GACAT canonical ID, or empty if not in catalogue
      * (legacy fixture keys remain on the boolean factReadiness path).
@@ -84,7 +169,6 @@ public class W6EvaluationContextFactory {
         }
         String raw = parameterOrLegacyKey.trim();
         CanonicalParameterRegistry registry = PolicyStudioConvergencePresenter.registry();
-        // Exact catalogue identity only — do not treat alias lookups as the requirement key itself
         Optional<com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterDefinition> byId =
                 registry.findById(raw);
         if (byId.isPresent() && raw.equals(byId.get().id())) {

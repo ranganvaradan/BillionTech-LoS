@@ -22,6 +22,8 @@ public class ExecutionSpineProducerBootstrap {
             "bureau.score",
             "bureau.tradeline.suit_filed",
             "bureau.tradeline.payment_history",
+            "bureau.tradelines",
+            "bureau.inquiries",
             "bureau.tradeline.dpd_month",
             "application.proposed_edi",
             "application.business_vintage_months",

@@ -180,6 +180,20 @@ public final class AuthoredDerivedProducer implements ParameterProducer {
         if (ctx.evaluationAsOf() != null) {
             prov.put("asOf", ctx.evaluationAsOf().toString());
         }
+        // Wave-3: collection op provenance (identity + row counts; no raw-row dump)
+        List<Map<String, Object>> collectionInputs = new ArrayList<>();
+        for (String dep : deps) {
+            Object v = evalInputs.get(dep);
+            if (v instanceof java.util.Collection<?> c) {
+                Map<String, Object> ci = new LinkedHashMap<>();
+                ci.put("inputCollectionIdentity", dep);
+                ci.put("inputRowCount", c.size());
+                collectionInputs.add(ci);
+            }
+        }
+        if (!collectionInputs.isEmpty()) {
+            prov.put("collectionInputs", collectionInputs);
+        }
 
         if (SafeDerivedExpressionEvaluator.STATUS_OK.equals(eval.status())) {
             return ExecutionResult.builder(canonicalParameterId)

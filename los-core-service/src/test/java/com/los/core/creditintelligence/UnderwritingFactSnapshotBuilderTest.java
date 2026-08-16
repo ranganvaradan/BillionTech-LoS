@@ -34,6 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -83,7 +84,10 @@ class UnderwritingFactSnapshotBuilderTest {
                 gstRegistrationRepository, gstIngestionService,
                 bankAccountRepository, bankingIngestionService,
                 itrReturnRepository, aisSummaryRepository, form26AsSummaryRepository, taxIngestionService,
-                reconciliationIngestionService);
+                reconciliationIngestionService,
+                mock(com.los.core.creditintelligence.bureau.repository.CiBureauTradelineRepository.class),
+                mock(com.los.core.creditintelligence.bureau.repository.CiBureauPaymentHistoryRepository.class),
+                mock(com.los.core.creditintelligence.bureau.repository.CiBureauInquiryRepository.class));
         org.mockito.Mockito.lenient().when(bureauReportRepository.findFirstByApplicationIdOrderByCreatedAtDesc(any()))
                 .thenReturn(Optional.empty());
         org.mockito.Mockito.lenient().when(gstRegistrationRepository.findByApplicationIdOrderByCreatedAtDesc(any()))

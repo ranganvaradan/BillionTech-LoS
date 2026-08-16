@@ -1,0 +1,41 @@
+{
+  "wave": "PLATFORM-CONVERGENCE-WAVE-3-CANONICAL-MATERIALIZATION-AND-PROVENANCE",
+  "recordedAtUtc": "2026-08-16T16:15:00Z",
+  "branch": "reconcile/laptop-layout-2026-08",
+  "SOURCE_START_SHA": "4d5d2289217416b91d01f672c3dc80db764a4777",
+  "SOURCE_FINAL_SHA": "PENDING_CONTENT_COMMIT",
+  "GITHUB_REMOTE": "https://github.com/ranganvaradan/BillionTech-LoS.git",
+  "GITHUB_REMOTE_SHA_NOTE": "Push reconcile/laptop-layout-2026-08; remote HEAD must match freeze tip after docs commit",
+  "Internal_deployed_SOURCE_SHA": "3da1ad4316eeda581975da41e6a23b2a258d4029",
+  "Client_deployed_SOURCE_SHA": "3da1ad4316eeda581975da41e6a23b2a258d4029",
+  "SAME_ARTIFACT_INTERNAL_CLIENT": true,
+  "DB_MIGRATION_WAVE3": "NONE",
+  "GACAT_MUTATED": false,
+  "VIKASAM_MUTATED": false,
+  "PRODUCTION_DEFINITIONS_CREATED": "NONE",
+  "POLICY_RUNTIME_CHANGED": false,
+  "SCORECARD_LOGIC_CHANGED": false,
+  "PARAMETER_SPECIFIC_CALCULATORS_ADDED": false,
+  "BANKING_FIXTURE_PROD_REMOVED": true,
+  "EXACT_CANONICAL_ID_BOUNDARY": true,
+  "COLLECTIONS_MATERIALIZED": [
+    "bureau.tradelines",
+    "bureau.tradeline.payment_history",
+    "bureau.inquiries"
+  ],
+  "CAPABILITY_COUNTS_AFTER": {
+    "policyTestCapableCount": 40,
+    "w6CapableCount": 30,
+    "underwritingCapableCount": 40
+  },
+  "WAVE_3_EXIT_CRITERIA": "PASS",
+  "WAVE_4_STARTED": false,
+  "KNOWN_UNTRACKED_ARTIFACTS_PRESERVED": true,
+  "notes": [
+    "Exact GACAT IDs at EvaluationContext/CPES via CanonicalCompatibilityRegistry + dual-write.",
+    "Real tradelines / payment_history / inquiries materialized for W6 and UW snapshot paths.",
+    "BuiltInBanking stagingFixture refused outside POLICY_TEST.",
+    "W6 asOf never LocalDate.now(); explicit → reportDate → PH month → null.",
+    "No production authored defs for overdue / cc_overdue. No Wave 4."
+  ]
+}

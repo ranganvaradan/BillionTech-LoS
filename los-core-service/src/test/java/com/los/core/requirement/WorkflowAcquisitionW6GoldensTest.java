@@ -33,6 +33,10 @@ class WorkflowAcquisitionW6GoldensTest {
     @Mock RequirementStateTransitionRepository transitionRepository;
     @Mock com.los.core.creditintelligence.repository.CiFactSnapshotRepository snapshotRepository;
     @Mock com.los.core.creditintelligence.repository.CiUnderwritingFactRepository factRepository;
+    @Mock com.los.core.creditintelligence.bureau.repository.CiBureauReportRepository bureauReportRepository;
+    @Mock com.los.core.creditintelligence.bureau.repository.CiBureauTradelineRepository tradelineRepository;
+    @Mock com.los.core.creditintelligence.bureau.repository.CiBureauPaymentHistoryRepository paymentHistoryRepository;
+    @Mock com.los.core.creditintelligence.bureau.repository.CiBureauInquiryRepository inquiryRepository;
 
     RequirementItemTransitionService transitionService;
     CanonicalFactLookupService factLookup;
@@ -62,7 +66,10 @@ class WorkflowAcquisitionW6GoldensTest {
         transitionService = new RequirementItemTransitionService(itemRepository, transitionRepository);
         factLookup = new CanonicalFactLookupService(snapshotRepository, factRepository);
         W6EvaluationContextFactory evalFactory =
-                new W6EvaluationContextFactory(snapshotRepository, factRepository);
+                new W6EvaluationContextFactory(
+                        snapshotRepository, factRepository,
+                        bureauReportRepository, tradelineRepository,
+                        paymentHistoryRepository, inquiryRepository);
         reconciler = new CanonicalFactReadinessReconciler(
                 factLookup, transitionService, evalFactory, new W6CanonicalParameterExecutor());
         gate = new DataCompletenessGate(legacyEval);
