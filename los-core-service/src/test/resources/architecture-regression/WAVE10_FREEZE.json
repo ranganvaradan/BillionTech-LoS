@@ -3,6 +3,7 @@
   "name": "LEGACY_RETIREMENT_AND_DETERMINISTIC_RUNTIME",
   "sourceStartSha": "5f32b6f9c4e16b2b98b8aa8af544c99a13257b17",
   "sourceFinalSha": "a926e9406a166f361d169d052fc5f5b0f6a17cf2",
+  "githubRemoteSha": "99f1a74a19dad6c5532200fa11bc53a8ad08e134",
   "LIVE_CUTOVER_READY": false,
   "liveDecisionAuthorityBefore": "LEGACY_FROZEN",
   "liveDecisionAuthorityAfter": "LEGACY_FROZEN",
