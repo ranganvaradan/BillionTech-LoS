@@ -4,7 +4,7 @@
   "branch": "reconcile/laptop-layout-2026-08",
   "SOURCE_START_SHA": "4783e14175bb88fe5cced3cea3695e5b7061c0e7",
   "SOURCE_FINAL_SHA": "cb003d22235e75ff932e27a618e1fb8953fad054",
-  "GITHUB_REMOTE_SHA": "cb003d22235e75ff932e27a618e1fb8953fad054",
+  "GITHUB_REMOTE_SHA": "738a995694d70282855a8f05e9d916ec1d57d009",
   "GITHUB_REMOTE": "https://github.com/ranganvaradan/BillionTech-LoS.git",
   "DB_MIGRATION_WAVE7": "NONE",
   "TARGET_ORCHESTRATION": "CanonicalUnderwritingOrchestration",
