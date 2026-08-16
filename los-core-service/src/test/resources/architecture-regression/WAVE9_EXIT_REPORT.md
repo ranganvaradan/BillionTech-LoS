@@ -9,7 +9,7 @@ Projection-convergence only — **no** capability, policy, scoring, Frozen, or V
 |-------|-------|
 | SOURCE_START_SHA | `261e622e4cea9bb00f46178a0b9939c11999fca2` |
 | SOURCE_FINAL_SHA | `1f566eb22db632327494b0904f1c89c58f4a9f01` |
-| GITHUB_REMOTE_SHA | *(pending push)* |
+| GITHUB_REMOTE_SHA | `3272c3cb73a273c3a1a0ace98085dfc36296c871` |
 
 ## TRUTH_PROJECTION_CLASS
 
