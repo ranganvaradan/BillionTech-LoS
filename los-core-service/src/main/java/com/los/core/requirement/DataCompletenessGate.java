@@ -138,7 +138,16 @@ public class DataCompletenessGate {
                     blocked++;
                     reasons.add(item.getItemKey() + ": required FAILED");
                 } else if (ready == DataReadinessState.DATA_INSUFFICIENT) {
-                    reasons.add(item.getItemKey() + ": DATA_INSUFFICIENT (source success ≠ ready)");
+                    Object spineStatus = item.getProvenance() != null
+                            ? item.getProvenance().get("spineExecutionStatus") : null;
+                    Object acqVs = item.getProvenance() != null
+                            ? item.getProvenance().get("acquisitionVsParameter") : null;
+                    if (acqVs != null || spineStatus != null) {
+                        reasons.add(item.getItemKey() + ": SOURCE_ACQUIRED≠PARAMETER_RESOLVED"
+                                + (spineStatus != null ? " (" + spineStatus + ")" : ""));
+                    } else {
+                        reasons.add(item.getItemKey() + ": DATA_INSUFFICIENT (source success ≠ ready)");
+                    }
                 } else if (RequirementCompletenessEvaluator.isCustomerUnresolved(item)
                         || (src != null && src.requiresCustomerAction())) {
                     reasons.add(item.getItemKey() + ": waiting for customer");
@@ -223,7 +232,8 @@ public class DataCompletenessGate {
             return true;
         }
         // Required auto/derivation items use NOT_APPLICABLE fulfilment (customer not asked)
-        // but still need usable canonical facts
+        // but still need usable canonical facts — for GACAT IDs that means spine VALUE_AVAILABLE
+        // (READY_FOR_POLICY), not mere source acquisition success.
         return item.getDataReadinessState() == DataReadinessState.READY_FOR_POLICY;
     }
 }

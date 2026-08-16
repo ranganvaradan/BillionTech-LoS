@@ -1,10 +1,14 @@
 package com.los.core.requirement.acquisition;
 
 import com.los.core.model.entity.KycStepResult;
+import com.los.core.creditintelligence.policystudio.parameters.execution.EvaluationContext;
+import com.los.core.creditintelligence.policystudio.parameters.execution.ExecutionStatus;
 import com.los.core.requirement.AcquisitionDtos;
 import com.los.core.requirement.AcquisitionExecutorPort;
 import com.los.core.requirement.AcquisitionSourceResolver;
 import com.los.core.requirement.SourceAcquisitionState;
+import com.los.core.requirement.W6CanonicalParameterExecutor;
+import com.los.core.requirement.W6EvaluationContextFactory;
 import com.los.core.service.aa.AccountAggregatorService;
 import com.los.core.service.document.OcrExtractionService;
 import com.los.core.service.integration.gstanalysis.GstAnalysisService;
@@ -64,7 +68,7 @@ public final class ExistingSourceAcquisitionAdapters {
                 summary.put("hasActiveConsent", active);
                 if (active) {
                     String param = ctx.item().getCanonicalParameterId();
-                    Map<String, Boolean> facts = param != null ? Map.of(param, true) : Map.of();
+                    Map<String, Boolean> facts = W6EvaluationContextFactory.acquisitionClaim(param, true);
                     return AcquisitionDtos.ExecutorOutcome.succeeded("ACCOUNT_AGGREGATOR", facts, summary);
                 }
                 // Do NOT create bank statement upload in parallel. Consent creation needs customerId —
@@ -137,7 +141,7 @@ public final class ExistingSourceAcquisitionAdapters {
                             summary, param != null ? Map.of(param, false) : Map.of(), true);
                 }
                 boolean ready = status.contains("PASS") || status.contains("SUCCESS") || status.contains("COMPLETE");
-                Map<String, Boolean> facts = param != null ? Map.of(param, ready) : Map.of();
+                Map<String, Boolean> facts = W6EvaluationContextFactory.acquisitionClaim(param, ready);
                 if (ready) {
                     return AcquisitionDtos.ExecutorOutcome.succeeded("KYC", facts, summary);
                 }
@@ -186,7 +190,7 @@ public final class ExistingSourceAcquisitionAdapters {
                 summary.put("reportComplete", complete);
                 String param = ctx.item().getCanonicalParameterId();
                 if (complete) {
-                    Map<String, Boolean> facts = param != null ? Map.of(param, true) : Map.of();
+                    Map<String, Boolean> facts = W6EvaluationContextFactory.acquisitionClaim(param, true);
                     return AcquisitionDtos.ExecutorOutcome.succeeded("GST", facts, summary);
                 }
                 return new AcquisitionDtos.ExecutorOutcome(
@@ -230,7 +234,7 @@ public final class ExistingSourceAcquisitionAdapters {
                 summary.put("hasLatest", latest.isPresent());
                 String param = ctx.item().getCanonicalParameterId();
                 if (ok) {
-                    Map<String, Boolean> facts = param != null ? Map.of(param, true) : Map.of();
+                    Map<String, Boolean> facts = W6EvaluationContextFactory.acquisitionClaim(param, true);
                     return AcquisitionDtos.ExecutorOutcome.succeeded("ITR", facts, summary);
                 }
                 return new AcquisitionDtos.ExecutorOutcome(
@@ -338,9 +342,8 @@ public final class ExistingSourceAcquisitionAdapters {
     @Component
     @RequiredArgsConstructor
     public static class DerivationAcquisitionAdapter implements AcquisitionExecutorPort {
-        private final org.springframework.beans.factory.ObjectProvider<
-                com.los.core.creditintelligence.policystudio.parameters.derived.DerivedCalculationDefinitionService>
-                derivedCalculationDefinitionService;
+        private final W6EvaluationContextFactory evaluationContextFactory;
+        private final W6CanonicalParameterExecutor parameterExecutor;
 
         @Override
         public String sourceKey() {
@@ -363,48 +366,60 @@ public final class ExistingSourceAcquisitionAdapters {
             if (ctx.dryRun()) {
                 return AcquisitionDtos.ExecutorOutcome.succeeded("DERIVATION_DRY_RUN", Map.of(), summary);
             }
+            String param = ctx.item().getCanonicalParameterId();
+            Optional<String> gacat = W6EvaluationContextFactory.resolveGacatId(param);
+            if (gacat.isPresent()) {
+                // REPLACE_WITH_SPINE_EXECUTION — no W6-local derived formula
+                EvaluationContext evalCtx = evaluationContextFactory.build(
+                        ctx.applicationId(), ctx.item(), null);
+                W6CanonicalParameterExecutor.ParameterExecutionView view =
+                        parameterExecutor.execute(gacat.get(), evalCtx);
+                summary.put("executionAuthority", "CanonicalParameterExecutionService");
+                summary.put("canonicalParameterId", gacat.get());
+                summary.put("spineExecution", view.toMap());
+                if (view.requirementSatisfied()) {
+                    summary.put("derivedValue", view.value());
+                    // Claim is still false for GACAT — reconciler re-executes spine as authority
+                    return AcquisitionDtos.ExecutorOutcome.succeeded(
+                            "DERIVATION",
+                            W6EvaluationContextFactory.acquisitionClaim(param, true),
+                            summary);
+                }
+                if (view.status() == ExecutionStatus.NOT_EXECUTABLE
+                        || view.status() == ExecutionStatus.CALCULATION_NOT_DEFINED) {
+                    // Definition/producer problem — do not retry as provider acquisition failure
+                    return new AcquisitionDtos.ExecutorOutcome(
+                            SourceAcquisitionState.SUCCEEDED,
+                            "DERIVATION", null, "NOT_EXECUTABLE", view.reason(),
+                            summary, Map.of(param, false), true);
+                }
+                if (view.status() == ExecutionStatus.DEPENDENCY_NOT_AVAILABLE
+                        || view.status() == ExecutionStatus.DATA_NOT_AVAILABLE
+                        || view.status() == ExecutionStatus.INPUT_REQUIRED) {
+                    return new AcquisitionDtos.ExecutorOutcome(
+                            SourceAcquisitionState.IN_PROGRESS,
+                            "DERIVATION", null, null, view.reason(),
+                            summary, Map.of(), true);
+                }
+                return new AcquisitionDtos.ExecutorOutcome(
+                        SourceAcquisitionState.IN_PROGRESS,
+                        "DERIVATION", null, null, view.reason(),
+                        summary, Map.of(), true);
+            }
+
+            // Legacy fixture keys (non-GACAT) — W6 goldens
             Object derived = ctx.item().getSourceHints() != null
                     ? ctx.item().getSourceHints().get("derivedValue") : null;
             Object readyFlag = ctx.item().getSourceHints() != null
                     ? ctx.item().getSourceHints().get("derivationReady") : null;
-            String param = ctx.item().getCanonicalParameterId();
             if (Boolean.TRUE.equals(readyFlag) || derived != null) {
                 Map<String, Boolean> facts = param != null ? Map.of(param, true) : Map.of();
                 summary.put("derivedValuePresent", derived != null);
+                summary.put("legacyFixturePath", true);
                 summary.put("calculatorVersion", ctx.item().getSourceHints() != null
                         ? ctx.item().getSourceHints().get("calculatorVersion") : null);
                 return AcquisitionDtos.ExecutorOutcome.succeeded("DERIVATION", facts, summary);
             }
-            // Safe typed GACAT derived calculation (if defined + tested/production-ready)
-            var calcSvc = derivedCalculationDefinitionService.getIfAvailable();
-            if (calcSvc != null && param != null && !param.isBlank()) {
-                Map<String, Object> inputs = new LinkedHashMap<>();
-                if (ctx.item().getSourceHints() != null
-                        && ctx.item().getSourceHints().get("inputs") instanceof Map<?, ?> rawInputs) {
-                    for (Map.Entry<?, ?> e : rawInputs.entrySet()) {
-                        if (e.getKey() != null) {
-                            inputs.put(String.valueOf(e.getKey()), e.getValue());
-                        }
-                    }
-                }
-                var eval = calcSvc.evaluateCanonical(param, null, inputs);
-                summary.put("derivedCalculationEvaluation", eval.toMap());
-                if (com.los.core.creditintelligence.policystudio.parameters.derived.SafeDerivedExpressionEvaluator
-                        .STATUS_OK.equals(eval.status())) {
-                    Map<String, Boolean> facts = Map.of(param, true);
-                    summary.put("derivedValue", eval.value());
-                    return AcquisitionDtos.ExecutorOutcome.succeeded("DERIVATION", facts, summary);
-                }
-                if (com.los.core.creditintelligence.policystudio.parameters.derived.SafeDerivedExpressionEvaluator
-                        .STATUS_DATA_INSUFFICIENT.equals(eval.status())) {
-                    // Fail closed — never invent zero defaults
-                    return new AcquisitionDtos.ExecutorOutcome(
-                            SourceAcquisitionState.IN_PROGRESS,
-                            "DERIVATION", null, null, eval.reason(),
-                            summary, Map.of(), true);
-                }
-            }
-            // Do not invent default values when calculator output absent
             return new AcquisitionDtos.ExecutorOutcome(
                     SourceAcquisitionState.IN_PROGRESS,
                     "DERIVATION", null, null, "Awaiting calculator materialization — no default invented",

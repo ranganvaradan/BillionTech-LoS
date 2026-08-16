@@ -61,7 +61,10 @@ class WorkflowAcquisitionW6GoldensTest {
         legacyEval = new RequirementCompletenessEvaluator();
         transitionService = new RequirementItemTransitionService(itemRepository, transitionRepository);
         factLookup = new CanonicalFactLookupService(snapshotRepository, factRepository);
-        reconciler = new CanonicalFactReadinessReconciler(factLookup, transitionService);
+        W6EvaluationContextFactory evalFactory =
+                new W6EvaluationContextFactory(snapshotRepository, factRepository);
+        reconciler = new CanonicalFactReadinessReconciler(
+                factLookup, transitionService, evalFactory, new W6CanonicalParameterExecutor());
         gate = new DataCompletenessGate(legacyEval);
 
         recordingExecutor = new RecordingExecutor(callCounts);

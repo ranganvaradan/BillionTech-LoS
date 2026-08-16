@@ -4,6 +4,7 @@ import com.los.core.requirement.AcquisitionDtos;
 import com.los.core.requirement.AcquisitionExecutorPort;
 import com.los.core.requirement.AcquisitionSourceResolver;
 import com.los.core.requirement.SourceAcquisitionState;
+import com.los.core.requirement.W6EvaluationContextFactory;
 import com.los.core.service.flow.step.BureauPullStepExecutor;
 import com.los.core.service.flow.step.StepResult;
 import lombok.RequiredArgsConstructor;
@@ -12,6 +13,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Thin adapter — reuses existing {@link BureauPullStepExecutor} (certified bureau path).
@@ -64,13 +66,21 @@ public class BureauAcquisitionAdapter implements AcquisitionExecutorPort {
             if (summary.containsKey("scorePresent")) {
                 scorePresent = Boolean.TRUE.equals(summary.get("scorePresent"));
             }
-            Map<String, Boolean> facts = new LinkedHashMap<>();
+            // Source success ≠ parameter available. Only claim legacy fixture readiness;
+            // GACAT IDs are decided by CanonicalParameterExecutionService after reconcile.
             String param = ctx.item().getCanonicalParameterId();
-            if (param != null) {
-                facts.put(param, scorePresent);
+            Map<String, Boolean> facts = new LinkedHashMap<>(
+                    W6EvaluationContextFactory.acquisitionClaim(param, scorePresent));
+            Optional<String> gacat = W6EvaluationContextFactory.resolveGacatId(param);
+            if (gacat.isPresent() && !"bureau.score".equals(gacat.get()) && scorePresent) {
+                summary.put("bureauScoreAvailableButNotTargetParameter", true);
+                summary.put("targetCanonicalParameterId", gacat.get());
             }
             summary.put("providerHttpSuccess", true);
             summary.put("scorePresent", scorePresent);
+            if (score != null) {
+                summary.put("creditScore", score);
+            }
             return new AcquisitionDtos.ExecutorOutcome(
                     SourceAcquisitionState.SUCCEEDED,
                     "BUREAU",
