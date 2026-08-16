@@ -7,9 +7,9 @@ Contract convergence only. No Wave 2 work. Wave 0 MUST_PRESERVE goldens remain g
 | Field | Value |
 |-------|-------|
 | SOURCE_START_SHA | `26c44f304dbcd6035601c1792d0151ae1f7877bf` |
-| SOURCE_FINAL_SHA | *(working tree; set on commit)* |
+| SOURCE_FINAL_SHA | `bc35f12f24948e5aa989e8a851ff4f33db365f29` |
 | GITHUB_REMOTE | `https://github.com/ranganvaradan/BillionTech-LoS.git` |
-| GITHUB_REMOTE_SHA | Local Wave-0 tip `26c44f3` (remote may lag until push) |
+| GITHUB_REMOTE_SHA | `bc35f12f24948e5aa989e8a851ff4f33db365f29` (after freeze push) |
 | INTERNAL_SHA (deployed) | `3da1ad4316eeda581975da41e6a23b2a258d4029` |
 | CLIENT_SHA (deployed) | `3da1ad4316eeda581975da41e6a23b2a258d4029` |
 | SAME_ARTIFACT | YES (staging Internal/Client unchanged this wave) |
