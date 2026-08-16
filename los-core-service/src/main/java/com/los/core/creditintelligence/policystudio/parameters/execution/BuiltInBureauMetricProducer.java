@@ -1,0 +1,124 @@
+package com.los.core.creditintelligence.policystudio.parameters.execution;
+
+import com.los.core.creditintelligence.bureau.service.BureauMetricService;
+
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * BUILT_IN adapter for IDs genuinely emitted by {@link BureauMetricService}.
+ * Asserts exact metricCode == requested canonical ID. Related IDs never substitute.
+ *
+ * <p>In Policy Test, values may already be present as exact-ID facts/inputs (fixture or
+ * precomputed). Live entity compute is optional when entities are loaded into context.
+ */
+public final class BuiltInBureauMetricProducer implements ParameterProducer {
+
+    public static final String PRODUCER_ID = "BureauMetricService.BUILT_IN";
+
+    /** Exact IDs emitted by {@link BureauMetricService#computeAndPersist}. */
+    public static final Set<String> EMITTED_IDS = Set.of(
+            BureauMetricService.LIVE_UNSECURED,
+            BureauMetricService.TOTAL_LIVE_EXPOSURE,
+            BureauMetricService.SECURED_LIVE_EXPOSURE,
+            BureauMetricService.UNSECURED_LIVE_EXPOSURE,
+            BureauMetricService.TOTAL_MONTHLY_OBLIGATION,
+            BureauMetricService.MAX_DPD_6M,
+            BureauMetricService.MAX_DPD_12M,
+            BureauMetricService.MAX_DPD_24M,
+            BureauMetricService.RECENT_INQUIRIES_90D,
+            BureauMetricService.SETTLED_ACCOUNT_COUNT,
+            BureauMetricService.WRITTEN_OFF_ACCOUNT_COUNT,
+            BureauMetricService.WRITEOFF_NON_CC,
+            BureauMetricService.WRITEOFF_CC,
+            BureauMetricService.STATUS_NTC
+    );
+
+    @Override
+    public String producerId() {
+        return PRODUCER_ID;
+    }
+
+    @Override
+    public ProducerType producerType() {
+        return ProducerType.BUILT_IN;
+    }
+
+    @Override
+    public boolean claims(String canonicalParameterId) {
+        return EMITTED_IDS.contains(canonicalParameterId);
+    }
+
+    @Override
+    public boolean hasCapability(String canonicalParameterId, EvaluationContext ctx, DependencyResolver resolver) {
+        return claims(canonicalParameterId);
+    }
+
+    @Override
+    public ExecutionResult execute(String canonicalParameterId, EvaluationContext ctx, DependencyResolver resolver) {
+        if (!claims(canonicalParameterId)) {
+            return ExecutionResult.notExecutable(canonicalParameterId,
+                    "Not a BureauMetricService emitted metricCode: " + canonicalParameterId);
+        }
+        // Exact-ID assert: only return when the key equals the requested ID (no related-ID map).
+        Object fromInput = ctx.inputs().get(canonicalParameterId);
+        if (fromInput != null) {
+            return valueResult(canonicalParameterId, fromInput, "inputs", "POLICY_TEST_INPUT_OVERLAY");
+        }
+        Object fromFact = ctx.facts().get(canonicalParameterId);
+        if (fromFact != null) {
+            return valueResult(canonicalParameterId, fromFact, "facts", "CONTEXT_FACT_EXACT_ID");
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> precomputed = ctx.entities().get("precomputedMetrics") instanceof Map<?, ?> m
+                ? (Map<String, Object>) m : Map.of();
+        if (precomputed.containsKey(canonicalParameterId) && precomputed.get(canonicalParameterId) != null) {
+            Object v = precomputed.get(canonicalParameterId);
+            // Exact-ID assert
+            if (!precomputed.containsKey(canonicalParameterId)) {
+                return ExecutionResult.error(canonicalParameterId, "metricCode mismatch");
+            }
+            return valueResult(canonicalParameterId, v, "entities.precomputedMetrics", "PRECOMPUTED_EXACT_ID");
+        }
+        return ExecutionResult.builder(canonicalParameterId)
+                .status(ExecutionStatus.DATA_NOT_AVAILABLE)
+                .producerType(ProducerType.BUILT_IN)
+                .producerId(PRODUCER_ID)
+                .capability(true)
+                .reason("BureauMetricService producer registered for exact ID, but no exact-ID value/entities in context")
+                .exactProducerPath(PRODUCER_ID + " [" + canonicalParameterId + "] (DATA_NOT_AVAILABLE)")
+                .build();
+    }
+
+    private static ExecutionResult valueResult(String id, Object value, String path, String sourceType) {
+        // Exact identity: path key must equal requested id (enforced by callers using id as map key).
+        if (value == null) {
+            return ExecutionResult.builder(id)
+                    .status(ExecutionStatus.DATA_NOT_AVAILABLE)
+                    .producerType(ProducerType.BUILT_IN)
+                    .producerId(PRODUCER_ID)
+                    .capability(true)
+                    .reason("null value for exact metricCode " + id)
+                    .exactProducerPath(PRODUCER_ID + " ← " + path + "[" + id + "]")
+                    .build();
+        }
+        Map<String, Object> prov = new LinkedHashMap<>();
+        prov.put("sourceType", sourceType);
+        prov.put("producerId", PRODUCER_ID);
+        prov.put("metricCode", id);
+        prov.put("metricVersion", BureauMetricService.METRIC_VERSION);
+        prov.put("exactMetricCodeAssert", true);
+        return ExecutionResult.builder(id)
+                .status(ExecutionStatus.VALUE_AVAILABLE)
+                .value(value)
+                .producerType(ProducerType.BUILT_IN)
+                .producerId(PRODUCER_ID)
+                .dependencies(List.of())
+                .capability(true)
+                .provenance(prov)
+                .exactProducerPath(PRODUCER_ID + " ← " + path + "[" + id + "] (metricCode==" + id + ")")
+                .build();
+    }
+}

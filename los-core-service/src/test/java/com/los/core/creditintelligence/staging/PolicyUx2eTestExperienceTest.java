@@ -1,6 +1,9 @@
 package com.los.core.creditintelligence.staging;
 
 import com.los.core.creditintelligence.config.CreditIntelligenceProperties;
+import com.los.core.creditintelligence.policystudio.parameters.derived.DerivedCalculationDefinitionService;
+import com.los.core.creditintelligence.policystudio.parameters.execution.CanonicalParameterExecutionService;
+import com.los.core.creditintelligence.policystudio.parameters.execution.ExecutionSpineProducerBootstrap;
 import com.los.core.creditintelligence.policystudio.service.PolicyStudioOrchestrator;
 import com.los.core.creditintelligence.policystudio.service.PolicyTextExtractionService;
 import org.junit.jupiter.api.BeforeEach;
@@ -8,9 +11,13 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * POLICY-UX-2E — Quick Test / application test on existing evaluator.
@@ -31,7 +38,10 @@ class PolicyUx2eTestExperienceTest {
         PolicyStudioOrchestrator orch = new PolicyStudioOrchestrator();
         demo = new StagingPolicyStudioDemoService(props, orch, new PolicyTextExtractionService());
         StagingProspectSimulationService sim = new StagingProspectSimulationService(props, orch);
-        testExperience = new PolicyStudioTestExperienceService(props, orch, sim);
+        DerivedCalculationDefinitionService defs = mock(DerivedCalculationDefinitionService.class);
+        when(defs.latestFor(any(), any())).thenReturn(Optional.empty());
+        CanonicalParameterExecutionService spine = ExecutionSpineProducerBootstrap.standalone(defs);
+        testExperience = new PolicyStudioTestExperienceService(props, orch, sim, spine);
     }
 
     @Test

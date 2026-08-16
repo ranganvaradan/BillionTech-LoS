@@ -15,6 +15,12 @@ import com.los.core.creditintelligence.policystudio.parameters.CanonicalParamete
 import com.los.core.creditintelligence.policystudio.parameters.ParameterResolutionSupport;
 import com.los.core.creditintelligence.policystudio.parameters.PolicyStudioConvergencePresenter;
 import com.los.core.creditintelligence.policystudio.parameters.RuleOperandPresenter;
+import com.los.core.creditintelligence.policystudio.parameters.execution.BuiltInBankingMetricProducer;
+import com.los.core.creditintelligence.policystudio.parameters.execution.CanonicalParameterExecutionService;
+import com.los.core.creditintelligence.policystudio.parameters.execution.EvaluationContext;
+import com.los.core.creditintelligence.policystudio.parameters.execution.EvaluationMode;
+import com.los.core.creditintelligence.policystudio.parameters.execution.ExecutionResult;
+import com.los.core.creditintelligence.policystudio.parameters.execution.ExecutionStatus;
 import com.los.core.creditintelligence.policystudio.service.PolicyStudioOrchestrator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -51,6 +57,7 @@ public class PolicyStudioTestExperienceService {
     private final CreditIntelligenceProperties properties;
     private final PolicyStudioOrchestrator orchestrator;
     private final StagingProspectSimulationService prospectSimulationService;
+    private final CanonicalParameterExecutionService parameterExecution;
     private final PolicyDslInterpreterV1 interpreter = new PolicyDslInterpreterV1();
     private final PolicyMetricLineageService lineageService = new PolicyMetricLineageService();
     private CanonicalParameterRegistry registry() {
@@ -63,10 +70,12 @@ public class PolicyStudioTestExperienceService {
     public PolicyStudioTestExperienceService(
             CreditIntelligenceProperties properties,
             PolicyStudioOrchestrator orchestrator,
-            StagingProspectSimulationService prospectSimulationService) {
+            StagingProspectSimulationService prospectSimulationService,
+            CanonicalParameterExecutionService parameterExecution) {
         this.properties = properties;
         this.orchestrator = orchestrator;
         this.prospectSimulationService = prospectSimulationService;
+        this.parameterExecution = parameterExecution;
     }
 
     public Map<String, Object> testContext(UUID documentId, String tenantHeader) {
@@ -149,137 +158,16 @@ public class PolicyStudioTestExperienceService {
         }
         boolean useFixtureDefaults = body != null && Boolean.TRUE.equals(body.get("useFixtureDefaults"));
 
-        for (Map<String, Object> p : required) {
-            String key = String.valueOf(p.get("parameterKey"));
-            String metricId = p.get("metricId") == null ? null : String.valueOf(p.get("metricId"));
-            String status = String.valueOf(p.getOrDefault("status", "UNAVAILABLE"));
-            Object supplied = firstNonNull(rawValues.get(key), metricId == null ? null : rawValues.get(metricId));
-            Map<String, Object> prov = new LinkedHashMap<>();
-            prov.put("parameterKey", key);
-            prov.put("businessName", p.get("businessName"));
-            prov.put("metricId", metricId);
+        UUID tenantId = resolveTenantId(tenantHeader);
+        SpineResolution spine = resolveViaExecutionSpine(
+                session, documentId, tenantId, expressionPaths, required, rawValues,
+                Map.of(), useFixtureDefaults);
 
-            boolean referenced = metricId != null && expressionPaths.contains(metricId)
-                    || expressionPaths.stream().anyMatch(path ->
-                    path.equals(key) || path.endsWith("." + key)
-                            || (metricId != null && path.equals(metricId)));
-            // Alias: bureau_score / score → bureau.score
-            if (!referenced && metricId == null) {
-                referenced = expressionPaths.contains(key);
-            }
-            if (!referenced && ("bureau_score".equals(key) || "score".equals(key))) {
-                referenced = expressionPaths.contains("bureau.score");
-            }
-            if (!referenced && key != null && key.contains("foir")) {
-                referenced = expressionPaths.contains("obligation.ratio")
-                        || expressionPaths.contains("application.foir");
-            }
-
-            if (supplied != null && !String.valueOf(supplied).isBlank()) {
-                Object coerced = coerce(supplied);
-                putMetric(metrics, facts, policyParams, metricId, key, coerced);
-                prov.put("value", coerced);
-                prov.put("status", "USER_SUPPLIED");
-                prov.put("sourceLabel", "Test value entered manually");
-                prov.put("simulationOnly", true);
-            } else if (!referenced) {
-                prov.put("status", "NOT_REQUIRED");
-                prov.put("sourceLabel", "Not required by the expressions under test");
-                // Do not invent a value
-            } else if ("UNRESOLVED".equals(status)) {
-                prov.put("status", "MISSING");
-                prov.put("sourceLabel", "Required by expression — unresolved / missing");
-                prov.put("needsTestValue", true);
-                blockers.add(String.valueOf(p.get("businessName")) + " — missing");
-            } else if ("MANUAL_INPUT".equals(status) || "MANUAL".equals(status)) {
-                prov.put("status", "MISSING");
-                prov.put("sourceLabel", "Required by expression — enter a test value");
-                prov.put("needsTestValue", true);
-                blockers.add(String.valueOf(p.get("businessName")) + " — manual input required");
-            } else if (useFixtureDefaults
-                    && ("AUTOMATIC_DERIVED".equals(status) || "DERIVED".equals(status) || "RAW".equals(status))
-                    && p.get("defaultHint") != null) {
-                // Opt-in only — never fabricate unrelated defaults by default
-                Object coerced = coerce(p.get("defaultHint"));
-                putMetric(metrics, facts, policyParams, metricId, key, coerced);
-                prov.put("value", coerced);
-                prov.put("status", "FIXTURE_SUPPLIED");
-                prov.put("sourceLabel", "Fixture default (useFixtureDefaults=true)");
-            } else {
-                prov.put("status", "MISSING");
-                prov.put("sourceLabel", "Required by expression — no value supplied");
-                prov.put("needsTestValue", true);
-                blockers.add(String.valueOf(p.get("businessName")) + " — missing");
-            }
-            valueProvenance.add(prov);
-        }
-
-        // Apply any extra testValues not in required list (CM may supply aliases)
-        for (Map.Entry<String, Object> e : rawValues.entrySet()) {
-            if (e.getValue() == null || String.valueOf(e.getValue()).isBlank()) continue;
-            putMetric(metrics, facts, policyParams, e.getKey(), e.getKey(), coerce(e.getValue()));
-        }
-
-        // EMI Bounce Count — if configured on this policy and not manually supplied, use shared calculator
-        // on the deterministic staging fixture (same path as Data & Calculations preview).
-        if (!metrics.containsKey("banking.emi_bounce_count_3m")
-                && policyHasEmiBounceBinding(session)) {
-            Map<String, Object> eval = com.los.core.creditintelligence.policystudio.metrics
-                    .EmiBounceCountCalculator.evaluate(
-                    com.los.core.creditintelligence.policystudio.metrics.EmiBounceCountCalculator.stagingFixture(),
-                    emiBounceConfigFromSession(session),
-                    java.time.LocalDate.of(2026, 8, 1));
-            if (com.los.core.creditintelligence.policystudio.metrics.EmiBounceCountCalculator.OUTCOME_PASS
-                    .equals(eval.get("outcome")) && eval.get("v") != null) {
-                metrics.put("banking.emi_bounce_count_3m", eval.get("v"));
-                facts.put("banking.emi_bounce_count_3m", eval.get("v"));
-                Map<String, Object> prov = new LinkedHashMap<>();
-                prov.put("parameterKey", "banking.emi_bounce_count_3m");
-                prov.put("businessName", "EMI Bounce Count");
-                prov.put("metricId", "banking.emi_bounce_count_3m");
-                prov.put("value", eval.get("v"));
-                prov.put("status", "AUTOMATIC_DERIVED");
-                prov.put("sourceLabel", "EmiBounceCountCalculator.V1 (staging fixture)");
-                prov.put("howCalculated", eval.get("calculation"));
-                prov.put("preview", Map.of(
-                        "emiCandidates", eval.get("emiCandidates"),
-                        "matchedBouncedEmiEvents", eval.get("matchedBouncedEmiEvents"),
-                        "emiBounceCount", eval.get("emiBounceCount")));
-                valueProvenance.add(prov);
-            }
-        }
-
-        // Adjusted ADB — when bulk >10× adjustment is executable on this policy, overlay the
-        // adjusted value onto banking.avg_daily_balance_3m (same calculator as Data & Calculations preview).
-        if (policyHasAdbBulkBinding(session)) {
-            Map<String, Object> eval = com.los.core.creditintelligence.policystudio.metrics
-                    .AdbBulkDepositAdjustmentCalculator.evaluate(
-                    com.los.core.creditintelligence.policystudio.metrics
-                            .AdbBulkDepositAdjustmentCalculator.stagingFixture(),
-                    adbBulkConfigFromSession(session),
-                    java.time.LocalDate.of(2026, 8, 1));
-            if (com.los.core.creditintelligence.policystudio.metrics.AdbBulkDepositAdjustmentCalculator.OUTCOME_PASS
-                    .equals(eval.get("outcome")) && eval.get("adjustedAdb") != null) {
-                Object adjusted = eval.get("adjustedAdb");
-                metrics.put("banking.avg_daily_balance_3m", adjusted);
-                facts.put("banking.avg_daily_balance_3m", adjusted);
-                metrics.put("BANK_POLICY_ADJUSTED_ADB_3M", adjusted);
-                facts.put("BANK_POLICY_ADJUSTED_ADB_3M", adjusted);
-                Map<String, Object> prov = new LinkedHashMap<>();
-                prov.put("parameterKey", "banking.avg_daily_balance_3m");
-                prov.put("businessName", "Adjusted Average Daily Balance");
-                prov.put("metricId", "banking.avg_daily_balance_3m");
-                prov.put("value", adjusted);
-                prov.put("status", "AUTOMATIC_DERIVED");
-                prov.put("sourceLabel", "AdbBulkDepositAdjustmentCalculator.V1 (staging fixture)");
-                prov.put("baseAdb", eval.get("baseAdb"));
-                prov.put("adjustedAdb", adjusted);
-                prov.put("bulkThreshold", eval.get("bulkThreshold"));
-                prov.put("averageDepositAmount", eval.get("averageDepositAmount"));
-                prov.put("excludedCredits", eval.get("excludedCredits"));
-                valueProvenance.add(prov);
-            }
-        }
+        metrics.putAll(spine.metrics());
+        facts.putAll(spine.facts());
+        policyParams.putAll(spine.policyParams());
+        valueProvenance.addAll(spine.valueProvenance());
+        blockers.addAll(spine.blockers());
 
         String product = body != null && body.get("product") != null
                 ? String.valueOf(body.get("product")) : "DIGILEAP";
@@ -309,6 +197,8 @@ public class PolicyStudioTestExperienceService {
         out.put("testType", "QUICK");
         out.put("testTypeLabel", "Quick Test");
         out.put("valueProvenance", valueProvenance);
+        out.put("executionSpineTrace", spine.trace());
+        out.put("executionSpineUsed", true);
         out.put("readiness", readinessSummary(required));
         out.put("blockers", remainingBlockers);
         out.put("cannotFullyEvaluate", !remainingBlockers.isEmpty()
@@ -384,27 +274,27 @@ public class PolicyStudioTestExperienceService {
                 ? (List<Map<String, Object>>) l : List.of();
         Map<String, Object> appRow = apps.isEmpty() ? Map.of() : apps.get(0);
 
-        // Re-evaluate with CM-facing rule cards + optional overrides on same facts
-        Map<String, Object> metrics = buildAppMetrics(app);
-        Map<String, Object> facts = new LinkedHashMap<>(app.factOverlay() == null ? Map.of() : app.factOverlay());
-        metrics.forEach((k, v) -> {
+        // Re-evaluate via execution spine — app metrics/facts seed context; overrides are inputs
+        Map<String, Object> seedFacts = new LinkedHashMap<>();
+        Map<String, Object> appMetrics = buildAppMetrics(app);
+        if (app.factOverlay() != null) seedFacts.putAll(app.factOverlay());
+        appMetrics.forEach((k, v) -> {
             if (k.startsWith("bureau.") || k.startsWith("application.") || k.startsWith("banking.")) {
-                facts.putIfAbsent(k, v);
+                seedFacts.putIfAbsent(k, v);
             }
         });
-        Map<String, Object> policyParams = new LinkedHashMap<>();
-        List<Map<String, Object>> overrideProv = new ArrayList<>();
-        for (Map.Entry<String, Object> e : overrides.entrySet()) {
-            if (e.getValue() == null || String.valueOf(e.getValue()).isBlank()) continue;
-            Object coerced = coerce(e.getValue());
-            putMetric(metrics, facts, policyParams, e.getKey(), e.getKey(), coerced);
-            overrideProv.add(Map.of(
-                    "parameterKey", e.getKey(),
-                    "value", coerced,
-                    "status", "MANUAL_TEST_VALUE",
-                    "sourceLabel", "Test value only",
-                    "simulationOnly", true));
+        Set<String> expressionPaths = new LinkedHashSet<>();
+        for (CiPolicyRuleCandidate r : session.getRuleCandidates()) {
+            if (isExcludedFromEvaluation(r) || isDataCalculationOnly(r)) continue;
+            expressionPaths.addAll(extractMetricPaths(r.getExpression()));
         }
+        UUID tenantId = resolveTenantId(tenantHeader);
+        SpineResolution spine = resolveViaExecutionSpine(
+                session, documentId, tenantId, expressionPaths, required, overrides,
+                seedFacts, false);
+        Map<String, Object> metrics = new LinkedHashMap<>(spine.metrics());
+        Map<String, Object> facts = new LinkedHashMap<>(spine.facts());
+        Map<String, Object> policyParams = new LinkedHashMap<>(spine.policyParams());
         if (facts.get("application.proposed_edi") != null) {
             policyParams.putIfAbsent("PROPOSED_EDI", facts.get("application.proposed_edi"));
         }
@@ -433,7 +323,9 @@ public class PolicyStudioTestExperienceService {
                 "scorecard unchanged",
                 "policy assignment unchanged"));
         out.put("readiness", readiness);
-        out.put("valueProvenance", overrideProv);
+        out.put("valueProvenance", spine.valueProvenance());
+        out.put("executionSpineTrace", spine.trace());
+        out.put("executionSpineUsed", true);
         out.putAll(evaluation);
         // Prefer prospect sim comparison when present
         if (appRow.get("drillDown") instanceof Map<?, ?> dd) {
@@ -1551,6 +1443,224 @@ public class PolicyStudioTestExperienceService {
         }
         return out;
     }
+
+    private UUID resolveTenantId(String tenantHeader) {
+        if (tenantHeader != null && !tenantHeader.isBlank()) {
+            try {
+                return UUID.fromString(tenantHeader.trim());
+            } catch (IllegalArgumentException ignored) {
+                // fall through
+            }
+        }
+        return properties.getDefaultTenantId();
+    }
+
+    /**
+     * Phase 2: every required canonical operand is resolved through
+     * {@link CanonicalParameterExecutionService} before the metrics map is used by the DSL.
+     */
+    private SpineResolution resolveViaExecutionSpine(
+            PolicyStudioSession session,
+            UUID documentId,
+            UUID tenantId,
+            Set<String> expressionPaths,
+            List<Map<String, Object>> required,
+            Map<String, Object> rawValues,
+            Map<String, Object> seedFacts,
+            boolean useFixtureDefaults) {
+
+        Map<String, Object> metrics = new LinkedHashMap<>();
+        Map<String, Object> facts = new LinkedHashMap<>();
+        Map<String, Object> policyParams = new LinkedHashMap<>();
+        List<Map<String, Object>> valueProvenance = new ArrayList<>();
+        List<String> blockers = new ArrayList<>();
+        List<Map<String, Object>> spineTrace = new ArrayList<>();
+
+        // Normalize aliases into exact canonical IDs for context inputs (not into metrics yet)
+        Map<String, Object> normalizedInputs = new LinkedHashMap<>();
+        Map<String, Object> scratchMetrics = new LinkedHashMap<>();
+        Map<String, Object> scratchFacts = new LinkedHashMap<>();
+        Map<String, Object> scratchParams = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> e : rawValues.entrySet()) {
+            if (e.getValue() == null || String.valueOf(e.getValue()).isBlank()) continue;
+            putMetric(scratchMetrics, scratchFacts, scratchParams, e.getKey(), e.getKey(), coerce(e.getValue()));
+        }
+        for (Map<String, Object> p : required) {
+            String key = String.valueOf(p.get("parameterKey"));
+            String metricId = p.get("metricId") == null ? null : String.valueOf(p.get("metricId"));
+            Object supplied = firstNonNull(rawValues.get(key), metricId == null ? null : rawValues.get(metricId));
+            if (supplied != null && !String.valueOf(supplied).isBlank()) {
+                putMetric(scratchMetrics, scratchFacts, scratchParams, metricId, key, coerce(supplied));
+            } else if (useFixtureDefaults
+                    && p.get("defaultHint") != null
+                    && metricId != null
+                    && expressionPaths.contains(metricId)) {
+                putMetric(scratchMetrics, scratchFacts, scratchParams, metricId, key, coerce(p.get("defaultHint")));
+            }
+        }
+        normalizedInputs.putAll(scratchMetrics);
+        normalizedInputs.putAll(scratchFacts);
+
+        EvaluationContext.Builder ctxBuilder = EvaluationContext.builder()
+                .mode(EvaluationMode.POLICY_TEST)
+                .evaluationAsOf(LocalDate.of(2026, 8, 1))
+                .tenantId(tenantId)
+                .documentId(documentId)
+                .facts(seedFacts == null ? Map.of() : seedFacts)
+                .inputs(normalizedInputs);
+
+        if (policyHasEmiBounceBinding(session)) {
+            ctxBuilder.entity(BuiltInBankingMetricProducer.ENTITY_EMI_ENABLED, true);
+            ctxBuilder.entity(BuiltInBankingMetricProducer.ENTITY_EMI_CONFIG, emiBounceConfigFromSession(session));
+        }
+        if (policyHasAdbBulkBinding(session)) {
+            ctxBuilder.entity(BuiltInBankingMetricProducer.ENTITY_ADB_ENABLED, true);
+            ctxBuilder.entity(BuiltInBankingMetricProducer.ENTITY_ADB_CONFIG, adbBulkConfigFromSession(session));
+        }
+        EvaluationContext ctx = ctxBuilder.build();
+
+        Set<String> toResolve = new LinkedHashSet<>(expressionPaths);
+        for (Map<String, Object> p : required) {
+            String metricId = p.get("metricId") == null ? null : String.valueOf(p.get("metricId"));
+            if (metricId != null && !metricId.isBlank() && metricId.contains(".")) {
+                // Only resolve if referenced by expressions (or required and referenced via alias logic)
+                boolean referenced = expressionPaths.contains(metricId);
+                String key = String.valueOf(p.get("parameterKey"));
+                if (!referenced && ("bureau_score".equals(key) || "score".equals(key))) {
+                    referenced = expressionPaths.contains("bureau.score");
+                }
+                if (referenced) {
+                    toResolve.add(metricId);
+                }
+            }
+        }
+
+        Map<String, ExecutionResult> byId = new LinkedHashMap<>();
+        for (String canonicalId : toResolve) {
+            if (canonicalId == null || canonicalId.isBlank() || !canonicalId.contains(".")) {
+                continue;
+            }
+            ExecutionResult result = parameterExecution.resolveAndExecute(canonicalId, ctx);
+            byId.put(canonicalId, result);
+            Map<String, Object> traceRow = result.toTraceMap();
+            traceRow.put("policyTestUsedSpine", true);
+            spineTrace.add(traceRow);
+
+            if (result.valueAvailable()) {
+                metrics.put(canonicalId, result.value());
+                facts.put(canonicalId, result.value());
+                // Keep runtime aliases for DSL compatibility
+                for (String alias : com.los.core.creditintelligence.policystudio.parameters
+                        .ParameterExecutabilitySupport.runtimeFactAliases(canonicalId)) {
+                    if (alias != null && !alias.isBlank()) {
+                        metrics.putIfAbsent(alias, result.value());
+                        facts.putIfAbsent(alias, result.value());
+                    }
+                }
+                if ("application.proposed_edi".equals(canonicalId)) {
+                    policyParams.put("PROPOSED_EDI", result.value());
+                }
+                if ("banking.avg_daily_balance_3m".equals(canonicalId)
+                        && result.provenance() != null
+                        && result.provenance().get("adjustedAdb") != null) {
+                    metrics.put("BANK_POLICY_ADJUSTED_ADB_3M", result.value());
+                    facts.put("BANK_POLICY_ADJUSTED_ADB_3M", result.value());
+                }
+            }
+        }
+
+        for (Map<String, Object> p : required) {
+            String key = String.valueOf(p.get("parameterKey"));
+            String metricId = p.get("metricId") == null ? null : String.valueOf(p.get("metricId"));
+            String status = String.valueOf(p.getOrDefault("status", "UNAVAILABLE"));
+            Map<String, Object> prov = new LinkedHashMap<>();
+            prov.put("parameterKey", key);
+            prov.put("businessName", p.get("businessName"));
+            prov.put("metricId", metricId);
+
+            boolean referenced = metricId != null && expressionPaths.contains(metricId);
+            if (!referenced && ("bureau_score".equals(key) || "score".equals(key))) {
+                referenced = expressionPaths.contains("bureau.score");
+                if (referenced) metricId = "bureau.score";
+            }
+            if (!referenced && key != null && key.contains("foir")) {
+                referenced = expressionPaths.contains("obligation.ratio")
+                        || expressionPaths.contains("application.foir");
+            }
+            if (!referenced && metricId == null) {
+                referenced = expressionPaths.contains(key);
+            }
+
+            ExecutionResult er = metricId == null ? null : byId.get(metricId);
+            if (!referenced) {
+                prov.put("status", "NOT_REQUIRED");
+                prov.put("sourceLabel", "Not required by the expressions under test");
+            } else if (er != null && er.valueAvailable()) {
+                prov.put("value", er.value());
+                boolean userOverlay = metricId != null && normalizedInputs.containsKey(metricId);
+                if (userOverlay) {
+                    prov.put("status", "MANUAL_TEST_VALUE");
+                    prov.put("simulationOnly", true);
+                    prov.put("sourceLabel", "Test value entered manually (via execution spine)");
+                } else {
+                    prov.put("status", er.producerType() == null ? "SPINE" : er.producerType().name());
+                    prov.put("sourceLabel", er.exactProducerPath());
+                }
+                prov.put("executionStatus", er.status().name());
+                prov.put("capability", er.capability());
+                prov.put("spineProvenance", er.provenance());
+                prov.put("exactProducerPath", er.exactProducerPath());
+                prov.put("policyTestUsedSpine", true);
+            } else if (er != null && er.status() == ExecutionStatus.INPUT_REQUIRED) {
+                prov.put("status", "MISSING");
+                prov.put("sourceLabel", "Required by expression — enter a test value");
+                prov.put("needsTestValue", true);
+                prov.put("executionStatus", er.status().name());
+                prov.put("policyTestUsedSpine", true);
+                blockers.add(String.valueOf(p.get("businessName")) + " — manual input required");
+            } else if (er != null && (er.status() == ExecutionStatus.NOT_EXECUTABLE
+                    || er.status() == ExecutionStatus.CALCULATION_NOT_DEFINED)) {
+                prov.put("status", "NOT_EXECUTABLE");
+                prov.put("sourceLabel", er.reason() == null ? "No executable producer" : er.reason());
+                prov.put("needsTestValue", true);
+                prov.put("executionStatus", er.status().name());
+                prov.put("capability", false);
+                prov.put("policyTestUsedSpine", true);
+                blockers.add(String.valueOf(p.get("businessName")) + " — not executable via spine");
+            } else if (er != null && (er.status() == ExecutionStatus.DATA_NOT_AVAILABLE
+                    || er.status() == ExecutionStatus.DEPENDENCY_NOT_AVAILABLE)) {
+                prov.put("status", "MISSING");
+                prov.put("sourceLabel", er.reason() == null ? "Data not available" : er.reason());
+                prov.put("needsTestValue", true);
+                prov.put("executionStatus", er.status().name());
+                prov.put("capability", er.capability());
+                prov.put("policyTestUsedSpine", true);
+                blockers.add(String.valueOf(p.get("businessName")) + " — missing");
+            } else if ("UNRESOLVED".equals(status) || "MANUAL_INPUT".equals(status) || "MANUAL".equals(status)) {
+                prov.put("status", "MISSING");
+                prov.put("sourceLabel", "Required by expression — unresolved / missing");
+                prov.put("needsTestValue", true);
+                blockers.add(String.valueOf(p.get("businessName")) + " — missing");
+            } else {
+                prov.put("status", "MISSING");
+                prov.put("sourceLabel", "Required by expression — no value from execution spine");
+                prov.put("needsTestValue", true);
+                blockers.add(String.valueOf(p.get("businessName")) + " — missing");
+            }
+            valueProvenance.add(prov);
+        }
+
+        return new SpineResolution(metrics, facts, policyParams, valueProvenance, blockers, spineTrace);
+    }
+
+    private record SpineResolution(
+            Map<String, Object> metrics,
+            Map<String, Object> facts,
+            Map<String, Object> policyParams,
+            List<Map<String, Object>> valueProvenance,
+            List<String> blockers,
+            List<Map<String, Object>> trace
+    ) {}
 
     private PolicyStudioSession requireSession(UUID documentId, String tenantHeader) {
         UUID tenantId = properties.getDefaultTenantId();
