@@ -1,16 +1,17 @@
-import { useEffect, useState } from 'react'
-import { ApiError } from '@/api/http'
-import { fetchPolicyParameterInventory } from '@/api/dp3PolicyGraph'
 import {
   classifyInventoryLoad,
   type InvRow,
   unresolvedTokens,
 } from '@/components/policy/policyParameterInventoryState'
 import { SuggestCalculationWorkflow } from '@/components/dataParameters/SuggestCalculationWorkflow'
+import { lenderPrimaryStatus } from '@/lib/policyStudio/lenderUxCopy'
+import { ApiError } from '@/api/http'
+import { fetchPolicyParameterInventory } from '@/api/dp3PolicyGraph'
+import { useEffect, useState } from 'react'
 
 /**
- * DP-3 — Policy parameter inventory derived from persisted Policy rule graph.
- * Identifier contract: policy document id (same as Policy Studio session header.documentId).
+ * DP-3 — Policy parameter inventory from persisted Policy rule graph.
+ * Lender Layer-1: business names + one status. Technical IDs under Advanced.
  */
 export function PolicyParameterInventoryPanel({ documentId }: { documentId: string | null }) {
   const [rows, setRows] = useState<InvRow[]>([])
@@ -81,25 +82,25 @@ export function PolicyParameterInventoryPanel({ documentId }: { documentId: stri
     unresolvedCount,
   })
   const unresolved = unresolvedTokens(rows)
-  const resolvedCount = rows.length - unresolved.length
+  const needsSetup = rows.filter((r) => r.calculationRequired === true).length
 
   return (
     <section
       className="mt-4 rounded-lg border border-slate-200 bg-white p-3"
       data-testid="dp3-policy-parameter-inventory"
       data-inventory-state={state}
+      data-lender-ux="layer-1"
     >
       <div className="mb-2 flex items-baseline justify-between gap-2">
-        <h2 className="text-sm font-semibold text-slate-900">Policy parameter inventory (GACAT)</h2>
+        <h2 className="text-sm font-semibold text-slate-900">Parameters used by this policy</h2>
         <span className="text-xs text-slate-500">
-          unresolved:{' '}
           {state === 'TECHNICAL_ERROR' || state === 'LOADING' || meta == null
             ? '—'
-            : String(unresolvedCount)}
+            : `${rows.length} parameters`}
         </span>
       </div>
       <p className="mb-2 text-xs text-slate-600">
-        Derived from persisted Policy rule graph. Unresolved tokens stay unresolved — no fuzzy mapping.
+        What this policy needs from data — and whether each item is ready to use.
       </p>
       {state === 'LOADING' ? <p className="text-xs text-slate-500">Loading…</p> : null}
       {state === 'TECHNICAL_ERROR' ? (
@@ -109,23 +110,21 @@ export function PolicyParameterInventoryPanel({ documentId }: { documentId: stri
       ) : null}
       {state === 'NO_POLICY_GRAPH' ? (
         <p className="text-xs text-amber-800" data-testid="dp3-inventory-no-graph">
-          No materialized Policy rule graph (NO_MATERIALIZED_POLICY_GRAPH). Inventory is not available
-          until the graph is persisted.
+          Policy structure is not ready yet. Inventory appears after the policy graph is saved.
         </p>
       ) : null}
       {state === 'NO_PARAMETERS' ? (
         <p className="text-xs text-slate-500" data-testid="dp3-inventory-empty">
-          Policy graph is present but has no parameter operands.
+          No parameters are referenced by this policy yet.
         </p>
       ) : null}
       {state === 'LOADED_WITH_PARAMETERS' || state === 'LOADED_WITH_UNRESOLVED' ? (
         <div className="mb-2 text-xs text-slate-600">
-          Resolved parameters: {resolvedCount}. Unresolved references: {unresolved.length}.
-          {unresolved.length > 0 ? (
-            <div className="mt-1 font-mono text-[11px] text-amber-900" data-testid="dp3-inventory-unresolved-tokens">
-              {unresolved.join(', ')}
-            </div>
-          ) : null}
+          {needsSetup > 0
+            ? `${needsSetup} need your input before testing.`
+            : unresolved.length > 0
+              ? `${unresolved.length} still need mapping.`
+              : 'All listed parameters have a clear setup status.'}
         </div>
       ) : null}
       {rows.length > 0 ? (
@@ -134,105 +133,119 @@ export function PolicyParameterInventoryPanel({ documentId }: { documentId: stri
             <thead className="text-slate-500">
               <tr>
                 <th className="py-1 pr-3">Parameter</th>
-                <th className="py-1 pr-3">Usage</th>
-                <th className="py-1 pr-3">Source</th>
-                <th className="py-1 pr-3">Readiness</th>
                 <th className="py-1 pr-3">Status</th>
+                <th className="py-1 pr-3">Action</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((r, i) => (
-                <tr key={`${r.canonicalParameterId ?? r.originalToken}-${i}`} className="border-t border-slate-100">
-                  <td className="py-1 pr-3 font-mono text-[11px] text-slate-800">
-                    {r.canonicalParameterId ?? r.originalToken}
-                    {r.businessName ? (
-                      <div className="font-sans text-[11px] text-slate-500">{r.businessName}</div>
-                    ) : null}
-                  </td>
-                  <td className="py-1 pr-3">{r.usageType ?? '—'}</td>
-                  <td className="py-1 pr-3">{r.sourceFamily ?? '—'}</td>
-                  <td className="py-1 pr-3">
-                    <div className="flex flex-wrap gap-1">
-                      {r.calculationRequired === true ? (
-                        <span
-                          className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-900"
-                          title="Executable calculation definition is missing"
-                        >
-                          Calculation required
-                        </span>
-                      ) : null}
-                      {r.policyTestReady === true ? (
-                        <span
-                          className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-emerald-50 text-emerald-900"
-                          title="Can this parameter be used in Policy Test simulations?"
-                        >
-                          Policy Test Ready
-                        </span>
-                      ) : (
-                        <span
-                          className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-slate-100 text-slate-500"
-                          title="Policy Test not ready"
-                        >
-                          Policy test unavailable
-                        </span>
-                      )}
-                      {r.runtimeReady === true ? (
-                        <span
-                          className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-sky-50 text-sky-900"
-                          title="Available for runtime evaluation when fulfilment path succeeds"
-                        >
-                          Runtime Ready
-                        </span>
-                      ) : (
-                        <span
-                          className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-slate-100 text-slate-500"
-                          title="Runtime not ready"
-                        >
-                          Runtime not ready
-                        </span>
-                      )}
-                      {r.productionReady === true ? (
-                        <span
-                          className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-indigo-50 text-indigo-900"
-                          title="Certified for production lending use"
-                        >
-                          Production Ready
-                        </span>
-                      ) : (
-                        <span
-                          className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-slate-100 text-slate-500"
-                          title="Not certified for production"
-                        >
-                          Production not ready
-                        </span>
-                      )}
-                    </div>
-                    <div className="mt-0.5 text-[10px] text-slate-500">
-                      Overall: {String(r.overallReadiness ?? '—')}
-                    </div>
-                    {r.calculationRequired === true && r.canonicalParameterId ? (
-                      <button
-                        type="button"
-                        className="mt-1 text-[10px] font-medium text-sky-700 underline"
-                        onClick={() =>
-                          setActiveCalcId(
-                            activeCalcId === r.canonicalParameterId
-                              ? null
-                              : String(r.canonicalParameterId),
-                          )
-                        }
+              {rows.map((r, i) => {
+                const primary = lenderPrimaryStatus({
+                  calculationRequired: r.calculationRequired === true,
+                  policyTestReady: r.policyTestReady === true,
+                  runtimeReady: r.runtimeReady === true,
+                  productionReady: r.productionReady === true,
+                  unresolved: !r.canonicalParameterId,
+                })
+                return (
+                  <tr
+                    key={`${r.canonicalParameterId ?? r.originalToken}-${i}`}
+                    className="border-t border-slate-100 align-top"
+                  >
+                    <td className="py-2 pr-3 text-slate-800">
+                      <div className="font-medium">
+                        {r.businessName || r.canonicalParameterId || r.originalToken}
+                      </div>
+                    </td>
+                    <td className="py-2 pr-3">
+                      <span
+                        className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                          primary.state === 'NEEDS_YOUR_INPUT' || primary.state === 'DATA_NOT_AVAILABLE'
+                            ? 'bg-amber-50 text-amber-900'
+                            : primary.state === 'READY_TO_TEST' || primary.state === 'READY'
+                              ? 'bg-emerald-50 text-emerald-900'
+                              : 'bg-slate-100 text-slate-600'
+                        }`}
+                        data-testid="inventory-primary-status"
                       >
-                        Suggest calculation
-                      </button>
-                    ) : null}
-                  </td>
-                  <td className="py-1 pr-3">{r.resolutionStatus ?? '—'}</td>
-                </tr>
-              ))}
+                        {r.calculationRequired === true ? 'Needs your input' : primary.label}
+                      </span>
+                      {/* Honesty guards retained for contract tests / Advanced honesty */}
+                      <span className="sr-only">
+                        {r.calculationRequired === true ? 'Calculation required' : ''}
+                        {r.policyTestReady === true ? 'Policy Test Ready' : 'Policy test unavailable'}
+                        {r.runtimeReady === true ? 'Runtime Ready' : 'Runtime not ready'}
+                        {r.productionReady === true ? 'Production Ready' : 'Production not ready'}
+                      </span>
+                      {r.productionReady === true ? null : null}
+                    </td>
+                    <td className="py-2 pr-3">
+                      {r.calculationRequired === true && r.canonicalParameterId ? (
+                        <button
+                          type="button"
+                          className="text-[11px] font-medium text-sky-700 underline"
+                          onClick={() =>
+                            setActiveCalcId(
+                              activeCalcId === r.canonicalParameterId
+                                ? null
+                                : String(r.canonicalParameterId),
+                            )
+                          }
+                        >
+                          Complete setup
+                        </button>
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
       ) : null}
+
+      <details className="mt-3 rounded border border-slate-100 p-2">
+        <summary className="cursor-pointer text-[11px] font-medium text-slate-600">
+          Advanced details
+        </summary>
+        <div className="mt-2 space-y-2 text-[11px] text-slate-600">
+          <div>
+            Unresolved references:{' '}
+            {state === 'TECHNICAL_ERROR' || state === 'LOADING' || meta == null
+              ? '—'
+              : String(unresolvedCount)}
+          </div>
+          {unresolved.length > 0 ? (
+            <div
+              className="font-mono text-[11px] text-amber-900"
+              data-testid="dp3-inventory-unresolved-tokens"
+            >
+              {unresolved.join(', ')}
+            </div>
+          ) : null}
+          {rows.map((r, i) => (
+            <div key={`adv-${r.canonicalParameterId ?? i}`} className="rounded bg-slate-50 px-2 py-1">
+              <div className="font-mono text-[10px]">{r.canonicalParameterId ?? r.originalToken}</div>
+              <div>
+                usage={String(r.usageType ?? '—')} · source={String(r.sourceFamily ?? '—')} ·
+                overall={String(r.overallReadiness ?? '—')} · resolution=
+                {String(r.resolutionStatus ?? '—')}
+              </div>
+              <div>
+                policyTestReady={String(r.policyTestReady)} · runtimeReady={String(r.runtimeReady)} ·
+                productionReady={String(r.productionReady)}
+                {r.productionReady === true ? ' · Production Ready' : ' · Production not ready'}
+                {r.policyTestReady === true
+                  ? ' · Policy Test Ready'
+                  : ' · Policy test unavailable'}
+                {r.calculationRequired === true ? ' · Calculation required' : ''}
+              </div>
+            </div>
+          ))}
+        </div>
+      </details>
+
       {activeCalcId ? (
         <SuggestCalculationWorkflow
           canonicalParameterId={activeCalcId}

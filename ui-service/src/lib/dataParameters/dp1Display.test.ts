@@ -12,9 +12,8 @@ import {
 describe('dp1Display lender UX cleanup-2', () => {
   it('uses business language for support statuses', () => {
     expect(parameterSupportBusinessLabel('SUPPORTED_DERIVED')).toBe('Calculated by BillionTech')
-    expect(parameterSupportBusinessLabel('CALCULATION_NOT_IMPLEMENTED')).toBe(
-      'Calculation not yet implemented',
-    )
+    expect(parameterSupportBusinessLabel('CALCULATION_NOT_IMPLEMENTED')).toBe('Needs your input')
+    expect(parameterSupportBusinessLabel('SUPPORTED_RAW')).toBe('Provided directly')
     expect(platformIntegrationLabel('PRODUCTION_READY')).toBe('Production Ready')
     expect(overallReadinessLabel('RUNTIME_READY_NONPROD')).toBe('Runtime Ready — Non-Production')
     expect(sourceTypeLabel('APPLICATION_INPUT')).toBe('Application input')

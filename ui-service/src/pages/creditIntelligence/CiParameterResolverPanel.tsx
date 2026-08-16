@@ -246,14 +246,11 @@ export function CiParameterResolverPanel({
               </p>
               {suggestion.canonicalParameter ? (
                 <p className="text-xs mt-1" data-testid="executability-modes">
-                  Policy Test: {suggestion.policyTestReady === true ? 'READY' : 'NOT READY'}
-                  {' · '}
-                  Runtime: {suggestion.runtimeReady === true ? 'READY' : 'NOT READY'}
-                  {' · '}
-                  Production: {suggestion.productionReady === true ? 'READY' : 'NOT READY'}
-                  {suggestion.executionState
-                    ? ` · (${String(suggestion.executionState)})`
-                    : ''}
+                  {suggestion.calculationRequired === true
+                    ? 'Needs your input'
+                    : suggestion.policyTestReady === true
+                      ? 'Ready to test'
+                      : 'Needs review'}
                 </p>
               ) : null}
               {(suggestion.calculationRequired === true ||
@@ -261,17 +258,32 @@ export function CiParameterResolverPanel({
                 String(suggestion.supportStatus ?? '') === 'CALCULATION_NOT_IMPLEMENTED') &&
               suggestion.canonicalParameter ? (
                 <div className="mt-2 rounded border border-amber-200 bg-white/70 p-2">
-                  <p className="text-xs font-medium text-amber-950">Calculation required</p>
+                  <p className="text-xs font-medium text-amber-950">Needs your input</p>
                   <SuggestCalculationWorkflow
                     canonicalParameterId={String(suggestion.canonicalParameter)}
                     businessName={String(suggestion.businessName ?? suggestion.canonicalParameter)}
                     calculationRequired
                   />
+                  <details className="mt-2">
+                    <summary className="cursor-pointer text-[10px] text-slate-500">
+                      Advanced details
+                    </summary>
+                    <p className="mt-1 text-[10px] text-slate-500" data-testid="executability-modes-advanced">
+                      Policy Test: {suggestion.policyTestReady === true ? 'READY' : 'NOT READY'}
+                      {' · '}
+                      Runtime: {suggestion.runtimeReady === true ? 'READY' : 'NOT READY'}
+                      {' · '}
+                      Production: {suggestion.productionReady === true ? 'READY' : 'NOT READY'}
+                      {suggestion.executionState
+                        ? ` · (${String(suggestion.executionState)})`
+                        : ''}
+                    </p>
+                  </details>
                 </div>
               ) : null}
               {suggestion.productionReady !== true && suggestion.policyTestReady === true ? (
                 <p className="text-xs text-amber-800 mt-1">
-                  Studio / Policy-Test ready only — not production go-live until certified.
+                  Ready to test in Studio — not certified for production lending yet.
                 </p>
               ) : null}
               {suggestion.mappedToProposedEdi === true ? (

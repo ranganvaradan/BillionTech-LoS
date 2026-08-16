@@ -26,12 +26,12 @@ export const PLATFORM_INTEGRATION_LABELS: Record<string, string> = {
 
 /** Lender-facing business labels (prefer over enum codes). */
 export const PARAMETER_SUPPORT_BUSINESS_LABELS: Record<string, string> = {
-  SUPPORTED_RAW: 'Directly provided',
+  SUPPORTED_RAW: 'Provided directly',
   SUPPORTED_DERIVED: 'Calculated by BillionTech',
-  PROVIDER_DOES_NOT_SUPPORT: 'Provider does not supply required data',
-  CALCULATION_NOT_IMPLEMENTED: 'Calculation not yet implemented',
-  SOURCE_NOT_INTEGRATED: 'Integration not yet available',
-  NOT_APPLICABLE: 'Application / internal input',
+  PROVIDER_DOES_NOT_SUPPORT: 'Data not available from provider',
+  CALCULATION_NOT_IMPLEMENTED: 'Needs your input',
+  SOURCE_NOT_INTEGRATED: 'Data source not connected yet',
+  NOT_APPLICABLE: 'Application or internal input',
 }
 
 export const PARAMETER_SUPPORT_LABELS: Record<string, string> = {

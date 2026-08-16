@@ -674,11 +674,6 @@ export function CiPolicyRulesTab({
                       {r.reviewBadge ? (
                         <p className="mt-1 text-xs font-semibold text-emerald-800" data-testid="rule-review-badge">
                           {String(r.reviewBadge)}
-                          {r.executionReadinessLabel ? (
-                            <span className="ml-2 font-normal text-amber-800">
-                              · Execution: {String(r.executionReadinessLabel)}
-                            </span>
-                          ) : null}
                         </p>
                       ) : null}
                           {r.period ? (
@@ -760,10 +755,10 @@ export function CiPolicyRulesTab({
                                     {op.calculationRequired === true ? (
                                       <div className="mt-2 rounded border border-amber-200 bg-amber-50/80 p-2">
                                         <p className="text-xs font-medium text-amber-950">
-                                          Calculation required
+                                          Needs your input
                                         </p>
                                         <p className="text-[11px] text-amber-900">
-                                          Policy test unavailable until calculation is defined
+                                          Complete setup so this rule can be tested.
                                         </p>
                                         {String(op.parameterId ?? op.suggestedParameterId ?? '') ? (
                                           <div className="mt-2">
@@ -774,9 +769,26 @@ export function CiPolicyRulesTab({
                                               businessName={String(
                                                 op.businessName ?? op.label ?? '',
                                               )}
+                                              ruleStatement={String(
+                                                r.businessRule ||
+                                                  [r.parameterName, r.operatorValueLabel]
+                                                    .filter(Boolean)
+                                                    .join(' ') ||
+                                                  '',
+                                              )}
                                               calculationRequired
                                             />
                                           </div>
+                                        ) : null}
+                                        {r.executionReadinessLabel ? (
+                                          <details className="mt-2">
+                                            <summary className="cursor-pointer text-[10px] text-slate-500">
+                                              Advanced details
+                                            </summary>
+                                            <p className="mt-1 text-[10px] text-slate-500">
+                                              Execution: {String(r.executionReadinessLabel)}
+                                            </p>
+                                          </details>
                                         ) : null}
                                       </div>
                                     ) : null}

@@ -76,7 +76,7 @@ export function GacatFactorPicker({ onPick, disabled }: Props) {
   return (
     <div className="rounded-lg border border-sky-200 bg-sky-50/40 p-3" data-testid="gacat-factor-picker">
       <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-sky-900">
-        Add factor from GACAT
+        Add factor from policy catalogue
       </div>
       <p className="mb-2 text-[11px] text-slate-600">
         Choose Source → Parameter from the catalogue. Do not redefine how the value is obtained.
@@ -126,9 +126,9 @@ export function GacatFactorPicker({ onPick, disabled }: Props) {
           </div>
           {selected.calculationRequired === true ? (
             <div className="mt-2 rounded border border-amber-200 bg-amber-50/60 p-2">
-              <p className="text-[11px] font-medium text-amber-950">Calculation required</p>
+              <p className="text-[11px] font-medium text-amber-950">Needs your input</p>
               <p className="text-[10px] text-amber-900 mb-1">
-                Same canonical workflow as Policy Studio — do not create a duplicate parameter.
+                Complete setup for this existing parameter — do not create a duplicate.
               </p>
               <SuggestCalculationWorkflow
                 canonicalParameterId={String(selected.canonicalParameterId)}
