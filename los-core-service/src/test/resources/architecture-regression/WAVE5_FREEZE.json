@@ -3,7 +3,7 @@
   "recordedAtUtc": "2026-08-16T17:00:00Z",
   "branch": "reconcile/laptop-layout-2026-08",
   "SOURCE_START_SHA": "d6c662a78b7c2e937ea3348e0294b0c02a9ca336",
-  "SOURCE_FINAL_SHA": "PENDING_CONTENT_COMMIT",
+  "SOURCE_FINAL_SHA": "f47d9c605051f4ec76fc1ca39cf7075812f1ccf2",
   "GITHUB_REMOTE": "https://github.com/ranganvaradan/BillionTech-LoS.git",
   "SEMANTIC_CATALOGUE_VERSION": "GACAT-SEMANTIC-4.0.0",
   "DB_MIGRATION_WAVE5": "NONE",

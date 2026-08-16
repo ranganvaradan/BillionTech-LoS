@@ -8,8 +8,8 @@ Target: one Policy DSL semantic evaluator + CPES values + Frozen translation + o
 | Field | Value |
 |-------|-------|
 | SOURCE_START_SHA | `d6c662a78b7c2e937ea3348e0294b0c02a9ca336` |
-| SOURCE_FINAL_SHA | *(set after content commit)* |
-| GITHUB_REMOTE_SHA | *(set after push)* |
+| SOURCE_FINAL_SHA | `f47d9c605051f4ec76fc1ca39cf7075812f1ccf2` |
+| GITHUB_REMOTE_SHA | *(set after docs push)* |
 | DB_MIGRATION | **NONE** |
 | SEMANTIC_CATALOGUE_VERSION | `GACAT-SEMANTIC-4.0.0` |
 
