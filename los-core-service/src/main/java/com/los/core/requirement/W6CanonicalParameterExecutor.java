@@ -26,13 +26,17 @@ public class W6CanonicalParameterExecutor {
             String exactProducerPath,
             Map<String, Object> provenance,
             String reason,
-            boolean requirementSatisfied) {
+            boolean requirementSatisfied,
+            boolean capability,
+            Map<String, Object> executionContract) {
 
         public Map<String, Object> toMap() {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("canonicalParameterId", canonicalParameterId);
             m.put("executionStatus", status == null ? null : status.name());
             m.put("value", value);
+            m.put("valueAvailable", status == ExecutionStatus.VALUE_AVAILABLE);
+            m.put("capability", capability);
             m.put("producerId", producerId);
             m.put("producerType", producerType);
             m.put("exactProducerPath", exactProducerPath);
@@ -40,6 +44,9 @@ public class W6CanonicalParameterExecutor {
             m.put("reason", reason);
             m.put("requirementSatisfied", requirementSatisfied);
             m.put("executionAuthority", "CanonicalParameterExecutionService");
+            m.put("certificationStatus", "NOT_ESTABLISHED");
+            m.put("executionContract", executionContract);
+            m.put("note", "SOURCE_ACQUIRED != PARAMETER_AVAILABLE — requirementSatisfied uses VALUE_AVAILABLE only");
             return m;
         }
     }
@@ -57,6 +64,8 @@ public class W6CanonicalParameterExecutor {
                 er.exactProducerPath(),
                 er.provenance(),
                 er.reason(),
-                ok);
+                ok,
+                er.capability(),
+                er.toCanonicalContractMap());
     }
 }

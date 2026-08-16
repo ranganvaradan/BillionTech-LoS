@@ -109,6 +109,11 @@ public final class ParameterExecutabilitySupport {
         out.put("designable", proj.get("designable"));
         out.put("executionAuthority", "CanonicalParameterExecutionService");
         out.put("spineInstalled", ExecutionCapabilityAuthority.isInstalled());
+        out.put("catalogueFlagsAreNotExecutionAuthority", true);
+        out.put("certificationStatus", "NOT_ESTABLISHED");
+        if (proj.get("executionContractSample") != null) {
+            out.put("executionContractSample", proj.get("executionContractSample"));
+        }
         return out;
     }
 

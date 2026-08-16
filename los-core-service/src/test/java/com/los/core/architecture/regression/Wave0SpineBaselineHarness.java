@@ -40,7 +40,14 @@ public final class Wave0SpineBaselineHarness {
 
     public Map<String, Object> captureCapabilitySnapshot() {
         Map<String, Object> out = new LinkedHashMap<>();
-        out.put("wave", "WAVE_0");
+        out.put("wave", "WAVE_1");
+        out.put("wave0BaselineCapabilityCounts", Map.of(
+                "policyTestCapableCount", 38,
+                "w6CapableCount", 28,
+                "underwritingCapableCount", 38));
+        out.put("wave1CapabilityChangeClass", "EXPECTED_WAVE_1_CONTRACT_CHANGE");
+        out.put("wave1CapabilityChangeWhy",
+                "BuiltInBankingMetricProducer.hasCapability true without facts (capability != value availability)");
         out.put("gacatAuthority", "GacatCatalogueSeed.all() via CanonicalParameterRegistry.fromSeedForTestsOnly");
         out.put("totalParameters", registry.all().size());
 

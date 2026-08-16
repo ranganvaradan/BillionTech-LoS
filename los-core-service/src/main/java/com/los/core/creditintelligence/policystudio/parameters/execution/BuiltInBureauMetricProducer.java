@@ -115,6 +115,7 @@ public final class BuiltInBureauMetricProducer implements ParameterProducer {
                 .value(value)
                 .producerType(ProducerType.BUILT_IN)
                 .producerId(PRODUCER_ID)
+                .producerVersion(BureauMetricService.METRIC_VERSION)
                 .dependencies(List.of())
                 .capability(true)
                 .provenance(prov)

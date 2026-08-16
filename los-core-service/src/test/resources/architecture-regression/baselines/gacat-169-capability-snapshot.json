@@ -1,10 +1,17 @@
 {
-  "wave" : "WAVE_0",
+  "wave" : "WAVE_1",
+  "wave0BaselineCapabilityCounts" : {
+    "policyTestCapableCount" : 38,
+    "w6CapableCount" : 28,
+    "underwritingCapableCount" : 38
+  },
+  "wave1CapabilityChangeClass" : "EXPECTED_WAVE_1_CONTRACT_CHANGE",
+  "wave1CapabilityChangeWhy" : "BuiltInBankingMetricProducer.hasCapability true without facts (capability != value availability)",
   "gacatAuthority" : "GacatCatalogueSeed.all() via CanonicalParameterRegistry.fromSeedForTestsOnly",
   "totalParameters" : 169,
-  "policyTestCapableCount" : 38,
-  "w6CapableCount" : 28,
-  "underwritingCapableCount" : 38,
+  "policyTestCapableCount" : 40,
+  "w6CapableCount" : 30,
+  "underwritingCapableCount" : 40,
   "parameters" : [ {
     "canonicalId" : "bureau.score",
     "catalogueType" : "RAW",
@@ -1100,9 +1107,9 @@
   }, {
     "canonicalId" : "banking.avg_daily_balance_3m",
     "catalogueType" : "DERIVED",
-    "policyTestCapable" : false,
-    "w6Capable" : false,
-    "underwritingCapable" : false,
+    "policyTestCapable" : true,
+    "w6Capable" : true,
+    "underwritingCapable" : true,
     "legacyImplemented" : true,
     "legacyProductionReady" : true,
     "runtimeFactAliases" : [ "banking.balance.average_3m", "banking.average_balance" ],
@@ -1136,9 +1143,9 @@
   }, {
     "canonicalId" : "banking.emi_bounce_count_3m",
     "catalogueType" : "DERIVED",
-    "policyTestCapable" : false,
-    "w6Capable" : false,
-    "underwritingCapable" : false,
+    "policyTestCapable" : true,
+    "w6Capable" : true,
+    "underwritingCapable" : true,
     "legacyImplemented" : true,
     "legacyProductionReady" : true,
     "runtimeFactAliases" : [ "banking.bounce.emi_count_3m" ],

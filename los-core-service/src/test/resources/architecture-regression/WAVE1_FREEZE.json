@@ -1,0 +1,43 @@
+{
+  "wave": "PLATFORM-CONVERGENCE-WAVE-1-EXECUTION-RESULT-CONTRACT",
+  "recordedAtUtc": "2026-08-16T16:00:00Z",
+  "branch": "reconcile/laptop-layout-2026-08",
+  "SOURCE_START_SHA": "26c44f304dbcd6035601c1792d0151ae1f7877bf",
+  "SOURCE_FINAL_SHA_NOTE": "Set after Wave-1 commit; pre-commit working tree on SOURCE_START_SHA",
+  "GITHUB_REMOTE": "https://github.com/ranganvaradan/BillionTech-LoS.git",
+  "GITHUB_REMOTE_SHA_NOTE": "Remote may lag until push; Wave-0 freeze tip was local HEAD 26c44f3",
+  "Internal_deployed_SOURCE_SHA": "3da1ad4316eeda581975da41e6a23b2a258d4029",
+  "Client_deployed_SOURCE_SHA": "3da1ad4316eeda581975da41e6a23b2a258d4029",
+  "SAME_ARTIFACT_INTERNAL_CLIENT": true,
+  "DB_MIGRATION_WAVE1": "NONE",
+  "GACAT_MUTATED": false,
+  "VIKASAM_MUTATED": false,
+  "NEW_CALCULATION_CAPABILITY_ADDED": false,
+  "POLICY_RUNTIME_CHANGED": false,
+  "BUSINESS_BEHAVIOUR_INTENTIONALLY_CHANGED": false,
+  "EXECUTION_RESULT_CLASS": "com.los.core.creditintelligence.policystudio.parameters.execution.ExecutionResult",
+  "capabilitySemanticsFix": {
+    "class": "EXPECTED_WAVE_1_CONTRACT_CHANGE",
+    "producer": "BuiltInBankingMetricProducer",
+    "ids": ["banking.avg_daily_balance_3m", "banking.emi_bounce_count_3m"],
+    "before": {
+      "policyTestCapableCount": 38,
+      "w6CapableCount": 28,
+      "underwritingCapableCount": 38,
+      "bankingCapabilityWithoutFacts": false
+    },
+    "after": {
+      "policyTestCapableCount": 40,
+      "w6CapableCount": 30,
+      "underwritingCapableCount": 40,
+      "bankingCapabilityWithoutFacts": true,
+      "emptyContextStatus": "DATA_NOT_AVAILABLE"
+    },
+    "why": "Capability means producer exists for ID/mode; missing facts are DATA_NOT_AVAILABLE, not capability=false"
+  },
+  "notes": [
+    "Wave 1 is contract convergence only — no FILTER/SUM, no GACAT class changes, no Policy DSL production promotion.",
+    "Certification remains NOT_ESTABLISHED on the execution contract.",
+    "Catalogue implemented/production_ready never override execution authority."
+  ]
+}

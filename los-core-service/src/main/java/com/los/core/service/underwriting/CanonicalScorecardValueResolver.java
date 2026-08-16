@@ -32,10 +32,12 @@ public final class CanonicalScorecardValueResolver {
             String exactProducerPath,
             Map<String, Object> provenance,
             String reason,
-            boolean legacyFallbackUsed) {
+            boolean legacyFallbackUsed,
+            boolean capability,
+            Map<String, Object> executionContract) {
 
         public boolean valueAvailable() {
-            return status == ExecutionStatus.VALUE_AVAILABLE && (numericValue != null || stringValue != null || rawValue != null);
+            return status == ExecutionStatus.VALUE_AVAILABLE;
         }
 
         public Map<String, Object> toTraceMap() {
@@ -43,6 +45,8 @@ public final class CanonicalScorecardValueResolver {
             m.put("canonicalParameterId", canonicalParameterId);
             m.put("executionStatus", status == null ? null : status.name());
             m.put("valueUsed", numericValue != null ? numericValue.toPlainString() : stringValue);
+            m.put("valueAvailable", valueAvailable());
+            m.put("capability", capability);
             m.put("producerId", producerId);
             m.put("producerType", producerType);
             m.put("exactProducerPath", exactProducerPath);
@@ -50,6 +54,8 @@ public final class CanonicalScorecardValueResolver {
             m.put("reason", reason);
             m.put("legacyFallbackUsed", legacyFallbackUsed);
             m.put("valueAuthority", AUTHORITY);
+            m.put("executionContract", executionContract);
+            m.put("certificationStatus", "NOT_ESTABLISHED");
             return m;
         }
     }
@@ -109,11 +115,15 @@ public final class CanonicalScorecardValueResolver {
                 er.exactProducerPath(),
                 er.provenance(),
                 er.reason(),
-                false);
+                false,
+                er.capability(),
+                er.toCanonicalContractMap());
     }
 
     private static ResolveOutcome unavailable(String id, ExecutionStatus status, String reason) {
-        return new ResolveOutcome(id, status, null, null, null, null, null, null, Map.of(), reason, false);
+        return new ResolveOutcome(id, status, null, null, null, null, null, null, Map.of(), reason, false,
+                false, Map.of("status", status == null ? null : status.name(),
+                "capability", false, "executionAuthority", AUTHORITY));
     }
 
     public static BigDecimal toBigDecimal(Object value) {

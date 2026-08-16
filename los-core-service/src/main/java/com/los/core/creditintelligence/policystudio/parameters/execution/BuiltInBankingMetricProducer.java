@@ -39,18 +39,9 @@ public final class BuiltInBankingMetricProducer implements ParameterProducer {
 
     @Override
     public boolean hasCapability(String canonicalParameterId, EvaluationContext ctx, DependencyResolver resolver) {
-        if (!claims(canonicalParameterId)) return false;
-        if (EMI_BOUNCE.equals(canonicalParameterId)) {
-            return Boolean.TRUE.equals(ctx.entities().get(ENTITY_EMI_ENABLED))
-                    || ctx.inputs().containsKey(EMI_BOUNCE)
-                    || ctx.facts().containsKey(EMI_BOUNCE);
-        }
-        if (ADB_3M.equals(canonicalParameterId)) {
-            return Boolean.TRUE.equals(ctx.entities().get(ENTITY_ADB_ENABLED))
-                    || ctx.inputs().containsKey(ADB_3M)
-                    || ctx.facts().containsKey(ADB_3M);
-        }
-        return false;
+        // Wave-1 contract: BuiltIn claim ⇒ capability true even when application facts are missing.
+        // Missing facts yield DATA_NOT_AVAILABLE on execute — not capability=false.
+        return claims(canonicalParameterId) && supports(ctx.mode());
     }
 
     @Override

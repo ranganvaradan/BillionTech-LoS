@@ -44,4 +44,4 @@ mvn -q "-Dtest=Wave0ArchitectureRegressionTest,Wave0CapabilitySnapshotTest,Wave0
 - GACAT_MUTATED = NO
 - VIKASAM_MUTATED = NO
 - BUSINESS_BEHAVIOUR_INTENTIONALLY_CHANGED = NO
-- WAVE_1 = NOT STARTED
+- WAVE_1 = **COMPLETE** (see `WAVE1_EXIT_REPORT.md`) — contract convergence only; capability counts 38/28/38 → 40/30/40 for banking BuiltIn semantic fix

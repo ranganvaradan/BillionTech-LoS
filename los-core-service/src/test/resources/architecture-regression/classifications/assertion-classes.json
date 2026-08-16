@@ -41,6 +41,12 @@
       "item": "payment_history not production-materialized by default",
       "class": "KNOWN_GAP",
       "expectedToChangeInWaves": ["WAVE_3"]
+    },
+    {
+      "item": "BuiltInBankingMetricProducer capability without facts (ADB + EMI bounce)",
+      "class": "EXPECTED_TO_CHANGE_IN_WAVE_X",
+      "expectedToChangeInWaves": ["WAVE_1"],
+      "wave1Resolution": "EXPECTED_WAVE_1_CONTRACT_CHANGE — capability true + DATA_NOT_AVAILABLE when facts missing; counts 38→40 PT/UW, 28→30 W6"
     }
   ]
 }

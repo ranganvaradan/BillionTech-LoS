@@ -47,8 +47,10 @@ public final class ManualInputProducer implements ParameterProducer {
         if (!claims(canonicalParameterId)) {
             return ExecutionResult.notExecutable(canonicalParameterId, "Not a MANUAL catalogue parameter");
         }
-        Object v = ctx.inputs().get(canonicalParameterId);
-        if (v == null) {
+        Object v = null;
+        if (ctx.inputs().containsKey(canonicalParameterId) && ctx.inputs().get(canonicalParameterId) != null) {
+            v = ctx.inputs().get(canonicalParameterId);
+        } else if (ctx.facts().containsKey(canonicalParameterId) && ctx.facts().get(canonicalParameterId) != null) {
             v = ctx.facts().get(canonicalParameterId);
         }
         if (v == null) {
@@ -59,6 +61,7 @@ public final class ManualInputProducer implements ParameterProducer {
                     .dependencies(List.of())
                     .capability(true)
                     .reason("Manual input required for " + canonicalParameterId)
+                    .missingReason("Manual input required for " + canonicalParameterId)
                     .exactProducerPath(PRODUCER_ID + " (INPUT_REQUIRED)")
                     .build();
         }

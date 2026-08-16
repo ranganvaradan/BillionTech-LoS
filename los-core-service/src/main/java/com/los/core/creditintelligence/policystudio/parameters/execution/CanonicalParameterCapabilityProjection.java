@@ -136,6 +136,21 @@ public final class CanonicalParameterCapabilityProjection {
         out.put("executionAuthority", ParameterTruthAuthorities.EXECUTION_SPINE);
         out.put("identityAuthority", ParameterTruthAuthorities.GACAT_IDENTITY);
         out.put("productionCertificationAuthority", ParameterTruthAuthorities.PRODUCTION_CERTIFICATION);
+        out.put("catalogueFlagsAreNotExecutionAuthority", true);
+        out.put("certificationStatus", PROD_CERT_NOT_ESTABLISHED);
+        // Wave-1: expose empty-context contract sample for POLICY_TEST (capability vs value)
+        try {
+            CanonicalParameterExecutionService spine = ExecutionCapabilityAuthority.orNull();
+            if (spine != null) {
+                EvaluationContext probeCtx = EvaluationContext.builder()
+                        .mode(EvaluationMode.POLICY_TEST)
+                        .build();
+                ExecutionResult probe = spine.resolveAndExecute(def.id(), probeCtx);
+                out.put("executionContractSample", CanonicalExecutionContractProjection.project(probe));
+            }
+        } catch (Exception ignored) {
+            // projection must not fail design surfaces
+        }
         return out;
     }
 

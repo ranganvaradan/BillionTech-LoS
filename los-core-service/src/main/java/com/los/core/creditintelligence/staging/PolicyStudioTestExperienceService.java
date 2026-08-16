@@ -1601,16 +1601,20 @@ public class PolicyStudioTestExperienceService {
             } else if (er != null && er.valueAvailable()) {
                 prov.put("value", er.value());
                 boolean userOverlay = metricId != null && normalizedInputs.containsKey(metricId);
-                if (userOverlay) {
+                if (userOverlay || er.simulatedValue()) {
                     prov.put("status", "MANUAL_TEST_VALUE");
                     prov.put("simulationOnly", true);
-                    prov.put("sourceLabel", "Test value entered manually (via execution spine)");
+                    prov.put("simulatedValueDoesNotImplyExecutable", !er.capability());
+                    prov.put("sourceLabel", er.capability()
+                            ? "Test value entered manually (via execution spine)"
+                            : "Simulated test value — producer not executable (capability=false)");
                 } else {
                     prov.put("status", er.producerType() == null ? "SPINE" : er.producerType().name());
                     prov.put("sourceLabel", er.exactProducerPath());
                 }
                 prov.put("executionStatus", er.status().name());
                 prov.put("capability", er.capability());
+                prov.put("executionContract", er.toCanonicalContractMap());
                 prov.put("spineProvenance", er.provenance());
                 prov.put("exactProducerPath", er.exactProducerPath());
                 prov.put("policyTestUsedSpine", true);

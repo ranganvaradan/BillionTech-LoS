@@ -44,8 +44,9 @@ public final class RawFactProducer implements ParameterProducer {
         if (!claims(canonicalParameterId)) {
             return ExecutionResult.notExecutable(canonicalParameterId, "RAW producer does not claim " + canonicalParameterId);
         }
-        Object fromInput = ctx.inputs().get(canonicalParameterId);
-        if (fromInput != null) {
+        // Overlay: key present with non-null value (0 / false / empty collection are valid values)
+        if (ctx.inputs().containsKey(canonicalParameterId) && ctx.inputs().get(canonicalParameterId) != null) {
+            Object fromInput = ctx.inputs().get(canonicalParameterId);
             Map<String, Object> prov = new LinkedHashMap<>();
             prov.put("sourceType", "POLICY_TEST_INPUT_OVERLAY");
             prov.put("producerId", PRODUCER_ID);
@@ -60,17 +61,18 @@ public final class RawFactProducer implements ParameterProducer {
                     .exactProducerPath("RawFactProducer ← inputs[" + canonicalParameterId + "]")
                     .build();
         }
-        Object fact = ctx.facts().get(canonicalParameterId);
-        if (fact == null) {
+        if (!ctx.facts().containsKey(canonicalParameterId) || ctx.facts().get(canonicalParameterId) == null) {
             return ExecutionResult.builder(canonicalParameterId)
                     .status(ExecutionStatus.DATA_NOT_AVAILABLE)
                     .producerType(ProducerType.RAW)
                     .producerId(PRODUCER_ID)
                     .capability(true)
                     .reason("Exact RAW fact not present in EvaluationContext: " + canonicalParameterId)
+                    .missingReason("Exact RAW fact not present in EvaluationContext: " + canonicalParameterId)
                     .exactProducerPath("RawFactProducer ← facts[" + canonicalParameterId + "] (missing)")
                     .build();
         }
+        Object fact = ctx.facts().get(canonicalParameterId);
         Map<String, Object> prov = new LinkedHashMap<>();
         prov.put("sourceType", "RAW_FACT");
         prov.put("producerId", PRODUCER_ID);
