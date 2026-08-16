@@ -15,6 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Administration → Data & Parameters (CanonicalParameterRegistry read model only).
@@ -462,8 +463,15 @@ public class DataParametersAdminService {
     private Map<String, Object> lineage(CanonicalParameterDefinition d) {
         Map<String, Object> lin = new LinkedHashMap<>();
         lin.put("type", d.type());
-        lin.put("howCalculated", d.calculationSummary());
-        lin.put("calculationSummary", d.calculationSummary());
+        String how = d.calculationSummary();
+        Optional<String> authoredHow =
+                com.los.core.creditintelligence.policystudio.parameters.derived
+                        .AuthoredDerivedCalculationSupport.latestExecutableHow(d.id());
+        if (authoredHow.isPresent()) {
+            how = authoredHow.get();
+        }
+        lin.put("howCalculated", how);
+        lin.put("calculationSummary", how);
         List<String> prims = d.requiredPrimitives() == null ? List.of() : d.requiredPrimitives();
         if (dbCataloguePresent()) {
             List<Map<String, Object>> persisted = catalogueRepository.lineageRows(d.id());
@@ -472,9 +480,19 @@ public class DataParametersAdminService {
                 prims = persisted.stream().map(r -> String.valueOf(r.get("input"))).toList();
             }
         }
+        Optional<List<String>> authoredDeps =
+                com.los.core.creditintelligence.policystudio.parameters.derived
+                        .AuthoredDerivedCalculationSupport.latestExecutableDependencies(d.id());
+        List<String> displayInputs = prims;
+        if (authoredDeps.isPresent()) {
+            displayInputs = com.los.core.creditintelligence.policystudio.parameters.derived
+                    .AuthoredDerivedCalculationSupport.humanizeInputs(
+                            authoredDeps.get(),
+                            Map.of("matchField", "dpd", "dateField", "month"));
+        }
         lin.put("requiredPrimitives", prims);
-        lin.put("rawInputs", prims);
-        lin.put("inputs", prims);
+        lin.put("rawInputs", displayInputs);
+        lin.put("inputs", displayInputs);
         lin.put("period", d.period());
         lin.put("window", d.period());
         lin.put("unit", d.unit());
@@ -487,9 +505,9 @@ public class DataParametersAdminService {
             lin.put("productionStatus", d.capability().primaryStatus());
         }
         if (CanonicalParameterDefinition.DERIVED.equalsIgnoreCase(d.type())) {
-            lin.put("businessLineage", d.calculationSummary() == null
+            lin.put("businessLineage", how == null
                     ? "Derived from required primitives"
-                    : d.calculationSummary());
+                    : how);
         }
         return lin;
     }

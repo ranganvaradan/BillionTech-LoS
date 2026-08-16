@@ -6,6 +6,8 @@ import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -42,6 +44,33 @@ public class AuthoredDerivedCalculationSupport {
         AuthoredDerivedCalculationSupport inst = INSTANCE;
         if (inst == null || face == null) return;
         inst.applyOverlay(face);
+    }
+
+    /**
+     * Lender-facing calculation narrative for an authored definition the spine would execute.
+     */
+    public static Optional<String> latestExecutableHow(String canonicalParameterId) {
+        AuthoredDerivedCalculationSupport inst = INSTANCE;
+        if (inst == null || canonicalParameterId == null || canonicalParameterId.isBlank()) {
+            return Optional.empty();
+        }
+        return inst.definitionService.latestFor(canonicalParameterId.trim(), null)
+                .filter(d -> AuthoredDerivedProducer.isSpineExecutableDefinition(
+                        canonicalParameterId.trim(), d.getExpressionJson()))
+                .map(CiGacatDerivedCalculationDefinition::getDescription)
+                .filter(s -> s != null && !s.isBlank());
+    }
+
+    public static Optional<List<String>> latestExecutableDependencies(String canonicalParameterId) {
+        AuthoredDerivedCalculationSupport inst = INSTANCE;
+        if (inst == null || canonicalParameterId == null || canonicalParameterId.isBlank()) {
+            return Optional.empty();
+        }
+        return inst.definitionService.latestFor(canonicalParameterId.trim(), null)
+                .filter(d -> AuthoredDerivedProducer.isSpineExecutableDefinition(
+                        canonicalParameterId.trim(), d.getExpressionJson()))
+                .map(CiGacatDerivedCalculationDefinition::getDependencyIds)
+                .filter(deps -> deps != null && !deps.isEmpty());
     }
 
     private void applyOverlay(Map<String, Object> face) {
@@ -93,7 +122,17 @@ public class AuthoredDerivedCalculationSupport {
             }
         }
         if (d.getDescription() != null && !d.getDescription().isBlank()) {
-            face.put("howCalculated", d.getDescription());
+            String how = d.getDescription().trim();
+            if (d.getDependencyIds() != null && !d.getDependencyIds().isEmpty()) {
+                List<String> inputs = humanizeInputs(d.getDependencyIds(), d.getExpressionJson());
+                if (!inputs.isEmpty()) {
+                    how = how + "\n\nInputs:\n- " + String.join("\n- ", inputs);
+                }
+            }
+            face.put("howCalculated", how);
+            face.put("calculationInputs", humanizeInputs(d.getDependencyIds(), d.getExpressionJson()));
+        } else if (d.getDependencyIds() != null && !d.getDependencyIds().isEmpty()) {
+            face.put("calculationInputs", humanizeInputs(d.getDependencyIds(), d.getExpressionJson()));
         }
         String st = d.getStatus() == null ? "" : d.getStatus().toUpperCase(Locale.ROOT);
         if (DerivedCalculationDefinitionService.STATUS_TESTED.equals(st)
@@ -104,5 +143,25 @@ public class AuthoredDerivedCalculationSupport {
         if (DerivedCalculationDefinitionService.STATUS_PRODUCTION_READY.equals(st)) {
             face.put("calculationProductionReady", true);
         }
+    }
+
+    public static List<String> humanizeInputs(List<String> deps, Map<String, Object> expr) {
+        List<String> out = new ArrayList<>();
+        boolean paymentHistory = deps.stream().anyMatch(d ->
+                d != null && d.toLowerCase(Locale.ROOT).contains("payment_history"));
+        if (paymentHistory) {
+            out.add("Bureau payment history");
+            Object matchField = expr == null ? null : expr.get("matchField");
+            if (matchField != null && "dpd".equalsIgnoreCase(String.valueOf(matchField))) {
+                out.add("Days past due");
+            }
+            Object dateField = expr == null ? null : expr.get("dateField");
+            if (dateField != null && "month".equalsIgnoreCase(String.valueOf(dateField))) {
+                out.add("Reporting month");
+            }
+        } else {
+            out.addAll(deps);
+        }
+        return out;
     }
 }

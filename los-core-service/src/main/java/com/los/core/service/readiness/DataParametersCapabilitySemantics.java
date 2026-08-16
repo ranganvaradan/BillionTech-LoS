@@ -1,6 +1,7 @@
 package com.los.core.service.readiness;
 
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterDefinition;
+import com.los.core.creditintelligence.policystudio.parameters.derived.AuthoredDerivedCalculationSupport;
 import com.los.core.creditintelligence.policystudio.parameters.execution.CanonicalParameterCapabilityProjection;
 
 import java.util.ArrayList;
@@ -68,10 +69,12 @@ public final class DataParametersCapabilitySemantics {
 
         ParameterSupport support = resolveParameterSupport(def, readiness, platform);
         String lender = resolveLenderSubscription(family, sourceType, platform, subscriptionProbe);
-        ProductionPolicyAvailability avail = resolveProductionPolicyAvailability(
-                def, readiness, platform, support, lender);
         // Platform/support remain descriptive; execution + design/cert from shared projection
         Map<String, Object> spineView = CanonicalParameterCapabilityProjection.project(def);
+        // Spine-executable authored derived must not remain "calculation not implemented"
+        support = alignSupportWithSpine(def, support, spineView);
+        ProductionPolicyAvailability avail = resolveProductionPolicyAvailability(
+                def, readiness, platform, support, lender);
         LiveUseAvailability live = resolveLiveUseAvailability(platform, support, lender, avail);
 
         Map<String, Object> out = new LinkedHashMap<>();
@@ -95,7 +98,14 @@ public final class DataParametersCapabilitySemantics {
         paramSupport.put("label", supportLabel(support.status()));
         paramSupport.put("businessLabel", supportBusinessLabel(support.status()));
         paramSupport.put("how", support.how());
-        paramSupport.put("businessHow", businessHow(platform, support));
+        // Prefer authored lender narrative over generic "Calculated by BillionTech from …"
+        String businessHowText = businessHow(platform, support);
+        if (SUPPORT_SUPPORTED_DERIVED.equals(support.status())
+                && support.how() != null
+                && support.how().length() > 48) {
+            businessHowText = support.how();
+        }
+        paramSupport.put("businessHow", businessHowText);
         paramSupport.put("evidence", support.evidence());
         out.put("parameterSupport", paramSupport);
 
@@ -688,6 +698,51 @@ public final class DataParametersCapabilitySemantics {
             return "Integration not yet available";
         }
         return support.how();
+    }
+
+    /**
+     * When the spine can execute an authored derived calculation, catalogue
+     * {@code DEFINED_NOT_IMPLEMENTED} must not keep D&amp;P on CALCULATION_NOT_IMPLEMENTED.
+     */
+    static ParameterSupport alignSupportWithSpine(
+            CanonicalParameterDefinition def,
+            ParameterSupport support,
+            Map<String, Object> spineView) {
+        if (def == null || support == null || spineView == null) {
+            return support;
+        }
+        if (!CanonicalParameterDefinition.DERIVED.equalsIgnoreCase(def.type())) {
+            return support;
+        }
+        if (!Boolean.TRUE.equals(spineView.get("policyTestReady"))) {
+            return support;
+        }
+        if (SUPPORT_SUPPORTED_DERIVED.equals(support.status())
+                || SUPPORT_SUPPORTED_RAW.equals(support.status())
+                || SUPPORT_NOT_APPLICABLE.equals(support.status())) {
+            // Already supported — still prefer authored narrative when longer
+            return AuthoredDerivedCalculationSupport.latestExecutableHow(def.id())
+                    .filter(h -> h.length() > 48)
+                    .map(h -> new ParameterSupport(support.status(), h, withSpineEvidence(support.evidence())))
+                    .orElse(support);
+        }
+        if (!SUPPORT_CALCULATION_NOT_IMPLEMENTED.equals(support.status())
+                && !SUPPORT_PROVIDER_DOES_NOT_SUPPORT.equals(support.status())) {
+            return support;
+        }
+        String how = AuthoredDerivedCalculationSupport.latestExecutableHow(def.id())
+                .orElse("Counts values using an approved BillionTech derived calculation.");
+        return new ParameterSupport(
+                SUPPORT_SUPPORTED_DERIVED,
+                how,
+                withSpineEvidence(support.evidence()));
+    }
+
+    private static List<String> withSpineEvidence(List<String> prior) {
+        List<String> ev = new ArrayList<>(prior == null ? List.of() : prior);
+        ev.add("spinePolicyTestReady=true");
+        ev.add("authority=CanonicalParameterExecutionService");
+        return ev;
     }
 
     public static String supportLabel(String status) {
