@@ -106,7 +106,9 @@ public class StagingDemoController {
         assertInternalToken(token);
         assertStagingDemoEnabled();
         Map<String, Object> landing = policyStudioDemoService.landing();
-        // Merge durable catalogue rows (scheduled/approved) that may not be in-memory sessions
+        // POLICY-STUDIO-DURABLE-LANDING-LIST-1 — membership already from durable documents.
+        // Catalogue merge may only enrich / fill orphan catalogue rows; never hide durables.
+        // Deduplicate strictly by policy document ID (never by name).
         try {
             Map<String, Object> cat = policyCatalogueFacade.list();
             @SuppressWarnings("unchecked")
@@ -136,7 +138,7 @@ public class StagingDemoController {
                 row.put("kind", "catalogue");
                 row.put("underwritingRuleCount", c.get("underwritingRuleCount"));
                 row.put("needsInputCount", c.get("needsInputCount"));
-                // Same lifecycle action matrix as session-backed rows (no hardcoded second matrix).
+                row.put("membershipAuthority", "CATALOGUE_ORPHAN");
                 row.put("availableActions", policyLifecycleService.landingActionsForCatalogueRow(c));
                 existing.add(row);
                 if (docId != null) seen.add(docId);
@@ -145,6 +147,10 @@ public class StagingDemoController {
             landing.put("existingPolicyCount", existing.size());
         } catch (Exception e) {
             log.warn("policy landing catalogue merge skipped reason={}", e.getClass().getSimpleName());
+            @SuppressWarnings("unchecked")
+            java.util.List<?> existing = landing.get("existingPolicies") instanceof java.util.List<?> l
+                    ? l : java.util.List.of();
+            landing.put("existingPolicyCount", existing.size());
         }
         return landing;
     }

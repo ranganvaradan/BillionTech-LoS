@@ -23,6 +23,7 @@ import com.los.core.creditintelligence.policystudio.service.PolicyClauseExtracto
 import com.los.core.creditintelligence.policystudio.service.PolicyDocumentService;
 import com.los.core.creditintelligence.policystudio.service.PolicyImplementabilityService;
 import com.los.core.creditintelligence.policystudio.service.PolicyReviewService;
+import com.los.core.creditintelligence.policystudio.service.PolicyStudioDurableLandingListService;
 import com.los.core.creditintelligence.policystudio.service.PolicyStudioOrchestrator;
 import com.los.core.creditintelligence.policystudio.service.PolicyTextExtractionService;
 import com.los.core.creditintelligence.policystudio.service.RuleCandidateFactory;
@@ -62,6 +63,7 @@ public class StagingPolicyStudioDemoService {
     private final PolicyLifecycleService lifecycleService;
     private final CatalogueCapabilityDraftService catalogueDraftService;
     private final CmRuleAuthoringService cmRuleAuthoringService;
+    private final PolicyStudioDurableLandingListService durableLandingListService;
 
     /** documentId → meta used to rebuild prospect view after resolve/review */
     private final ConcurrentHashMap<UUID, Map<String, Object>> sessionMeta = new ConcurrentHashMap<>();
@@ -74,7 +76,8 @@ public class StagingPolicyStudioDemoService {
             BusinessMeasureDesignerService measureDesigner,
             PolicyLifecycleService lifecycleService,
             CatalogueCapabilityDraftService catalogueDraftService,
-            CmRuleAuthoringService cmRuleAuthoringService) {
+            CmRuleAuthoringService cmRuleAuthoringService,
+            PolicyStudioDurableLandingListService durableLandingListService) {
         this.properties = properties;
         this.orchestrator = orchestrator;
         this.textExtractionService = textExtractionService;
@@ -85,6 +88,9 @@ public class StagingPolicyStudioDemoService {
                 : new CatalogueCapabilityDraftService(new CreditCapabilityCatalogueService(properties));
         this.cmRuleAuthoringService = cmRuleAuthoringService != null
                 ? cmRuleAuthoringService : new CmRuleAuthoringService();
+        this.durableLandingListService = durableLandingListService != null
+                ? durableLandingListService
+                : new PolicyStudioDurableLandingListService();
     }
 
     /** Test / legacy convenience — Spring uses the @Autowired constructor. */
@@ -93,7 +99,7 @@ public class StagingPolicyStudioDemoService {
             PolicyStudioOrchestrator orchestrator,
             PolicyTextExtractionService textExtractionService) {
         this(properties, orchestrator, textExtractionService, new BusinessMeasureDesignerService(),
-                null, null, new CmRuleAuthoringService());
+                null, null, new CmRuleAuthoringService(), new PolicyStudioDurableLandingListService());
     }
 
     public StagingPolicyStudioDemoService(
@@ -101,7 +107,21 @@ public class StagingPolicyStudioDemoService {
             PolicyStudioOrchestrator orchestrator,
             PolicyTextExtractionService textExtractionService,
             BusinessMeasureDesignerService measureDesigner) {
-        this(properties, orchestrator, textExtractionService, measureDesigner, null, null, new CmRuleAuthoringService());
+        this(properties, orchestrator, textExtractionService, measureDesigner, null, null,
+                new CmRuleAuthoringService(), new PolicyStudioDurableLandingListService());
+    }
+
+    /** Unit-test convenience with lifecycle + durable landing list. */
+    public StagingPolicyStudioDemoService(
+            CreditIntelligenceProperties properties,
+            PolicyStudioOrchestrator orchestrator,
+            PolicyTextExtractionService textExtractionService,
+            BusinessMeasureDesignerService measureDesigner,
+            PolicyLifecycleService lifecycleService,
+            CatalogueCapabilityDraftService catalogueDraftService,
+            CmRuleAuthoringService cmRuleAuthoringService) {
+        this(properties, orchestrator, textExtractionService, measureDesigner, lifecycleService,
+                catalogueDraftService, cmRuleAuthoringService, new PolicyStudioDurableLandingListService());
     }
 
     public Map<String, Object> landing() {
@@ -118,7 +138,9 @@ public class StagingPolicyStudioDemoService {
         out.put("journey", List.of(
                 "Create Policy", "Scope", "Rules", "Resolve parameters", "Test", "Versions", "Approved", "Scorecard"));
         out.put("allowCanonicalAuthority", false);
-        out.put("existingPolicies", listExistingPolicies());
+        List<Map<String, Object>> existing = listExistingPolicies();
+        out.put("existingPolicies", existing);
+        out.put("existingPolicyCount", existing.size());
         out.put("demoPolicies", List.of(
                 Map.of(
                         "kind", "kyc",
@@ -280,63 +302,16 @@ public class StagingPolicyStudioDemoService {
         return view;
     }
 
-    /** Existing policies for landing — session store (+ rule counts from session). */
+    /**
+     * Existing policies for landing — durable {@code ci_policy_document} membership
+     * (POLICY-STUDIO-DURABLE-LANDING-LIST-1). In-memory sessions enrich only.
+     */
     public List<Map<String, Object>> listExistingPolicies() {
-        List<Map<String, Object>> rows = new ArrayList<>();
-        for (PolicyStudioSession session : orchestrator.persistence().listAllSessions()) {
-            if (session.getDocument() == null || session.getDocument().getId() == null) continue;
-            UUID docId = session.getDocument().getId();
-            Map<String, Object> meta = sessionMeta.getOrDefault(docId, Map.of());
-            // Skip pure demo fixtures unless they were saved as working drafts
-            if (Boolean.TRUE.equals(meta.get("demo")) && !"scratch".equals(meta.get("kind"))
-                    && !"copy".equals(meta.get("kind")) && !"upload".equals(meta.get("kind"))) {
-                // still show demos that are open sessions — Credit Manager may want them; mark as example
-            }
-            Map<String, Object> row = new LinkedHashMap<>();
-            row.put("documentId", docId.toString());
-            row.put("policyName", session.getDocument().getName());
-            Map<String, Object> life = Map.of();
-            try {
-                if (lifecycleService != null) {
-                    life = requireLifecycle().settingsView(session);
-                }
-            } catch (Exception ignored) {
-                life = Map.of();
-            }
-            row.put("status", life.getOrDefault("businessStatus",
-                    session.getDocument().getStatus() == null ? "DRAFT" : session.getDocument().getStatus()));
-            row.put("policyVersion", life.getOrDefault("policyVersion",
-                    "v" + (session.getDocument().getDocumentVersion() == null
-                            ? 1 : session.getDocument().getDocumentVersion())));
-            Map<String, Object> app = life.get("applicability") instanceof Map<?, ?> m
-                    ? castMap(m) : Map.of();
-            row.put("products", app.getOrDefault("products", List.of()));
-            row.put("scopeSummary", life.get("scopeSummary"));
-            row.put("effectiveFrom", app.get("effectiveFrom"));
-            long uw = session.getRuleCandidates() == null ? 0 : session.getRuleCandidates().stream()
-                    .filter(r -> r.getSystemRuleId() == null
-                            || !r.getSystemRuleId().toUpperCase(Locale.ROOT).contains("OVERDUE_CHILD"))
-                    .count();
-            // POLICY-STUDIO-UX-CLOSURE-1 — Needs Input = genuine unresolved executable/config work only
-            long needs = PolicyExecutionReadiness.countNeedsBusinessInput(session);
-            row.put("underwritingRuleCount", uw);
-            row.put("needsInputCount", needs);
-            List<String> landingActions = List.of("OPEN", "COPY");
-            try {
-                if (lifecycleService != null) {
-                    landingActions = requireLifecycle().landingActions(session);
-                }
-            } catch (Exception ignored) {
-                // keep Open/Copy
-            }
-            row.put("availableActions", landingActions);
-            row.put("kind", meta.getOrDefault("kind", Boolean.TRUE.equals(meta.get("demo")) ? "demo" : "session"));
-            row.put("demo", Boolean.TRUE.equals(meta.get("demo")));
-            row.put("copiedFromLabel", meta.get("copiedFromLabel"));
-            rows.add(row);
-        }
-        rows.sort((a, b) -> String.valueOf(b.get("policyName")).compareToIgnoreCase(String.valueOf(a.get("policyName"))));
-        return rows;
+        return durableLandingListService.list(
+                properties.getDefaultTenantId(),
+                orchestrator.persistence(),
+                lifecycleService,
+                sessionMeta);
     }
 
     public Map<String, Object> build(String kind) {
