@@ -1,0 +1,27 @@
+{
+  "wave": "PLATFORM-CONVERGENCE-WAVE-7-DECISION-OWNERSHIP-AND-BOUNDARY-CLOSURE",
+  "recordedAtUtc": "2026-08-16T18:00:00Z",
+  "branch": "reconcile/laptop-layout-2026-08",
+  "SOURCE_START_SHA": "4783e14175bb88fe5cced3cea3695e5b7061c0e7",
+  "SOURCE_FINAL_SHA": "PENDING_CONTENT_COMMIT",
+  "GITHUB_REMOTE": "https://github.com/ranganvaradan/BillionTech-LoS.git",
+  "DB_MIGRATION_WAVE7": "NONE",
+  "TARGET_ORCHESTRATION": "CanonicalUnderwritingOrchestration",
+  "FINAL_DECISION_CONTRACT": "FinalUnderwritingDecision",
+  "LIVE_DECISION_AUTHORITY_CHANGED": false,
+  "FROZEN_RETIRED": false,
+  "FROZEN_RETIREMENT_READY": false,
+  "CANONICAL_UW_ORCHESTRATION_READY_FOR_LIVE": false,
+  "READY_FOR_LIVE_REASON": "Frozen still live authority; dual UW/Scorecard engines; scorecard hardRules flag defaults false; cutover not authorized",
+  "CAPABILITY_COUNTS_AFTER": {
+    "policyTestCapableCount": 40,
+    "w6CapableCount": 30,
+    "underwritingCapableCount": 40
+  },
+  "GACAT_MUTATED": false,
+  "VIKASAM_MUTATED": false,
+  "PRODUCTION_DEFINITIONS_CREATED": "NONE",
+  "WAVE_7_EXIT_CRITERIA": "PASS",
+  "WAVE_8_STARTED": false,
+  "KNOWN_UNTRACKED_ARTIFACTS_PRESERVED": true
+}

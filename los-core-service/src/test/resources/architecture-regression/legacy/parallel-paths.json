@@ -2,7 +2,19 @@
   "purpose": "Prove current parallel authorities exist so later retirement cannot silently change outcomes",
   "wave5Note": "CanonicalPolicyRuntime is TARGET semantics for Policy Test + shadow; live UW authority unchanged",
   "wave6Note": "Policy Test, Graph Test, TargetLiveCanonical, shadow canonical share CanonicalPolicyRuntime+CPES+explicit asOf; live UW still Frozen/legacy",
+  "wave7Note": "Decision ownership: Policy=eligibility, Scorecard=bands, CreditControl=prep, UW orchestration target facade; live cutover gated OFF",
   "paths": [
+    {
+      "component": "CanonicalUnderwritingOrchestration",
+      "role": "TARGET_UW_ORCHESTRATION_NOT_CUTOVER",
+      "classification": "UNDERWRITING_ORCHESTRATION",
+      "usesCpes": true,
+      "wallClock": false,
+      "shadowCovered": true,
+      "businessDecisionsDepend": false,
+      "retirementWave": "N/A_TARGET",
+      "expectedToChangeInWaves": ["WAVE_7", "WAVE_10"]
+    },
     {
       "component": "CanonicalPolicyRuntime",
       "role": "TARGET_POLICY_SEMANTICS",
@@ -13,7 +25,7 @@
       "shadowCovered": true,
       "businessDecisionsDepend": false,
       "retirementWave": "N/A_TARGET",
-      "expectedToChangeInWaves": ["WAVE_5", "WAVE_6", "WAVE_10"]
+      "expectedToChangeInWaves": ["WAVE_5", "WAVE_6", "WAVE_7", "WAVE_10"]
     },
     {
       "component": "TargetLiveCanonicalPolicyEvaluation",

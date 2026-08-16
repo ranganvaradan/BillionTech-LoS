@@ -182,6 +182,11 @@ public class ScorecardPolicyEngine {
                 traceRow.put("dataInsufficient", true);
                 traceRow.put("reason", "REQUIRED_HARD_RULE_OPERAND_MISSING");
                 hardTrace.add(traceRow);
+                if (com.los.core.creditintelligence.policystudio.runtime.ownership.DecisionOwnershipFlags
+                        .scorecardHardRulesShadowOnly()) {
+                    traceRow.put("policyOwnedShadowOnly", true);
+                    continue;
+                }
                 return finishHard(
                         c,
                         app,
@@ -207,6 +212,14 @@ public class ScorecardPolicyEngine {
                     msg = "Hard rule triggered on " + p;
                 }
                 msg = hardRuleFailureMessage(p, cond, v, msg);
+                // Wave-7: when shadow-only flag set, record match but do not early-exit — Policy owns eligibility
+                if (com.los.core.creditintelligence.policystudio.runtime.ownership.DecisionOwnershipFlags
+                        .scorecardHardRulesShadowOnly()) {
+                    traceRow.put("policyOwnedShadowOnly", true);
+                    traceRow.put("wouldHaveDecision", dec);
+                    traceRow.put("shadowMessage", msg);
+                    continue;
+                }
                 if ("REJECT".equalsIgnoreCase(dec) || "REJECTED".equalsIgnoreCase(dec)) {
                     return finishHard(
                             c, app, ctx, kycMeta, "REJECT", "REJECTED", 0, List.of(msg), true, hardTrace);
