@@ -9,7 +9,7 @@ No Vikasam mutation. No production authored definitions. No Policy DSL → produ
 |-------|-------|
 | SOURCE_START_SHA | `4d5d2289217416b91d01f672c3dc80db764a4777` |
 | SOURCE_FINAL_SHA | `cece016f9cbd4f52f19b55fae6f762274b86120a` |
-| GITHUB_REMOTE_SHA | *(set after push)* |
+| GITHUB_REMOTE_SHA / FREEZE_TIP | `3ddf906ba8b59e869554768a22c1b01c527c85a5` |
 | DB_MIGRATION | **NONE** |
 | KNOWN_UNTRACKED_ARTIFACTS_PRESERVED | YES |
 
