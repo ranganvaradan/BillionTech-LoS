@@ -8,8 +8,8 @@ Target-live gate available; **legacy live authority unchanged**.
 | Field | Value |
 |-------|-------|
 | SOURCE_START_SHA | `2d5f5d31eff75fa209df034c18684f5b7255e6a9` |
-| SOURCE_FINAL_SHA | *(content commit)* |
-| GITHUB_REMOTE_SHA | *(after push)* |
+| SOURCE_FINAL_SHA | `3a9e56c1dbbcacc306f44501ce1999baca8828f2` |
+| GITHUB_REMOTE_SHA | `3a9e56c1dbbcacc306f44501ce1999baca8828f2` |
 
 ## CERTIFICATION_DOMAIN_MODEL
 
