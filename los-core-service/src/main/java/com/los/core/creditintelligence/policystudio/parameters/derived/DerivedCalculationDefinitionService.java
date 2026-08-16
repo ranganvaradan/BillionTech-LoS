@@ -54,6 +54,20 @@ public class DerivedCalculationDefinitionService {
                 canonicalParameterId, STATUS_RETIRED);
     }
 
+    /** Wave-10: exact version pin for target-live — never silent latest. */
+    @Transactional(readOnly = true)
+    public Optional<CiGacatDerivedCalculationDefinition> forVersion(
+            String canonicalParameterId, UUID tenantId, int versionNo) {
+        if (canonicalParameterId == null || canonicalParameterId.isBlank()) return Optional.empty();
+        return repository.findByCanonicalParameterIdOrderByVersionNoDesc(canonicalParameterId.trim()).stream()
+                .filter(d -> d.getVersionNo() != null && d.getVersionNo() == versionNo)
+                .filter(d -> !STATUS_RETIRED.equalsIgnoreCase(d.getStatus() == null ? "" : d.getStatus()))
+                .filter(d -> tenantId == null
+                        ? d.getTenantId() == null
+                        : (tenantId.equals(d.getTenantId()) || d.getTenantId() == null))
+                .findFirst();
+    }
+
     @Transactional
     public Map<String, Object> saveDraft(Map<String, Object> body, UUID tenantId, String actor) {
         String canonicalId = str(body.get("canonicalParameterId"));

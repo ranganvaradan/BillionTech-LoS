@@ -1,7 +1,7 @@
 package com.los.core.creditintelligence.policystudio.runtime.ownership;
 
 /**
- * Wave-7 staged ownership flags. Live cutover remains OFF.
+ * Wave-7/8/10 staged ownership flags. Live cutover remains OFF.
  * Compatibility flags enable shadow / staged disable of duplicate decision roles.
  */
 public final class DecisionOwnershipFlags {
@@ -11,6 +11,12 @@ public final class DecisionOwnershipFlags {
 
     /** Frozen remains current live/replay authority where configured. */
     public static final boolean FROZEN_RETIRED = false;
+
+    /**
+     * Explicit Wave-10 routing. Default {@link LiveDecisionAuthority#LEGACY_FROZEN}.
+     * Flip to CANONICAL only when cutover readiness is YES (Wave-10 leaves default).
+     */
+    private static volatile LiveDecisionAuthority liveDecisionAuthority = LiveDecisionAuthority.LEGACY_FROZEN;
 
     /**
      * When true, {@link com.los.core.service.underwriting.ScorecardPolicyEngine} records hard-rule
@@ -25,7 +31,26 @@ public final class DecisionOwnershipFlags {
      */
     private static volatile boolean demoDefaultsNotDecisionTruth = true;
 
+    /**
+     * When true, {@link CanonicalUnderwritingOrchestration#assembleTargetLive} enforces
+     * production certification. Default false — legacy live authority unchanged.
+     */
+    private static volatile boolean targetLiveCertificationGateEnabled = false;
+
     private DecisionOwnershipFlags() {}
+
+    public static LiveDecisionAuthority liveDecisionAuthority() {
+        return liveDecisionAuthority;
+    }
+
+    /** Test / staged flip only. Production default remains LEGACY_FROZEN. */
+    public static void setLiveDecisionAuthority(LiveDecisionAuthority authority) {
+        liveDecisionAuthority = authority == null ? LiveDecisionAuthority.LEGACY_FROZEN : authority;
+    }
+
+    public static boolean isCanonicalPrimary() {
+        return liveDecisionAuthority == LiveDecisionAuthority.CANONICAL;
+    }
 
     public static boolean scorecardHardRulesShadowOnly() {
         return scorecardHardRulesShadowOnly;
@@ -43,12 +68,6 @@ public final class DecisionOwnershipFlags {
         demoDefaultsNotDecisionTruth = value;
     }
 
-    /**
-     * When true, {@link CanonicalUnderwritingOrchestration#assembleTargetLive} enforces
-     * production certification. Default false — legacy live authority unchanged.
-     */
-    private static volatile boolean targetLiveCertificationGateEnabled = false;
-
     public static boolean targetLiveCertificationGateEnabled() {
         return targetLiveCertificationGateEnabled;
     }
@@ -61,5 +80,6 @@ public final class DecisionOwnershipFlags {
         scorecardHardRulesShadowOnly = false;
         demoDefaultsNotDecisionTruth = true;
         targetLiveCertificationGateEnabled = false;
+        liveDecisionAuthority = LiveDecisionAuthority.LEGACY_FROZEN;
     }
 }

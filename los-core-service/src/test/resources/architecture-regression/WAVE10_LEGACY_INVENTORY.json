@@ -1,0 +1,143 @@
+{
+  "wave" : 10,
+  "LIVE_CUTOVER_READY" : false,
+  "fullRetirementClaimed" : false,
+  "authorities" : [ {
+    "component" : "UnderwritingRuleEngine",
+    "disposition" : "KEEP_PRIMARY_LIVE",
+    "callers" : "Live LoanApplicationFlowService",
+    "targetReplacement" : "CanonicalUnderwritingOrchestration",
+    "safeToRetireNow" : false,
+    "rollbackRequired" : true,
+    "risk" : "CRITICAL"
+  }, {
+    "component" : "FrozenUnderwritingRuleEngine",
+    "disposition" : "KEEP_ROLLBACK",
+    "callers" : "Shadow/replay",
+    "targetReplacement" : "CPR",
+    "safeToRetireNow" : false,
+    "rollbackRequired" : true,
+    "risk" : "HIGH"
+  }, {
+    "component" : "ShadowPolicyEngine",
+    "disposition" : "KEEP_AS_FACADE",
+    "callers" : "Staging/cutover tools",
+    "targetReplacement" : "CPR shadow",
+    "safeToRetireNow" : false,
+    "rollbackRequired" : false,
+    "risk" : "MEDIUM"
+  }, {
+    "component" : "PolicyBureauMetricService",
+    "disposition" : "DEPRECATED_EXECUTION",
+    "callers" : "Studio/tests only — not CPES producer",
+    "targetReplacement" : "BuiltInBureau / CPES",
+    "safeToRetireNow" : true,
+    "rollbackRequired" : false,
+    "risk" : "LOW"
+  }, {
+    "component" : "PolicyGraphPolicyTestService",
+    "disposition" : "KEEP_AS_FACADE",
+    "callers" : "Already CPR+CPES",
+    "targetReplacement" : "PolicyStudioTestExperience",
+    "safeToRetireNow" : false,
+    "rollbackRequired" : false,
+    "risk" : "LOW"
+  }, {
+    "component" : "runtimeFactAliases",
+    "disposition" : "KEEP_AS_FACADE",
+    "callers" : "TRUE_COMPAT only via CanonicalCompatibilityRegistry",
+    "targetReplacement" : "CanonicalCompatibilityRegistry",
+    "safeToRetireNow" : false,
+    "rollbackRequired" : false,
+    "risk" : "LOW"
+  }, {
+    "component" : "CanonicalCompatibilityRegistry",
+    "disposition" : "KEEP_AS_FACADE",
+    "callers" : "Single alias authority",
+    "targetReplacement" : "—",
+    "safeToRetireNow" : false,
+    "rollbackRequired" : false,
+    "risk" : "LOW"
+  }, {
+    "component" : "BuiltInBanking stagingFixture",
+    "disposition" : "KEEP_TEST_ONLY",
+    "callers" : "POLICY_TEST mode gate",
+    "targetReplacement" : "live facts",
+    "safeToRetireNow" : true,
+    "rollbackRequired" : false,
+    "risk" : "LOW"
+  }, {
+    "component" : "CreditControlService FOIR prep",
+    "disposition" : "KEEP_PRIMARY_LIVE",
+    "callers" : "Fact prep on live path",
+    "targetReplacement" : "FACT_PREP only on CANONICAL",
+    "safeToRetireNow" : false,
+    "rollbackRequired" : true,
+    "risk" : "CRITICAL"
+  }, {
+    "component" : "CreditDecisionServiceImpl FOIR",
+    "disposition" : "RETIRE_WHEN_CUTOVER",
+    "callers" : "Fallback decision twin",
+    "targetReplacement" : "CPR Policy FOIR",
+    "safeToRetireNow" : false,
+    "rollbackRequired" : true,
+    "risk" : "CRITICAL"
+  }, {
+    "component" : "ScorecardPolicyEngine hardRules",
+    "disposition" : "KEEP_PRIMARY_LIVE",
+    "callers" : "Flag default false = live",
+    "targetReplacement" : "Policy eligibility + shadowOnly flag",
+    "safeToRetireNow" : false,
+    "rollbackRequired" : true,
+    "risk" : "HIGH"
+  }, {
+    "component" : "GacatParameterReadinessProjection",
+    "disposition" : "NEUTRALIZED_RUNTIME",
+    "callers" : "D&P Advanced; overall not live cert",
+    "targetReplacement" : "CanonicalParameterTruthProjection",
+    "safeToRetireNow" : true,
+    "rollbackRequired" : false,
+    "risk" : "MEDIUM"
+  }, {
+    "component" : "DataParametersCapabilitySemantics",
+    "disposition" : "KEEP_AS_FACADE",
+    "callers" : "liveUse overridden by Wave-9 truth",
+    "targetReplacement" : "CanonicalParameterTruthProjection",
+    "safeToRetireNow" : false,
+    "rollbackRequired" : false,
+    "risk" : "LOW"
+  }, {
+    "component" : "catalogue.implemented/production_ready",
+    "disposition" : "NEUTRALIZED_RUNTIME",
+    "callers" : "Display/migration metadata only after Wave-10 rewires",
+    "targetReplacement" : "Certification + CPES",
+    "safeToRetireNow" : true,
+    "rollbackRequired" : false,
+    "risk" : "MEDIUM"
+  }, {
+    "component" : "latestFor()",
+    "disposition" : "KEEP_AUTHORING",
+    "callers" : "Authoring current; target-live uses PinnedArtifactSelection",
+    "targetReplacement" : "PinnedArtifactSelection",
+    "safeToRetireNow" : false,
+    "rollbackRequired" : true,
+    "risk" : "HIGH"
+  }, {
+    "component" : "EvaluationContextFactory wall-clock",
+    "disposition" : "NEUTRALIZED_RUNTIME",
+    "callers" : "Requires asOf or EvaluationClock",
+    "targetReplacement" : "explicit asOf",
+    "safeToRetireNow" : true,
+    "rollbackRequired" : false,
+    "risk" : "MEDIUM"
+  }, {
+    "component" : "LiveDecisionAuthority",
+    "disposition" : "KEEP_PRIMARY_LIVE",
+    "callers" : "Default LEGACY_FROZEN",
+    "targetReplacement" : "flip to CANONICAL when cutover ready",
+    "safeToRetireNow" : false,
+    "rollbackRequired" : true,
+    "risk" : "CRITICAL"
+  } ],
+  "count" : 17
+}

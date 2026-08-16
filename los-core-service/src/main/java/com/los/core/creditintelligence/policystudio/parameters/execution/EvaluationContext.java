@@ -156,6 +156,13 @@ public final class EvaluationContext {
             return this;
         }
 
+        public Builder entities(Map<String, Object> more) {
+            if (more != null) {
+                more.forEach(this::entity);
+            }
+            return this;
+        }
+
         public EvaluationContext build() {
             return new EvaluationContext(this);
         }

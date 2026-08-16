@@ -19,7 +19,12 @@ import java.util.Map;
 
 /**
  * Studio bureau BRE metric helpers. CLEAN history requires customer vocabulary resolution.
+ *
+ * <p><b>Wave-10:</b> Deprecated as an execution/capability authority.
+ * Canonical parameter values must come from {@code CanonicalParameterExecutionService} only.
+ * This class remains for authoring explanation / studio helpers / tests.
  */
+@Deprecated(since = "Wave-10", forRemoval = false)
 public class PolicyBureauMetricService {
 
     public static final String OUTCOME_PASS = "PASS";

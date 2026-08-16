@@ -137,7 +137,7 @@ public final class ScorecardCanonicalFactorMapper {
                 : (d.unit() != null && d.unit().equalsIgnoreCase("SCORE") ? "SCORE"
                 : (d.unit() != null && d.unit().equalsIgnoreCase("BOOLEAN") ? "BOOLEAN"
                 : (d.unit() != null && d.unit().equalsIgnoreCase("FLAG") ? "BOOLEAN" : "NUMERIC"))));
-        boolean ready = d.capability() != null && d.capability().productionReady();
+        boolean ready = false; // Wave-10: catalogue production_ready is never readiness/runtime authority
         return new Binding(
                 key,
                 d.id(),

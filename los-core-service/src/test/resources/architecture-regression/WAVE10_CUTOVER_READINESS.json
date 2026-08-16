@@ -1,0 +1,20 @@
+{
+  "LIVE_CUTOVER_READY" : false,
+  "liveDecisionAuthority" : "LEGACY_FROZEN",
+  "checks" : {
+    "A_CanonicalUnderwritingOrchestrationExists" : true,
+    "B_CanonicalPolicyRuntimeExists" : true,
+    "C_TargetValuesFromCpes" : true,
+    "D_ScorecardUsesSpineValues" : true,
+    "E_W6SharedCanonicalContext" : true,
+    "F_TargetLiveCertificationGateExists" : true,
+    "G_ArtifactsCanBeCertified" : true,
+    "H_NoUnknownDecisionAuthority" : true,
+    "I_HighRiskDuplicatesClassified" : true,
+    "J_FrozenShadowMismatchesDocumented" : true,
+    "K_FrozenRollbackPossible" : true
+  },
+  "blockers" : [ "LIVE_PATH_STILL_LEGACY: LoanApplicationFlowService → UnderwritingRuleEngine", "SCORECARD_HARD_RULES_STILL_LIVE: flag scorecardHardRulesShadowOnly=false", "CERTIFICATION_GATE_DEFAULT_OFF: enable for certified target scope before cutover", "CREDIT_CONTROL_DUPLICATE_FOIR_ENGINES: CreditDecisionServiceImpl / CreditRulesEngine still live", "AUTHORD_DERIVED_LATESTFOR: production AuthoredDerivedProducer still defaults to latestFor without pin", "FULFILMENT_READINESS_LADDER: FulfilmentPathResolver still consumes readiness projection dims" ],
+  "CANONICAL_UW_ORCHESTRATION_READY_FOR_LIVE" : false,
+  "note" : "Wave-10 leaves LEGACY_FROZEN primary; safe retirements only"
+}

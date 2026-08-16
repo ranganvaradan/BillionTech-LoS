@@ -35,14 +35,20 @@ public class EvaluationContextFactory {
             UUID reconSetId,
             Map<String, Object> metadata) {
         Map<String, Object> meta = metadata != null ? new LinkedHashMap<>(metadata) : new LinkedHashMap<>();
+        if (asOf == null && clock == null) {
+            throw new IllegalArgumentException(
+                    "EvaluationContextFactory requires explicit evaluationAsOf or EvaluationClock — no wall-clock fallback");
+        }
+        LocalDate resolvedAsOf = asOf != null ? asOf : clock.today();
+        java.time.Instant resolvedInstant = clock != null ? clock.instant() : null;
         Map<String, Object> hashPayload = new LinkedHashMap<>();
         hashPayload.put("tenantId", tenantId != null ? tenantId.toString() : null);
         hashPayload.put("applicationId", applicationId != null ? applicationId.toString() : null);
         hashPayload.put("factSnapshotId", snapshotId != null ? snapshotId.toString() : null);
         hashPayload.put("policyVersionId", policyVersionId != null ? policyVersionId.toString() : null);
         hashPayload.put("configFreezeId", configFreezeId != null ? configFreezeId.toString() : null);
-        hashPayload.put("evaluationAsOf", asOf != null ? asOf.toString() : null);
-        hashPayload.put("clockInstant", clock != null ? clock.instant().toString() : null);
+        hashPayload.put("evaluationAsOf", resolvedAsOf.toString());
+        hashPayload.put("clockInstant", resolvedInstant != null ? resolvedInstant.toString() : null);
         hashPayload.put("clockZone", clock != null ? clock.zone().getId() : "Asia/Kolkata");
         hashPayload.put("metricResultSetId", metricSetId != null ? metricSetId.toString() : null);
         hashPayload.put("reconciliationResultSetId", reconSetId != null ? reconSetId.toString() : null);
@@ -59,8 +65,8 @@ public class EvaluationContextFactory {
                         .factSnapshotId(snapshotId)
                         .policyVersionId(policyVersionId)
                         .configFreezeId(configFreezeId)
-                        .evaluationAsOf(asOf != null ? asOf : (clock != null ? clock.today() : LocalDate.now()))
-                        .clockInstant(clock != null ? clock.instant() : java.time.Instant.now())
+                        .evaluationAsOf(resolvedAsOf)
+                        .clockInstant(resolvedInstant)
                         .clockZone(clock != null ? clock.zone().getId() : "Asia/Kolkata")
                         .metricResultSetId(metricSetId)
                         .reconciliationResultSetId(reconSetId)

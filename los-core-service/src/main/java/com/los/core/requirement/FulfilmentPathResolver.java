@@ -374,9 +374,18 @@ public class FulfilmentPathResolver {
         boolean workflowAuto = !productionSteps.isEmpty()
                 || Boolean.TRUE.equals(workflow.get("integrationAvailable"));
         boolean providerSource = GacatParameterReadinessProjection.SOURCE_PROVIDER.equals(sourceType);
-        boolean runtimeOrProd = Boolean.TRUE.equals(projection.get("runtimeReady"))
-                || Boolean.TRUE.equals(projection.get("productionReady"))
+        // Wave-10: never use catalogue production_ready as acquisition authority —
+        // spine POLICY_TEST / runtime capability only (+ workflow proven signals).
+        boolean spineCapable = com.los.core.creditintelligence.policystudio.parameters.execution
+                .ExecutionCapabilityAuthority.hasExecutionCapability(
+                        id, com.los.core.creditintelligence.policystudio.parameters.execution.EvaluationMode.POLICY_TEST)
+                || com.los.core.creditintelligence.policystudio.parameters.execution
+                .ExecutionCapabilityAuthority.hasExecutionCapability(
+                        id, com.los.core.creditintelligence.policystudio.parameters.execution.EvaluationMode.W6_ACQUISITION);
+        boolean runtimeOrProd = spineCapable
+                || Boolean.TRUE.equals(projection.get("runtimeReady"))
                 || Boolean.TRUE.equals(projection.get("sourceAvailable"));
+        // Explicitly ignore projection.productionReady (always false from Gate3; catalogue claim is not authority)
 
         // Explicit force-automatic from hints (tests / staging overlays on proven ids)
         Set<String> forceAuto = stringSet(hints.get("automaticSourceParameterIds"));

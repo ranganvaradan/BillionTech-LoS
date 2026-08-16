@@ -31,7 +31,18 @@ public final class AuthoredDerivedProducer implements ParameterProducer {
     private final AuthoredDefinitionSource definitions;
 
     public AuthoredDerivedProducer(DerivedCalculationDefinitionService definitionService) {
-        this(definitionService::latestFor);
+        this(new AuthoredDefinitionSource() {
+            @Override
+            public Optional<CiGacatDerivedCalculationDefinition> latestFor(String id, java.util.UUID tenantId) {
+                return definitionService.latestFor(id, tenantId);
+            }
+
+            @Override
+            public Optional<CiGacatDerivedCalculationDefinition> forVersion(
+                    String id, java.util.UUID tenantId, int versionNo) {
+                return definitionService.forVersion(id, tenantId, versionNo);
+            }
+        });
     }
 
     public AuthoredDerivedProducer(AuthoredDefinitionSource definitions) {
@@ -41,6 +52,13 @@ public final class AuthoredDerivedProducer implements ParameterProducer {
     @FunctionalInterface
     public interface AuthoredDefinitionSource {
         Optional<CiGacatDerivedCalculationDefinition> latestFor(String canonicalParameterId, java.util.UUID tenantId);
+
+        /** Wave-10 pinned lookup; default filters latest by versionNo when present. */
+        default Optional<CiGacatDerivedCalculationDefinition> forVersion(
+                String canonicalParameterId, java.util.UUID tenantId, int versionNo) {
+            return latestFor(canonicalParameterId, tenantId)
+                    .filter(d -> d.getVersionNo() != null && d.getVersionNo() == versionNo);
+        }
     }
 
     @Override
@@ -55,13 +73,13 @@ public final class AuthoredDerivedProducer implements ParameterProducer {
 
     @Override
     public boolean claims(String canonicalParameterId) {
-        return loadValidDefinition(canonicalParameterId, null).isPresent();
+        return loadValidDefinition(canonicalParameterId, EvaluationContext.builder().build()).isPresent();
     }
 
     @Override
     public boolean hasCapability(String canonicalParameterId, EvaluationContext ctx, DependencyResolver resolver) {
         Optional<CiGacatDerivedCalculationDefinition> def =
-                loadValidDefinition(canonicalParameterId, ctx == null ? null : ctx.tenantId());
+                loadValidDefinition(canonicalParameterId, ctx);
         if (def.isEmpty()) {
             return false;
         }
@@ -77,9 +95,13 @@ public final class AuthoredDerivedProducer implements ParameterProducer {
     @Override
     public ExecutionResult execute(String canonicalParameterId, EvaluationContext ctx, DependencyResolver resolver) {
         Optional<CiGacatDerivedCalculationDefinition> opt =
-                loadValidDefinition(canonicalParameterId, ctx.tenantId());
+                loadValidDefinition(canonicalParameterId, ctx);
         if (opt.isEmpty()) {
-            // Distinguish: definition exists but invalid vs absent
+            // Distinguish: definition exists but invalid vs absent / unpinned under forbidLatestFor
+            if (ctx != null && Boolean.TRUE.equals(ctx.entities().get("forbidLatestFor"))) {
+                return ExecutionResult.notExecutable(canonicalParameterId,
+                        "Pinned definition required (forbidLatestFor) for " + canonicalParameterId);
+            }
             Optional<CiGacatDerivedCalculationDefinition> raw =
                     definitions.latestFor(canonicalParameterId, ctx.tenantId());
             if (raw.isPresent()) {
@@ -233,12 +255,29 @@ public final class AuthoredDerivedProducer implements ParameterProducer {
     }
 
     private Optional<CiGacatDerivedCalculationDefinition> loadValidDefinition(
-            String canonicalParameterId, java.util.UUID tenantId) {
+            String canonicalParameterId, EvaluationContext ctx) {
         if (canonicalParameterId == null || canonicalParameterId.isBlank()) {
             return Optional.empty();
         }
-        Optional<CiGacatDerivedCalculationDefinition> opt =
-                definitions.latestFor(canonicalParameterId, tenantId);
+        java.util.UUID tenantId = ctx == null ? null : ctx.tenantId();
+        Optional<CiGacatDerivedCalculationDefinition> opt;
+        if (ctx != null && Boolean.TRUE.equals(ctx.entities().get("forbidLatestFor"))) {
+            Object pins = ctx.entities().get("pinnedCalculationDefinitions");
+            if (pins instanceof Map<?, ?> m && m.get(canonicalParameterId) != null) {
+                int ver;
+                try {
+                    ver = Integer.parseInt(String.valueOf(m.get(canonicalParameterId)).trim());
+                } catch (NumberFormatException e) {
+                    return Optional.empty();
+                }
+                opt = definitions.forVersion(canonicalParameterId, tenantId, ver);
+            } else {
+                // Target-live pin required for this id — do not silently use latest
+                return Optional.empty();
+            }
+        } else {
+            opt = definitions.latestFor(canonicalParameterId, tenantId);
+        }
         if (opt.isEmpty()) {
             return Optional.empty();
         }
@@ -258,6 +297,12 @@ public final class AuthoredDerivedProducer implements ParameterProducer {
             return Optional.empty();
         }
         return Optional.of(def);
+    }
+
+    private Optional<CiGacatDerivedCalculationDefinition> loadValidDefinition(
+            String canonicalParameterId, java.util.UUID tenantId) {
+        return loadValidDefinition(canonicalParameterId,
+                EvaluationContext.builder().tenantId(tenantId).build());
     }
 
     /**

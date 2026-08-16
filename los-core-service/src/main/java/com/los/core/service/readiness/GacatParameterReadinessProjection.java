@@ -158,15 +158,17 @@ public final class GacatParameterReadinessProjection {
             reasons.add("productionReady=true but sourceAvailable=false");
             return OVERALL_READINESS_UNKNOWN;
         }
-        // policyTestReady must not imply productionReady — already handled by requiring catalogue flag
+        // Wave-10: catalogue production_ready must NEVER yield OVERALL_PRODUCTION_READY.
+        // Certification ledger is the only live-approval authority (Wave-8/9).
         if (catalogueProductionReady && (implemented || manual)) {
             reasons.add(manual
-                    ? "MANUAL / application-authorised — provider_code not required"
-                    : "GACAT productionReady + implemented; Gate3=" + executionState);
-            return OVERALL_PRODUCTION_READY;
+                    ? "MANUAL — catalogue production_ready claim ignored for overall ladder"
+                    : "Legacy catalogue production_ready claim ignored — not certification; Gate3=" + executionState);
+            // Fall through to non-production ladders below
         }
         if (ParameterExecutabilitySupport.RUNTIME_READY_NONPROD.equals(executionState)
-                || (implemented && runtimeReady && !catalogueProductionReady)) {
+                || (implemented && runtimeReady && !catalogueProductionReady)
+                || (catalogueProductionReady && implemented && runtimeReady)) {
             reasons.add("Implemented runtime path without production certification; Gate3=" + executionState);
             return OVERALL_RUNTIME_READY_NONPROD;
         }

@@ -196,6 +196,75 @@ public final class CanonicalUnderwritingOrchestration {
                 credit.manualOverride(), credit.finalOutcome(), credit.reasonCodes(), prov);
     }
 
+    /**
+     * Wave-10 pinned target-live path. Requires explicit artifact versions — no latestFor.
+     * Does not flip live LoanApplicationFlowService authority.
+     */
+    public FinalUnderwritingDecision assembleTargetLivePinned(
+            String applicationId,
+            EvaluationContext sharedContext,
+            PinnedArtifactSelection pins,
+            List<CanonicalPolicyRuntime.RuleSpec> policyRules,
+            ScorecardBandInput scorecard,
+            Map<String, Object> limitResult,
+            Map<String, Object> pricingResult,
+            ManualOverrideRecord override,
+            List<String> automaticOperandCanonicalIds,
+            com.los.core.creditintelligence.policystudio.certification.CertificationScopeType scopeType,
+            String scopeId) {
+
+        Objects.requireNonNull(pins, "pins");
+        pins.requireForTargetLive();
+
+        EvaluationContext ctx = sharedContext;
+        if (ctx != null) {
+            Map<String, Object> entities = new LinkedHashMap<>(ctx.entities());
+            entities.putAll(pins.entityPins());
+            ctx = EvaluationContext.builder()
+                    .mode(ctx.mode())
+                    .tenantId(ctx.tenantId())
+                    .evaluationAsOf(pins.evaluationAsOf())
+                    .facts(ctx.facts())
+                    .inputs(ctx.inputs())
+                    .entities(entities)
+                    .build();
+        } else {
+            ctx = EvaluationContext.builder()
+                    .mode(com.los.core.creditintelligence.policystudio.parameters.execution.EvaluationMode.UNDERWRITING)
+                    .evaluationAsOf(pins.evaluationAsOf())
+                    .entities(pins.entityPins())
+                    .build();
+        }
+
+        FinalUnderwritingDecision d = assembleTargetLive(
+                applicationId,
+                pins.evaluationAsOf(),
+                ctx,
+                pins.policyId(),
+                pins.policyVersion(),
+                policyRules,
+                scorecard,
+                limitResult,
+                pricingResult,
+                override,
+                automaticOperandCanonicalIds,
+                pins.scorecardId(),
+                pins.scorecardVersion(),
+                scopeType,
+                scopeId);
+
+        Map<String, Object> prov = new LinkedHashMap<>(d.provenance());
+        prov.put("pinnedArtifacts", pins.toMap());
+        prov.put("latestForForbidden", true);
+        prov.put("liveDecisionAuthority", DecisionOwnershipFlags.liveDecisionAuthority().name());
+        prov.put("creditControlDuplicatePolicyNotApplied", true);
+        prov.put("scorecardHardRulesNotAppliedOnCanonicalPath", true);
+        return new FinalUnderwritingDecision(
+                d.applicationId(), d.evaluationAsOf(), d.policyResult(),
+                d.scorecardResult(), d.limitResult(), d.pricingResult(),
+                d.manualOverride(), d.finalOutcome(), d.reasonCodes(), prov);
+    }
+
     /** Workflow readiness never becomes APPROVE. */
     public static FinalUnderwritingDecision.FinalOutcome workflowStateToDecision(String workflowState) {
         if (workflowState == null) return FinalUnderwritingDecision.FinalOutcome.DATA_INSUFFICIENT;
