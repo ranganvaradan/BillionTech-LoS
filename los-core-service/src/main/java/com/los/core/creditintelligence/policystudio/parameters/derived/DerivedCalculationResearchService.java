@@ -137,7 +137,9 @@ public class DerivedCalculationResearchService {
             savedViews.add(toView(row));
             idx++;
         }
-        Map<String, Object> primary = savedViews.get(0);
+        // Copy primary out of the options list to avoid a circular Map graph
+        // (Jackson would otherwise emit nested ]}]}]} until the response fails).
+        Map<String, Object> primary = new LinkedHashMap<>(savedViews.get(0));
         primary.put("options", savedViews);
         primary.put("unableToRecommend", false);
         primary.put("primaryProposalId", primaryId);
