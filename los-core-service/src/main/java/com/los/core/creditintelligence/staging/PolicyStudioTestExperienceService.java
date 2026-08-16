@@ -391,7 +391,91 @@ public class PolicyStudioTestExperienceService {
                 mergeParamByCanonical(byCanonical, fromMetricPath("banking.inward_return_count_3m", meta));
             }
         }
+        return dedupePolicyTestInputs(new ArrayList<>(byCanonical.values()));
+    }
+
+    /**
+     * FINAL-CANONICAL-PARAMETER-STATE — one PolicyTestInput per canonical parameter.
+     * Collapse alias keys / missing metricId rows that share the same business name.
+     */
+    private List<Map<String, Object>> dedupePolicyTestInputs(List<Map<String, Object>> inputs) {
+        Map<String, Map<String, Object>> byCanonical = new LinkedHashMap<>();
+        Map<String, String> nameToCanonical = new LinkedHashMap<>();
+        for (Map<String, Object> p : inputs) {
+            if (p == null) continue;
+            String cid = firstNonBlank(p.get("canonicalParameterId"), p.get("metricId"));
+            String nameKey = String.valueOf(p.getOrDefault("businessName", p.get("parameterKey")))
+                    .trim().toLowerCase(Locale.ROOT);
+            if (cid != null && cid.contains(".")) {
+                if (nameToCanonical.containsKey(nameKey)
+                        && !nameToCanonical.get(nameKey).equals(cid)
+                        && byCanonical.containsKey(nameToCanonical.get(nameKey))) {
+                    // Prefer dotted canonical id over prior alias
+                    String prior = nameToCanonical.get(nameKey);
+                    Map<String, Object> merged = preferPolicyTestInput(byCanonical.get(prior), p);
+                    byCanonical.remove(prior);
+                    byCanonical.put(cid, merged);
+                    nameToCanonical.put(nameKey, cid);
+                } else {
+                    Map<String, Object> existing = byCanonical.get(cid);
+                    byCanonical.put(cid, existing == null ? p : preferPolicyTestInput(existing, p));
+                    if (!nameKey.isBlank() && !"null".equals(nameKey)) {
+                        nameToCanonical.putIfAbsent(nameKey, cid);
+                    }
+                }
+                continue;
+            }
+            // No dotted canonical id — attach to existing same-name row if present
+            if (!nameKey.isBlank() && !"null".equals(nameKey) && nameToCanonical.containsKey(nameKey)) {
+                String existingCid = nameToCanonical.get(nameKey);
+                byCanonical.put(existingCid, preferPolicyTestInput(byCanonical.get(existingCid), p));
+            } else {
+                String fallback = cid != null ? cid : String.valueOf(p.get("parameterKey"));
+                Map<String, Object> existing = byCanonical.get(fallback);
+                byCanonical.put(fallback, existing == null ? p : preferPolicyTestInput(existing, p));
+                if (!nameKey.isBlank() && !"null".equals(nameKey)) {
+                    nameToCanonical.putIfAbsent(nameKey, fallback);
+                }
+            }
+        }
         return new ArrayList<>(byCanonical.values());
+    }
+
+    private static String firstNonBlank(Object a, Object b) {
+        if (a != null) {
+            String s = String.valueOf(a).trim();
+            if (!s.isEmpty() && !"null".equals(s)) return s;
+        }
+        if (b != null) {
+            String s = String.valueOf(b).trim();
+            if (!s.isEmpty() && !"null".equals(s)) return s;
+        }
+        return null;
+    }
+
+    private static Map<String, Object> preferPolicyTestInput(Map<String, Object> a, Map<String, Object> b) {
+        if (a == null) return b;
+        if (b == null) return a;
+        String as = String.valueOf(a.get("status"));
+        String bs = String.valueOf(b.get("status"));
+        // Prefer concrete attention states only when the other is weaker
+        int ar = policyTestStatusRank(as);
+        int br = policyTestStatusRank(bs);
+        if (br > ar) return b;
+        if (ar > br) return a;
+        // Prefer row that already carries CanonicalParameterState
+        if (b.get("canonicalParameterState") != null && a.get("canonicalParameterState") == null) return b;
+        return a;
+    }
+
+    private static int policyTestStatusRank(String st) {
+        return switch (st == null ? "" : st) {
+            case "CALCULATION_REQUIRED" -> 4;
+            case "MANUAL_INPUT" -> 3;
+            case "DATA_REQUIRED", "UNAVAILABLE", "UNRESOLVED" -> 2;
+            case "AUTOMATIC_DERIVED" -> 1;
+            default -> 0;
+        };
     }
 
     private Map<String, Object> fromOperand(Map<String, Object> op) {
