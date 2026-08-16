@@ -1311,7 +1311,10 @@ public class PolicyStudioTestExperienceService {
     }
 
     private static Object coerce(Object v) {
-        if (v instanceof Number) return v;
+        if (v == null) return null;
+        if (v instanceof Number || v instanceof Boolean) return v;
+        // Preserve structured RAW facts (e.g. payment_history observation lists) for the spine.
+        if (v instanceof Map<?, ?> || v instanceof List<?>) return v;
         String s = String.valueOf(v).trim().replace(",", "").replace("₹", "").replace("%", "");
         try {
             if (s.contains(".")) return new BigDecimal(s);
@@ -1611,6 +1614,14 @@ public class PolicyStudioTestExperienceService {
                 prov.put("spineProvenance", er.provenance());
                 prov.put("exactProducerPath", er.exactProducerPath());
                 prov.put("policyTestUsedSpine", true);
+            } else if (er != null && er.status() == ExecutionStatus.ERROR) {
+                prov.put("status", "ERROR");
+                prov.put("sourceLabel", er.reason() == null ? "Execution error" : er.reason());
+                prov.put("needsTestValue", true);
+                prov.put("executionStatus", er.status().name());
+                prov.put("capability", er.capability());
+                prov.put("policyTestUsedSpine", true);
+                blockers.add(String.valueOf(p.get("businessName")) + " — execution error");
             } else if (er != null && er.status() == ExecutionStatus.INPUT_REQUIRED) {
                 prov.put("status", "MISSING");
                 prov.put("sourceLabel", "Required by expression — enter a test value");
