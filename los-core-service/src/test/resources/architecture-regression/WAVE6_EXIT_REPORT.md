@@ -10,7 +10,7 @@ Converge Policy Test, Graph Test, target-live canonical, and shadow canonical on
 |-------|-------|
 | SOURCE_START_SHA | `3293e22aba543047a5ce8e793a1b2ef8d56cc22f` |
 | SOURCE_FINAL_SHA | `c4ca1eb89a583095a9e2894a20dad0ec8b9cdf05` |
-| GITHUB_REMOTE_SHA | `c4ca1eb89a583095a9e2894a20dad0ec8b9cdf05` |
+| GITHUB_REMOTE_SHA | `9d5aab26f6ddcba8e7dd40054aa85f117b02aa26` |
 | DB_MIGRATION | **NONE** |
 
 ## EXECUTION_CONTEXT_PATHS_BEFORE
