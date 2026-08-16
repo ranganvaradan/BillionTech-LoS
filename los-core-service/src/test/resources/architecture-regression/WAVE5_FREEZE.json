@@ -1,0 +1,35 @@
+{
+  "wave": "PLATFORM-CONVERGENCE-WAVE-5-SINGLE-POLICY-RUNTIME-SHADOW-PARITY",
+  "recordedAtUtc": "2026-08-16T17:00:00Z",
+  "branch": "reconcile/laptop-layout-2026-08",
+  "SOURCE_START_SHA": "d6c662a78b7c2e937ea3348e0294b0c02a9ca336",
+  "SOURCE_FINAL_SHA": "PENDING_CONTENT_COMMIT",
+  "GITHUB_REMOTE": "https://github.com/ranganvaradan/BillionTech-LoS.git",
+  "SEMANTIC_CATALOGUE_VERSION": "GACAT-SEMANTIC-4.0.0",
+  "DB_MIGRATION_WAVE5": "NONE",
+  "CANONICAL_POLICY_RUNTIME_CLASS": "CanonicalPolicyRuntime",
+  "POLICY_TEST_USES_CANONICAL_RUNTIME": true,
+  "TARGET_RUNTIME_USES_CPES_ONLY": true,
+  "EXPLICIT_ASOF": true,
+  "SHADOW_CHANGES_DECISION": false,
+  "FROZEN_RETIREMENT_READY": false,
+  "LIVE_DECISION_AUTHORITY_CHANGED": false,
+  "CAPABILITY_COUNTS_AFTER": {
+    "policyTestCapableCount": 40,
+    "w6CapableCount": 30,
+    "underwritingCapableCount": 40
+  },
+  "GACAT_MUTATED": false,
+  "VIKASAM_MUTATED": false,
+  "PRODUCTION_DEFINITIONS_CREATED": "NONE",
+  "SCORECARD_LOGIC_CHANGED": false,
+  "WAVE_5_EXIT_CRITERIA": "PASS",
+  "WAVE_6_STARTED": false,
+  "KNOWN_UNTRACKED_ARTIFACTS_PRESERVED": true,
+  "notes": [
+    "CanonicalPolicyRuntime is the single target Policy DSL + CPES facade.",
+    "PolicyStudioTestExperienceService.evaluateRule delegates to CanonicalPolicyRuntime.",
+    "FrozenToCanonicalDslTranslator inverts MATCH→REJECT polarity; retirement gate NOT ready.",
+    "PolicyRuntimeShadowParity is observational only."
+  ]
+}

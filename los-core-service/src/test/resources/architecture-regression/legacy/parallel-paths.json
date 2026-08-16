@@ -1,10 +1,39 @@
 {
   "purpose": "Prove current parallel authorities exist so later retirement cannot silently change outcomes",
+  "wave5Note": "CanonicalPolicyRuntime is TARGET semantics for Policy Test + shadow; live UW authority unchanged",
   "paths": [
     {
+      "component": "CanonicalPolicyRuntime",
+      "role": "TARGET_POLICY_SEMANTICS_WAVE5",
+      "classification": "POLICY_SEMANTICS_AUTHORITY",
+      "usesCpes": true,
+      "usesExactGacatIds": true,
+      "wallClock": false,
+      "shadowCovered": true,
+      "businessDecisionsDepend": false,
+      "retirementWave": "N/A_TARGET",
+      "expectedToChangeInWaves": ["WAVE_5", "WAVE_10"]
+    },
+    {
       "component": "FrozenUnderwritingRuleEngine",
-      "role": "LEGACY_PRIMARY_LIVE",
+      "role": "LEGACY_PRIMARY_LIVE_REPLAY",
       "classification": "KNOWN_GAP",
+      "usesCpes": false,
+      "usesExactGacatIds": false,
+      "wallClock": false,
+      "shadowCovered": true,
+      "businessDecisionsDepend": true,
+      "retirementWave": "WAVE_10_IF_GATE",
+      "frozenRetirementReady": false,
+      "expectedToChangeInWaves": ["WAVE_5", "WAVE_10"]
+    },
+    {
+      "component": "UnderwritingRuleEngine",
+      "role": "LIVE_UW_HARD_RULES",
+      "classification": "LEGACY_POLICY_RUNTIME",
+      "usesCpes": false,
+      "businessDecisionsDepend": true,
+      "retirementWave": "WAVE_10_IF_GATE",
       "expectedToChangeInWaves": ["WAVE_5", "WAVE_10"]
     },
     {
@@ -19,6 +48,12 @@
       "classification": "MUST_PRESERVE_AS_SCORECARD_LAYER"
     },
     {
+      "component": "ScorecardPolicyEngine.hardRules",
+      "role": "SCORECARD_EMBEDDED_POLICY_ELIGIBILITY",
+      "classification": "KNOWN_GAP",
+      "expectedToChangeInWaves": ["WAVE_7"]
+    },
+    {
       "component": "ParameterExecutabilitySupport.runtimeFactAliases",
       "role": "POLICY_TEST_ALIAS_FANOUT",
       "classification": "KNOWN_GAP",
@@ -28,25 +63,34 @@
     {
       "component": "compat.* snapshot remaps",
       "role": "UnderwritingFactSnapshotBuilder PATH_REMAP",
-      "classification": "KNOWN_GAP",
-      "expectedToChangeInWaves": ["WAVE_3"]
+      "classification": "ADDRESSED_WAVE_3_DUAL_WRITE",
+      "expectedToChangeInWaves": ["WAVE_3", "WAVE_6"]
     },
     {
       "component": "PolicyGraphPolicyTestService",
       "role": "DSL_WITHOUT_SPINE",
       "classification": "KNOWN_GAP",
+      "usesCpes": false,
       "expectedToChangeInWaves": ["WAVE_6"]
     },
     {
       "component": "ShadowPolicyEngine",
       "role": "FROZEN_MAP_DSL",
       "classification": "KNOWN_GAP",
+      "shadowCovered": true,
+      "expectedToChangeInWaves": ["WAVE_5", "WAVE_10"]
+    },
+    {
+      "component": "PolicyStudioTestExperienceService",
+      "role": "POLICY_TEST_USES_CANONICAL_RUNTIME",
+      "classification": "TEST_ONLY",
+      "usesCpes": true,
       "expectedToChangeInWaves": ["WAVE_5"]
     },
     {
       "component": "BuiltInBankingMetricProducer.stagingFixture",
-      "role": "FIXTURE_IN_SPINE_PATH",
-      "classification": "KNOWN_GAP",
+      "role": "FIXTURE_POLICY_TEST_ONLY",
+      "classification": "ADDRESSED_WAVE_3",
       "expectedToChangeInWaves": ["WAVE_3"]
     },
     {
@@ -62,14 +106,14 @@
     },
     {
       "component": "PolicyDslInterpreterV1",
-      "role": "STUDIO_SHADOW_DSL_NEVER_PRODUCTION_ACTIVE_TODAY",
+      "role": "TARGET_DSL_ENGINE_VIA_CANONICAL_RUNTIME",
       "classification": "MUST_PRESERVE_ENGINE",
-      "expectedToChangeInWaves": ["WAVE_5"]
+      "expectedToChangeInWaves": ["WAVE_5", "WAVE_10"]
     },
     {
       "component": "catalogue.implemented / production_ready",
       "role": "METADATA_NOT_RUNTIME_TRUTH",
-      "classification": "KNOWN_GAP",
+      "classification": "ADDRESSED_WAVE_4_LEGACY_METADATA",
       "expectedToChangeInWaves": ["WAVE_1", "WAVE_8"]
     }
   ]

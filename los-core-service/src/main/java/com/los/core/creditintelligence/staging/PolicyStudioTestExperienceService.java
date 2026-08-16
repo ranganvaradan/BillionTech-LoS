@@ -21,6 +21,8 @@ import com.los.core.creditintelligence.policystudio.parameters.execution.Evaluat
 import com.los.core.creditintelligence.policystudio.parameters.execution.EvaluationMode;
 import com.los.core.creditintelligence.policystudio.parameters.execution.ExecutionResult;
 import com.los.core.creditintelligence.policystudio.parameters.execution.ExecutionStatus;
+import com.los.core.creditintelligence.policystudio.runtime.CanonicalPolicyRuntime;
+import com.los.core.creditintelligence.policystudio.runtime.CanonicalRuleResult;
 import com.los.core.creditintelligence.policystudio.service.PolicyStudioOrchestrator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
@@ -52,13 +54,13 @@ public class PolicyStudioTestExperienceService {
 
     public static final String BANNER = "TEST ONLY — NON-AUTHORITATIVE · DOES NOT CHANGE THE APPLICATION";
     public static final String ENGINE =
-            "PolicyDslInterpreterV1 + StagingProspectSimulationService capacity-gate / overallFromCounts semantics";
+            "CanonicalPolicyRuntime ← PolicyDslInterpreterV1 + CPES (Wave-5 target semantics)";
 
     private final CreditIntelligenceProperties properties;
     private final PolicyStudioOrchestrator orchestrator;
     private final StagingProspectSimulationService prospectSimulationService;
     private final CanonicalParameterExecutionService parameterExecution;
-    private final PolicyDslInterpreterV1 interpreter = new PolicyDslInterpreterV1();
+    private final CanonicalPolicyRuntime canonicalPolicyRuntime;
     private final PolicyMetricLineageService lineageService = new PolicyMetricLineageService();
     private CanonicalParameterRegistry registry() {
         return RuleOperandPresenter.registry();
@@ -76,6 +78,7 @@ public class PolicyStudioTestExperienceService {
         this.orchestrator = orchestrator;
         this.prospectSimulationService = prospectSimulationService;
         this.parameterExecution = parameterExecution;
+        this.canonicalPolicyRuntime = new CanonicalPolicyRuntime(parameterExecution);
     }
 
     public Map<String, Object> testContext(UUID documentId, String tenantHeader) {
@@ -860,7 +863,7 @@ public class PolicyStudioTestExperienceService {
         return ch;
     }
 
-    /** Same semantics as StagingProspectSimulationService.evaluateRule (capacity-gate aware). */
+    /** Wave-5: same CanonicalPolicyRuntime as target/shadow path (CPES + Policy DSL). */
     private String evaluateRule(
             CiPolicyRuleCandidate rule,
             Map<String, Object> metrics,
@@ -871,14 +874,39 @@ public class PolicyStudioTestExperienceService {
         if (expr == null || expr.isEmpty()) {
             return rule.getOnMissing() == null ? "DATA_INSUFFICIENT" : rule.getOnMissing();
         }
-        var ctx = new PolicyDslInterpreterV1.EvaluationContext(
-                metrics == null ? Map.of() : metrics,
-                new LinkedHashMap<>(facts == null ? Map.of() : facts),
-                new LinkedHashMap<>(policyParams == null ? Map.of() : policyParams),
-                new LinkedHashMap<>(facts == null ? Map.of() : facts),
-                clock,
-                rule.getOnMissing() == null ? "DATA_INSUFFICIENT" : rule.getOnMissing());
-        String boolOutcome = interpreter.evaluate(expr, ctx);
+        LocalDate asOf = clock == null ? LocalDate.of(2024, 6, 15) : clock.today();
+        EvaluationContext.Builder b = EvaluationContext.builder()
+                .mode(EvaluationMode.POLICY_TEST)
+                .evaluationAsOf(asOf);
+        if (metrics != null) {
+            metrics.forEach((k, v) -> {
+                if (k != null && v != null) b.fact(k, unwrapMetric(v));
+            });
+        }
+        if (facts != null) {
+            facts.forEach((k, v) -> {
+                if (k != null && v != null) b.fact(k, v);
+            });
+        }
+        if (policyParams != null) {
+            policyParams.forEach((k, v) -> {
+                if (k != null && v != null) b.input(k, v);
+            });
+        }
+        // POLICY_TEST banking fixtures remain allowed via entities when present in metrics pipeline
+        CanonicalRuleResult rr = canonicalPolicyRuntime.evaluateRule(
+                new CanonicalPolicyRuntime.RuleSpec(
+                        rule.getSystemRuleId() == null ? rule.getId() == null ? "rule" : rule.getId().toString()
+                                : rule.getSystemRuleId(),
+                        expr),
+                b.build(),
+                asOf);
+        String boolOutcome = switch (rr.result()) {
+            case PASS -> "PASS";
+            case FAIL -> "FAIL";
+            case ERROR -> "ERROR";
+            case DATA_INSUFFICIENT -> "DATA_INSUFFICIENT";
+        };
         if ("DATA_INSUFFICIENT".equals(boolOutcome) || "REFER".equals(boolOutcome)) {
             return boolOutcome;
         }
@@ -893,6 +921,15 @@ public class PolicyStudioTestExperienceService {
             return rule.getOnFalse() == null ? "FAIL" : rule.getOnFalse();
         }
         return boolOutcome;
+    }
+
+    private static Object unwrapMetric(Object raw) {
+        if (raw instanceof Map<?, ?> mm) {
+            Object v = mm.get("v");
+            if (v == null) v = mm.get("value");
+            return v != null ? v : raw;
+        }
+        return raw;
     }
 
     // ─── helpers ───────────────────────────────────────────────────────────

@@ -83,6 +83,16 @@ public final class PolicyDsl {
         return op("NE", left, right);
     }
 
+    /** Inclusive BETWEEN: low <= left <= high. */
+    public static Map<String, Object> between(Object left, Object low, Object high) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("op", "BETWEEN");
+        m.put("left", left);
+        m.put("low", low instanceof Map<?, ?> ? low : Map.of("const", low));
+        m.put("high", high instanceof Map<?, ?> ? high : Map.of("const", high));
+        return m;
+    }
+
     /** Membership: left IN set (list of consts or raw values). */
     public static Map<String, Object> in(Object left, List<?> values) {
         Map<String, Object> m = new LinkedHashMap<>();
