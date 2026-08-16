@@ -43,8 +43,23 @@ public final class DecisionOwnershipFlags {
         demoDefaultsNotDecisionTruth = value;
     }
 
+    /**
+     * When true, {@link CanonicalUnderwritingOrchestration#assembleTargetLive} enforces
+     * production certification. Default false — legacy live authority unchanged.
+     */
+    private static volatile boolean targetLiveCertificationGateEnabled = false;
+
+    public static boolean targetLiveCertificationGateEnabled() {
+        return targetLiveCertificationGateEnabled;
+    }
+
+    public static void setTargetLiveCertificationGateEnabled(boolean value) {
+        targetLiveCertificationGateEnabled = value;
+    }
+
     public static void resetForTests() {
         scorecardHardRulesShadowOnly = false;
         demoDefaultsNotDecisionTruth = true;
+        targetLiveCertificationGateEnabled = false;
     }
 }

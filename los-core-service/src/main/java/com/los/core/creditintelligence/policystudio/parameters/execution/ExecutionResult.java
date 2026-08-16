@@ -14,7 +14,8 @@ import java.util.Map;
  * collections are values — not missing data.
  *
  * <p>Catalogue {@code implemented}/{@code production_ready} are never execution truth.
- * Certification remains NOT ESTABLISHED (not part of this contract's executable truth).
+ * Wave-8 certification is a separate axis ({@code certificationStatus}) — never folded into
+ * {@code capability}.
  */
 public record ExecutionResult(
         String canonicalParameterId,
@@ -101,7 +102,61 @@ public record ExecutionResult(
         m.put("exactProducerPath", exactProducerPath);
         m.put("simulatedValue", simulatedValue());
         m.put("executionAuthority", "CanonicalParameterExecutionService");
-        m.put("certificationStatus", "NOT_ESTABLISHED");
+        // Wave-8: certification projection — separate from capability / valueAvailable
+        m.putAll(certificationProjection());
+        return m;
+    }
+
+    /**
+     * Certification axis projection. Never sets capability from certification.
+     */
+    public Map<String, Object> certificationProjection() {
+        Map<String, Object> m = new LinkedHashMap<>();
+        var auth = com.los.core.creditintelligence.policystudio.certification.ProductionCertificationAuthority.get();
+        if (auth == null || canonicalParameterId == null || canonicalParameterId.isBlank()) {
+            m.put("certificationStatus",
+                    com.los.core.creditintelligence.policystudio.certification.CertificationStatus.UNCERTIFIED.name());
+            m.put("certificationStatusWave1Alias", "NOT_ESTABLISHED");
+            m.put("certificationId", null);
+            m.put("certifiedArtifactVersion", producerVersion);
+            m.put("certificationAuthority",
+                    com.los.core.creditintelligence.policystudio.certification.ProductionCertificationService.AUTHORITY);
+            m.put("capabilityIndependentOfCertification", true);
+            return m;
+        }
+        String version = producerVersion == null || producerVersion.isBlank() ? "1" : producerVersion;
+        Map<String, Object> proj = auth.projectionFor(
+                com.los.core.creditintelligence.policystudio.certification.CertifiableArtifactType
+                        .CANONICAL_PARAMETER_PRODUCER,
+                canonicalParameterId,
+                version,
+                com.los.core.creditintelligence.policystudio.certification.CertificationScopeType.PLATFORM,
+                null);
+        // Also try authored definition id = canonical id
+        if (!"CERTIFIED".equals(String.valueOf(proj.get("certificationStatus")))) {
+            Map<String, Object> authored = auth.projectionFor(
+                    com.los.core.creditintelligence.policystudio.certification.CertifiableArtifactType
+                            .AUTHORED_CALCULATION_DEFINITION,
+                    canonicalParameterId,
+                    version,
+                    com.los.core.creditintelligence.policystudio.certification.CertificationScopeType.PLATFORM,
+                    null);
+            if ("CERTIFIED".equals(String.valueOf(authored.get("certificationStatus")))) {
+                proj = authored;
+            }
+        }
+        m.putAll(proj);
+        if (!m.containsKey("certificationStatusWave1Alias")) {
+            m.put("certificationStatusWave1Alias",
+                    "UNCERTIFIED".equals(String.valueOf(m.get("certificationStatus")))
+                            || "REVOKED".equals(String.valueOf(m.get("certificationStatus")))
+                            || "PENDING_REVIEW".equals(String.valueOf(m.get("certificationStatus")))
+                            ? "NOT_ESTABLISHED"
+                            : m.get("certificationStatus"));
+        }
+        m.put("certificationAuthority",
+                com.los.core.creditintelligence.policystudio.certification.ProductionCertificationService.AUTHORITY);
+        m.put("capabilityIndependentOfCertification", true);
         return m;
     }
 

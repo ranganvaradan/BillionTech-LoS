@@ -67,7 +67,9 @@ class Wave1ExecutionResultContractTest {
         assertThat(((Number) r.value()).intValue()).isEqualTo(0);
         assertThat(r.mode()).isEqualTo(EvaluationMode.POLICY_TEST);
         assertThat(r.evaluationAsOf()).isEqualTo(LocalDate.of(2026, 8, 1));
-        assertThat(r.toCanonicalContractMap().get("certificationStatus")).isEqualTo("NOT_ESTABLISHED");
+        // Wave-8: certification vocabulary is UNCERTIFIED (Wave-1 used NOT_ESTABLISHED synonym)
+        assertThat(r.toCanonicalContractMap().get("certificationStatus")).isEqualTo("UNCERTIFIED");
+        assertThat(r.toCanonicalContractMap().get("certificationStatusWave1Alias")).isEqualTo("NOT_ESTABLISHED");
     }
 
     @Test

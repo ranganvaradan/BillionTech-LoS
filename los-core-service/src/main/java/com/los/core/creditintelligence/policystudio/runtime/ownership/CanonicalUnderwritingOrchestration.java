@@ -117,6 +117,85 @@ public final class CanonicalUnderwritingOrchestration {
                 prov);
     }
 
+    /**
+     * Target-live path with optional Wave-8 certification gate.
+     * Certification failure → {@link FinalUnderwritingDecision.FinalOutcome#LIVE_BLOCKED}
+     * (operational), never credit REJECT.
+     * Legacy LoanApplicationFlowService is unaffected.
+     */
+    public FinalUnderwritingDecision assembleTargetLive(
+            String applicationId,
+            LocalDate evaluationAsOf,
+            EvaluationContext sharedContext,
+            String policyId,
+            String policyVersion,
+            List<CanonicalPolicyRuntime.RuleSpec> policyRules,
+            ScorecardBandInput scorecard,
+            Map<String, Object> limitResult,
+            Map<String, Object> pricingResult,
+            ManualOverrideRecord override,
+            List<String> automaticOperandCanonicalIds,
+            String scorecardId,
+            String scorecardVersion,
+            com.los.core.creditintelligence.policystudio.certification.CertificationScopeType scopeType,
+            String scopeId) {
+
+        if (DecisionOwnershipFlags.targetLiveCertificationGateEnabled()) {
+            var cert = com.los.core.creditintelligence.policystudio.certification
+                    .ProductionCertificationAuthority.get();
+            if (cert == null) {
+                cert = new com.los.core.creditintelligence.policystudio.certification
+                        .ProductionCertificationService();
+            }
+            Map<String, Object> gate = cert.evaluatePolicyLiveGate(
+                    policyId, policyVersion,
+                    scopeType == null
+                            ? com.los.core.creditintelligence.policystudio.certification.CertificationScopeType.PLATFORM
+                            : scopeType,
+                    scopeId,
+                    automaticOperandCanonicalIds,
+                    scorecardId,
+                    scorecardVersion);
+            if (!Boolean.TRUE.equals(gate.get("livePermitted"))) {
+                Map<String, Object> prov = new LinkedHashMap<>();
+                prov.put("orchestration", PATH);
+                prov.put("certificationGate", gate);
+                prov.put("operationalBlock", "NOT_CERTIFIED");
+                prov.put("creditReject", false);
+                prov.put("liveDecisionAuthorityChanged", false);
+                List<String> reasons = new ArrayList<>();
+                reasons.add("NOT_CERTIFIED");
+                reasons.add("LIVE_BLOCKED");
+                Object blockers = gate.get("blockers");
+                if (blockers instanceof List<?> list) {
+                    for (Object b : list) reasons.add(String.valueOf(b));
+                }
+                return new FinalUnderwritingDecision(
+                        applicationId,
+                        evaluationAsOf,
+                        Map.of("overall", "NOT_EVALUATED_DUE_TO_CERTIFICATION"),
+                        scorecard == null ? Map.of() : scorecard.detail(),
+                        limitResult == null ? Map.of() : limitResult,
+                        pricingResult == null ? Map.of() : pricingResult,
+                        override,
+                        FinalUnderwritingDecision.FinalOutcome.LIVE_BLOCKED,
+                        reasons,
+                        prov);
+            }
+        }
+
+        FinalUnderwritingDecision credit = assemble(
+                applicationId, evaluationAsOf, sharedContext, policyId, policyVersion,
+                policyRules, scorecard, limitResult, pricingResult, override);
+        Map<String, Object> prov = new LinkedHashMap<>(credit.provenance());
+        prov.put("targetLivePath", true);
+        prov.put("certificationGateEnforced", DecisionOwnershipFlags.targetLiveCertificationGateEnabled());
+        return new FinalUnderwritingDecision(
+                credit.applicationId(), credit.evaluationAsOf(), credit.policyResult(),
+                credit.scorecardResult(), credit.limitResult(), credit.pricingResult(),
+                credit.manualOverride(), credit.finalOutcome(), credit.reasonCodes(), prov);
+    }
+
     /** Workflow readiness never becomes APPROVE. */
     public static FinalUnderwritingDecision.FinalOutcome workflowStateToDecision(String workflowState) {
         if (workflowState == null) return FinalUnderwritingDecision.FinalOutcome.DATA_INSUFFICIENT;

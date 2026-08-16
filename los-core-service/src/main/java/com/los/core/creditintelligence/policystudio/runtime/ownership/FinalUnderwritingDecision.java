@@ -26,7 +26,9 @@ public record FinalUnderwritingDecision(
         REJECT,
         REFER,
         DATA_INSUFFICIENT,
-        ERROR
+        ERROR,
+        /** Operational/governance block — not an adverse credit REJECT. */
+        LIVE_BLOCKED
     }
 
     public FinalUnderwritingDecision {
