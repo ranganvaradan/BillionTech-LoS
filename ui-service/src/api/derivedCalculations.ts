@@ -1,5 +1,10 @@
 /** Derived calculation authoring API (Data & Parameters). */
-import { apiFetch } from '@/api/http'
+import { http } from '@/api/http'
+
+/**
+ * Relative to http baseURL (`/api/v1` on staging). Must NOT include `/api/v1`.
+ */
+const BASE = 'data-parameters/derived-calculations'
 
 export type DerivedCalculationDraftRequest = {
   canonicalParameterId: string
@@ -15,9 +20,10 @@ export async function getDerivedCalculationLatest(
   opts?: { tenantId?: string },
 ): Promise<Record<string, unknown>> {
   const q = opts?.tenantId ? `?tenantId=${encodeURIComponent(opts.tenantId)}` : ''
-  return apiFetch(
-    `/api/v1/data-parameters/derived-calculations/by-parameter/${encodeURIComponent(canonicalParameterId)}${q}`,
+  const { data } = await http.get<Record<string, unknown>>(
+    `${BASE}/by-parameter/${encodeURIComponent(canonicalParameterId)}${q}`,
   )
+  return data
 }
 
 export async function saveDerivedCalculationDraft(
@@ -25,27 +31,27 @@ export async function saveDerivedCalculationDraft(
   opts?: { tenantId?: string },
 ): Promise<Record<string, unknown>> {
   const q = opts?.tenantId ? `?tenantId=${encodeURIComponent(opts.tenantId)}` : ''
-  return apiFetch(`/api/v1/data-parameters/derived-calculations${q}`, {
-    method: 'POST',
-    body: JSON.stringify(body),
-  })
+  const { data } = await http.post<Record<string, unknown>>(`${BASE}${q}`, body)
+  return data
 }
 
 export async function testDerivedCalculation(
   id: string,
   sampleInputs: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
-  return apiFetch(`/api/v1/data-parameters/derived-calculations/${encodeURIComponent(id)}/test`, {
-    method: 'POST',
-    body: JSON.stringify(sampleInputs),
-  })
+  const { data } = await http.post<Record<string, unknown>>(
+    `${BASE}/${encodeURIComponent(id)}/test`,
+    sampleInputs,
+  )
+  return data
 }
 
 export async function markDerivedCalculationProductionReady(
   id: string,
 ): Promise<Record<string, unknown>> {
-  return apiFetch(
-    `/api/v1/data-parameters/derived-calculations/${encodeURIComponent(id)}/mark-production-ready`,
-    { method: 'POST', body: '{}' },
+  const { data } = await http.post<Record<string, unknown>>(
+    `${BASE}/${encodeURIComponent(id)}/mark-production-ready`,
+    {},
   )
+  return data
 }
