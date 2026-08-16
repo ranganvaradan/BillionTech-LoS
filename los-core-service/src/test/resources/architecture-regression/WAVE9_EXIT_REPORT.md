@@ -8,8 +8,8 @@ Projection-convergence only — **no** capability, policy, scoring, Frozen, or V
 | Field | Value |
 |-------|-------|
 | SOURCE_START_SHA | `261e622e4cea9bb00f46178a0b9939c11999fca2` |
-| SOURCE_FINAL_SHA | *(set at commit)* |
-| GITHUB_REMOTE_SHA | *(set at push)* |
+| SOURCE_FINAL_SHA | `1f566eb22db632327494b0904f1c89c58f4a9f01` |
+| GITHUB_REMOTE_SHA | *(pending push)* |
 
 ## TRUTH_PROJECTION_CLASS
 
