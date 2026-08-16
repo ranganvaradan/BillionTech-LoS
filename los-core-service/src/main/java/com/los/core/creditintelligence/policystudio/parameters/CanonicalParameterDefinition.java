@@ -162,6 +162,9 @@ public record CanonicalParameterDefinition(
         m.put("production", Boolean.TRUE.equals(exec.get("productionReady")) ? "READY" : "NOT READY");
         if (cap.cardinality() != null) m.put("cardinality", cap.cardinality());
         if (cap.providerFieldPath() != null) m.put("providerFieldPath", cap.providerFieldPath());
+        // Wave-4 semantic overlay (metadata only; does not change execution)
+        com.los.core.creditintelligence.policystudio.parameters.semantic.GacatSemanticProjection
+                .mergeIntoBusinessView(m, this);
         return m;
     }
 }

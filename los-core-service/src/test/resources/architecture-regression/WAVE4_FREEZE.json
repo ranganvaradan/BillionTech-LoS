@@ -1,0 +1,41 @@
+{
+  "wave": "PLATFORM-CONVERGENCE-WAVE-4-GACAT-SEMANTIC-CLASSIFICATION",
+  "recordedAtUtc": "2026-08-16T16:40:00Z",
+  "branch": "reconcile/laptop-layout-2026-08",
+  "SOURCE_START_SHA": "1d32d74cb4b1ea055ed20e8b940c8e4024c1cdaa",
+  "SOURCE_FINAL_SHA": "PENDING_CONTENT_COMMIT",
+  "GITHUB_REMOTE": "https://github.com/ranganvaradan/BillionTech-LoS.git",
+  "SEMANTIC_VERSION": "GACAT-SEMANTIC-4.0.0",
+  "DB_MIGRATION_WAVE4": "NONE",
+  "GACAT_TOTAL": 169,
+  "UNKNOWN_SEMANTIC_COUNT": 0,
+  "CANONICAL_IDS_CHANGED": 0,
+  "PRODUCERS_ADDED": 0,
+  "CALCULATION_DEFINITIONS_CREATED": "NONE",
+  "CAPABILITY_COUNTS_AFTER": {
+    "policyTestCapableCount": 40,
+    "w6CapableCount": 30,
+    "underwritingCapableCount": 40
+  },
+  "PARAMETER_CLASS_COUNTS": {
+    "INGREDIENT": 65,
+    "BUSINESS_PARAMETER": 90,
+    "MANUAL_INPUT": 10,
+    "CONFIGURATION": 4,
+    "DECISION_OUTPUT": 0
+  },
+  "FULL_CLASSIFICATION_ARTIFACT": "baselines/gacat-169-semantic-classification.json",
+  "GACAT_RUNTIME_SEMANTICS_CHANGED": false,
+  "VIKASAM_MUTATED": false,
+  "POLICY_RUNTIME_CHANGED": false,
+  "SCORECARD_LOGIC_CHANGED": false,
+  "WAVE_4_EXIT_CRITERIA": "PASS",
+  "WAVE_5_STARTED": false,
+  "KNOWN_UNTRACKED_ARTIFACTS_PRESERVED": true,
+  "notes": [
+    "Semantic overlay via GacatSemanticRegistry; no Flyway migration.",
+    "Legacy implemented/production_ready marked LEGACY_EXECUTION_METADATA only.",
+    "Policy picker filtering deferred; policySelectableDefault exposed as metadata.",
+    "SafeDerivedSemanticValidation consults cardinality/types without changing operators."
+  ]
+}

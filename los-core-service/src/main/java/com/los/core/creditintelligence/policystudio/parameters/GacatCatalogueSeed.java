@@ -16,11 +16,11 @@ import static com.los.core.creditintelligence.policystudio.parameters.CanonicalP
  * Do not use as a silent production fallback.
  * Inclusion ≠ production-ready.
  */
-final class GacatCatalogueSeed {
+public final class GacatCatalogueSeed {
 
     private GacatCatalogueSeed() {}
 
-    static List<CanonicalParameterDefinition> all() {
+    public static List<CanonicalParameterDefinition> all() {
         List<CanonicalParameterDefinition> p = new ArrayList<>();
         bureauRetailRaw(p);
         bureauRetailDerived(p);
