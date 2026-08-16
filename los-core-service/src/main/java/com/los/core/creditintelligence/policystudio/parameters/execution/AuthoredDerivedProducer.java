@@ -245,6 +245,15 @@ public final class AuthoredDerivedProducer implements ParameterProducer {
     }
 
     /**
+     * Shared with surface overlays: a stored definition is spine-executable only when
+     * expression op matches target intent (e.g. COUNT_PERIODS_MATCHING for COUNT_DPD_MONTHS).
+     */
+    public static boolean isSpineExecutableDefinition(
+            String canonicalParameterId, Map<String, Object> expr) {
+        return expressionMatchesTargetIntent(canonicalParameterId, expr);
+    }
+
+    /**
      * Refuse capability when approved expression op cannot satisfy target business intent
      * (e.g. MONTHS_SINCE_LAST_MATCH on COUNT_DPD_MONTHS target).
      */
