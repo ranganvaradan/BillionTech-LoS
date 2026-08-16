@@ -9,7 +9,7 @@ Frozen remains primary. Rollback remains available.
 |-------|-------|
 | SOURCE_START_SHA | `5f32b6f9c4e16b2b98b8aa8af544c99a13257b17` |
 | SOURCE_FINAL_SHA | `a926e9406a166f361d169d052fc5f5b0f6a17cf2` |
-| GITHUB_REMOTE_SHA | `99f1a74a19dad6c5532200fa11bc53a8ad08e134` |
+| GITHUB_REMOTE_SHA | `cc3093abb1ea0462642359642dac894fc1ea241f` |
 
 ## LIVE_CUTOVER_READY = **NO**
 
