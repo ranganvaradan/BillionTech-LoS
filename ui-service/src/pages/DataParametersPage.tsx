@@ -23,7 +23,7 @@ import {
   supportBadgeClass,
   type Dp1ListFilters,
 } from '@/lib/dataParameters/dp1Display'
-import { DefineDerivedCalculationPanel } from '@/components/dataParameters/DefineDerivedCalculationPanel'
+import { SuggestCalculationWorkflow } from '@/components/dataParameters/SuggestCalculationWorkflow'
 
 function asList(v: unknown): unknown[] {
   return Array.isArray(v) ? v : []
@@ -341,15 +341,13 @@ function ParameterDetailPanel({
         </p>
       </div>
 
-      <DefineDerivedCalculationPanel
+      <SuggestCalculationWorkflow
         canonicalParameterId={String(definition.canonicalId ?? parameter.id ?? '')}
-        unit={String(definition.unit ?? parameter.unit ?? '') || undefined}
+        businessName={String(definition.businessName ?? parameter.businessName ?? '')}
         primitives={asList(asRecord(sections.provenance).requiredPrimitives ?? parameter.requiredPrimitives).map(
           String,
         )}
-        supportStatus={String(
-          nestStatus(support) || support.status || '',
-        )}
+        supportStatus={String(nestStatus(support) || support.status || '')}
       />
 
       <div className="grid gap-4 lg:grid-cols-2">

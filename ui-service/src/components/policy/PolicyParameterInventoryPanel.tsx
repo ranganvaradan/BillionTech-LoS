@@ -6,6 +6,7 @@ import {
   type InvRow,
   unresolvedTokens,
 } from '@/components/policy/policyParameterInventoryState'
+import { SuggestCalculationWorkflow } from '@/components/dataParameters/SuggestCalculationWorkflow'
 
 /**
  * DP-3 — Policy parameter inventory derived from persisted Policy rule graph.
@@ -16,6 +17,26 @@ export function PolicyParameterInventoryPanel({ documentId }: { documentId: stri
   const [meta, setMeta] = useState<Record<string, unknown> | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [activeCalcId, setActiveCalcId] = useState<string | null>(null)
+
+  const reload = () => {
+    if (!documentId) return
+    setBusy(true)
+    setError(null)
+    void fetchPolicyParameterInventory(documentId)
+      .then((data) => {
+        setMeta(data)
+        setRows(Array.isArray(data.parameters) ? (data.parameters as InvRow[]) : [])
+      })
+      .catch((e) => {
+        if (e instanceof ApiError) {
+          setError(e.serverMessage || e.message || 'Failed to load inventory')
+        } else {
+          setError(e instanceof Error ? e.message : 'Failed to load inventory')
+        }
+      })
+      .finally(() => setBusy(false))
+  }
 
   useEffect(() => {
     if (!documentId) return
@@ -26,7 +47,6 @@ export function PolicyParameterInventoryPanel({ documentId }: { documentId: stri
     setRows([])
     void (async () => {
       try {
-        // GET ensures materialization when graph missing; do not rematerialize on every open.
         const data = await fetchPolicyParameterInventory(documentId)
         if (cancelled) return
         setMeta(data)
@@ -133,40 +153,78 @@ export function PolicyParameterInventoryPanel({ documentId }: { documentId: stri
                   <td className="py-1 pr-3">{r.sourceFamily ?? '—'}</td>
                   <td className="py-1 pr-3">
                     <div className="flex flex-wrap gap-1">
-                      <span
-                        className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                          r.policyTestReady
-                            ? 'bg-emerald-50 text-emerald-900'
-                            : 'bg-slate-100 text-slate-500'
-                        }`}
-                        title="Can this parameter be used in Policy Test simulations?"
-                      >
-                        Policy Test Ready
-                      </span>
-                      <span
-                        className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                          r.runtimeReady
-                            ? 'bg-sky-50 text-sky-900'
-                            : 'bg-slate-100 text-slate-500'
-                        }`}
-                        title="Available for runtime evaluation when fulfilment path succeeds"
-                      >
-                        Runtime Ready
-                      </span>
-                      <span
-                        className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                          r.productionReady
-                            ? 'bg-indigo-50 text-indigo-900'
-                            : 'bg-slate-100 text-slate-500'
-                        }`}
-                        title="Certified for production lending use"
-                      >
-                        Production Ready
-                      </span>
+                      {r.calculationRequired === true ? (
+                        <span
+                          className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-amber-50 text-amber-900"
+                          title="Executable calculation definition is missing"
+                        >
+                          Calculation required
+                        </span>
+                      ) : null}
+                      {r.policyTestReady === true ? (
+                        <span
+                          className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-emerald-50 text-emerald-900"
+                          title="Can this parameter be used in Policy Test simulations?"
+                        >
+                          Policy Test Ready
+                        </span>
+                      ) : (
+                        <span
+                          className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-slate-100 text-slate-500"
+                          title="Policy Test not ready"
+                        >
+                          Policy test unavailable
+                        </span>
+                      )}
+                      {r.runtimeReady === true ? (
+                        <span
+                          className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-sky-50 text-sky-900"
+                          title="Available for runtime evaluation when fulfilment path succeeds"
+                        >
+                          Runtime Ready
+                        </span>
+                      ) : (
+                        <span
+                          className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-slate-100 text-slate-500"
+                          title="Runtime not ready"
+                        >
+                          Runtime not ready
+                        </span>
+                      )}
+                      {r.productionReady === true ? (
+                        <span
+                          className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-indigo-50 text-indigo-900"
+                          title="Certified for production lending use"
+                        >
+                          Production Ready
+                        </span>
+                      ) : (
+                        <span
+                          className="rounded px-1.5 py-0.5 text-[10px] font-medium bg-slate-100 text-slate-500"
+                          title="Not certified for production"
+                        >
+                          Production not ready
+                        </span>
+                      )}
                     </div>
                     <div className="mt-0.5 text-[10px] text-slate-500">
                       Overall: {String(r.overallReadiness ?? '—')}
                     </div>
+                    {r.calculationRequired === true && r.canonicalParameterId ? (
+                      <button
+                        type="button"
+                        className="mt-1 text-[10px] font-medium text-sky-700 underline"
+                        onClick={() =>
+                          setActiveCalcId(
+                            activeCalcId === r.canonicalParameterId
+                              ? null
+                              : String(r.canonicalParameterId),
+                          )
+                        }
+                      >
+                        Suggest calculation
+                      </button>
+                    ) : null}
                   </td>
                   <td className="py-1 pr-3">{r.resolutionStatus ?? '—'}</td>
                 </tr>
@@ -174,6 +232,16 @@ export function PolicyParameterInventoryPanel({ documentId }: { documentId: stri
             </tbody>
           </table>
         </div>
+      ) : null}
+      {activeCalcId ? (
+        <SuggestCalculationWorkflow
+          canonicalParameterId={activeCalcId}
+          businessName={
+            rows.find((r) => r.canonicalParameterId === activeCalcId)?.businessName || undefined
+          }
+          calculationRequired
+          onChanged={reload}
+        />
       ) : null}
     </section>
   )

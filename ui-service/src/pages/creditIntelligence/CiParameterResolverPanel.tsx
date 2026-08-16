@@ -6,6 +6,7 @@ import {
   searchCanonicalParameters,
   type ReviewRuleBody,
 } from '@/api/creditIntelligence'
+import { SuggestCalculationWorkflow } from '@/components/dataParameters/SuggestCalculationWorkflow'
 
 function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {}
@@ -254,6 +255,19 @@ export function CiParameterResolverPanel({
                     ? ` · (${String(suggestion.executionState)})`
                     : ''}
                 </p>
+              ) : null}
+              {(suggestion.calculationRequired === true ||
+                String(suggestion.executionState ?? '').includes('CALCULATION') ||
+                String(suggestion.supportStatus ?? '') === 'CALCULATION_NOT_IMPLEMENTED') &&
+              suggestion.canonicalParameter ? (
+                <div className="mt-2 rounded border border-amber-200 bg-white/70 p-2">
+                  <p className="text-xs font-medium text-amber-950">Calculation required</p>
+                  <SuggestCalculationWorkflow
+                    canonicalParameterId={String(suggestion.canonicalParameter)}
+                    businessName={String(suggestion.businessName ?? suggestion.canonicalParameter)}
+                    calculationRequired
+                  />
+                </div>
               ) : null}
               {suggestion.productionReady !== true && suggestion.policyTestReady === true ? (
                 <p className="text-xs text-amber-800 mt-1">

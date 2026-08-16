@@ -7,6 +7,7 @@ import {
 } from '@/components/creditIntelligence/CiSection'
 import { decisionPolicyDomainLabel } from '@/lib/creditIntelligence/businessLexicon'
 import { CiCapabilityCataloguePanel } from '@/pages/creditIntelligence/CiCapabilityCataloguePanel'
+import { SuggestCalculationWorkflow } from '@/components/dataParameters/SuggestCalculationWorkflow'
 import { CiParameterResolverPanel } from '@/pages/creditIntelligence/CiParameterResolverPanel'
 import {
   CiDataCalcResolutionPanel,
@@ -756,6 +757,29 @@ export function CiPolicyRulesTab({
                                   <div className="mt-1 text-slate-700">
                                     {String(op.evaluatedFrom ?? '—')} ·{' '}
                                     {String(op.availabilityLabel ?? op.resolutionState ?? '—')}
+                                    {op.calculationRequired === true ? (
+                                      <div className="mt-2 rounded border border-amber-200 bg-amber-50/80 p-2">
+                                        <p className="text-xs font-medium text-amber-950">
+                                          Calculation required
+                                        </p>
+                                        <p className="text-[11px] text-amber-900">
+                                          Policy test unavailable until calculation is defined
+                                        </p>
+                                        {String(op.parameterId ?? op.suggestedParameterId ?? '') ? (
+                                          <div className="mt-2">
+                                            <SuggestCalculationWorkflow
+                                              canonicalParameterId={String(
+                                                op.parameterId ?? op.suggestedParameterId,
+                                              )}
+                                              businessName={String(
+                                                op.businessName ?? op.label ?? '',
+                                              )}
+                                              calculationRequired
+                                            />
+                                          </div>
+                                        ) : null}
+                                      </div>
+                                    ) : null}
                                     {op.howCalculated ? (
                                       <details className="mt-1">
                                         <summary className="cursor-pointer text-xs font-medium text-slate-600">

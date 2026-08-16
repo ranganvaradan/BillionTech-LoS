@@ -8,6 +8,7 @@ import {
 } from '@/api/creditIntelligence'
 import { ApiError } from '@/api/http'
 import { CiExecutiveSummary, CiSection, CiTechnicalDetails } from '@/components/creditIntelligence/CiSection'
+import { SuggestCalculationWorkflow } from '@/components/dataParameters/SuggestCalculationWorkflow'
 
 function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {}
@@ -255,6 +256,20 @@ export function CiPolicySimulationTab({
                     {how.source ? <div>Source: {String(how.source)}</div> : null}
                     {how.period ? <div>Period: {String(how.period)}</div> : null}
                     {how.calculation ? <div>Calculation: {String(how.calculation)}</div> : null}
+                  </div>
+                ) : null}
+                {p.calculationRequired === true &&
+                String(p.canonicalParameterId ?? p.parameterId ?? '') ? (
+                  <div className="mt-2 rounded border border-amber-200 bg-amber-50/70 p-2">
+                    <p className="text-[11px] font-medium text-amber-950">Calculation required</p>
+                    <p className="text-[10px] text-amber-900 mb-1">
+                      Policy test unavailable until calculation is defined
+                    </p>
+                    <SuggestCalculationWorkflow
+                      canonicalParameterId={String(p.canonicalParameterId ?? p.parameterId)}
+                      businessName={String(p.businessName ?? '')}
+                      calculationRequired
+                    />
                   </div>
                 ) : null}
                 {unresolved && onResolveParameter ? (

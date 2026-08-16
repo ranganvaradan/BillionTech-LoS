@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { listGacatScorecardFactors } from '@/api/scorecards'
+import { SuggestCalculationWorkflow } from '@/components/dataParameters/SuggestCalculationWorkflow'
 
 export type GacatFactorPick = {
   canonicalParameterId: string
@@ -117,12 +118,25 @@ export function GacatFactorPicker({ onPick, disabled }: Props) {
           <div>How obtained: {String(selected.howObtained ?? 'Automatic / existing LOS path')}</div>
           <div>
             Production-ready:{' '}
-            {selected.productionReady ? (
+            {selected.productionReady === true ? (
               <span className="text-emerald-700">Yes</span>
             ) : (
               <span className="text-amber-800">Not production-ready</span>
             )}
           </div>
+          {selected.calculationRequired === true ? (
+            <div className="mt-2 rounded border border-amber-200 bg-amber-50/60 p-2">
+              <p className="text-[11px] font-medium text-amber-950">Calculation required</p>
+              <p className="text-[10px] text-amber-900 mb-1">
+                Same canonical workflow as Policy Studio — do not create a duplicate parameter.
+              </p>
+              <SuggestCalculationWorkflow
+                canonicalParameterId={String(selected.canonicalParameterId)}
+                businessName={String(selected.businessName ?? selected.canonicalParameterId)}
+                calculationRequired
+              />
+            </div>
+          ) : null}
           <details className="mt-1">
             <summary className="cursor-pointer text-slate-500">Advanced</summary>
             <div className="mt-1 font-mono text-[10px] text-slate-600">

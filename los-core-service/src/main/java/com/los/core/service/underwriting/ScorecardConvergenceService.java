@@ -240,6 +240,10 @@ public class ScorecardConvergenceService {
         m.put("howObtained", d.calculationSummary() != null ? d.calculationSummary()
                 : (d.existingImplementationBinding() != null ? "Via existing LOS path" : null));
         m.put("productionReady", d.capability() != null && d.capability().productionReady());
+        boolean calculationRequired = d.capability() != null
+                && d.capability().derivationDefined()
+                && !d.capability().implemented();
+        m.put("calculationRequired", calculationRequired);
         m.put("legacyScorecardKey", d.liveScorecardParameter());
         m.put("liveRuleParameter", d.liveRuleParameter());
         m.put("aliases", d.aliases());

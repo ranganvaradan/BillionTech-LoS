@@ -7,6 +7,9 @@ export type InvRow = {
   productionReady?: boolean
   policyTestReady?: boolean
   runtimeReady?: boolean
+  calculationRequired?: boolean
+  calculationDefined?: boolean
+  calculationDefinitionStatus?: string
   sourceFamily?: string
   businessName?: string
 }
