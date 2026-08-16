@@ -94,6 +94,18 @@ public class DerivedCalculationDefinitionService {
         if (!errors.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, String.join("; ", errors));
         }
+        if (SCOPE_PLATFORM.equals(scope)) {
+            CanonicalParameterDefinition target = registry().findById(canonicalId).orElse(null);
+            if (target != null) {
+                DerivedCalculationSemanticCompatibility.Result compat =
+                        DerivedCalculationSemanticCompatibility.assessExpression(
+                                target, expression, id -> registry().findById(id).orElse(null));
+                if (!compat.compatible()) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                            "Semantic/dimensional incompatibility: " + String.join("; ", compat.failures()));
+                }
+            }
+        }
         Set<String> deps = SafeDerivedExpressionEvaluator.collectDependencies(expression);
         detectCycle(canonicalId, deps, tenantId, scope);
 
@@ -150,6 +162,26 @@ public class DerivedCalculationDefinitionService {
         }
         row.setStatus(STATUS_PRODUCTION_READY);
         row.setUpdatedAt(Instant.now());
+        repository.save(row);
+        return toView(row);
+    }
+
+    /** Retire an active definition so it is no longer executable via W6/latestFor. */
+    @Transactional
+    public Map<String, Object> retire(UUID id, String actor) {
+        CiGacatDerivedCalculationDefinition row = repository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "definition not found"));
+        if (STATUS_RETIRED.equals(row.getStatus())) {
+            return toView(row);
+        }
+        row.setStatus(STATUS_RETIRED);
+        row.setUpdatedAt(Instant.now());
+        Map<String, Object> meta = row.getMetadata() == null
+                ? new LinkedHashMap<>() : new LinkedHashMap<>(row.getMetadata());
+        meta.put("retiredBy", actor);
+        meta.put("retiredAt", Instant.now().toString());
+        meta.put("retireReason", "semantic_incompatibility");
+        row.setMetadata(meta);
         repository.save(row);
         return toView(row);
     }

@@ -59,6 +59,13 @@ public class DerivedCalculationAdminController {
         return service.markProductionReady(id);
     }
 
+    @PostMapping("/{id}/retire")
+    public Map<String, Object> retire(
+            @PathVariable UUID id,
+            @RequestParam(required = false, defaultValue = "admin") String actor) {
+        return service.retire(id, actor);
+    }
+
     @PostMapping("/research/suggest")
     public Map<String, Object> suggest(
             @RequestBody Map<String, Object> body,

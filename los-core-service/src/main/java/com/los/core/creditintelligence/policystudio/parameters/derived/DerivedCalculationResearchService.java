@@ -149,6 +149,7 @@ public class DerivedCalculationResearchService {
     /**
      * Generic catalogue-driven options. No parameter-id hardcoding.
      * Semantic similarity only discovers candidates; every dependency is an exact GACAT id.
+     * READY_FOR_REVIEW REF requires semantic/dimensional compatibility — overlap alone is insufficient.
      */
     private List<Map<String, Object>> buildOptions(CanonicalParameterDefinition target, UUID tenantId) {
         List<Map<String, Object>> options = new ArrayList<>();
@@ -169,13 +170,17 @@ public class DerivedCalculationResearchService {
                 ? "" : String.valueOf(target.capability().missingDataTreatment());
         boolean needsConfig = missingTreatment.toUpperCase(Locale.ROOT).contains("NEEDS_CONFIGURATION")
                 || missingTreatment.toUpperCase(Locale.ROOT).contains("CALCULATION_NOT_IMPLEMENTED")
-                || missingTreatment.toUpperCase(Locale.ROOT).contains("VOCABULARY");
+                || missingTreatment.toUpperCase(Locale.ROOT).contains("VOCABULARY")
+                || "CUSTOMER_DEFINED".equalsIgnoreCase(
+                        target.period() == null ? "" : target.period().trim());
 
-        // Option A: single exact primitive REF when types align and no config gate
+        // Option A: single exact primitive REF only when strong semantic equivalence holds
         if (primitiveDeps.size() == 1 && missing.isEmpty() && !needsConfig) {
             String onlyId = String.valueOf(primitiveDeps.get(0).get("parameterId"));
             CanonicalParameterDefinition only = registry().findById(onlyId).orElseThrow();
-            if (typesCompatible(target, only)) {
+            DerivedCalculationSemanticCompatibility.Result compat =
+                    DerivedCalculationSemanticCompatibility.assess(target, only, true);
+            if (compat.compatible() && compat.strongEquivalence()) {
                 Map<String, Object> opt = baseOption(
                         STATUS_READY_FOR_REVIEW,
                         "HIGH",
@@ -183,17 +188,19 @@ public class DerivedCalculationResearchService {
                                 + only.businessName() + " (" + only.id() + ").",
                         Map.of("op", "REF", "id", only.id()),
                         primitiveDeps,
-                        List.of("Target declares exactly one required primitive of compatible type"),
+                        List.of("Target declares exactly one required primitive with strong semantic equivalence"),
                         List.of("Confirm business equivalence before production certification"),
                         List.of(),
-                        List.of("requiredPrimitives", "type_compatibility"),
+                        List.of("requiredPrimitives", "semantic_compatibility", "unit_dimension", "temporal"),
                         true);
+                opt.put("compatibility", compat.toMap());
                 options.add(opt);
             }
         }
 
-        // Option B: related DERIVED already executable / defined that shares primitives or aliases
+        // Option B: related DERIVED — discovery may list candidates, but REF only if strong equivalence
         List<CanonicalParameterDefinition> relatedDerived = findRelatedDerived(target);
+        List<String> rejectedProxies = new ArrayList<>();
         for (CanonicalParameterDefinition rel : relatedDerived) {
             if (rel.id().equals(target.id())) continue;
             boolean relImplemented = rel.capability() != null && rel.capability().implemented();
@@ -202,51 +209,75 @@ public class DerivedCalculationResearchService {
             boolean hasAuthored = authored.isPresent()
                     && !DerivedCalculationDefinitionService.STATUS_RETIRED.equals(authored.get().getStatus());
             if (!relImplemented && !hasAuthored) {
-                // Still list as discovery candidate dependency only when overlapping primitives
+                continue;
+            }
+            DerivedCalculationSemanticCompatibility.Result compat =
+                    DerivedCalculationSemanticCompatibility.assess(target, rel, true);
+            if (!compat.compatible() || !compat.strongEquivalence()) {
+                rejectedProxies.add(rel.id() + " rejected as REF: "
+                        + String.join("; ", compat.failures()));
                 continue;
             }
             List<Map<String, Object>> deps = List.of(
-                    depView(rel, "Related derived parameter with overlapping catalogue semantics"));
-            String conf = relImplemented ? "MEDIUM" : "LOW";
-            List<String> limitations = new ArrayList<>();
-            limitations.add("Proxy / related derived — confirm it matches the lender's intended meaning");
-            if (!rel.id().equals(target.id())) {
-                limitations.add("Does not rename or replace the target canonical id; attaches a REF expression only");
-            }
+                    depView(rel, "Related derived parameter with validated semantic equivalence"));
             Map<String, Object> opt = baseOption(
                     STATUS_READY_FOR_REVIEW,
-                    conf,
-                    "Derive " + target.businessName() + " by referencing related derived parameter "
+                    "HIGH",
+                    "Derive " + target.businessName() + " by referencing equivalent derived parameter "
                             + rel.businessName() + ".",
                     Map.of("op", "REF", "id", rel.id()),
                     deps,
-                    List.of("Catalogue synonym / primitive overlap discovery"),
-                    limitations,
+                    List.of("Semantic/dimensional equivalence validated (not mere keyword overlap)"),
+                    List.of("Confirm lender intent before production certification"),
                     List.of(),
-                    List.of("source_family", "alias_overlap", "requiredPrimitives_overlap"),
+                    List.of("semantic_compatibility", "unit_dimension", "temporal", "aggregation"),
                     options.isEmpty());
+            opt.put("compatibility", compat.toMap());
             options.add(opt);
             if (options.size() >= 2) break;
         }
 
-        // Option C: primitives known but vocabulary/config incomplete → NEEDS_INPUT (no fabricated formula)
-        if (options.isEmpty() && (!primitiveDeps.isEmpty() || !missing.isEmpty() || needsConfig)) {
+        // Option C: no defensible executable expression → NEEDS_INPUT (never invent a proxy formula)
+        if (options.isEmpty()) {
+            List<String> limitations = new ArrayList<>();
+            limitations.add("No formula was invented to force Policy executability");
+            limitations.add("Overlapping aliases/primitives alone do not authorise READY_FOR_REVIEW");
+            if (!rejectedProxies.isEmpty()) {
+                limitations.addAll(rejectedProxies.stream().limit(5).toList());
+            }
+            List<String> missingOut = new ArrayList<>(missing);
+            if (needsConfig) {
+                missingOut.add("Customer-defined / vocabulary configuration for executable derivation");
+            }
+            if (primitiveDeps.isEmpty() && missingOut.isEmpty()) {
+                missingOut.add("No exact GACAT dependencies with sufficient metadata to form a safe expression");
+            }
+            String explanation;
+            if (needsConfig) {
+                explanation = "Candidate inputs were identified from catalogue metadata, but no semantically "
+                        + "compatible typed expression can be completed until configuration / vocabulary is "
+                        + "confirmed. A direct REF to a related metric (for example max DPD) is not a valid "
+                        + "substitute for " + target.businessName() + ".";
+            } else if (primitiveDeps.isEmpty()) {
+                explanation = "Unable to recommend a calculation from the currently available canonical parameters.";
+            } else {
+                explanation = "Unable to form a complete safe, semantically compatible expression from catalogue "
+                        + "metadata alone. Edit only if you can supply a supported typed expression whose "
+                        + "dependencies match the target's unit, temporal window, aggregation, and business meaning.";
+            }
             Map<String, Object> opt = baseOption(
                     STATUS_NEEDS_INPUT,
                     primitiveDeps.isEmpty() ? "LOW" : "MEDIUM",
-                    needsConfig
-                            ? "Candidate inputs were identified from catalogue metadata, but an executable "
-                            + "typed expression cannot be completed until configuration / vocabulary is confirmed. "
-                            + "Edit the proposal to supply a safe expression over the listed dependencies, "
-                            + "or reject if the business concept is not yet definable."
-                            : "Unable to form a complete safe expression from catalogue metadata alone. "
-                            + "Edit to supply a supported typed expression over exact GACAT dependencies.",
+                    explanation,
                     null,
                     primitiveDeps,
-                    List.of("Dependencies come from exact requiredPrimitives / catalogue metadata only"),
-                    List.of("No formula was invented to force Policy executability"),
-                    missing,
-                    List.of("requiredPrimitives", "missingDataTreatment", "calculationSummary"),
+                    List.of("Dependencies come from exact requiredPrimitives / catalogue metadata only",
+                            "Semantic validation requires datatype, unit/dimension, temporal, aggregation, "
+                                    + "and business-meaning compatibility"),
+                    limitations,
+                    missingOut,
+                    List.of("requiredPrimitives", "missingDataTreatment", "semantic_compatibility",
+                            "unit_dimension", "temporal", "aggregation"),
                     true);
             options.add(opt);
         }
@@ -302,12 +333,24 @@ public class DerivedCalculationResearchService {
     }
 
     private static boolean typesCompatible(CanonicalParameterDefinition target, CanonicalParameterDefinition dep) {
-        String tu = norm(target.unit());
-        String du = norm(dep.unit());
-        if (!tu.isBlank() && !du.isBlank() && tu.equals(du)) return true;
-        // MONTHS / NUMBER soft compatibility when units missing on one side
-        if (tu.isBlank() || du.isBlank()) return true;
-        return tu.equals(du);
+        return DerivedCalculationSemanticCompatibility.assess(target, dep, false).compatible();
+    }
+
+    private void assertExpressionSemanticallyCompatible(
+            String targetParameterId, Map<String, Object> expression) {
+        CanonicalParameterDefinition target = registry().findById(targetParameterId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Unknown GACAT parameter: " + targetParameterId));
+        DerivedCalculationSemanticCompatibility.Result compat =
+                DerivedCalculationSemanticCompatibility.assessExpression(
+                        target,
+                        expression,
+                        id -> registry().findById(id).orElse(null));
+        if (!compat.compatible()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Semantic/dimensional incompatibility — proposal cannot be approved: "
+                            + String.join("; ", compat.failures()));
+        }
     }
 
     private static String norm(String s) {
@@ -380,6 +423,7 @@ public class DerivedCalculationResearchService {
         if (!errors.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, String.join("; ", errors));
         }
+        assertExpressionSemanticallyCompatible(row.getTargetParameterId(), expression);
         row.setProposedExpression(expression);
         row.setProposalStatus(STATUS_READY_FOR_REVIEW);
         row.setUpdatedAt(Instant.now());
@@ -408,6 +452,7 @@ public class DerivedCalculationResearchService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Proposal has no proposedExpression — Edit calculation before Accept");
         }
+        assertExpressionSemanticallyCompatible(row.getTargetParameterId(), expr);
         // Persist via existing V139 authoring path (exact GACAT target, safe validate, cycle check)
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("canonicalParameterId", row.getTargetParameterId());
