@@ -87,7 +87,7 @@ export function lenderSupportLabel(supportStatus: unknown): string {
       return 'Calculated by BillionTech'
     case 'CALCULATION_NOT_IMPLEMENTED':
     case 'SUPPORT_CALCULATION_NOT_IMPLEMENTED':
-      return 'Needs your input'
+      return 'Calculation needs setup'
     case 'PROVIDER_DOES_NOT_SUPPORT':
       return 'Data not available from provider'
     case 'SOURCE_NOT_INTEGRATED':
@@ -114,7 +114,7 @@ export function lenderOverallReadinessLabel(code: unknown): string {
     case 'CAN_CALCULATE_WHEN_DATA_AVAILABLE':
       return 'Can calculate when data is available'
     case 'NEEDS_MANUAL_INPUT':
-      return 'Needs your input'
+      return 'Needs manual input'
     case 'NOT_YET_SUPPORTED':
       return 'Not yet supported'
     case 'APPROVAL_REVOKED':

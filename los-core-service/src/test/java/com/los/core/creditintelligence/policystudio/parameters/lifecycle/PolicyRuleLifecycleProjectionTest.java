@@ -61,7 +61,7 @@ class PolicyRuleLifecycleProjectionTest {
         var needs = PolicyRuleLifecycleProjection.project("r2", new PolicyRuleLifecycleProjection.Facts(
                 true, true, true, false, false, false, true, false, false, false, true, true, false, false));
         assertEquals("NEEDS_INPUT", needs.get("lenderState"));
-        assertEquals("Needs your input", needs.get("statusChip"));
+        assertEquals("Needs review", needs.get("statusChip"));
         assertTrue(Boolean.TRUE.equals(needs.get("forbidAcceptedBadgeWhenNeedsInput")));
         assertFalse(Boolean.TRUE.equals(needs.get("showAcceptRule")));
     }

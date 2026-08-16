@@ -39,7 +39,10 @@ export function lenderPrimaryFromTruth(
     return { state: 'DATA_NOT_AVAILABLE', label: 'Data not available' }
   }
   if (fallbackFlags?.unresolved || fallbackFlags?.calculationRequired) {
-    return { state: 'NEEDS_YOUR_INPUT', label: 'Needs your input' }
+    return {
+      state: fallbackFlags.calculationRequired ? 'CALCULATION_NEEDS_SETUP' : 'NEEDS_YOUR_INPUT',
+      label: fallbackFlags.calculationRequired ? 'Calculation needs setup' : 'Needs your input',
+    }
   }
   if (fallbackFlags?.policyTestReady) {
     return {

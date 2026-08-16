@@ -10,6 +10,10 @@ import { CiCapabilityCataloguePanel } from '@/pages/creditIntelligence/CiCapabil
 import { SuggestCalculationWorkflow } from '@/components/dataParameters/SuggestCalculationWorkflow'
 import { CiParameterResolverPanel } from '@/pages/creditIntelligence/CiParameterResolverPanel'
 import {
+  derivePolicyStudioOperandPresentation,
+  ruleLifecycleNeedsReview,
+} from '@/lib/policyStudio/policyStudioResolverState'
+import {
   CiDataCalcResolutionPanel,
   resolveKindForGroup,
   type DataCalcResolveKind,
@@ -63,6 +67,7 @@ function statusChip(status: string): string {
     case 'Ready':
     case 'Ready to test':
     case 'Ready for confirmation':
+    case 'Needs review':
     case 'Ready to test · Production setup pending':
       return 'bg-sky-100 text-sky-900'
     case 'Manual Input':
@@ -660,7 +665,11 @@ export function CiPolicyRulesTab({
                   const id = String(r.id ?? r.systemRuleId ?? '')
                   const life = asRecord(r.lifecycle)
                   const status = String(
-                    life.lenderStateLabel ?? life.statusChip ?? r.status ?? 'Needs your input',
+                    life.ruleLifecycleLabel ??
+                      life.lenderStateLabel ??
+                      life.statusChip ??
+                      r.status ??
+                      'Needs review',
                   )
                   const visual = asRecord(r.visualLogic)
                   const isTerminal = status === 'Deleted'
@@ -670,7 +679,9 @@ export function CiPolicyRulesTab({
                     status === 'Needs your input' ||
                     status === 'Blocked' ||
                     status === 'Needs Review' ||
+                    status === 'Needs review' ||
                     status === 'Data not available'
+                  const ruleNeedsReview = ruleLifecycleNeedsReview(life)
                   const showAccept =
                     life.showAcceptRule === true ||
                     (life.showAcceptRule == null &&
@@ -718,8 +729,11 @@ export function CiPolicyRulesTab({
                             <p className="mt-1 text-sm text-slate-600">{String(r.failureConditionLabel)}</p>
                           ) : null}
                         </div>
-                        <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusChip(status)}`}>
-                          {status === 'Needs Review' ? 'Needs your input' : status === 'Ignored' ? 'Ignored by you' : status}
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-xs font-semibold ${statusChip(status)}`}
+                          data-testid="rule-lifecycle-status"
+                        >
+                          {status === 'Ignored' ? 'Ignored by you' : status}
                         </span>
                       </div>
 
@@ -749,6 +763,12 @@ export function CiPolicyRulesTab({
                             const op = asRecord(opRaw)
                             const unresolved = Boolean(op.unresolved)
                             const unavailable = Boolean(op.unavailable)
+                            const presentation = derivePolicyStudioOperandPresentation(op, {
+                              ruleNeedsReview,
+                              proposalReadyForReview:
+                                String(op.proposalStatus ?? '') === 'READY_FOR_REVIEW' ||
+                                op.proposalReadyForReview === true,
+                            })
                             return (
                               <div
                                 key={oi}
@@ -759,11 +779,25 @@ export function CiPolicyRulesTab({
                                       ? 'border-slate-300 bg-slate-50'
                                       : 'border-slate-200 bg-white'
                                 }`}
+                                data-testid="rule-operand-row"
                               >
                                 <div className="font-medium text-slate-900">
                                   {String(op.businessName ?? op.label ?? 'Parameter')}
                                 </div>
-                                {unresolved ? (
+                                <div
+                                  className="mt-1 flex flex-wrap items-center gap-2 text-xs"
+                                  data-testid="parameter-execution-status"
+                                >
+                                  <span className="font-semibold text-slate-800">
+                                    Parameter: {presentation.parameterLabel}
+                                  </span>
+                                  {ruleNeedsReview && presentation.capability ? (
+                                    <span className="text-amber-900" data-testid="rule-review-separate">
+                                      Rule: Needs review
+                                    </span>
+                                  ) : null}
+                                </div>
+                                {unresolved || presentation.showMapResolver ? (
                                   <div className="mt-1 flex flex-wrap items-center gap-2">
                                     <span className="text-amber-900">Not yet mapped</span>
                                     <button
@@ -773,7 +807,7 @@ export function CiPolicyRulesTab({
                                       data-testid={`resolve-parameter-${String(op.operandKey ?? oi)}`}
                                       onClick={() => setResolver({ ruleId: id, operand: op })}
                                     >
-                                      Resolve parameter
+                                      {presentation.resolverActionLabel ?? 'Resolve parameter'}
                                     </button>
                                   </div>
                                 ) : unavailable ? (
@@ -787,9 +821,8 @@ export function CiPolicyRulesTab({
                                   <div className="mt-1 text-slate-700">
                                     {String(op.evaluatedFrom ?? '—')} ·{' '}
                                     {String(op.availabilityLabel ?? op.resolutionState ?? '—')}
-                                    {op.calculationRequired === true &&
-                                    !Boolean(asRecord(r.lifecycle).forbidNeedsInputWhenAcceptedReady) ? (
-                                      <div className="mt-2">
+                                    {presentation.showCalculationResolver ? (
+                                      <div className="mt-2" data-testid="policy-studio-calc-resolver">
                                         {String(op.parameterId ?? op.suggestedParameterId ?? '') ? (
                                           <SuggestCalculationWorkflow
                                             canonicalParameterId={String(
@@ -806,6 +839,7 @@ export function CiPolicyRulesTab({
                                                 '',
                                             )}
                                             calculationRequired
+                                            resolverActionHint={presentation.resolverActionLabel}
                                             onChanged={() => {
                                               void onRefresh?.()
                                             }}
@@ -816,53 +850,32 @@ export function CiPolicyRulesTab({
                                           </p>
                                         )}
                                       </div>
-                                    ) : String(op.parameterId ?? op.suggestedParameterId ?? '') &&
-                                      !Boolean(asRecord(r.lifecycle).forbidNeedsInputWhenAcceptedReady) &&
-                                      String(asRecord(r.lifecycle).lenderState ?? '') ===
-                                        'READY_FOR_CONFIRMATION' &&
-                                      (String(op.availabilityLabel ?? '')
-                                        .toLowerCase()
-                                        .includes('derived') ||
-                                        String(op.howCalculated ?? '').trim().length > 0 ||
-                                        op.calculationDefined === true) ? (
+                                    ) : presentation.showManualResolver ? (
                                       <div className="mt-2">
-                                        <SuggestCalculationWorkflow
-                                          canonicalParameterId={String(
-                                            op.parameterId ?? op.suggestedParameterId,
-                                          )}
-                                          businessName={String(op.businessName ?? op.label ?? '')}
-                                          knownExisting
-                                          existingExplanation={
-                                            op.howCalculated
-                                              ? String(op.howCalculated)
-                                              : undefined
-                                          }
-                                          onChanged={() => {
-                                            void onRefresh?.()
-                                          }}
-                                          onMeaningAccepted={() => {
-                                            void onReview(id, {
-                                              uiAction: 'ACCEPT',
-                                              reason:
-                                                'Accepted calculation meaning — matches intended policy',
+                                        <button
+                                          type="button"
+                                          disabled={busy}
+                                          className="bt-btn bt-btn-secondary bt-btn-sm"
+                                          data-testid={`manual-input-${String(op.operandKey ?? oi)}`}
+                                          onClick={() =>
+                                            setResolver({
+                                              ruleId: id,
+                                              operand: { ...op, unresolved: true },
                                             })
-                                          }}
-                                        />
+                                          }
+                                        >
+                                          Provide manual input
+                                        </button>
                                       </div>
-                                    ) : Boolean(asRecord(r.lifecycle).lifecycleReadyToTest) ||
-                                      Boolean(r.lifecycleReadyToTest) ||
-                                      String(asRecord(r.lifecycle).lenderState ?? '').includes(
-                                        'READY_TO_TEST',
-                                      ) ||
-                                      String(asRecord(r.lifecycle).lenderState ?? '') ===
-                                        'ACCEPTED_READY_TO_TEST' ||
-                                      String(asRecord(r.lifecycle).lenderState ?? '') ===
-                                        'PRODUCTION_READY' ? (
-                                      <div className="mt-2 text-xs text-emerald-900" data-testid="rule-calc-ready-note">
-                                        {op.calculationDefined === true || op.howCalculated
-                                          ? 'Calculation confirmed for this rule.'
-                                          : null}
-                                      </div>
+                                    ) : presentation.capability && presentation.explanation ? (
+                                      <details className="mt-2 text-xs text-slate-600">
+                                        <summary className="cursor-pointer font-medium text-sky-800">
+                                          How is this calculated?
+                                        </summary>
+                                        <p className="mt-1 whitespace-pre-wrap">
+                                          {presentation.explanation}
+                                        </p>
+                                      </details>
                                     ) : null}
                                     <div className="mt-2">
                                       <button

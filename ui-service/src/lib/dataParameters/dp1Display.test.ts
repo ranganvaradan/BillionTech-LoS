@@ -12,7 +12,7 @@ import {
 describe('dp1Display lender UX cleanup-2', () => {
   it('uses business language for support statuses', () => {
     expect(parameterSupportBusinessLabel('SUPPORTED_DERIVED')).toBe('Calculated by BillionTech')
-    expect(parameterSupportBusinessLabel('CALCULATION_NOT_IMPLEMENTED')).toBe('Needs your input')
+    expect(parameterSupportBusinessLabel('CALCULATION_NOT_IMPLEMENTED')).toBe('Calculation needs setup')
     expect(parameterSupportBusinessLabel('SUPPORTED_RAW')).toBe('Provided directly')
     expect(platformIntegrationLabel('PRODUCTION_READY')).toBe('Connected')
     expect(overallReadinessLabel('RUNTIME_READY_NONPROD')).toBe('Ready to test')
@@ -45,16 +45,21 @@ describe('dp1Display lender UX cleanup-2', () => {
     ).toBe(true)
   })
 
-  it('DataParametersPage separates policy design vs live use and simplifies source cards', () => {
+  it('DataParametersPage uses canonical primary status and isolates legacy metadata', () => {
     const page = readFileSync(resolve(__dirname, '../../pages/DataParametersPage.tsx'), 'utf8')
-    expect(page).toContain('dp-detail-policy-design')
+    expect(page).toContain('dp-primary-status')
+    expect(page).toContain('dp-detail-primary-status')
     expect(page).toContain('dp-detail-live-use')
-    expect(page).toContain('Available for policy design')
-    expect(page).toContain('Live use: subscription required')
+    expect(page).toContain('lenderPrimaryFromTruth')
     expect(page).toContain('dp-source-capability-summary')
+    expect(page).toContain('dp-source-summary-line')
     expect(page).toContain('BillionTech integration')
-    expect(page).toContain('dp-diagnostics-source-counts')
-    expect(page).toContain('dp-advanced-technical')
+    expect(page).toContain('dp-legacy-filters-advanced')
+    expect(page).toContain('Advanced / Technical — Legacy metadata')
+    expect(page).toContain('CanonicalParameterTruthProjection')
+    expect(page).not.toContain('Legacy readiness (all)')
+    // Catalogue Production Ready only under Advanced details, not primary option label alone
+    expect(page).toContain('dp-legacy-filters-advanced')
     expect(page).not.toContain('Policy use: No')
     expect(page).not.toContain('Source N/I')
     expect(page).not.toContain('SurePass')

@@ -26,6 +26,8 @@ type Props = {
   primitives?: string[]
   ruleStatement?: string
   hideTitle?: boolean
+  /** Wave 10A — preferred lender action label (e.g. Review proposed calculation) */
+  resolverActionHint?: string | null
   onChanged?: () => void
   /** Called when lender Accepts meaning of an existing implemented calculation */
   onMeaningAccepted?: () => void
@@ -62,6 +64,7 @@ export function SuggestCalculationWorkflow({
   primitives = [],
   ruleStatement,
   hideTitle = false,
+  resolverActionHint,
   onChanged,
   onMeaningAccepted,
 }: Props) {
@@ -318,10 +321,15 @@ export function SuggestCalculationWorkflow({
         >
           {needsSetup && phase === 'idle' ? (
             <>
-              <div className="font-medium">Needs your input</div>
+              <div className="font-medium" data-testid="lender-calc-setup-title">
+                {resolverActionHint === 'Review proposed calculation'
+                  ? 'Review proposed calculation'
+                  : 'Calculation needs setup'}
+              </div>
               <p className="mt-1 text-xs leading-relaxed">
-                I have related bureau or application data, but I need to understand what you mean by
-                “{displayName}” before I can apply this rule.
+                {resolverActionHint === 'Review proposed calculation'
+                  ? `A proposed calculation for “${displayName}” is ready for your review. It is not executable until you accept it.`
+                  : `I have related bureau or application data, but I need to understand what you mean by “${displayName}” before I can apply this rule.`}
               </p>
               <label className="mt-3 block text-xs font-medium text-amber-950">
                 How should I calculate it?

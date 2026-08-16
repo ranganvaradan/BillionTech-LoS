@@ -6,7 +6,7 @@ export const OVERALL_READINESS_LABELS: Record<string, string> = {
   READY_TO_TEST: 'Ready to test',
   CALCULATION_NEEDS_SETUP: 'Calculation needs setup',
   CAN_CALCULATE_WHEN_DATA_AVAILABLE: 'Can calculate when data is available',
-  NEEDS_MANUAL_INPUT: 'Needs your input',
+  NEEDS_MANUAL_INPUT: 'Needs manual input',
   NOT_YET_SUPPORTED: 'Not yet supported',
   APPROVAL_REVOKED: 'Approval revoked',
   // Legacy overall codes — never imply live certification
@@ -38,7 +38,7 @@ export const PARAMETER_SUPPORT_BUSINESS_LABELS: Record<string, string> = {
   SUPPORTED_RAW: 'Provided directly',
   SUPPORTED_DERIVED: 'Calculated by BillionTech',
   PROVIDER_DOES_NOT_SUPPORT: 'Data not available from provider',
-  CALCULATION_NOT_IMPLEMENTED: 'Needs your input',
+  CALCULATION_NOT_IMPLEMENTED: 'Calculation needs setup',
   SOURCE_NOT_INTEGRATED: 'Data source not connected yet',
   NOT_APPLICABLE: 'Application or internal input',
 }

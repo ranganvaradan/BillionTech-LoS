@@ -1,5 +1,9 @@
 package com.los.core.creditintelligence.policystudio.parameters;
 
+import com.los.core.creditintelligence.policystudio.parameters.execution.EvaluationMode;
+import com.los.core.creditintelligence.policystudio.parameters.execution.ExecutionCapabilityAuthority;
+import com.los.core.creditintelligence.policystudio.truth.CanonicalParameterTruthProjection;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -191,6 +195,11 @@ public final class RuleOperandPresenter {
             registry().findById(registryId).ifPresent(def -> applyGacatHonestyFlags(face, def));
             com.los.core.creditintelligence.policystudio.parameters.derived
                     .AuthoredDerivedCalculationSupport.overlayOperand(face);
+            if (face.get("parameterId") != null) {
+                attachCanonicalTruth(face, String.valueOf(face.get("parameterId")));
+            } else if (registryId != null) {
+                attachCanonicalTruth(face, registryId);
+            }
             return face;
         }
         return registry().findById(registryId)
@@ -289,7 +298,36 @@ public final class RuleOperandPresenter {
         // POLICY-STUDIO-RULE-LIFECYCLE-AND-STATE-MODEL-CLOSURE-1 — authored defs clear calc-required
         com.los.core.creditintelligence.policystudio.parameters.derived
                 .AuthoredDerivedCalculationSupport.overlayOperand(face);
+        attachCanonicalTruth(face, def.id());
         return face;
+    }
+
+    /**
+     * Wave 10A — operand faces carry the same canonical truth authority as D&P.
+     * calculationRequired follows CPES + truth projection, never catalogue alone.
+     */
+    private static void attachCanonicalTruth(Map<String, Object> face, String canonicalId) {
+        if (face == null || canonicalId == null || canonicalId.isBlank()) return;
+        Map<String, Object> truth = CanonicalParameterTruthProjection.project(canonicalId.trim());
+        face.put("canonicalTruth", truth);
+        face.put("primaryStatus", truth.get("primaryStatus"));
+        face.put("primaryStatusLabel", truth.get("primaryStatusLabel"));
+        face.put("nextAction", truth.get("nextAction"));
+        face.put("calculationExplanation", truth.get("calculationExplanation"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> execution = truth.get("execution") instanceof Map<?, ?>
+                ? (Map<String, Object>) truth.get("execution") : Map.of();
+        @SuppressWarnings("unchecked")
+        Map<String, Object> calculation = truth.get("calculation") instanceof Map<?, ?>
+                ? (Map<String, Object>) truth.get("calculation") : Map.of();
+        boolean capability = Boolean.TRUE.equals(execution.get("capability"));
+        boolean calcRequired = Boolean.TRUE.equals(calculation.get("required"));
+        if (capability) {
+            face.put("calculationRequired", false);
+            face.put("policyTestReady", true);
+        } else if (calcRequired) {
+            face.put("calculationRequired", true);
+        }
     }
 
     /**
@@ -307,7 +345,9 @@ public final class RuleOperandPresenter {
                 || binding.contains("vocabulary-gated")
                 || summary.contains("must be confirmed")
                 || summary.contains("customer-defined");
-        boolean calcMissing = cap != null && cap.derivationDefined() && !cap.implemented();
+        boolean spineCapable = ExecutionCapabilityAuthority.hasExecutionCapability(
+                def.id(), EvaluationMode.POLICY_TEST);
+        boolean calcMissing = cap != null && cap.derivationDefined() && !cap.implemented() && !spineCapable;
         if (calcMissing) {
             face.put("calculationRequired", true);
             face.put("needsConfiguration", true);
@@ -315,7 +355,7 @@ public final class RuleOperandPresenter {
             face.put("message", "Calculation is defined in the catalogue but not yet implemented.");
             face.put("availability", ParameterResolutionSupport.AVAIL_NEEDS_CONFIG);
             face.put("availabilityLabel", availabilityCmLabel(ParameterResolutionSupport.AVAIL_NEEDS_CONFIG));
-        } else if (needsConfig) {
+        } else if (needsConfig && !spineCapable) {
             face.put("needsConfiguration", true);
             face.put("executionReadinessCause", "NEEDS_PARAMETER_MAPPING");
             face.put("message", missing != null ? missing
@@ -356,6 +396,9 @@ public final class RuleOperandPresenter {
         }
         com.los.core.creditintelligence.policystudio.parameters.derived
                 .AuthoredDerivedCalculationSupport.overlayOperand(face);
+        if (pid != null) {
+            attachCanonicalTruth(face, String.valueOf(pid));
+        }
         return face;
     }
 

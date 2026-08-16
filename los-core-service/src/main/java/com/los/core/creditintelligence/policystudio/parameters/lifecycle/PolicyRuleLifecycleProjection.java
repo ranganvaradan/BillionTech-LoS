@@ -55,11 +55,14 @@ public final class PolicyRuleLifecycleProjection {
         out.put("runtimeReady", f.runtimeReady());
         out.put("productionReady", f.productionReady());
         out.put("lenderState", state.name());
-        out.put("lenderStateLabel", lenderLabel(state));
+        out.put("lenderStateLabel", lenderLabel(state, f));
+        out.put("ruleLifecycleLabel", ruleLifecycleLabel(state, f));
         out.put("outstandingAction", outstanding.name());
         out.put("lenderPrimaryAction", primary);
         out.put("lenderSecondaryActions", secondary);
         out.put("statusChip", statusChip(state, f));
+        // Wave 10A — do not collapse parameter execution with rule review
+        out.put("parameterExecutionAxisSeparate", true);
         out.put("showAcceptRule", outstanding == PolicyRuleOutstandingAction.ACCEPT_RULE);
         out.put("showAcceptCalculation",
                 outstanding == PolicyRuleOutstandingAction.ACCEPT_EXISTING_CALCULATION
@@ -143,10 +146,26 @@ public final class PolicyRuleLifecycleProjection {
         };
     }
 
-    static String lenderLabel(PolicyRuleLenderState state) {
+    static String lenderLabel(PolicyRuleLenderState state, Facts f) {
+        return ruleLifecycleLabel(state, f);
+    }
+
+    /**
+     * Rule lifecycle only — never use this string to claim calculation setup is required
+     * when the parameter is already executable.
+     */
+    static String ruleLifecycleLabel(PolicyRuleLenderState state, Facts f) {
         return switch (state) {
-            case NEEDS_INPUT -> "Needs your input";
-            case READY_FOR_CONFIRMATION -> "Ready for confirmation";
+            case NEEDS_INPUT -> {
+                if (f.calculationRequired()) {
+                    yield "Needs review";
+                }
+                if (!f.parameterResolved()) {
+                    yield "Needs your input";
+                }
+                yield "Needs review";
+            }
+            case READY_FOR_CONFIRMATION -> "Needs review";
             case READY_TO_TEST -> "Ready to test";
             case ACCEPTED_READY_TO_TEST -> "Accepted · Ready to test";
             case DATA_NOT_AVAILABLE -> "Data not available";
@@ -158,14 +177,23 @@ public final class PolicyRuleLifecycleProjection {
 
     static String statusChip(PolicyRuleLenderState state, Facts f) {
         return switch (state) {
-            case NEEDS_INPUT -> "Needs your input";
-            case READY_FOR_CONFIRMATION -> "Ready";
+            case NEEDS_INPUT -> {
+                if (f.calculationRequired()) {
+                    // Chip reflects outstanding setup; parameter axis still owns "Calculation needs setup"
+                    yield "Needs review";
+                }
+                if (!f.parameterResolved()) {
+                    yield "Needs your input";
+                }
+                yield "Needs review";
+            }
+            case READY_FOR_CONFIRMATION -> "Needs review";
             case READY_TO_TEST -> "Ready to test";
             case ACCEPTED_READY_TO_TEST -> "Accepted";
             case DATA_NOT_AVAILABLE -> "Unavailable";
             case PRODUCTION_BLOCKED -> "Ready to test";
             case PRODUCTION_READY -> "Accepted";
-            case NOT_APPLICABLE -> f.ruleAccepted() ? "Accepted" : "Needs your input";
+            case NOT_APPLICABLE -> f.ruleAccepted() ? "Accepted" : "Needs review";
         };
     }
 

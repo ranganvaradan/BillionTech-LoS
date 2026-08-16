@@ -38,7 +38,7 @@ public final class LenderTruthDisplayMapper {
                 || ExecutionStatus.NOT_EXECUTABLE.name().equals(status) && !capability) {
             if (isManualClass(semantic)) {
                 primary = "NEEDS_MANUAL_INPUT";
-                label = "Needs your input";
+                label = "Needs manual input";
                 next = "Enter value";
             } else if (!capability) {
                 primary = "CALCULATION_NEEDS_SETUP";
@@ -51,7 +51,7 @@ public final class LenderTruthDisplayMapper {
             }
         } else if (ExecutionStatus.INPUT_REQUIRED.name().equals(status) || isManualClass(semantic) && !valueAvailable) {
             primary = "NEEDS_MANUAL_INPUT";
-            label = "Needs your input";
+            label = "Needs manual input";
             next = "Enter value";
         } else if (capability && CertificationStatus.CERTIFIED.name().equals(certStatus)) {
             // Live approval is primary when executable + certified (data availability is secondary)
@@ -162,7 +162,7 @@ public final class LenderTruthDisplayMapper {
             return "Not yet supported";
         }
         if (ExecutionStatus.INPUT_REQUIRED.name().equals(status)) {
-            return "Needs your input";
+            return "Needs manual input";
         }
         if (capability && valueAvailable) {
             return "Available";

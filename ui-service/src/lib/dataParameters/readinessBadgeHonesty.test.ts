@@ -40,7 +40,7 @@ describe('POLICY-DERIVED-CALCULATION-BUSINESS-ASSISTANT-1', () => {
   it('maps calculation-required to Calculation needs setup', () => {
     const s = lenderPrimaryStatus({ calculationRequired: true, policyTestReady: false })
     expect(s.label).toBe('Calculation needs setup')
-    expect(lenderSupportLabel('CALCULATION_NOT_IMPLEMENTED')).toBe('Needs your input')
+    expect(lenderSupportLabel('CALCULATION_NOT_IMPLEMENTED')).toBe('Calculation needs setup')
   })
 
   it('sanitizes technical jargon from lender copy', () => {
@@ -63,7 +63,7 @@ describe('POLICY-DERIVED-CALCULATION-BUSINESS-ASSISTANT-1', () => {
       resolve(__dirname, '../../components/dataParameters/SuggestCalculationWorkflow.tsx'),
       'utf8',
     )
-    expect(src).toContain('Needs your input')
+    expect(src).toContain('Calculation needs setup')
     expect(src).toContain('Work it out for me')
     expect(src).toContain('Use this calculation')
     expect(src).toContain('I can calculate this')
@@ -120,8 +120,11 @@ describe('POLICY-DERIVED-CALCULATION-BUSINESS-ASSISTANT-1', () => {
       resolve(__dirname, '../../pages/creditIntelligence/CiPolicyRulesTab.tsx'),
       'utf8',
     )
-    expect(rules).toContain('knownExisting')
-    expect(rules).toContain('onMeaningAccepted')
+    // Wave 10A — calculation resolver only when presentation.showCalculationResolver
+    expect(rules).toContain('derivePolicyStudioOperandPresentation')
+    expect(rules).toContain('showCalculationResolver')
+    expect(rules).toContain('parameter-execution-status')
+    expect(rules).toContain('rule-lifecycle-status')
     const sim = readFileSync(
       resolve(__dirname, '../../pages/creditIntelligence/CiPolicySimulationTab.tsx'),
       'utf8',

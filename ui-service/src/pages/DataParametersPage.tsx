@@ -10,7 +10,6 @@ import {
 import { ApiError } from '@/api/http'
 import {
   capabilityFromParameter,
-  isSupportedSupport,
   lenderOrgLabel,
   matchesDp1Filters,
   nestStatus,
@@ -18,11 +17,10 @@ import {
   parameterSupportBusinessLabel,
   platformIntegrationLabel,
   providerStatusLabel,
-  readinessBadgeClass,
   sourceTypeLabel,
-  supportBadgeClass,
   type Dp1ListFilters,
 } from '@/lib/dataParameters/dp1Display'
+import { lenderPrimaryFromTruth, type CanonicalTruthLike } from '@/lib/policyStudio/lenderTruthDisplay'
 import { SuggestCalculationWorkflow } from '@/components/dataParameters/SuggestCalculationWorkflow'
 
 function asList(v: unknown): unknown[] {
@@ -60,54 +58,58 @@ function ParameterBadges({
   p: Record<string, unknown>
   hideOrgBadge?: boolean
 }) {
-  const cap = capabilityFromParameter(p)
-  const supportStatus = nestStatus(cap.parameterSupport ?? p.parameterSupport)
-  const design = asRecord(cap.policyDesign ?? p.policyDesign)
-  const live = asRecord(cap.liveUse ?? p.liveUse)
-  const supported = isSupportedSupport(supportStatus)
-  const hasCapability = Boolean(supportStatus)
+  const truth = (asRecord(p.canonicalTruth).primaryStatusLabel
+    ? asRecord(p.canonicalTruth)
+    : {
+        primaryStatus: p.primaryStatus,
+        primaryStatusLabel: p.primaryStatusLabel,
+        nextAction: p.nextAction,
+        calculationExplanation: p.calculationExplanation,
+        execution: asRecord(asRecord(p.canonicalTruth).execution),
+        certification: asRecord(asRecord(p.canonicalTruth).certification),
+        liveUseDisplay: asRecord(p.liveUse),
+      }) as CanonicalTruthLike
+  const primary = lenderPrimaryFromTruth(truth)
+  const classLabel = String(
+    truth.parameterClassLabel ?? p.parameterClassLabel ?? p.type ?? sourceTypeLabel(p.sourceType),
+  )
+  const certLabel = String(
+    truth.certificationLabel ??
+      asRecord(truth.liveUseDisplay).label ??
+      p.certificationLabel ??
+      '',
+  )
+  const next = primary.nextAction
 
   return (
     <div className="mt-1 flex flex-wrap gap-1" data-testid="dp1-badges">
-      <Badge className="border-slate-200 bg-white text-slate-700">
-        {String(p.type ?? sourceTypeLabel(p.sourceType))}
+      <Badge className="border-slate-200 bg-white text-slate-700" testId="dp-parameter-class">
+        {classLabel}
       </Badge>
-      {hasCapability ? (
-        <>
-          <Badge className={supportBadgeClass(supportStatus)} testId="dp-parameter-support">
-            {supported ? 'Supported' : 'Not currently available'}
-          </Badge>
-          {design.available === true ? (
-            <Badge
-              className="border-emerald-200 bg-emerald-50 text-emerald-900"
-              testId="dp-policy-design"
-            >
-              Available for policy design
-            </Badge>
-          ) : design.available === false ? (
-            <Badge className="border-slate-200 bg-slate-50 text-slate-600" testId="dp-policy-design">
-              Not for policy design yet
-            </Badge>
-          ) : null}
-          {String(live.status ?? '') === 'SUBSCRIPTION_REQUIRED' ? (
-            <Badge className="border-amber-200 bg-amber-50 text-amber-900" testId="dp-live-use">
-              Live use: subscription required
-            </Badge>
-          ) : live.available === true ? (
-            <Badge className="border-emerald-200 bg-emerald-50 text-emerald-900" testId="dp-live-use">
-              Live use: available
-            </Badge>
-          ) : live.available === false ? (
-            <Badge className="border-slate-200 bg-slate-50 text-slate-600" testId="dp-live-use">
-              Live use: not available
-            </Badge>
-          ) : null}
-        </>
-      ) : (
-        <Badge className={readinessBadgeClass(p.overallReadiness)} testId="dp1-overall-readiness">
-          {overallReadinessLabel(p.overallReadiness)}
+      <Badge
+        className={
+          primary.label === 'Calculation needs setup' || primary.label === 'Needs manual input'
+            ? 'border-amber-200 bg-amber-50 text-amber-950'
+            : primary.label.includes('Ready to test') ||
+                primary.label === 'Can calculate when data is available' ||
+                primary.label === 'Approved for live use'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-900'
+              : 'border-slate-200 bg-slate-50 text-slate-700'
+        }
+        testId="dp-primary-status"
+      >
+        {primary.label}
+      </Badge>
+      {certLabel && primary.label !== certLabel ? (
+        <Badge className="border-slate-200 bg-slate-50 text-slate-600" testId="dp-live-use">
+          {certLabel}
         </Badge>
-      )}
+      ) : null}
+      {next ? (
+        <Badge className="border-sky-200 bg-sky-50 text-sky-900" testId="dp-next-action">
+          {next}
+        </Badge>
+      ) : null}
     </div>
   )
 }
@@ -139,14 +141,19 @@ function ParameterCard({
   hideOrgBadge?: boolean
 }) {
   const lineage = asRecord(p.lineage)
-  const cap = capabilityFromParameter(p)
-  const support = asRecord(cap.parameterSupport ?? p.parameterSupport)
-  const supportStatus = String(support.status ?? '')
-  const supported = isSupportedSupport(supportStatus)
+  const truth = asRecord(p.canonicalTruth)
+  const primaryLabel = String(p.primaryStatusLabel ?? truth.primaryStatusLabel ?? '')
   const how = String(
-    support.businessHow ?? support.how ?? lineage.howCalculated ?? p.calculationSummary ?? '',
+    p.calculationExplanation ??
+      truth.calculationExplanation ??
+      lineage.howCalculated ??
+      p.calculationSummary ??
+      '',
   ).trim()
+  const needsSetup =
+    primaryLabel === 'Calculation needs setup' || primaryLabel === 'Needs manual input'
   const advanced = asRecord(p.advanced)
+  const cap = capabilityFromParameter(p)
   const id = String(p.id ?? '')
   return (
     <li className="rounded border border-slate-100 px-2 py-1.5" data-testid="dp1-parameter-row">
@@ -161,13 +168,19 @@ function ParameterCard({
         <ParameterBadges p={p} hideOrgBadge={hideOrgBadge} />
         {how ? (
           <p className="mt-1 text-xs text-slate-600" data-testid="dp-card-how">
-            {supported ? how : parameterSupportBusinessLabel(supportStatus)}
+            {needsSetup && !how.toLowerCase().includes('not set up')
+              ? 'Calculation has not yet been configured'
+              : how}
+          </p>
+        ) : needsSetup ? (
+          <p className="mt-1 text-xs text-slate-600" data-testid="dp-card-how">
+            Calculation has not yet been configured
           </p>
         ) : null}
       </button>
-      {how && supported ? (
+      {how && !needsSetup ? (
         <details className="mt-1 text-xs text-slate-600">
-          <summary className="cursor-pointer font-medium text-sky-800">How calculated</summary>
+          <summary className="cursor-pointer font-medium text-sky-800">How is this calculated?</summary>
           <p className="mt-1 whitespace-pre-wrap">{how}</p>
           {asList(lineage.rawInputs).length > 0 ? (
             <p className="mt-1 text-slate-500">
@@ -193,6 +206,8 @@ function ParameterCard({
               calculatorAvailable: advanced.calculatorAvailable,
               legacyOverallReadiness: advanced.legacyOverallReadiness ?? p.overallReadiness,
               catalogueProductionReady: cap.catalogueProductionReady,
+              legacyParameterSupport: nestStatus(cap.parameterSupport ?? p.parameterSupport),
+              canonicalTruth: truth.primaryStatusLabel ? truth : undefined,
             },
             null,
             2,
@@ -262,12 +277,17 @@ function ParameterDetailPanel({
         className="rounded-lg border border-slate-100 bg-slate-50 p-3"
         data-testid="dp-lender-capability"
       >
-        <h3 className="text-sm font-semibold text-slate-900">Capability (setup)</h3>
+        <h3 className="text-sm font-semibold text-slate-900">Execution readiness</h3>
         <dl className="mt-2 grid gap-2 text-xs text-slate-700 sm:grid-cols-2">
-          <div>
-            <dt className="text-slate-500">Can BillionTech support it?</dt>
-            <dd className="font-semibold">
-              {String(lenderCap.canBillionTechSupport ?? parameter.canBillionTechSupportLabel ?? '—')}
+          <div className="sm:col-span-2">
+            <dt className="text-slate-500">Primary status</dt>
+            <dd className="font-semibold" data-testid="dp-detail-primary-status">
+              {String(
+                lenderCap.primaryStatusLabel ??
+                  parameter.primaryStatusLabel ??
+                  asRecord(parameter.canonicalTruth).primaryStatusLabel ??
+                  '—',
+              )}
             </dd>
           </div>
           <div>
@@ -285,21 +305,16 @@ function ParameterDetailPanel({
               )}
             </dd>
           </div>
-          <div>
-            <dt className="text-slate-500">Parameter support</dt>
-            <dd data-testid="dp-detail-support">
-              {String(
-                lenderCap.parameterSupport ??
-                  support.businessLabel ??
-                  parameterSupportBusinessLabel(nestStatus(support)),
-              )}
-            </dd>
-          </div>
           <div className="sm:col-span-2">
-            <dt className="text-slate-500">How?</dt>
+            <dt className="text-slate-500">How is this calculated?</dt>
             <dd>
               {String(
-                lenderCap.how ?? support.businessHow ?? support.how ?? '—',
+                lenderCap.calculationExplanation ??
+                  parameter.calculationExplanation ??
+                  lenderCap.how ??
+                  support.businessHow ??
+                  support.how ??
+                  '—',
               )}
             </dd>
           </div>
@@ -312,21 +327,15 @@ function ParameterDetailPanel({
               )}
             </dd>
           </div>
-          <div>
-            <dt className="text-slate-500">Available for policy design</dt>
-            <dd data-testid="dp-detail-policy-design">
-              {String(lenderCap.policyDesign ?? design.label ?? '—')}
-              {design.reason || lenderCap.policyDesignReason ? (
-                <span className="mt-0.5 block font-normal text-slate-500">
-                  {String(lenderCap.policyDesignReason ?? design.reason)}
-                </span>
-              ) : null}
-            </dd>
-          </div>
           <div className="sm:col-span-2">
             <dt className="text-slate-500">Live use</dt>
             <dd data-testid="dp-detail-live-use">
-              {String(lenderCap.liveUse ?? live.label ?? '—')}
+              {String(
+                lenderCap.certificationLabel ??
+                  lenderCap.liveUse ??
+                  live.label ??
+                  'Not approved for live use',
+              )}
               {live.reason || lenderCap.liveUseReason ? (
                 <span className="mt-0.5 block font-normal text-slate-500">
                   {String(lenderCap.liveUseReason ?? live.reason)}
@@ -335,9 +344,29 @@ function ParameterDetailPanel({
             </dd>
           </div>
         </dl>
+        <details className="mt-2 text-[11px] text-slate-500">
+          <summary className="cursor-pointer">Advanced / Technical — legacy support metadata</summary>
+          <dl className="mt-1 grid gap-1 sm:grid-cols-2">
+            <div>
+              <dt>Legacy parameter support</dt>
+              <dd data-testid="dp-detail-support">
+                {String(
+                  lenderCap.parameterSupport ??
+                    support.businessLabel ??
+                    parameterSupportBusinessLabel(nestStatus(support)),
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt>Legacy policy design flag</dt>
+              <dd data-testid="dp-detail-policy-design">
+                {String(lenderCap.policyDesign ?? design.label ?? '—')}
+              </dd>
+            </div>
+          </dl>
+        </details>
         <p className="mt-2 text-[11px] text-slate-500">
-          Setup catalogue only — does not represent whether a particular loan application currently has a
-          value. Live underwriting remains fail-closed until subscription and configuration are valid.
+          Primary status is from CanonicalParameterTruthProjection — not catalogue support lists.
         </p>
       </div>
 
@@ -518,81 +547,104 @@ function FilterBar({
   supportStatuses: string[]
 }) {
   return (
-    <div className="flex flex-wrap gap-2" data-testid="dp1-filters">
-      <select
-        className="rounded border border-slate-300 px-2 py-1.5 text-xs"
-        value={filters.sourceFamily}
-        onChange={(e) => setFilters({ ...filters, sourceFamily: e.target.value })}
-        aria-label="Filter source family"
-      >
-        <option value="">Source family (all)</option>
-        {families.map((f) => (
-          <option key={f} value={f}>
-            {f}
-          </option>
-        ))}
-      </select>
-      <select
-        className="rounded border border-slate-300 px-2 py-1.5 text-xs"
-        value={filters.sourceType}
-        onChange={(e) => setFilters({ ...filters, sourceType: e.target.value })}
-        aria-label="Filter source type"
-      >
-        <option value="">Source type (all)</option>
-        {sourceTypes.map((t) => (
-          <option key={t} value={t}>
-            {sourceTypeLabel(t)}
-          </option>
-        ))}
-      </select>
-      <select
-        className="rounded border border-slate-300 px-2 py-1.5 text-xs"
-        value={filters.parameterSupport}
-        onChange={(e) => setFilters({ ...filters, parameterSupport: e.target.value })}
-        aria-label="Filter parameter support"
-      >
-        <option value="">Parameter support (all)</option>
-        {supportStatuses.map((s) => (
-          <option key={s} value={s}>
-            {parameterSupportBusinessLabel(s)}
-          </option>
-        ))}
-      </select>
-      <select
-        className="rounded border border-slate-300 px-2 py-1.5 text-xs"
-        value={filters.overallReadiness}
-        onChange={(e) => setFilters({ ...filters, overallReadiness: e.target.value })}
-        aria-label="Filter legacy overall readiness"
-      >
-        <option value="">Legacy readiness (all)</option>
-        {readinessStates.map((s) => (
-          <option key={s} value={s}>
-            {overallReadinessLabel(s)}
-          </option>
-        ))}
-      </select>
-      <select
-        className="rounded border border-slate-300 px-2 py-1.5 text-xs"
-        value={filters.productionReady}
-        onChange={(e) =>
-          setFilters({
-            ...filters,
-            productionReady: e.target.value as Dp1ListFilters['productionReady'],
-          })
-        }
-        aria-label="Filter catalogue production ready"
-      >
-        <option value="">Catalogue Production Ready (all)</option>
-        <option value="true">Catalogue Production Ready</option>
-        <option value="false">Catalogue Not Production Ready</option>
-      </select>
-      <input
-        className="min-w-[12rem] flex-1 rounded border border-slate-300 px-2 py-1.5 text-xs"
-        placeholder="Filter list…"
-        value={filters.q}
-        onChange={(e) => setFilters({ ...filters, q: e.target.value })}
-        aria-label="Filter list text"
-      />
+    <div className="space-y-2" data-testid="dp1-filters">
+      <div className="flex flex-wrap gap-2">
+        <select
+          className="rounded border border-slate-300 px-2 py-1.5 text-xs"
+          value={filters.sourceFamily}
+          onChange={(e) => setFilters({ ...filters, sourceFamily: e.target.value })}
+          aria-label="Filter source family"
+        >
+          <option value="">Source (all)</option>
+          {families.map((f) => (
+            <option key={f} value={f}>
+              {f}
+            </option>
+          ))}
+        </select>
+        <select
+          className="rounded border border-slate-300 px-2 py-1.5 text-xs"
+          value={filters.sourceType}
+          onChange={(e) => setFilters({ ...filters, sourceType: e.target.value })}
+          aria-label="Filter parameter class / source type"
+        >
+          <option value="">Parameter class / source type (all)</option>
+          {sourceTypes.map((t) => (
+            <option key={t} value={t}>
+              {sourceTypeLabel(t)}
+            </option>
+          ))}
+        </select>
+        <select
+          className="rounded border border-slate-300 px-2 py-1.5 text-xs"
+          value={filters.overallReadiness}
+          onChange={(e) => setFilters({ ...filters, overallReadiness: e.target.value })}
+          aria-label="Filter execution readiness"
+          data-testid="dp-filter-execution-readiness"
+        >
+          <option value="">Execution readiness (all)</option>
+          {(readinessStates.length
+            ? readinessStates
+            : [
+                'READY_TO_TEST',
+                'CAN_CALCULATE_WHEN_DATA_AVAILABLE',
+                'CALCULATION_NEEDS_SETUP',
+                'NEEDS_MANUAL_INPUT',
+                'APPROVED_FOR_LIVE_USE',
+                'NOT_YET_SUPPORTED',
+              ]
+          ).map((s) => (
+            <option key={s} value={s}>
+              {overallReadinessLabel(s)}
+            </option>
+          ))}
+        </select>
+        <input
+          className="min-w-[12rem] flex-1 rounded border border-slate-300 px-2 py-1.5 text-xs"
+          placeholder="Filter list…"
+          value={filters.q}
+          onChange={(e) => setFilters({ ...filters, q: e.target.value })}
+          aria-label="Filter list text"
+        />
+      </div>
+      <details className="text-xs text-slate-600" data-testid="dp-legacy-filters-advanced">
+        <summary className="cursor-pointer font-medium text-slate-700">
+          Advanced / Technical — Legacy metadata
+        </summary>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <select
+            className="rounded border border-slate-300 px-2 py-1.5 text-xs"
+            value={filters.parameterSupport}
+            onChange={(e) => setFilters({ ...filters, parameterSupport: e.target.value })}
+            aria-label="Filter legacy parameter support"
+          >
+            <option value="">Legacy parameter support (all)</option>
+            {supportStatuses.map((s) => (
+              <option key={s} value={s}>
+                {parameterSupportBusinessLabel(s)}
+              </option>
+            ))}
+          </select>
+          <select
+            className="rounded border border-slate-300 px-2 py-1.5 text-xs"
+            value={filters.productionReady}
+            onChange={(e) =>
+              setFilters({
+                ...filters,
+                productionReady: e.target.value as Dp1ListFilters['productionReady'],
+              })
+            }
+            aria-label="Filter catalogue production ready"
+          >
+            <option value="">Catalogue Production Ready (all)</option>
+            <option value="true">Catalogue Production Ready</option>
+            <option value="false">Catalogue Not Production Ready</option>
+          </select>
+        </div>
+        <p className="mt-1 text-[11px] text-slate-500">
+          Legacy catalogue metadata is not execution or live-approval authority.
+        </p>
+      </details>
     </div>
   )
 }
@@ -753,14 +805,9 @@ export function DataParametersPage() {
               <div className="grid gap-2 lg:grid-cols-2">
                 {sourceCapability.map((s) => {
                   const counts = asRecord(s.parameterSupportCounts)
+                  const canonical = asRecord(s.canonicalCounts ?? counts.canonical)
                   const facing = asRecord(s.lenderFacing)
                   const detail = asRecord(facing.expandableDetail)
-                  const available =
-                    Number(counts.parametersAvailable ?? 0) ||
-                    Number(counts.supportedRaw ?? 0) +
-                      Number(counts.supportedDerived ?? 0) +
-                      Number(counts.notApplicable ?? 0)
-                  const calcPending = Number(counts.calculationNotImplemented ?? 0)
                   const selected = source === s.source
                   return (
                     <div
@@ -791,16 +838,15 @@ export function DataParametersPage() {
                             )}
                           </div>
                         ) : null}
-                        <div className={`mt-1 ${selected ? 'text-slate-300' : 'text-slate-500'}`}>
+                        <div
+                          className={`mt-1 ${selected ? 'text-slate-300' : 'text-slate-500'}`}
+                          data-testid="dp-source-summary-line"
+                        >
                           {String(
                             facing.summaryLine ??
                               (String(s.platformIntegration) === 'NOT_INTEGRATED'
                                 ? 'Integration not yet available'
-                                : `${available} parameters available${
-                                    calcPending > 0
-                                      ? ` · ${calcPending} calculations not yet implemented`
-                                      : ''
-                                  }`),
+                                : `${Number(canonical.catalogueListed ?? counts.total ?? 0)} catalogue parameters · ${Number(canonical.readyToTest ?? 0)} ready to test · ${Number(canonical.setupRequired ?? 0)} setup required`),
                           )}
                         </div>
                       </button>
@@ -808,26 +854,31 @@ export function DataParametersPage() {
                         <summary className="cursor-pointer">More detail</summary>
                         <ul className="mt-1 list-disc pl-4">
                           <li>
-                            {String(detail.directlyProvided ?? counts.supportedRaw ?? 0)} directly
-                            provided
+                            Directly provided:{' '}
+                            {String(detail.directlyProvided ?? canonical.directlyProvided ?? 0)}
                           </li>
                           <li>
-                            {String(detail.calculatedByBillionTech ?? counts.supportedDerived ?? 0)}{' '}
-                            calculated by BillionTech
-                          </li>
-                          <li>
-                            {String(detail.unsupportedByProvider ?? counts.providerDoesNotSupport ?? 0)}{' '}
-                            unsupported by provider
-                          </li>
-                          <li>
+                            Calculated:{' '}
                             {String(
-                              detail.calculationsNotYetImplemented ??
-                                counts.calculationNotImplemented ??
-                                0,
-                            )}{' '}
-                            calculations not yet implemented
+                              detail.calculatedByBillionTech ?? canonical.calculated ?? 0,
+                            )}
+                          </li>
+                          <li>Manual: {String(detail.manual ?? canonical.manual ?? 0)}</li>
+                          <li>
+                            Ready to test: {String(detail.readyToTest ?? canonical.readyToTest ?? 0)}
+                          </li>
+                          <li>
+                            Setup required:{' '}
+                            {String(detail.setupRequired ?? canonical.setupRequired ?? 0)}
+                          </li>
+                          <li>
+                            Live approved:{' '}
+                            {String(detail.liveApproved ?? canonical.liveApproved ?? 0)}
                           </li>
                         </ul>
+                        <p className="mt-1 text-[10px] opacity-80">
+                          Counts from CanonicalParameterTruthProjection — not list length.
+                        </p>
                       </details>
                     </div>
                   )
@@ -861,7 +912,7 @@ export function DataParametersPage() {
               ).map(([key, label]) => (
                 <div key={key}>
                   <h3 className="text-sm font-semibold text-slate-900">
-                    {label} ({filterParams(asList(sourceView[key])).length}/{asList(sourceView[key]).length})
+                    {label} ({filterParams(asList(sourceView[key])).length})
                   </h3>
                   <ul className="mt-2 space-y-2 text-sm">
                     {filterParams(asList(sourceView[key])).map((p, i) => (
