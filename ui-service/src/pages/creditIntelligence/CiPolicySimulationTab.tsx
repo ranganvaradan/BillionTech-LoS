@@ -242,7 +242,7 @@ export function CiPolicySimulationTab({
                     <span className="ml-1 font-medium text-sky-800">· Test value only</span>
                   ) : null}
                 </p>
-                {how.calculation || how.source ? (
+                {p.calculationRequired !== true && (how.calculation || how.source) ? (
                   <button
                     type="button"
                     className="mt-1 text-xs font-medium text-sky-800 hover:underline"
@@ -251,7 +251,7 @@ export function CiPolicySimulationTab({
                     How calculated
                   </button>
                 ) : null}
-                {howOpen[key] ? (
+                {p.calculationRequired !== true && howOpen[key] ? (
                   <div className="mt-1 rounded bg-slate-50 px-2 py-1 text-xs text-slate-700">
                     {how.source ? <div>Source: {String(how.source)}</div> : null}
                     {how.period ? <div>Period: {String(how.period)}</div> : null}

@@ -778,7 +778,7 @@ export function CiPolicyRulesTab({
                                         )}
                                       </div>
                                     ) : null}
-                                    {op.howCalculated ? (
+                                    {op.howCalculated && op.calculationRequired !== true ? (
                                       <details className="mt-1">
                                         <summary className="cursor-pointer text-xs font-medium text-slate-600">
                                           How calculated

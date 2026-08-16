@@ -10,6 +10,9 @@ import { ApiError } from '@/api/http'
 import { DefineDerivedCalculationPanel } from '@/components/dataParameters/DefineDerivedCalculationPanel'
 import {
   LENDER_SETUP_EXAMPLE,
+  businessFacingInputLabels,
+  formatCalculationResultLabel,
+  formatCanCalculateNarrative,
   sanitizeLenderTechnicalPhrase,
 } from '@/lib/policyStudio/lenderUxCopy'
 
@@ -112,9 +115,14 @@ export function SuggestCalculationWorkflow({
     return sanitizeLenderTechnicalPhrase(raw)
   }, [selected, msg])
 
-  const dataICanUse = deps
-    .map((d) => String(d.displayName || d.role || '').trim())
-    .filter(Boolean)
+  const canCalculateNarrative = useMemo(
+    () => formatCanCalculateNarrative(String(selected?.humanExplanation ?? '')),
+    [selected],
+  )
+
+  const dataICanUse = useMemo(() => businessFacingInputLabels(deps), [deps])
+
+  const resultLabel = formatCalculationResultLabel(displayName)
 
   if (!canonicalParameterId) return null
 
@@ -289,12 +297,14 @@ export function SuggestCalculationWorkflow({
               {isCanCalculate ? (
                 <div data-testid="lender-proposal-panel">
                   <div className="text-sm font-semibold text-slate-900">I can calculate this</div>
-                  <p className="mt-2 text-xs leading-relaxed text-slate-800 whitespace-pre-wrap">
-                    {plainExplanation}
-                  </p>
+                  {canCalculateNarrative ? (
+                    <p className="mt-2 text-xs leading-relaxed text-slate-800 whitespace-pre-wrap">
+                      {canCalculateNarrative}
+                    </p>
+                  ) : null}
                   {dataICanUse.length > 0 ? (
-                    <div className="mt-3 text-xs text-slate-800">
-                      <div className="font-medium">I'll use</div>
+                    <div className="mt-3 text-xs text-slate-800" data-testid="lender-ill-use-list">
+                      <div className="font-medium">I&apos;ll use:</div>
                       <ul className="mt-1 list-disc pl-4">
                         {dataICanUse.map((name) => (
                           <li key={name}>{name}</li>
@@ -302,6 +312,9 @@ export function SuggestCalculationWorkflow({
                       </ul>
                     </div>
                   ) : null}
+                  <p className="mt-3 text-xs font-medium text-slate-900">
+                    Result: {resultLabel}
+                  </p>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <button
                       type="button"
@@ -444,7 +457,7 @@ export function SuggestCalculationWorkflow({
           ) : null}
 
           <details className="mt-3" data-testid="lender-advanced-details">
-            <summary className="cursor-pointer text-xs font-medium text-slate-600">Advanced</summary>
+            <summary className="cursor-pointer text-xs font-medium text-slate-600">Advanced &gt;</summary>
             <div className="mt-2 space-y-2 text-[11px] text-slate-600">
               <div>
                 Canonical parameter ID:{' '}
@@ -519,7 +532,7 @@ export function SuggestCalculationWorkflow({
             This rule is ready to test. Production use still requires separate certification.
           </p>
           <details className="mt-3" data-testid="lender-advanced-details">
-            <summary className="cursor-pointer text-xs font-medium text-slate-600">Advanced</summary>
+            <summary className="cursor-pointer text-xs font-medium text-slate-600">Advanced &gt;</summary>
             <div className="mt-2 space-y-1 text-[11px] text-slate-600">
               <div>
                 Definition status: <strong>{String(definition?.status ?? '—')}</strong>

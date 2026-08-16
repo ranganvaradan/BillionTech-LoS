@@ -2,6 +2,9 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
+  businessFacingInputLabels,
+  formatCalculationResultLabel,
+  formatCanCalculateNarrative,
   lenderPrimaryStatus,
   lenderSupportLabel,
   sanitizeLenderTechnicalPhrase,
@@ -68,10 +71,14 @@ describe('POLICY-DERIVED-CALCULATION-BUSINESS-ASSISTANT-1', () => {
     expect(src).toContain("I can't calculate this yet")
     expect(src).toContain('data-lender-ux="layer-1"')
     expect(src).toContain('data-business-assistant="1"')
-    // Exactly one Advanced summary in the needs-input card path (plus optional ready-state)
-    const advancedMatches = src.match(/>Advanced</g) ?? []
+    // Exactly one Advanced summary style in the needs-input card path (plus optional ready-state)
+    const advancedMatches = src.match(/>Advanced &gt;</g) ?? src.match(/>Advanced >/g) ?? []
+    expect(advancedMatches.length).toBeGreaterThanOrEqual(1)
     expect(advancedMatches.length).toBeLessThanOrEqual(2)
     expect(src).not.toContain('Advanced details')
+    expect(src).toContain('lender-ill-use-list')
+    expect(src).toContain('formatCanCalculateNarrative')
+    expect(src).toContain('businessFacingInputLabels')
     const layer1Idle = src.slice(0, src.indexOf('data-testid="lender-advanced-details"'))
     expect(layer1Idle).not.toMatch(/>\s*Dependencies\s*</)
     expect(layer1Idle).not.toContain('exact GACAT')
@@ -79,6 +86,42 @@ describe('POLICY-DERIVED-CALCULATION-BUSINESS-ASSISTANT-1', () => {
     expect(layer1Idle).not.toContain('Accept &amp; create calculation')
     expect(layer1Idle).not.toContain('vocabulary configuration')
     expect(layer1Idle).not.toContain('typed expression')
+  })
+
+  it('proposal polish strips duplicate intro and collapses input labels', () => {
+    const narrative = formatCanCalculateNarrative(
+      "I can calculate this.\n\nI'll find the most recent month in which any bureau account was overdue (DPD > 0), then count the number of months since that overdue.\n\nI'll use:\n• Bureau payment history\n• DPD for each reported month\n• Reporting month/date\n\nResult: Clean history months",
+    )
+    expect(narrative).not.toMatch(/I can calculate this/i)
+    expect(narrative).not.toMatch(/I'll use/i)
+    expect(narrative).not.toMatch(/^Result:/im)
+    expect(narrative).toMatch(/completed months/)
+    const labels = businessFacingInputLabels([
+      { parameterId: 'bureau.tradeline.payment_history', displayName: 'Payment history' },
+      { parameterId: 'bureau.tradeline.dpd_month', displayName: 'Days past due (month)' },
+      { parameterId: 'bureau.report.date', displayName: 'Bureau report date' },
+    ])
+    expect(labels).toEqual([
+      'Bureau payment history',
+      'Days past due (DPD)',
+      'Reporting month/date',
+    ])
+    expect(formatCalculationResultLabel('Clean history months (post-overdue)')).toBe(
+      'Clean history months',
+    )
+  })
+
+  it('hides How calculated under calculationRequired workflow surfaces', () => {
+    const rules = readFileSync(
+      resolve(__dirname, '../../pages/creditIntelligence/CiPolicyRulesTab.tsx'),
+      'utf8',
+    )
+    expect(rules).toContain('op.howCalculated && op.calculationRequired !== true')
+    const sim = readFileSync(
+      resolve(__dirname, '../../pages/creditIntelligence/CiPolicySimulationTab.tsx'),
+      'utf8',
+    )
+    expect(sim).toContain('p.calculationRequired !== true && (how.calculation || how.source)')
   })
 
   it('inventory default title drops GACAT jargon', () => {

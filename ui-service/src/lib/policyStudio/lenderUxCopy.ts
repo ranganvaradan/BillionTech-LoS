@@ -127,3 +127,83 @@ export function sanitizeLenderTechnicalPhrase(text: string): string {
 
 export const LENDER_SETUP_EXAMPLE =
   'Count consecutive months after the last overdue in which there were no further overdue payments.'
+
+/**
+ * DERIVED-CALCULATION-PROPOSAL-UX-POLISH-1
+ * Presentation helpers only — strip duplicate heading / I'll-use / Result from stored explanation.
+ */
+export function formatCanCalculateNarrative(explanation: string): string {
+  let t = sanitizeLenderTechnicalPhrase(explanation ?? '')
+  t = t.replace(/^I can calculate this\.?\s*/i, '')
+  t = t.replace(/\n*I'll use:[\s\S]*$/i, '')
+  t = t.replace(/\n*Result:\s*[^\n]*\s*$/i, '')
+  t = t.replace(
+    /count the number of months since that overdue/gi,
+    'count the number of completed months since that overdue',
+  )
+  t = t.replace(
+    /count the number of months from that overdue/gi,
+    'count the number of completed months from that overdue',
+  )
+  t = t.replace(/then count the number of months since/gi, 'then count the number of completed months since')
+  return t.trim()
+}
+
+/** One business-facing input list; collapse raw/duplicate catalogue labels. */
+export function businessFacingInputLabels(
+  deps: Array<{ parameterId?: string; displayName?: string; role?: string }>,
+): string[] {
+  const labels: string[] = []
+  const seen = new Set<string>()
+  const add = (label: string) => {
+    const key = label.trim().toLowerCase()
+    if (!key || seen.has(key)) return
+    seen.add(key)
+    labels.push(label.trim())
+  }
+
+  for (const d of deps ?? []) {
+    const id = String(d.parameterId ?? '').toLowerCase()
+    if (id.includes('payment_history')) {
+      add('Bureau payment history')
+      continue
+    }
+    if (id.includes('dpd') || id.includes('days_past_due') || id.includes('dayspastdue')) {
+      add('Days past due (DPD)')
+      continue
+    }
+    if (id.includes('report.date') || id.includes('report_date')) {
+      add('Reporting month/date')
+      continue
+    }
+    const name = String(d.displayName ?? '').trim()
+    if (!name) continue
+    if (/payment history/i.test(name)) {
+      add('Bureau payment history')
+      continue
+    }
+    if (/dpd|days past due/i.test(name)) {
+      add('Days past due (DPD)')
+      continue
+    }
+    if (/report(ing)?\s*(month|date)?/i.test(name)) {
+      add('Reporting month/date')
+      continue
+    }
+    add(name)
+  }
+
+  // When dated payment history is present, surface the conceptual trio lenders expect.
+  if (labels.some((l) => /payment history/i.test(l))) {
+    if (!labels.some((l) => /dpd|days past due/i.test(l))) add('Days past due (DPD)')
+    if (!labels.some((l) => /reporting|report/i.test(l))) add('Reporting month/date')
+  }
+
+  return labels
+}
+
+export function formatCalculationResultLabel(businessName?: string): string {
+  const raw = (businessName ?? '').trim()
+  if (!raw) return 'Clean history months'
+  return raw.replace(/\s*\([^)]*\)\s*$/, '').trim() || raw
+}
