@@ -374,13 +374,18 @@ public final class RuleOperandPresenter {
         if (res.get("factSource") != null) face.put("factSource", res.get("factSource"));
         if (res.get("guidance") != null) face.put("guidance", res.get("guidance"));
         Object pid = res.get("parameterId");
-        if (pid != null) {
-            registry().findById(String.valueOf(pid)).ifPresent(def -> applyGacatHonestyFlags(face, def));
+        if (pid == null || String.valueOf(pid).isBlank() || "null".equalsIgnoreCase(String.valueOf(pid))) {
+            registry().findByOperandKey(key).ifPresent(def -> face.put("parameterId", def.id()));
         }
-        com.los.core.creditintelligence.policystudio.parameters.derived
-                .AuthoredDerivedCalculationSupport.overlayOperand(face);
-        if (pid != null) {
-            attachCanonicalTruth(face, String.valueOf(pid));
+        Object boundId = face.get("parameterId");
+        if (boundId != null && !String.valueOf(boundId).isBlank() && !"null".equalsIgnoreCase(String.valueOf(boundId))) {
+            registry().findById(String.valueOf(boundId)).ifPresent(def -> applyGacatHonestyFlags(face, def));
+            com.los.core.creditintelligence.policystudio.parameters.derived
+                    .AuthoredDerivedCalculationSupport.overlayOperand(face);
+            attachCanonicalTruth(face, String.valueOf(boundId));
+        } else {
+            com.los.core.creditintelligence.policystudio.parameters.derived
+                    .AuthoredDerivedCalculationSupport.overlayOperand(face);
         }
         return face;
     }

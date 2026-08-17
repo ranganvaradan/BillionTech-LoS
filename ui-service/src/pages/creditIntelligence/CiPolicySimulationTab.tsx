@@ -9,6 +9,7 @@ import {
 import { ApiError } from '@/api/http'
 import { CiExecutiveSummary, CiSection, CiTechnicalDetails } from '@/components/creditIntelligence/CiSection'
 import { SuggestCalculationWorkflow } from '@/components/dataParameters/SuggestCalculationWorkflow'
+import { testInputDisplayLabel } from '@/lib/policyStudio/lenderTruthDisplay'
 
 function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {}
@@ -224,7 +225,7 @@ export function CiPolicySimulationTab({
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm font-medium text-slate-900">{String(p.businessName)}</span>
-                  <StatusPill status={status} />
+                  <StatusPill status={status} valuePresent={Boolean(testValues[key])} />
                 </div>
                 <input
                   className="bt-input mt-1 w-full"
@@ -467,19 +468,8 @@ export function CiPolicySimulationTab({
   )
 }
 
-function StatusPill({ status }: { status: string }) {
-  const label =
-    status === 'UNRESOLVED'
-      ? 'Unresolved'
-      : status === 'MANUAL_INPUT' || status === 'MANUAL'
-        ? 'Manual input'
-        : status === 'MANUAL_TEST_VALUE'
-          ? 'Test value'
-          : status === 'AUTOMATIC_DERIVED' || status === 'DERIVED' || status === 'RAW'
-            ? 'Filled automatically'
-            : status === 'CALCULATION_REQUIRED' || status === 'NEEDS_INPUT'
-              ? 'Needs your input'
-            : 'Unavailable'
+function StatusPill({ status, valuePresent }: { status: string; valuePresent?: boolean }) {
+  const label = testInputDisplayLabel(status, valuePresent)
   const cls =
     status === 'UNRESOLVED'
       ? 'bg-amber-100 text-amber-900'

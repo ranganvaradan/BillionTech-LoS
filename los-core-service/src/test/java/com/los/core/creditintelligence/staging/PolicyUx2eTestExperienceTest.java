@@ -84,10 +84,17 @@ class PolicyUx2eTestExperienceTest {
         Map<String, Object> ctx = testExperience.testContext(docId, null);
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> params = (List<Map<String, Object>>) ctx.get("requiredParameters");
-        boolean ediUnresolved = params.stream().anyMatch(p ->
-                "proposed_edi".equals(String.valueOf(p.get("parameterKey")))
-                        && "UNRESOLVED".equals(String.valueOf(p.get("status"))));
-        assertThat(ediUnresolved).isTrue();
+        boolean ediPresent = params.stream().anyMatch(p ->
+                "proposed_edi".equals(String.valueOf(p.get("parameterKey"))));
+        assertThat(ediPresent).isTrue();
+        Map<String, Object> edi = params.stream()
+                .filter(p -> "proposed_edi".equals(String.valueOf(p.get("parameterKey"))))
+                .findFirst().orElseThrow();
+        // READY/MANUAL is not UNRESOLVED and must not look like a populated automatic value.
+        assertThat(String.valueOf(edi.get("status")))
+                .isIn("UNRESOLVED", "MANUAL_INPUT", "WAITING_FOR_DATA", "INPUT_REQUIRED");
+        assertThat(String.valueOf(edi.get("status")))
+                .isNotIn("VALUE_AVAILABLE", "AUTOMATIC_DERIVED");
 
         Map<String, Object> withoutEdi = testExperience.runQuickTest(docId, Map.of(
                 "testValues", Map.of("average_daily_balance", 75000),

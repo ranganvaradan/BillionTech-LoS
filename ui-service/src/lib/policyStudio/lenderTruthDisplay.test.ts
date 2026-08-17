@@ -3,6 +3,7 @@ import {
   lenderPrimaryFromTruth,
   requiresCalculationSetupAction,
   SETUP_CALCULATION_ACTION,
+  testInputDisplayLabel,
 } from './lenderTruthDisplay'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -78,5 +79,22 @@ describe('CALCULATION-SETUP-ACTION-INVARIANT static guard', () => {
     )
     expect(inventory).toContain('requiresCalculationSetupAction')
     expect(inventory).toContain('SETUP_CALCULATION_ACTION')
+  })
+})
+
+describe('AXIS 1/3 guards', () => {
+  it('never uses Needs review as a parameter label', () => {
+    expect(lenderPrimaryFromTruth(null, { unresolved: true }).label).not.toBe('Needs review')
+    expect(lenderPrimaryFromTruth(null).label).toBe('Needs your input')
+    expect(lenderPrimaryFromTruth(null).label).not.toBe('Needs review')
+  })
+
+  it('does not say Filled automatically without a value', () => {
+    expect(testInputDisplayLabel('WAITING_FOR_DATA')).toBe('Waiting for data')
+    expect(testInputDisplayLabel('AUTOMATIC_DERIVED')).toBe('Waiting for data')
+    expect(testInputDisplayLabel('AUTOMATIC_DERIVED', false)).toBe('Waiting for data')
+    expect(testInputDisplayLabel('VALUE_AVAILABLE', true)).toBe('Filled automatically')
+    expect(testInputDisplayLabel('AUTOMATIC_DERIVED', true)).toBe('Filled automatically')
+    expect(testInputDisplayLabel('CALCULATION_REQUIRED')).toBe('Calculation needs setup')
   })
 })

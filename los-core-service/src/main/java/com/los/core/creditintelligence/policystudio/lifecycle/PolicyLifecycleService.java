@@ -1151,6 +1151,15 @@ public class PolicyLifecycleService {
                 .PolicyExecutionReadiness.sessionExecutionBlockers(session)) {
             blockers.add(formatExecutionBlockerMessage(b));
         }
+        for (Map<String, Object> b : com.los.core.creditintelligence.policystudio.parameters
+                .PolicyExecutionReadiness.currentParameterBlockers(session)) {
+            String name = String.valueOf(b.getOrDefault("businessName", b.get("canonicalParameterId")));
+            String reason = String.valueOf(b.getOrDefault("reason", "Parameter not ready"));
+            String msg = name + " — " + reason;
+            if (!blockers.contains(msg)) {
+                blockers.add(msg);
+            }
+        }
         // GOVERNANCE blockers — separate from execution readiness
         if (!testsReady(session) && !simulationReady(session)) {
             blockers.add("Test not completed — run Policy Test");
@@ -1241,7 +1250,13 @@ public class PolicyLifecycleService {
         long uw = ((Number) execEval.getOrDefault("includedExecutableRules", 0L)).longValue();
         long readyRules = ((Number) execEval.getOrDefault("executionReadyRules", 0L)).longValue();
         long needs = Math.max(0, uw - readyRules);
-        boolean executionReady = Boolean.TRUE.equals(execEval.get("executionReady"));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> currentParameterBlockers = execEval.get("currentParameterBlockers") instanceof List<?> cpl
+                ? (List<Map<String, Object>>) cpl : List.of();
+        String currentExecution = String.valueOf(execEval.getOrDefault("currentExecutionReadiness",
+                currentParameterBlockers.isEmpty() && executionBlockers.isEmpty() ? "READY" : "BLOCKED"));
+        boolean paramsResolved = Boolean.TRUE.equals(execEval.get("requiredParametersResolved"))
+                && Boolean.TRUE.equals(execEval.get("boundaryAmbiguitiesResolved"));
         boolean scopeOk = castMap(life.get("applicability")).get("products") instanceof List<?> p && !p.isEmpty();
         List<Map<String, Object>> governanceBlockers = com.los.core.creditintelligence.policystudio.parameters
                 .PolicyExecutionReadiness.sessionGovernanceBlockers(scopeOk, policyTest, cm, checker);
@@ -1252,24 +1267,41 @@ public class PolicyLifecycleService {
                 "scope", "Scope missing product"));
         readinessItems.add(readyItem(
                 readyRules + " underwriting rule" + (readyRules == 1 ? "" : "s") + " execution-ready",
-                uw > 0 && executionReady,
+                uw > 0 && "READY".equals(currentExecution),
                 "rules",
-                needs > 0
+                !currentParameterBlockers.isEmpty()
+                        ? currentParameterBlockers.size() + " required parameter"
+                        + (currentParameterBlockers.size() == 1 ? "" : "s") + " need setup"
+                        : (needs > 0
                         ? needs + " rule(s) need confirmation"
                         : (!executionBlockers.isEmpty()
                         ? "Resolve execution blockers before continuing"
-                        : "Add underwriting rules")));
+                        : "Add underwriting rules"))));
         readinessItems.add(readyItem("Required parameters resolved",
-                Boolean.TRUE.equals(execEval.get("requiredParametersResolved"))
-                        && Boolean.TRUE.equals(execEval.get("boundaryAmbiguitiesResolved")),
+                paramsResolved,
                 "rules",
-                "Resolve required parameters / boundary ambiguities"));
-        readinessItems.add(readyItem("Test completed", policyTest, "tests", "Run Policy Test"));
+                currentParameterBlockers.isEmpty()
+                        ? "Resolve required parameters / boundary ambiguities"
+                        : currentParameterBlockers.size() + " parameter"
+                        + (currentParameterBlockers.size() == 1 ? "" : "s") + " require setup"));
+        readinessItems.add(readyItem("Last test completed", policyTest, "tests", "Run Policy Test"));
 
         List<Map<String, Object>> blockerDetails = new ArrayList<>();
         for (Map<String, Object> b : executionBlockers) {
             Map<String, Object> row = new LinkedHashMap<>(b);
             row.put("message", formatExecutionBlockerMessage(b));
+            row.put("tab", "rules");
+            row.put("category", "EXECUTION");
+            blockerDetails.add(row);
+        }
+        for (Map<String, Object> b : currentParameterBlockers) {
+            String msg = String.valueOf(b.getOrDefault("businessName", b.get("canonicalParameterId")))
+                    + " — " + b.getOrDefault("reason", "Parameter not ready");
+            boolean already = blockerDetails.stream()
+                    .anyMatch(row -> msg.equals(String.valueOf(row.get("message"))));
+            if (already) continue;
+            Map<String, Object> row = new LinkedHashMap<>(b);
+            row.put("message", msg);
             row.put("tab", "rules");
             row.put("category", "EXECUTION");
             blockerDetails.add(row);
@@ -1291,7 +1323,7 @@ public class PolicyLifecycleService {
         Map<String, Object> primary = primaryAction(status, actions, cm, checker, submitBlockers, approveBlockers);
         // Ready-for-next-step cannot be true while any execution blocker remains (invariant).
         boolean checklistOk = readinessItems.stream().allMatch(i -> Boolean.TRUE.equals(i.get("ok")));
-        boolean readyForNext = checklistOk && executionBlockers.isEmpty()
+        boolean readyForNext = checklistOk && executionBlockers.isEmpty() && currentParameterBlockers.isEmpty()
                 && Boolean.TRUE.equals(primary.get("enabled"));
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("progressSteps", List.of("DRAFT", "IN REVIEW", "APPROVED", "SCHEDULED", "ACTIVE"));
@@ -1300,6 +1332,12 @@ public class PolicyLifecycleService {
         out.put("readyForNextStep", readyForNext);
         out.put("blockerDetails", blockerDetails);
         out.put("executionBlockers", executionBlockers);
+        out.put("currentParameterBlockers", currentParameterBlockers);
+        out.put("currentExecutionReadiness", currentExecution);
+        out.put("lifecycleStatus", status);
+        out.put("lifecycleAxis", "POLICY_VERSION_LIFECYCLE");
+        out.put("executionReadinessAxis", "POLICY_EXECUTION_READINESS");
+        out.put("historicalLifecycleUnchanged", true);
         out.put("governanceBlockers", governanceBlockers);
         out.put("executionReadinessOk", executionBlockers.isEmpty());
         out.put("governanceReadinessOk", governanceBlockers.isEmpty());

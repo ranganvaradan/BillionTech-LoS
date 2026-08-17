@@ -104,7 +104,24 @@ export function lenderPrimaryFromTruth(
       detail: 'Production use still requires certification.',
     }
   }
-  return { state: 'NEEDS_REVIEW', label: 'Needs review' }
+  return { state: 'NEEDS_YOUR_INPUT', label: 'Needs your input' }
+}
+
+/** AXIS 3 — test-input label. READY must never map to Filled automatically without a value. */
+export function testInputDisplayLabel(status: string, valuePresent?: boolean): string {
+  if (status === 'VALUE_AVAILABLE' || (Boolean(valuePresent) && (status === 'AUTOMATIC_DERIVED' || status === 'DERIVED' || status === 'RAW'))) {
+    return 'Filled automatically'
+  }
+  if (status === 'UNRESOLVED') return 'Unresolved'
+  if (status === 'MANUAL_INPUT' || status === 'MANUAL') return 'Needs your input'
+  if (status === 'MANUAL_TEST_VALUE') return 'Test value'
+  if (status === 'WAITING_FOR_DATA' || status === 'AUTOMATIC_DERIVED' || status === 'DERIVED' || status === 'RAW') {
+    return 'Waiting for data'
+  }
+  if (status === 'CALCULATION_REQUIRED' || status === 'NOT_EXECUTABLE' || status === 'NEEDS_INPUT') {
+    return 'Calculation needs setup'
+  }
+  return 'Unavailable'
 }
 
 export function certificationDisplayLabel(status: unknown): string {

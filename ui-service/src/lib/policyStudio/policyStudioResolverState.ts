@@ -78,6 +78,8 @@ export function derivePolicyStudioOperandPresentation(
     unavailable: op.unavailable === true,
     unresolved: op.unresolved === true,
   })
+  const parameterLabel =
+    primary.label === 'Needs review' ? 'Needs your input' : primary.label
 
   const primaryStatus = String(truth.primaryStatus ?? primary.state ?? '')
   const readinessReason = String(
@@ -96,7 +98,7 @@ export function derivePolicyStudioOperandPresentation(
   if (paramClass === 'INGREDIENT' || String(op.parameterClassLabel ?? '').includes('Source ingredient')) {
     return {
       case: 'EXECUTABLE',
-      parameterLabel: primary.label || 'Source ingredient',
+      parameterLabel: parameterLabel || 'Source ingredient',
       parameterState: primaryStatus || 'NOT_READY',
       showCalculationResolver: false,
       showManualResolver: false,
@@ -111,7 +113,7 @@ export function derivePolicyStudioOperandPresentation(
   if (op.unresolved === true) {
     return {
       case: 'UNRESOLVED_MAP',
-      parameterLabel: primary.label === 'Needs review' ? 'Needs your input' : primary.label,
+      parameterLabel: parameterLabel || 'Needs your input',
       parameterState: 'UNRESOLVED',
       showCalculationResolver: false,
       showManualResolver: false,
@@ -126,7 +128,7 @@ export function derivePolicyStudioOperandPresentation(
   if (manual) {
     return {
       case: 'MANUAL_INPUT',
-      parameterLabel: primary.label || 'Needs manual input',
+      parameterLabel: parameterLabel || 'Needs manual input',
       parameterState: 'READY',
       showCalculationResolver: false,
       showManualResolver: true,
@@ -141,7 +143,7 @@ export function derivePolicyStudioOperandPresentation(
   if (capability || primaryStatus === 'READY') {
     return {
       case: opts?.ruleNeedsReview ? 'RULE_REVIEW_ONLY' : 'EXECUTABLE',
-      parameterLabel: primary.label || 'Ready',
+      parameterLabel: parameterLabel || 'Ready',
       parameterState: primaryStatus || 'READY',
       showCalculationResolver: false,
       showManualResolver: false,
@@ -168,7 +170,7 @@ export function derivePolicyStudioOperandPresentation(
   if (calcSetup || opts?.proposalReadyForReview) {
     return {
       case: 'SETUP_CALCULATION',
-      parameterLabel: primary.label || 'Calculation not defined',
+      parameterLabel: parameterLabel || 'Calculation not defined',
       parameterState: 'NOT_READY',
       showCalculationResolver: true,
       showManualResolver: false,
@@ -186,7 +188,7 @@ export function derivePolicyStudioOperandPresentation(
 
   return {
     case: 'CHANGE_PARAMETER',
-    parameterLabel: primary.label || 'Not ready',
+    parameterLabel: parameterLabel || 'Not ready',
     parameterState: primaryStatus || 'NOT_READY',
     showCalculationResolver: false,
     showManualResolver: false,

@@ -9,6 +9,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -98,6 +99,40 @@ class PolicyRuleLifecycleProjectionTest {
         facts = PolicyRuleLifecycleProjection.factsFromCard(card, meta);
         assertTrue(facts.policyTestReady());
         assertEquals(PolicyRuleLenderState.ACCEPTED_READY_TO_TEST,
+                PolicyRuleLifecycleProjection.deriveState(facts));
+    }
+
+    @Test
+    void ignoredAndKeepAs_areNotNotApplicable() {
+        var ignored = PolicyRuleLifecycleProjection.project("r-ign", new PolicyRuleLifecycleProjection.Facts(
+                false, true, true, false, false, false, true, false, false, false, false, true, false, false,
+                true, false));
+        assertEquals("IGNORED", ignored.get("lenderState"));
+        assertEquals("Ignored", ignored.get("ruleLifecycleLabel"));
+        assertEquals("Ignored", ignored.get("statusChip"));
+
+        var keep = PolicyRuleLifecycleProjection.project("r-keep", new PolicyRuleLifecycleProjection.Facts(
+                false, true, false, true, true, false, true, true, false, false, false, true, false, false,
+                false, true));
+        assertEquals("POLICY_REQUIREMENT", keep.get("lenderState"));
+        assertEquals("Policy requirement", keep.get("ruleLifecycleLabel"));
+        assertNotEquals("Not applicable", keep.get("statusChip"));
+    }
+
+    @Test
+    void factsFromCard_keepAsIsNotNotApplicable() {
+        Map<String, Object> card = new LinkedHashMap<>();
+        card.put("includedForActivation", false);
+        card.put("authoringComplete", true);
+        card.put("operands", java.util.List.of(Map.of(
+                "parameterId", "bureau.dpd_30_plus_count_6m",
+                "canonicalParameterId", "bureau.dpd_30_plus_count_6m",
+                "calculationRequired", false,
+                "unresolved", false
+        )));
+        Map<String, Object> meta = Map.of("disposition", "KEEP_AS_POLICY_REQUIREMENT");
+        var facts = PolicyRuleLifecycleProjection.factsFromCard(card, meta);
+        assertEquals(PolicyRuleLenderState.POLICY_REQUIREMENT,
                 PolicyRuleLifecycleProjection.deriveState(facts));
     }
 }

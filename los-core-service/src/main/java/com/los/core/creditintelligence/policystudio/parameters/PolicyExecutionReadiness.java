@@ -5,6 +5,7 @@ import com.los.core.creditintelligence.policystudio.domain.CiPolicyRuleCandidate
 import com.los.core.creditintelligence.policystudio.model.PolicyStudioSession;
 import com.los.core.creditintelligence.policystudio.parameters.execution.EvaluationMode;
 import com.los.core.creditintelligence.policystudio.parameters.execution.ExecutionCapabilityAuthority;
+import com.los.core.creditintelligence.policystudio.truth.CanonicalParameterStateService;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -31,6 +32,7 @@ public final class PolicyExecutionReadiness {
     public static final String BLOCKER_THRESHOLD_MISSING = "THRESHOLD_MISSING";
     public static final String BLOCKER_REQUIRED_ADJUSTMENT = "REQUIRED_POLICY_ADJUSTMENT";
     public static final String BLOCKER_MATERIAL_AMBIGUITY = "MATERIAL_AMBIGUITY";
+    public static final String BLOCKER_PARAMETER_NOT_READY = "PARAMETER_NOT_READY";
 
     public static final String ROLE_REQUIRED_OPERAND = "REQUIRED_OPERAND";
     public static final String ROLE_REQUIRED_DEPENDENCY = "REQUIRED_DEPENDENCY";
@@ -60,19 +62,27 @@ public final class PolicyExecutionReadiness {
             }
         }
         boolean executionReady = executionBlockers.isEmpty() && included > 0 && ready == included;
-        out.put("executionReady", executionReady);
-        out.put("executionBlockers", executionBlockers);
-        out.put("executionBlockerCount", executionBlockers.size());
-        out.put("includedExecutableRules", included);
-        out.put("executionReadyRules", ready);
-        out.put("requiredParametersResolved", executionBlockers.stream().noneMatch(b -> {
+        List<Map<String, Object>> currentParameterBlockers = currentParameterBlockers(session);
+        boolean requiredParametersResolved = currentParameterBlockers.isEmpty()
+                && executionBlockers.stream().noneMatch(b -> {
             String t = String.valueOf(b.get("blockerType"));
             return BLOCKER_UNRESOLVED_OPERAND.equals(t)
                     || BLOCKER_UNAVAILABLE_OPERAND.equals(t)
                     || BLOCKER_NEEDS_CONFIGURATION.equals(t)
                     || BLOCKER_REQUIRED_ADJUSTMENT.equals(t)
-                    || BLOCKER_THRESHOLD_MISSING.equals(t);
-        }));
+                    || BLOCKER_THRESHOLD_MISSING.equals(t)
+                    || BLOCKER_PARAMETER_NOT_READY.equals(t);
+        });
+        boolean currentBlocked = !currentParameterBlockers.isEmpty() || !executionBlockers.isEmpty();
+        out.put("executionReady", executionReady);
+        out.put("executionBlockers", executionBlockers);
+        out.put("executionBlockerCount", executionBlockers.size());
+        out.put("includedExecutableRules", included);
+        out.put("executionReadyRules", ready);
+        out.put("currentParameterBlockers", currentParameterBlockers);
+        out.put("currentAttentionCount", currentParameterBlockers.size());
+        out.put("currentExecutionReadiness", currentBlocked ? "BLOCKED" : "READY");
+        out.put("requiredParametersResolved", requiredParametersResolved);
         // Boundary / material ambiguities are execution blockers — not "parameters", but they
         // must prevent a green "execution-ready" checklist (same authority as submit).
         out.put("boundaryAmbiguitiesResolved", executionBlockers.stream().noneMatch(b ->
@@ -132,24 +142,82 @@ public final class PolicyExecutionReadiness {
     }
 
     /**
-     * POLICY-STUDIO-UX-CLOSURE-1 — count items that genuinely need business/configuration action.
-     * Excludes Ignore / Keep-as-requirement / deleted / non-executable excluded items.
+     * Genuine underwriting rule still on the policy — includes IGNORED / KEEP_AS.
+     * Excludes classification-only, data-requirement, metric-adjustment, deleted, compound children.
+     */
+    public static boolean isCurrentAttentionRule(CiPolicyRuleCandidate r) {
+        if (r == null) return false;
+        if (PolicyStudioConvergencePresenter.isCompoundChild(r.getSystemRuleId())) return false;
+        Map<String, Object> m = r.getMetadata() == null ? Map.of() : r.getMetadata();
+        if (Boolean.TRUE.equals(m.get("classificationOnly"))
+                && !Boolean.TRUE.equals(m.get("cmAuthored"))) {
+            return false;
+        }
+        if (Boolean.TRUE.equals(m.get("dataRequirementOnly"))
+                || Boolean.TRUE.equals(m.get("metricAdjustment"))) {
+            return false;
+        }
+        if (Boolean.TRUE.equals(m.get("deleted"))) return false;
+        String disposition = String.valueOf(m.getOrDefault("disposition", ""));
+        return !"DELETED".equalsIgnoreCase(disposition);
+    }
+
+    /**
+     * Unique current structural parameter blockers across all genuine UW rules
+     * (including ignored / keep-as). CanonicalParameterState is the parameter axis.
+     */
+    public static List<Map<String, Object>> currentParameterBlockers(PolicyStudioSession session) {
+        LinkedHashMap<String, Map<String, Object>> unique = new LinkedHashMap<>();
+        if (session == null || session.getRuleCandidates() == null) {
+            return List.of();
+        }
+        for (CiPolicyRuleCandidate r : session.getRuleCandidates()) {
+            if (!isCurrentAttentionRule(r)) continue;
+            for (Map<String, Object> op : operandsOf(r)) {
+                String id = operandCanonicalId(op);
+                if (id == null && op.get("operandKey") != null) {
+                    id = CanonicalParameterRegistry.shared()
+                            .findByOperandKey(String.valueOf(op.get("operandKey")))
+                            .map(CanonicalParameterDefinition::id)
+                            .orElse(null);
+                }
+                boolean unresolved = Boolean.TRUE.equals(op.get("unresolved"));
+                boolean notReady = false;
+                String reason = null;
+                String label = null;
+                if (id != null) {
+                    Map<String, Object> state = CanonicalParameterStateService.state(id);
+                    notReady = "NOT_READY".equals(String.valueOf(state.get("businessReadiness")));
+                    reason = state.get("businessReadinessReason") == null
+                            ? null : String.valueOf(state.get("businessReadinessReason"));
+                    label = state.get("primaryStatusLabel") == null
+                            ? null : String.valueOf(state.get("primaryStatusLabel"));
+                }
+                boolean blocks = unresolved || notReady || operandBlocksExecution(op);
+                if (!blocks) continue;
+                String key = id != null ? id : String.valueOf(op.getOrDefault("operandKey", "unknown"));
+                if (unique.containsKey(key)) continue;
+                Map<String, Object> b = new LinkedHashMap<>();
+                b.put("blockerType", notReady ? BLOCKER_PARAMETER_NOT_READY : BLOCKER_UNRESOLVED_OPERAND);
+                b.put("canonicalParameterId", id);
+                b.put("reason", reason != null ? reason : (unresolved
+                        ? "Parameter not mapped" : "Parameter blocks execution"));
+                b.put("label", label);
+                b.put("businessName", op.getOrDefault("businessName", op.get("label")));
+                b.put("ruleId", r.getId() == null ? r.getSystemRuleId() : r.getId().toString());
+                unique.put(key, b);
+            }
+        }
+        return new ArrayList<>(unique.values());
+    }
+
+    /**
+     * POLICY-STUDIO-UX-CLOSURE-1 — current structural attention count.
+     * Unique canonical parameter blockers on genuine UW rules, including ignored / keep-as.
+     * Documentary / classification-only items remain excluded.
      */
     public static long countNeedsBusinessInput(PolicyStudioSession session) {
-        if (session == null || session.getRuleCandidates() == null) {
-            return 0L;
-        }
-        List<Map<String, Object>> blockers = sessionExecutionBlockers(session);
-        long n = 0L;
-        for (CiPolicyRuleCandidate r : session.getRuleCandidates()) {
-            if (!isIncludedExecutableRule(r)) {
-                continue;
-            }
-            if (!isExecutionReadyInSession(session, r, blockers)) {
-                n++;
-            }
-        }
-        return n;
+        return currentParameterBlockers(session).size();
     }
 
     /** Authoring complete AND all required runtime operands resolved for execution. */

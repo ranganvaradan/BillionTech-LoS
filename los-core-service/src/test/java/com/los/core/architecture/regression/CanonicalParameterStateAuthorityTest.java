@@ -176,6 +176,55 @@ class CanonicalParameterStateAuthorityTest {
     }
 
     @Test
+    void architectureGuard_policyStudioStateAxesRemainSeparate() throws Exception {
+        Path uiRoot = Path.of("../ui-service/src").toAbsolutePath().normalize();
+        if (!Files.isDirectory(uiRoot)) {
+            uiRoot = Path.of("ui-service/src").toAbsolutePath().normalize();
+        }
+        Path javaRoot = Path.of("src/main/java").toAbsolutePath().normalize();
+        if (!Files.isDirectory(javaRoot)) {
+            javaRoot = Path.of("los-core-service/src/main/java").toAbsolutePath().normalize();
+        }
+        String rules = Files.readString(uiRoot.resolve("pages/creditIntelligence/CiPolicyRulesTab.tsx"));
+        // GUARD 1 — parameter label from presentation (CPS), not rule lifecycle string as Parameter:
+        assertThat(rules).contains("presentation.parameterLabel");
+        assertThat(rules).contains("Parameter:");
+        assertThat(rules).doesNotContain("Parameter: {String(life.ruleLifecycleLabel");
+        assertThat(rules).doesNotContain("Parameter: {status}");
+        // GUARD 2 — rule chip from lifecycle
+        assertThat(rules).contains("data-testid=\"rule-lifecycle-status\"");
+        String sim = Files.readString(uiRoot.resolve("pages/creditIntelligence/CiPolicySimulationTab.tsx"));
+        // GUARD 3 — Filled automatically only via testInputDisplayLabel (value-aware)
+        assertThat(sim).contains("testInputDisplayLabel");
+        assertThat(sim).doesNotContain("? 'Filled automatically'");
+        String landing = Files.readString(uiRoot.resolve("pages/creditIntelligence/CiCreditPoliciesLanding.tsx"));
+        // GUARD 4 — Need input from backend needsInputCount
+        assertThat(landing).contains("needsInputCount");
+        String lifeUi = Files.readString(uiRoot.resolve("pages/creditIntelligence/CiPolicyLifecycleTab.tsx"));
+        // GUARD 6 — historical lifecycle displayed separately from current execution
+        assertThat(lifeUi).contains("current-execution-readiness");
+        assertThat(lifeUi).contains("lifecycle-status");
+        String exec = Files.readString(javaRoot.resolve(
+                "com/los/core/creditintelligence/policystudio/parameters/PolicyExecutionReadiness.java"));
+        assertThat(exec).contains("currentParameterBlockers");
+        assertThat(exec).contains("currentExecutionReadiness");
+        String versions = Files.readString(javaRoot.resolve(
+                "com/los/core/creditintelligence/policystudio/lifecycle/PolicyLifecycleService.java"));
+        // GUARD 5 — required parameters from evaluate()
+        assertThat(versions).contains("requiredParametersResolved");
+        assertThat(versions).contains("currentParameterBlockers");
+        // GUARD 6 — do not put BLOCKED into businessStatus from evaluate
+        assertThat(versions).doesNotContain("life.put(\"businessStatus\", currentExecution");
+        String score = Files.readString(javaRoot.resolve(
+                "com/los/core/service/underwriting/CanonicalScorecardValueResolver.java"));
+        // GUARD 7 — scoring uses valueAvailable, not lender READY
+        assertThat(score).contains("valueAvailable");
+        String resolver = Files.readString(uiRoot.resolve("lib/policyStudio/policyStudioResolverState.ts"));
+        // GUARD 8 — frontend maps enum→label; cannot use Needs review as parameter label
+        assertThat(resolver).contains("Needs review' ? 'Needs your input'");
+    }
+
+    @Test
     void cleanHistory_andDpd_shareStateAuthority() {
         for (String id : List.of(DPD30, CLEAN, CC_OVERDUE)) {
             Map<String, Object> st = CanonicalParameterStateService.state(id);

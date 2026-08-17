@@ -20,6 +20,11 @@ import java.util.Map;
 @Service
 public class CanonicalParameterCapabilityParityService {
 
+    /**
+     * Historical Wave-8/9 inventory of IDs that once disagreed across D&amp;P / Gate3 / spine.
+     * Not a permanent "must remain not executable" list. Capability follows
+     * CanonicalParameterExecutionService plus PlatformNormalizedRawFieldCatalog.
+     */
     public static final List<String> GOLDEN_12_DISAGREEMENT_IDS = List.of(
             "bureau.reason_code",
             "bureau.inquiry.purpose",

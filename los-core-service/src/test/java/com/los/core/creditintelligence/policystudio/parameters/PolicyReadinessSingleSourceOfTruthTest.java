@@ -57,9 +57,13 @@ class PolicyReadinessSingleSourceOfTruthTest {
         }
 
         Map<String, Object> eval = PolicyExecutionReadiness.evaluate(session);
-        assertThat(eval.get("executionReady")).isEqualTo(true);
         assertThat(eval.get("boundaryAmbiguitiesResolved")).isEqualTo(true);
-        assertThat(PolicyExecutionReadiness.sessionExecutionBlockers(session)).isEmpty();
+        assertThat(PolicyExecutionReadiness.sessionExecutionBlockers(session))
+                .noneMatch(b -> String.valueOf(b.get("reason")).contains("transaction count = 100"));
+        // Boundary closed ≠ structurally executable: inward-return ratio is NOT_READY
+        // (CALCULATION_NOT_DEFINED) in this unit JVM. executionReady follows canonical param truth.
+        assertThat(eval.get("requiredParametersResolved")).isEqualTo(false);
+        assertThat(eval.get("currentExecutionReadiness")).isEqualTo("BLOCKED");
     }
 
     @Test
@@ -78,7 +82,8 @@ class PolicyReadinessSingleSourceOfTruthTest {
         List<Map<String, Object>> blockers = PolicyExecutionReadiness.sessionExecutionBlockers(session);
         assertThat(blockers).noneMatch(b ->
                 String.valueOf(b.get("reason")).contains("transaction count = 100"));
-        assertThat(PolicyExecutionReadiness.evaluate(session).get("executionReady")).isEqualTo(true);
+        assertThat(PolicyExecutionReadiness.evaluate(session).get("boundaryAmbiguitiesResolved"))
+                .isEqualTo(true);
     }
 
     private static PolicyStudioSession sessionWithOpenHundredBoundary() {

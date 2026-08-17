@@ -143,27 +143,37 @@ public class PolicyStudioDurableLandingListService {
 
         String docStatus = document == null || document.getStatus() == null
                 ? "DRAFT" : document.getStatus();
-        String status = docStatus;
-        if (applicability != null && applicability.getBusinessStatus() != null
-                && !applicability.getBusinessStatus().isBlank()) {
-            status = applicability.getBusinessStatus();
-        } else if (memorySession != null && lifecycleService != null) {
+        String lifecycleStatus = null;
+        String approvalStatus = null;
+        if (memorySession != null && lifecycleService != null) {
             try {
                 Map<String, Object> life = lifecycleService.settingsView(memorySession);
                 Object biz = life.get("businessStatus");
                 if (biz != null && !String.valueOf(biz).isBlank()) {
-                    status = String.valueOf(biz);
+                    lifecycleStatus = String.valueOf(biz);
                 }
             } catch (Exception ignored) {
                 // keep document status
             }
-        } else if (document != null && document.getMetadata() != null) {
+        }
+        if (lifecycleStatus == null && document != null && document.getMetadata() != null) {
             Object life = document.getMetadata().get(PolicyLifecycleService.META_KEY);
-            if (life instanceof Map<?, ?> m && m.get("businessStatus") != null) {
-                status = String.valueOf(m.get("businessStatus"));
+            if (life instanceof Map<?, ?> m && m.get("businessStatus") != null
+                    && !String.valueOf(m.get("businessStatus")).isBlank()) {
+                lifecycleStatus = String.valueOf(m.get("businessStatus"));
             }
         }
+        if (applicability != null && applicability.getBusinessStatus() != null
+                && !applicability.getBusinessStatus().isBlank()) {
+            approvalStatus = applicability.getBusinessStatus();
+        }
+        String status = lifecycleStatus != null ? lifecycleStatus
+                : (approvalStatus != null ? approvalStatus : docStatus);
         row.put("status", status);
+        row.put("lifecycleStatus", lifecycleStatus != null ? lifecycleStatus : status);
+        row.put("approvalStatus", approvalStatus);
+        row.put("statusMeaning", "POLICY_VERSION_LIFECYCLE");
+        row.put("statusAxis", "POLICY_VERSION_LIFECYCLE");
 
         if (applicability != null) {
             row.put("applicabilityId", applicability.getId() == null
@@ -204,6 +214,8 @@ public class PolicyStudioDurableLandingListService {
         }
         row.put("underwritingRuleCount", ruleCount);
         row.put("needsInputCount", needsInput);
+        row.put("needsInputMeaning", "CURRENT_STRUCTURAL_PARAMETER_BLOCKERS");
+        row.put("needsInputAuthority", "PolicyExecutionReadiness.currentParameterBlockers");
 
         List<String> landingActions = List.of("OPEN", "COPY");
         if (lifecycleService != null) {

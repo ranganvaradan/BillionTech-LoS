@@ -96,6 +96,33 @@ public class CanonicalParameterRegistry {
                 || key.equalsIgnoreCase(p.liveScorecardParameter())).findFirst();
     }
 
+    /**
+     * Rehydrate a stored operandKey (e.g. {@code dpd_30_plus_count_6m}) to a unique catalogue id.
+     * Projection only — does not mutate persisted rule metadata.
+     */
+    public Optional<CanonicalParameterDefinition> findByOperandKey(String operandKey) {
+        if (operandKey == null || operandKey.isBlank()) return Optional.empty();
+        String k = operandKey.trim();
+        Optional<CanonicalParameterDefinition> direct = findById(k);
+        if (direct.isPresent()) return direct;
+        String lower = k.toLowerCase(Locale.ROOT);
+        List<CanonicalParameterDefinition> hits = new ArrayList<>();
+        for (CanonicalParameterDefinition p : all) {
+            if (p.id() == null) continue;
+            String id = p.id().toLowerCase(Locale.ROOT);
+            if (id.equals(lower) || id.endsWith("." + lower)) {
+                hits.add(p);
+            }
+        }
+        if (hits.size() == 1) {
+            return Optional.of(hits.get(0));
+        }
+        if (hits.isEmpty()) {
+            return findById("bureau." + k);
+        }
+        return Optional.empty();
+    }
+
     public Optional<CanonicalParameterDefinition> resolve(String phrase) {
         if (phrase == null || phrase.isBlank()) return Optional.empty();
         String q = phrase.trim().toLowerCase(Locale.ROOT);

@@ -24,6 +24,8 @@ import static org.mockito.Mockito.when;
 /**
  * POLICY-STUDIO-SESSION-PERSISTENCE-P0 — full session (OR AST) survives process restart
  * via JPA snapshot, not resolution-overlay-only.
+ * <p>
+ * Fixture must stub {@code saveAndFlush} (product persist path), not only {@code save}.
  */
 class PolicyStudioSessionPersistenceP0Test {
 
@@ -54,10 +56,20 @@ class PolicyStudioSessionPersistenceP0Test {
             docs.put(d.getId(), d);
             return d;
         });
+        when(docRepo.saveAndFlush(any())).thenAnswer(inv -> {
+            CiPolicyDocument d = inv.getArgument(0);
+            docs.put(d.getId(), d);
+            return d;
+        });
 
         CiPolicyStudioSessionSnapshotRepository snapRepo = mock(CiPolicyStudioSessionSnapshotRepository.class);
         when(snapRepo.findById(any())).thenAnswer(inv -> Optional.ofNullable(snaps.get(inv.getArgument(0))));
         when(snapRepo.save(any())).thenAnswer(inv -> {
+            CiPolicyStudioSessionSnapshot s = inv.getArgument(0);
+            snaps.put(s.getPolicyDocumentId(), s);
+            return s;
+        });
+        when(snapRepo.saveAndFlush(any())).thenAnswer(inv -> {
             CiPolicyStudioSessionSnapshot s = inv.getArgument(0);
             snaps.put(s.getPolicyDocumentId(), s);
             return s;

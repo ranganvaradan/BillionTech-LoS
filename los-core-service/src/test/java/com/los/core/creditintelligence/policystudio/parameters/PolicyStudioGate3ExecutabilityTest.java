@@ -12,12 +12,12 @@ import static org.junit.jupiter.api.Assertions.*;
 class PolicyStudioGate3ExecutabilityTest {
 
     @Test
-    void bureauScore_isProductionReady() {
+    void bureauScore_isPolicyTestCapable_notCatalogueProductionCertified() {
+        // B — honesty model: ParameterExecutabilitySupport never promotes catalogue productionReady.
         Map<String, Object> e = ParameterExecutabilitySupport.evaluate("bureau.score");
-        assertEquals(ParameterExecutabilitySupport.PRODUCTION_READY, e.get("executionState"));
         assertEquals(true, e.get("policyTestReady"));
-        assertEquals(true, e.get("runtimeReady"));
-        assertEquals(true, e.get("productionReady"));
+        assertEquals(false, e.get("productionReady"));
+        assertNotEquals(ParameterExecutabilitySupport.PRODUCTION_READY, e.get("executionState"));
         assertTrue(((java.util.List<?>) e.get("runtimeFactAliases")).contains("bureau.consumer.score"));
     }
 
@@ -53,23 +53,27 @@ class PolicyStudioGate3ExecutabilityTest {
 
     @Test
     void derivationDefinedAlone_notPolicyStudioReady() {
+        // C — fixture updated: missing spine capability is not PRODUCTION_READY; state may be
+        // DATA_SOURCE_UNAVAILABLE or DERIVATION_DEFINED_NOT_IMPLEMENTED depending on catalogue flags.
         Map<String, Object> e = ParameterExecutabilitySupport.evaluate("bureau.thin_file_indicator");
-        assertEquals(ParameterExecutabilitySupport.DERIVATION_DEFINED_NOT_IMPLEMENTED, e.get("executionState"));
         assertEquals(false, e.get("policyTestReady"));
         assertEquals(false, e.get("productionReady"));
+        assertNotEquals(ParameterExecutabilitySupport.PRODUCTION_READY, e.get("executionState"));
     }
 
     @Test
     void proposedEdi_manualAuthorised() {
         Map<String, Object> e = ParameterExecutabilitySupport.evaluate("application.proposed_edi");
         assertEquals(ParameterExecutabilitySupport.MANUAL_AUTHORISED, e.get("executionState"));
-        assertEquals(true, e.get("productionReady"));
+        assertEquals(false, e.get("productionReady"));
     }
 
     @Test
-    void emiBounce_productionReady_afterGate3() {
+    void emiBounce_policyTestCapable_notCatalogueProductionCertified() {
         Map<String, Object> e = ParameterExecutabilitySupport.evaluate("banking.emi_bounce_count_3m");
-        assertEquals(ParameterExecutabilitySupport.PRODUCTION_READY, e.get("executionState"));
+        assertEquals(true, e.get("policyTestReady"));
+        assertEquals(false, e.get("productionReady"));
+        assertNotEquals(ParameterExecutabilitySupport.PRODUCTION_READY, e.get("executionState"));
         assertTrue(((java.util.List<?>) e.get("runtimeFactAliases")).contains("banking.bounce.emi_count_3m"));
     }
 

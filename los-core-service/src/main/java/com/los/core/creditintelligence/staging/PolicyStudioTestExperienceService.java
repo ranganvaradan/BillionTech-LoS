@@ -251,7 +251,8 @@ public class PolicyStudioTestExperienceService {
                         "issue", "manual_input_required",
                         "detail", "Manual input required"));
             } else if (has) {
-                if ("AUTOMATIC_DERIVED".equals(status) || "DERIVED".equals(status)) derived++;
+                if ("AUTOMATIC_DERIVED".equals(status) || "DERIVED".equals(status)
+                        || "WAITING_FOR_DATA".equals(status) || "VALUE_AVAILABLE".equals(status)) derived++;
                 else available++;
             } else {
                 needsAttention.add(Map.of(
@@ -474,6 +475,7 @@ public class PolicyStudioTestExperienceService {
             case "MANUAL_INPUT" -> 3;
             case "DATA_REQUIRED", "UNAVAILABLE", "UNRESOLVED" -> 2;
             case "AUTOMATIC_DERIVED" -> 1;
+            case "WAITING_FOR_DATA", "VALUE_AVAILABLE" -> 1;
             default -> 0;
         };
     }
@@ -484,6 +486,11 @@ public class PolicyStudioTestExperienceService {
         p.put("parameterKey", key);
         p.put("businessName", op.getOrDefault("businessName", op.get("label")));
         Object pid = op.get("parameterId");
+        if (pid == null || String.valueOf(pid).isBlank() || "null".equals(String.valueOf(pid))) {
+            String keyHint = String.valueOf(op.getOrDefault("operandKey", op.get("parameterKey")));
+            pid = CanonicalParameterRegistry.shared().findByOperandKey(keyHint)
+                    .map(CanonicalParameterDefinition::id).orElse(null);
+        }
         p.put("metricId", pid);
         p.put("canonicalParameterId", pid);
         applyCanonicalTestStatus(p, pid == null ? null : String.valueOf(pid), op);
@@ -497,12 +504,9 @@ public class PolicyStudioTestExperienceService {
      */
     private void applyCanonicalTestStatus(Map<String, Object> p, String canonicalId, Map<String, Object> op) {
         if (canonicalId == null || canonicalId.isBlank() || "null".equals(canonicalId)) {
-            boolean unresolved = op != null && (Boolean.TRUE.equals(op.get("unresolved"))
-                    || ParameterResolutionSupport.STATUS_UNRESOLVED.equals(op.get("status")));
-            p.put("status", unresolved ? "UNRESOLVED" : "AUTOMATIC_DERIVED");
-            if (unresolved) {
-                p.put("sourceLabel", "Unresolved — resolve in Rules or enter temporary test value");
-            }
+            p.put("status", "UNRESOLVED");
+            p.put("testInputState", "NOT_EXECUTABLE");
+            p.put("sourceLabel", "Unresolved — resolve in Rules or enter temporary test value");
             return;
         }
         Map<String, Object> state = CanonicalParameterStateService.state(canonicalId.trim());
@@ -517,15 +521,18 @@ public class PolicyStudioTestExperienceService {
                 String reason = String.valueOf(state.getOrDefault("businessReadinessReason", ""));
                 if ("MANUAL_INPUT".equals(reason)) {
                     p.put("status", "MANUAL_INPUT");
-                    p.put("sourceLabel", "Needs manual input");
+                    p.put("testInputState", "INPUT_REQUIRED");
+                    p.put("sourceLabel", "Needs your input");
                 } else if ("SOURCE_NOT_INTEGRATED".equals(reason) || "SOURCE_NOT_CONFIGURED".equals(reason)
                         || "RAW_FIELD_NOT_AVAILABLE".equals(reason)) {
                     p.put("status", "DATA_REQUIRED");
+                    p.put("testInputState", "NOT_EXECUTABLE");
                     p.put("sourceLabel", String.valueOf(state.getOrDefault("primaryStatusLabel", "Not ready")));
                 } else {
                     p.put("status", "CALCULATION_REQUIRED");
+                    p.put("testInputState", "NOT_EXECUTABLE");
                     p.put("sourceLabel", String.valueOf(state.getOrDefault("primaryStatusLabel",
-                            "Calculation not defined — simulate only, or set up calculation")));
+                            "Calculation not defined — not executable until setup")));
                 }
             }
             case "NEEDS_MANUAL_INPUT" -> {
@@ -544,10 +551,22 @@ public class PolicyStudioTestExperienceService {
                 String reason = String.valueOf(state.getOrDefault("businessReadinessReason", ""));
                 if ("MANUAL_INPUT".equals(reason)) {
                     p.put("status", "MANUAL_INPUT");
-                    p.put("sourceLabel", "Needs manual input");
+                    p.put("testInputState", "INPUT_REQUIRED");
+                    p.put("sourceLabel", "Needs your input");
                 } else {
-                    p.put("status", "AUTOMATIC_DERIVED");
-                    p.put("sourceLabel", String.valueOf(state.getOrDefault("primaryStatusLabel", "Ready")));
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> exec = state.get("execution") instanceof Map<?, ?>
+                            ? (Map<String, Object>) state.get("execution") : Map.of();
+                    boolean valueAvailable = Boolean.TRUE.equals(exec.get("valueAvailable"));
+                    if (valueAvailable) {
+                        p.put("status", "VALUE_AVAILABLE");
+                        p.put("testInputState", "VALUE_AVAILABLE");
+                        p.put("sourceLabel", "Value available");
+                    } else {
+                        p.put("status", "WAITING_FOR_DATA");
+                        p.put("testInputState", "WAITING_FOR_DATA");
+                        p.put("sourceLabel", "Automatic — waiting for data");
+                    }
                     attachLineage(p, canonicalId);
                     p.put("defaultHint", defaultHint(String.valueOf(p.get("parameterKey")), canonicalId));
                 }
@@ -558,18 +577,25 @@ public class PolicyStudioTestExperienceService {
                         ? (Map<String, Object>) state.get("execution") : Map.of();
                 if (Boolean.TRUE.equals(exec.get("capability"))
                         || "READY".equals(String.valueOf(state.get("businessReadiness")))) {
-                    p.put("status", "AUTOMATIC_DERIVED");
-                    p.put("sourceLabel", String.valueOf(state.getOrDefault("primaryStatusLabel", "Ready")));
+                    boolean valueAvailable = Boolean.TRUE.equals(exec.get("valueAvailable"));
+                    p.put("status", valueAvailable ? "VALUE_AVAILABLE" : "WAITING_FOR_DATA");
+                    p.put("testInputState", valueAvailable ? "VALUE_AVAILABLE" : "WAITING_FOR_DATA");
+                    p.put("sourceLabel", valueAvailable
+                            ? "Value available"
+                            : "Automatic — waiting for data");
                     p.put("defaultHint", defaultHint(String.valueOf(p.get("parameterKey")), canonicalId));
                 } else {
                     p.put("status", "CALCULATION_REQUIRED");
+                    p.put("testInputState", "NOT_EXECUTABLE");
                     p.put("sourceLabel", String.valueOf(state.getOrDefault("primaryStatusLabel",
                             "Calculation not defined")));
                 }
             }
         }
         // EDI still needs explicit resolution for test when not bound — data axis, not calc invent
-        if (canonicalId.contains("proposed_edi") && "AUTOMATIC_DERIVED".equals(p.get("status"))) {
+        if (canonicalId.contains("proposed_edi") && ("WAITING_FOR_DATA".equals(p.get("status"))
+                || "VALUE_AVAILABLE".equals(p.get("status"))
+                || "AUTOMATIC_DERIVED".equals(p.get("status")))) {
             // keep derived if capable
         }
     }
@@ -657,7 +683,7 @@ public class PolicyStudioTestExperienceService {
         for (Map<String, Object> p : required) {
             String st = String.valueOf(p.get("status"));
             switch (st) {
-                case "AUTOMATIC_DERIVED", "DERIVED", "RAW" -> {
+                case "AUTOMATIC_DERIVED", "DERIVED", "RAW", "WAITING_FOR_DATA", "VALUE_AVAILABLE" -> {
                     auto++;
                     derived++;
                 }
@@ -665,7 +691,7 @@ public class PolicyStudioTestExperienceService {
                     manual++;
                     needs.add(Map.of("businessName", p.get("businessName"), "issue", "manual_input_required"));
                 }
-                case "UNRESOLVED", "CALCULATION_REQUIRED" -> {
+                case "UNRESOLVED", "CALCULATION_REQUIRED", "NOT_EXECUTABLE" -> {
                     unresolved++;
                     needs.add(Map.of("businessName", p.get("businessName"), "issue",
                             "CALCULATION_REQUIRED".equals(st) ? "calculation_needs_setup" : "unresolved"));

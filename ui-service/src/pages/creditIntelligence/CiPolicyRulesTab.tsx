@@ -789,7 +789,10 @@ export function CiPolicyRulesTab({
                                   data-testid="parameter-execution-status"
                                 >
                                   <span className="font-semibold text-slate-800">
-                                    Parameter: {presentation.parameterLabel}
+                                    Parameter:{' '}
+                                    {presentation.parameterLabel === 'Needs review'
+                                      ? 'Needs your input'
+                                      : presentation.parameterLabel}
                                   </span>
                                   {ruleNeedsReview && presentation.capability ? (
                                     <span className="text-amber-900" data-testid="rule-review-separate">

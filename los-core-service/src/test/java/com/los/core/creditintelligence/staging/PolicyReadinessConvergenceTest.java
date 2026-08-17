@@ -26,6 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * POLICY-READINESS-CONVERGENCE-1 — Rules ↔ Versions share one execution readiness model.
+ * card.status is the rule-lifecycle chip (AXIS 2). executionReady is AXIS 5. Do not conflate.
  */
 class PolicyReadinessConvergenceTest {
 
@@ -42,7 +43,8 @@ class PolicyReadinessConvergenceTest {
         Map<String, Object> card = new LinkedHashMap<>();
         card.put("status", "Ready");
         PolicyAuthoringCompleteness.reconcileCard(card, r);
-        assertThat(card.get("status")).isEqualTo("Needs your input");
+        // card.status is AXIS 2 (lifecycle chip). Calculation-required → NEEDS_INPUT / Needs review.
+        assertThat(card.get("status")).isEqualTo("Needs review");
         assertThat(card.get("executionReady")).isEqualTo(false);
         assertThat(card.get("lifecycle")).isInstanceOf(Map.class);
         assertThat(asLife(card).get("lenderState")).isEqualTo("NEEDS_INPUT");
@@ -79,7 +81,7 @@ class PolicyReadinessConvergenceTest {
         card.put("status", "Accepted");
         PolicyAuthoringCompleteness.reconcileCard(card, r);
         assertThat(card.get("reviewDisposition")).isEqualTo("ACCEPTED");
-        assertThat(card.get("status")).isEqualTo("Needs your input");
+        assertThat(card.get("status")).isEqualTo("Needs review");
         assertThat(card.get("executionReady")).isEqualTo(false);
         assertThat(Boolean.TRUE.equals(asLife(card).get("forbidAcceptedBadgeWhenNeedsInput"))).isTrue();
         assertThat(card.get("reviewBadge")).isNull();
@@ -95,7 +97,9 @@ class PolicyReadinessConvergenceTest {
         card.put("status", "Needs your input");
         PolicyAuthoringCompleteness.reconcileCard(card, r);
         assertThat(card.get("executionReady")).isEqualTo(true);
-        assertThat(card.get("status")).isIn("Ready", "Accepted", "Edited");
+        // Unaccepted + execution-ready → READY_FOR_CONFIRMATION ("Needs review"), not mixed Ready.
+        assertThat(asLife(card).get("lenderState")).isEqualTo("READY_FOR_CONFIRMATION");
+        assertThat(card.get("status")).isEqualTo("Needs review");
     }
 
     @Test
@@ -320,9 +324,12 @@ class PolicyReadinessConvergenceTest {
         card.put("status", "Needs your input");
         card.put("blockedReason", PolicyAuthoringCompleteness.LEGACY_VALUE_MISSING);
         PolicyAuthoringCompleteness.reconcileCard(card, r);
-        assertThat(card.get("status")).isIn("Ready", "Accepted", "Edited");
+        assertThat(card.get("executionReady")).isEqualTo(true);
         assertThat(card.get("authoringComplete")).isEqualTo(true);
         assertThat(card.get("runtimeValueRequired")).isEqualTo(false);
+        // Rule not accepted → lifecycle chip Needs review (AXIS 2). Execution remains ready (AXIS 5).
+        assertThat(asLife(card).get("lenderState")).isEqualTo("READY_FOR_CONFIRMATION");
+        assertThat(card.get("status")).isEqualTo("Needs review");
     }
 
     @Test

@@ -229,10 +229,19 @@ export function CiPolicyLifecycleTab({
       <section className="rounded-xl border border-slate-200 bg-white px-4 py-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Current status</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Lifecycle status
+            </p>
             <h2 className="text-xl font-semibold text-slate-900" data-testid="lifecycle-status">
               {progressCurrent}
             </h2>
+            <p
+              className="mt-1 text-sm font-medium text-slate-800"
+              data-testid="current-execution-readiness"
+            >
+              Current execution:{' '}
+              {String(settings?.currentExecutionReadiness ?? '—')}
+            </p>
             <p className="mt-1 text-sm text-slate-700">{nextActor || '—'}</p>
             {scopeSummary.appliesTo ? (
               <p className="mt-1 text-sm text-slate-600">

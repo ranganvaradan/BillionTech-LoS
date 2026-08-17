@@ -205,7 +205,12 @@ export function CiCreditPoliciesLanding({
                   <th className="px-4 py-2 font-semibold">Scope</th>
                   <th className="px-4 py-2 font-semibold">Version</th>
                   <th className="px-4 py-2 font-semibold">Rules</th>
-                  <th className="px-4 py-2 font-semibold">Need input</th>
+                  <th
+                    className="px-4 py-2 font-semibold"
+                    title="Current structural parameter blockers (canonical PolicyExecutionReadiness)"
+                  >
+                    Need input
+                  </th>
                   <th className="px-4 py-2 font-semibold">Effective</th>
                   <th className="px-4 py-2 font-semibold">Actions</th>
                 </tr>
@@ -246,7 +251,15 @@ export function CiCreditPoliciesLanding({
                           <div className="text-xs font-normal text-slate-500">{String(row.copiedFromLabel)}</div>
                         ) : null}
                       </td>
-                      <td className="px-4 py-3">{String(row.status ?? 'DRAFT')}</td>
+                      <td className="px-4 py-3">
+                        <div data-testid={`policy-status-${docId}`}>{String(row.status ?? 'DRAFT')}</div>
+                        {row.approvalStatus &&
+                        String(row.approvalStatus).toUpperCase() !== status ? (
+                          <div className="text-xs text-slate-500">
+                            Approval: {String(row.approvalStatus)}
+                          </div>
+                        ) : null}
+                      </td>
                       <td className="px-4 py-3 text-slate-700">{scopeLabel(row)}</td>
                       <td className="px-4 py-3">{policyVersion}</td>
                       <td className="px-4 py-3">{row.underwritingRuleCount != null ? String(row.underwritingRuleCount) : '—'}</td>

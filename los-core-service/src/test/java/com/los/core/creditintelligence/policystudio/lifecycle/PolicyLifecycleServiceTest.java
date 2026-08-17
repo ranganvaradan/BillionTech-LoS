@@ -111,28 +111,28 @@ class PolicyLifecycleServiceTest {
 
     @Test
     void criticalDataReadiness_blocksApproval() {
+        // C — EDI is MANUAL authorised and no longer blocks. CASE F: NOT_READY calculation operand
+        // on a new DRAFT must block Approve via PolicyExecutionReadiness current parameter blockers.
         lifecycle.saveDraft(session, Map.of(
                 "products", List.of("DIGILEAP"),
                 "effectiveFrom", "2026-04-01"));
-        // POLICY-READINESS-CONVERGENCE-1 — unresolved required operand blocks Approve
         session.getRuleCandidates().clear();
         session.getRuleCandidates().add(CiPolicyRuleCandidate.builder()
                 .id(UUID.randomUUID())
                 .clauseId(UUID.randomUUID())
-                .systemRuleId("BANK_ADB_GE_PROPOSED_EDI")
+                .systemRuleId("CM_BUREAU_CC_OVERDUE_AMOUNT_GTE")
                 .expression(Map.of(
                         "op", "GTE",
-                        "left", Map.of("metric", "banking.avg_daily_balance_3m"),
-                        "right", Map.of("metric", "application.proposed_edi")))
+                        "left", Map.of("metric", "bureau.cc_overdue_amount"),
+                        "right", Map.of("const", 0)))
                 .metadata(new LinkedHashMap<>(Map.of(
-                        "businessTitle", "DigiLeap — Banking Capacity",
-                        "catalogueBacked", true,
-                        "parameters", Map.of("ratio", 1),
-                        "threshold", 1)))
+                        "businessTitle", "Credit-card overdue amount",
+                        "disposition", "ACCEPTED",
+                        "parameterId", "bureau.cc_overdue_amount")))
                 .build());
         assertThatThrownBy(() -> lifecycle.approvePolicy(session, Map.of()))
                 .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining("EDI");
+                .hasMessageContaining("overdue");
     }
 
     @Test

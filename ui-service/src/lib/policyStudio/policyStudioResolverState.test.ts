@@ -55,6 +55,14 @@ describe('policyStudioResolverState golden readiness', () => {
     expect(p.showCalculationResolver).toBe(false)
   })
 
+  it('missing canonical truth never labels the parameter Needs review', () => {
+    const p = derivePolicyStudioOperandPresentation({
+      operandKey: 'dpd_30_plus_count_6m',
+      unresolved: false,
+    })
+    expect(p.parameterLabel).not.toBe('Needs review')
+  })
+
   it('proposal ready still exposes Set up calculation as primary outer action', () => {
     const p = derivePolicyStudioOperandPresentation(
       {

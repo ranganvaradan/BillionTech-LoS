@@ -31,8 +31,31 @@ public final class PolicyRuleLifecycleProjection {
             boolean includedExecutable,
             boolean authoringComplete,
             boolean knownExistingCalculationPending,
-            boolean newCalculationProposalPending
-    ) {}
+            boolean newCalculationProposalPending,
+            boolean ignored,
+            boolean policyRequirement
+    ) {
+        public Facts(
+                boolean ruleAccepted,
+                boolean parameterResolved,
+                boolean calculationRequired,
+                boolean calculationDefined,
+                boolean calculationValidated,
+                boolean businessClarificationRequired,
+                boolean dataAvailableForPolicyDesign,
+                boolean policyTestReady,
+                boolean runtimeReady,
+                boolean productionReady,
+                boolean includedExecutable,
+                boolean authoringComplete,
+                boolean knownExistingCalculationPending,
+                boolean newCalculationProposalPending) {
+            this(ruleAccepted, parameterResolved, calculationRequired, calculationDefined,
+                    calculationValidated, businessClarificationRequired, dataAvailableForPolicyDesign,
+                    policyTestReady, runtimeReady, productionReady, includedExecutable, authoringComplete,
+                    knownExistingCalculationPending, newCalculationProposalPending, false, false);
+        }
+    }
 
     public static Map<String, Object> project(String ruleId, Facts f) {
         PolicyRuleLenderState state = deriveState(f);
@@ -69,7 +92,10 @@ public final class PolicyRuleLifecycleProjection {
                         || outstanding == PolicyRuleOutstandingAction.APPROVE_NEW_CALCULATION);
         out.put("showCalculationSetup",
                 outstanding == PolicyRuleOutstandingAction.COMPLETE_CALCULATION_SETUP
-                        || outstanding == PolicyRuleOutstandingAction.ANSWER_CLARIFICATION);
+                        || outstanding == PolicyRuleOutstandingAction.ANSWER_CLARIFICATION
+                        || (f.calculationRequired()
+                        && (state == PolicyRuleLenderState.IGNORED
+                        || state == PolicyRuleLenderState.POLICY_REQUIREMENT)));
         out.put("showChange", state == PolicyRuleLenderState.READY_TO_TEST
                 || state == PolicyRuleLenderState.ACCEPTED_READY_TO_TEST
                 || state == PolicyRuleLenderState.PRODUCTION_BLOCKED
@@ -85,8 +111,15 @@ public final class PolicyRuleLifecycleProjection {
     }
 
     static PolicyRuleLenderState deriveState(Facts f) {
-        if (!f.includedExecutable()) {
+        // Genuine out-of-scope only. IGNORED / KEEP_AS are still policy rules — never N/A.
+        if (!f.includedExecutable() && !f.ignored() && !f.policyRequirement()) {
             return PolicyRuleLenderState.NOT_APPLICABLE;
+        }
+        if (f.ignored()) {
+            return PolicyRuleLenderState.IGNORED;
+        }
+        if (f.policyRequirement()) {
+            return PolicyRuleLenderState.POLICY_REQUIREMENT;
         }
         if (!f.dataAvailableForPolicyDesign()) {
             return PolicyRuleLenderState.DATA_NOT_AVAILABLE;
@@ -118,6 +151,15 @@ public final class PolicyRuleLifecycleProjection {
     static PolicyRuleOutstandingAction deriveOutstanding(Facts f, PolicyRuleLenderState state) {
         return switch (state) {
             case NOT_APPLICABLE -> PolicyRuleOutstandingAction.NONE;
+            case IGNORED, POLICY_REQUIREMENT -> {
+                if (!f.parameterResolved()) {
+                    yield PolicyRuleOutstandingAction.RESOLVE_PARAMETER;
+                }
+                if (f.calculationRequired()) {
+                    yield PolicyRuleOutstandingAction.COMPLETE_CALCULATION_SETUP;
+                }
+                yield PolicyRuleOutstandingAction.NONE;
+            }
             case DATA_NOT_AVAILABLE -> PolicyRuleOutstandingAction.NONE;
             case NEEDS_INPUT -> {
                 if (!f.parameterResolved()) {
@@ -171,6 +213,8 @@ public final class PolicyRuleLifecycleProjection {
             case DATA_NOT_AVAILABLE -> "Data not available";
             case PRODUCTION_BLOCKED -> "Ready to test · Production setup pending";
             case PRODUCTION_READY -> "Production ready";
+            case IGNORED -> "Ignored";
+            case POLICY_REQUIREMENT -> "Policy requirement";
             case NOT_APPLICABLE -> "Not applicable";
         };
     }
@@ -193,7 +237,9 @@ public final class PolicyRuleLifecycleProjection {
             case DATA_NOT_AVAILABLE -> "Unavailable";
             case PRODUCTION_BLOCKED -> "Ready to test";
             case PRODUCTION_READY -> "Accepted";
-            case NOT_APPLICABLE -> f.ruleAccepted() ? "Accepted" : "Needs review";
+            case IGNORED -> "Ignored";
+            case POLICY_REQUIREMENT -> "Policy requirement";
+            case NOT_APPLICABLE -> "Not applicable";
         };
     }
 
@@ -225,11 +271,25 @@ public final class PolicyRuleLifecycleProjection {
     }
 
     public static Facts factsFromCard(Map<String, Object> card, Map<String, Object> meta) {
-        boolean included = !Boolean.FALSE.equals(card.get("includedForActivation"));
-        if (card.containsKey("includedForActivation")) {
-            included = Boolean.TRUE.equals(card.get("includedForActivation"));
-        }
-        String disposition = String.valueOf(meta.getOrDefault("disposition", ""));
+        String disposition = String.valueOf(meta.getOrDefault("disposition",
+                card.getOrDefault("disposition", "")));
+        boolean ignored = "IGNORED".equalsIgnoreCase(disposition);
+        boolean policyRequirement = "KEEP_AS_POLICY_REQUIREMENT".equalsIgnoreCase(disposition)
+                || "IGNORE_FOR_AUTOMATION".equalsIgnoreCase(disposition);
+        boolean classification = Boolean.TRUE.equals(meta.get("classificationOnly"))
+                && !Boolean.TRUE.equals(meta.get("cmAuthored"));
+        boolean dataRequirement = Boolean.TRUE.equals(meta.get("dataRequirementOnly"));
+        boolean metricAdj = Boolean.TRUE.equals(meta.get("metricAdjustment"));
+        boolean deleted = Boolean.TRUE.equals(meta.get("deleted"))
+                || "DELETED".equalsIgnoreCase(disposition)
+                || "Deleted".equals(String.valueOf(card.get("status")));
+        String sys = String.valueOf(card.getOrDefault("systemRuleId", ""));
+        boolean compoundChild = com.los.core.creditintelligence.policystudio.parameters
+                .PolicyStudioConvergencePresenter.isCompoundChild(sys)
+                || Boolean.TRUE.equals(card.get("compoundChild"));
+        // Genuine N/A only — never IGNORED / KEEP_AS / parameter-not-ready
+        boolean included = !classification && !dataRequirement && !metricAdj && !deleted && !compoundChild;
+
         boolean ruleAccepted = "ACCEPTED".equalsIgnoreCase(disposition)
                 || "EDITED".equalsIgnoreCase(disposition);
 
@@ -322,7 +382,9 @@ public final class PolicyRuleLifecycleProjection {
                 included,
                 authoringComplete,
                 knownExisting && !ruleAccepted && !calcRequired,
-                false
+                false,
+                ignored,
+                policyRequirement
         );
     }
 

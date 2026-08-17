@@ -3,6 +3,7 @@ package com.los.core.creditintelligence.policystudio.parameters.execution;
 import com.los.core.creditintelligence.policystudio.parameters.ParameterExecutabilitySupport;
 import com.los.core.creditintelligence.policystudio.parameters.PolicyStudioConvergencePresenter;
 import com.los.core.creditintelligence.policystudio.parameters.lifecycle.PolicyRuleLifecycleProjection;
+import com.los.core.creditintelligence.policystudio.sourceintegration.PlatformNormalizedRawFieldCatalog;
 import com.los.core.service.readiness.DataParametersCapabilitySemantics;
 import com.los.core.service.underwriting.ScorecardConvergenceService;
 import org.junit.jupiter.api.BeforeEach;
@@ -48,6 +49,13 @@ class SurfaceConvergenceAcceptanceTest {
         assertThat(report.get("spineAligned")).isEqualTo(true);
     }
 
+    /**
+     * Disposition B — GOLDEN_12 is a historical disagreement inventory, not a freeze that
+     * these IDs must stay not-executable. Equifax-normalized RAW fields
+     * ({@link PlatformNormalizedRawFieldCatalog}) are correctly spine-capable via
+     * RawFactProducer. Remaining IDs without a producer stay not-executable.
+     * Surfaces must still agree with spine for every ID.
+     */
     @Test
     void golden12_allAgreeWithSpine_notExecutable() {
         for (String id : CanonicalParameterCapabilityParityService.GOLDEN_12_DISAGREEMENT_IDS) {
@@ -56,9 +64,14 @@ class SurfaceConvergenceAcceptanceTest {
             Map<String, Object> gate3 = ParameterExecutabilitySupport.evaluate(id);
             Map<String, Object> dp = DataParametersCapabilitySemantics.project(
                     PolicyStudioConvergencePresenter.registry().findById(id).orElseThrow());
-            assertThat(spineCap).as(id + " spine").isFalse();
-            assertThat(gate3.get("policyTestReady")).as(id + " PS").isEqualTo(false);
-            assertThat(dp.get("policyTestReady")).as(id + " DP").isEqualTo(false);
+            boolean structurallyMappedRaw = PlatformNormalizedRawFieldCatalog.isStructurallyMapped(id);
+            if (structurallyMappedRaw) {
+                assertThat(spineCap).as(id + " spine RAW via PlatformNormalizedRawFieldCatalog").isTrue();
+            } else {
+                assertThat(spineCap).as(id + " spine no producer").isFalse();
+            }
+            assertThat(gate3.get("policyTestReady")).as(id + " PS").isEqualTo(spineCap);
+            assertThat(dp.get("policyTestReady")).as(id + " DP").isEqualTo(spineCap);
             assertThat(dp.get("policyDesign") instanceof Map<?, ?> m && Boolean.TRUE.equals(m.get("available")))
                     .as(id + " still designable").isTrue();
         }

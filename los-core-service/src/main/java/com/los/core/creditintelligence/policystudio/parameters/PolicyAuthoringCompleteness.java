@@ -134,7 +134,7 @@ public final class PolicyAuthoringCompleteness {
         // Spine-backed lifecycle facts — policyTestReady from CanonicalParameterExecutionService only
         var facts = com.los.core.creditintelligence.policystudio.parameters.lifecycle
                 .PolicyRuleLifecycleProjection.factsFromCard(card, meta);
-        card.put("executionReady", facts.policyTestReady());
+        // Do not overwrite PolicyExecutionReadiness.executionReady with spine policyTestReady
         card.put("policyTestReady", facts.policyTestReady());
         card.put("runtimeReady", facts.runtimeReady());
         card.put("productionReady", false);

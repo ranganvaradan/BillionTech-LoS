@@ -19,6 +19,10 @@ public enum PolicyRuleLenderState {
     PRODUCTION_BLOCKED,
     /** Accepted and production-certified path. */
     PRODUCTION_READY,
-    /** Non-executable / excluded from underwriting automation. */
+    /** Lender ignored the rule for automation — still a genuine policy rule, not business N/A. */
+    IGNORED,
+    /** Kept as a policy requirement (not automated) — still a genuine policy rule, not business N/A. */
+    POLICY_REQUIREMENT,
+    /** Truly out of underwriting-automation scope (classification / data-requirement / deleted / compound child). */
     NOT_APPLICABLE
 }
