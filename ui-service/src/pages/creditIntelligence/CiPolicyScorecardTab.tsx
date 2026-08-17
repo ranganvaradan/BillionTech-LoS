@@ -348,7 +348,7 @@ export function CiPolicyScorecardTab({
         <div className="flex flex-wrap gap-2">
           {(
             [
-              ['NONE', 'No scorecard'],
+              ['NONE', linkage.kind === 'LINKED' ? 'Unlink' : 'No scorecard'],
               ['LINK', 'Link existing'],
               ['CREATE', 'Create new'],
             ] as const

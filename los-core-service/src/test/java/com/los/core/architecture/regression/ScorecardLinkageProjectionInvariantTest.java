@@ -202,6 +202,7 @@ class ScorecardLinkageProjectionInvariantTest {
         assertThat(tab).contains("scorecard-linkage-linked");
         assertThat(tab).contains("scorecard-linkage-none");
         assertThat(tab).contains("linkage.kind === 'NONE' && mode === 'NONE'");
+        assertThat(tab).contains("linkage.kind === 'LINKED' ? 'Unlink' : 'No scorecard'");
         String display = Files.readString(uiRoot.resolve("lib/policyStudio/scorecardLinkageDisplay.ts"));
         assertThat(display).contains("kind: 'LOADING'");
         assertThat(display).contains("kind: 'NONE'");
