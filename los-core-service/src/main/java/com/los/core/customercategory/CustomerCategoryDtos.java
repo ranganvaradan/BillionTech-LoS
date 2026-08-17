@@ -306,7 +306,11 @@ public final class CustomerCategoryDtos {
             String compatibilityStatus,
             List<String> compatibilityReasons,
             List<String> compatibilityNotes,
-            String scopeSummary
+            String scopeSummary,
+            UUID workflowFamilyId,
+            String publicationStatus,
+            /** True when this exact version may be newly bound (ACTIVE published). */
+            boolean eligibleForNewBind
     ) {}
 
     public record ActivationCheck(String code, String label, boolean ok, String detail) {}

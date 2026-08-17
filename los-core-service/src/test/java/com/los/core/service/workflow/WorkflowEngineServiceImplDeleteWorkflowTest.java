@@ -1,5 +1,6 @@
 package com.los.core.service.workflow;
 
+import com.los.core.audit.AdminConfigAuditSupport;
 import com.los.core.exception.BusinessRuleException;
 import com.los.core.model.entity.WorkflowConfig;
 import com.los.core.repository.WorkflowConfigRepository;
@@ -25,6 +26,9 @@ class WorkflowEngineServiceImplDeleteWorkflowTest {
 
     @Mock
     private WorkflowConfigRepository workflowRepository;
+
+    @Mock
+    private AdminConfigAuditSupport adminConfigAuditSupport;
 
     @InjectMocks
     private WorkflowEngineServiceImpl workflowEngineService;

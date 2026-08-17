@@ -30,6 +30,14 @@ export async function updateWorkflow(
   return data
 }
 
+export async function createNewWorkflowVersion(
+  sourceWorkflowId: string,
+  request: WorkflowConfigRequest,
+): Promise<WorkflowConfigResponse> {
+  const { data } = await http.post<WorkflowConfigResponse>(`/workflows/${sourceWorkflowId}/versions`, request)
+  return data
+}
+
 export async function activateWorkflow(workflowId: string): Promise<void> {
   await http.post(`/workflows/${workflowId}/activate`)
 }

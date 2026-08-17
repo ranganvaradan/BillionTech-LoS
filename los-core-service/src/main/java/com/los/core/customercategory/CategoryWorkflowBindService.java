@@ -169,7 +169,10 @@ public class CategoryWorkflowBindService {
                     compat.status(),
                     List.copyOf(compat.reasons()),
                     notes,
-                    compat.scopeSummary()));
+                    compat.scopeSummary(),
+                    cfg.resolvedFamilyId(),
+                    cfg.resolvedPublicationStatus(),
+                    "ACTIVE".equals(cfg.resolvedPublicationStatus())));
         }
         return out;
     }
@@ -216,7 +219,7 @@ public class CategoryWorkflowBindService {
                 "WORKFLOW_VERSION_EXISTS",
                 "Workflow Version exists",
                 exists,
-                exists ? cfg.getName() + " / v" + cfg.getVersion() : "workflow_configs row missing"));
+                exists ? cfg.getName() + " / v" + cfg.getVersion() + " id=" + cfg.getId() : "workflow_configs row missing"));
 
         if (cfg == null) {
             checks.add(new CustomerCategoryDtos.ActivationCheck(
@@ -230,12 +233,16 @@ public class CategoryWorkflowBindService {
             return checks;
         }
 
-        boolean eligible = cfg.isActive();
+        boolean eligible = "ACTIVE".equals(cfg.resolvedPublicationStatus())
+                || "SUPERSEDED".equals(cfg.resolvedPublicationStatus())
+                || cfg.isActive();
         checks.add(new CustomerCategoryDtos.ActivationCheck(
                 "WORKFLOW_ELIGIBLE",
-                "Workflow eligible/governed for use (active)",
+                "Workflow eligible/governed for use (published version)",
                 eligible,
-                eligible ? "active=true" : "WORKFLOW_NOT_ELIGIBLE — inactive"));
+                eligible
+                        ? ("publication=" + cfg.resolvedPublicationStatus() + " version=" + cfg.getVersion())
+                        : "WORKFLOW_NOT_ELIGIBLE — " + cfg.resolvedPublicationStatus()));
 
         CategoryWorkflowCompatibility.Result scope = CategoryWorkflowCompatibility.evaluate(e, cfg);
         checks.add(new CustomerCategoryDtos.ActivationCheck(
@@ -254,13 +261,14 @@ public class CategoryWorkflowBindService {
         boolean identityOk = versionMatch && hashMatch;
         String detail;
         if (!versionMatch) {
-            detail = WORKFLOW_VERSION_INVALID + " — stored v" + e.getWorkflowVersion()
-                    + " current v" + cfg.getVersion();
+            detail = WORKFLOW_VERSION_INVALID + " — bound version row is v" + cfg.getVersion()
+                    + " but category pin is v" + e.getWorkflowVersion()
+                    + " (exact id=" + cfg.getId() + "; siblings are not compared)";
         } else if (!hashMatch) {
             detail = WORKFLOW_VERSION_MUTATED
                     + " — Workflow content changed after Category linked (P1: immutable Workflow versions)";
         } else {
-            detail = "version=" + cfg.getVersion() + " hash=OK";
+            detail = "exactVersionId=" + cfg.getId() + " version=" + cfg.getVersion() + " hash=OK";
         }
         checks.add(new CustomerCategoryDtos.ActivationCheck(
                 "WORKFLOW_CONTENT_IDENTITY_VALID",

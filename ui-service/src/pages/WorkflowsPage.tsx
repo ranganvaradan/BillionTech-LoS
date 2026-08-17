@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { listWorkflowEventTemplateMappings } from '@/api/workflowEventTemplateMappings'
 import {
   activateWorkflow,
+  createNewWorkflowVersion,
   createWorkflow,
   deactivateWorkflow,
   deleteWorkflow,
@@ -392,13 +393,29 @@ export function WorkflowsPage() {
         applySelection(created)
       } else {
         if (!selected) return
-        const updated = await updateWorkflow(selected.id, body)
+        const immutable =
+          selected.publicationStatus === 'ACTIVE' ||
+          selected.publicationStatus === 'SUPERSEDED' ||
+          selected.publicationStatus === 'RETIRED' ||
+          (selected.active && selected.publicationStatus !== 'DRAFT')
+        const updated = immutable
+          ? await createNewWorkflowVersion(selected.id, body)
+          : await updateWorkflow(selected.id, body)
         const merged: WorkflowConfigResponse = {
           ...updated,
           intakeConfig: intakeConfigFromApi(updated, body.intakeConfig),
         }
-        setList((prev) => (prev ? prev.map((w) => (w.id === merged.id ? merged : w)) : [merged]))
+        setList((prev) => {
+          const next = prev ? [...prev] : []
+          const idx = next.findIndex((w) => w.id === merged.id)
+          if (idx >= 0) next[idx] = merged
+          else next.unshift(merged)
+          return next
+        })
         applySelection(merged, { preserveTab: true, intakeFallback: body.intakeConfig })
+        if (immutable) {
+          setSuccessMessage(`Created Workflow Version ${merged.version}. The previous version is unchanged.`)
+        }
       }
     } catch (e) {
       const m = e instanceof ApiError ? e.message : e instanceof Error ? e.message : 'Save failed'
@@ -589,13 +606,13 @@ export function WorkflowsPage() {
                   active={selected?.id === w.id && !isCreating}
                   onClick={() => applySelection(w)}
                   avatar={w.name}
-                  title={w.name}
-                  subtitle={`Version ${lenderFacingWorkflowVersion(w)}`}
+                  title={`${w.name} · v${lenderFacingWorkflowVersion(w)}`}
+                  subtitle={formatLenderWorkflowVersionLabel(w)}
                   meta={
-                    w.active ? (
-                      <span className="bt-badge bt-badge-green">Active</span>
+                    w.publicationStatus === 'ACTIVE' || w.active ? (
+                      <span className="bt-badge bt-badge-green">{w.publicationStatus || 'ACTIVE'}</span>
                     ) : (
-                      <span className="bt-badge bt-badge-gray">Draft</span>
+                      <span className="bt-badge bt-badge-gray">{w.publicationStatus || 'DRAFT'}</span>
                     )
                   }
                   tags={
@@ -1098,7 +1115,17 @@ export function WorkflowsPage() {
                     disabled={saving}
                     className="bt-btn bt-btn-primary disabled:opacity-50"
                   >
-                    {saving ? 'Saving…' : isCreating ? 'Create' : 'Save changes'}
+                    {saving
+                      ? 'Saving…'
+                      : isCreating
+                        ? 'Create'
+                        : selected &&
+                            (selected.publicationStatus === 'ACTIVE' ||
+                              selected.publicationStatus === 'SUPERSEDED' ||
+                              selected.publicationStatus === 'RETIRED' ||
+                              (selected.active && selected.publicationStatus !== 'DRAFT'))
+                          ? 'Create New Version'
+                          : 'Save changes'}
                   </button>
                   {isCreating ? (
                     <button

@@ -38,4 +38,10 @@ describe('WorkflowsPage CLEANUP-4 contracts', () => {
     expect(pageSrc).toContain('lenderFacingWorkflowVersion')
     expect(pageSrc).toContain('formatLenderWorkflowVersionLabel')
   })
+
+  it('creates a new version instead of mutating active rows', () => {
+    expect(pageSrc).toContain('createNewWorkflowVersion')
+    expect(pageSrc).toContain('Create New Version')
+    expect(pageSrc).toContain("publicationStatus === 'ACTIVE'")
+  })
 })

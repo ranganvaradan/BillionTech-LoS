@@ -45,5 +45,8 @@ describe('workflowLenderVersion', () => {
   it('existing active workflow identity version remains unchanged in display', () => {
     expect(lenderFacingWorkflowVersion({ version: 5, active: true })).toBe(5)
     expect(formatLenderWorkflowVersionLabel({ version: 5, active: true })).toBe('Version 5 · Active')
+    expect(
+      formatLenderWorkflowVersionLabel({ version: 1, active: false, publicationStatus: 'SUPERSEDED' }),
+    ).toBe('Version 1 · Superseded')
   })
 })

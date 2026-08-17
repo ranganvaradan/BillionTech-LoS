@@ -14,6 +14,8 @@ public interface IWorkflowEngineService {
 
     WorkflowConfigResponse updateWorkflow(UUID workflowId, WorkflowConfigRequest request);
 
+    WorkflowConfigResponse createNewVersion(UUID sourceWorkflowId, WorkflowConfigRequest request);
+
     WorkflowConfigResponse getActiveWorkflow(BorrowerType borrowerType, String loanProduct);
 
     WorkflowConfigResponse getActiveWorkflow(BorrowerType borrowerType, String loanProduct, IntakeSegment intakeSegment);

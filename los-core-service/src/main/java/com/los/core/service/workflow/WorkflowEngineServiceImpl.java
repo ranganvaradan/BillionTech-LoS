@@ -64,8 +64,13 @@ public class WorkflowEngineServiceImpl implements IWorkflowEngineService {
                 // Inactive until explicitly activated (avoids multiple active rows per borrower/product)
                 .active(false)
                 .version(1)
+                .publicationStatus("DRAFT")
                 .build();
 
+        if (config.getId() == null) {
+            config.setId(UUID.randomUUID());
+        }
+        config.setWorkflowFamilyId(config.getId());
         config = workflowRepository.save(config);
         log.info("Workflow created: {} for {}/{}/{}", config.getName(), config.getBorrowerType(), config.getLoanProduct(), config.getIntakeSegment());
         WorkflowConfigResponse saved = toResponse(config);
@@ -80,55 +85,23 @@ public class WorkflowEngineServiceImpl implements IWorkflowEngineService {
                 .orElseThrow(() -> new ResourceNotFoundException("Workflow not found: " + workflowId));
 
         WorkflowConfigResponse before = toResponse(config);
+        if (config.isImmutablePublished()) {
+            throw new BusinessRuleException(
+                    "This Workflow Version is immutable. Create a new version to apply changes.",
+                    "WORKFLOW_VERSION_IMMUTABLE",
+                    "CREATE_NEW_VERSION",
+                    Map.of(
+                            "workflowId", workflowId.toString(),
+                            "publicationStatus", config.resolvedPublicationStatus(),
+                            "workflowFamilyId", String.valueOf(config.resolvedFamilyId())));
+        }
 
-        config.setName(request.getName());
-        if (request.getBorrowerType() != null) {
-            config.setBorrowerType(request.getBorrowerType().name());
+        applyRequest(config, request);
+        if (config.getPublicationStatus() == null || config.getPublicationStatus().isBlank()) {
+            config.setPublicationStatus("DRAFT");
         }
-        if (request.getLoanProduct() != null) {
-            config.setLoanProduct(request.getLoanProduct());
-        }
-        if (request.getLmsProductCode() != null) {
-            config.setLmsProductCode(blankToNull(request.getLmsProductCode()));
-        }
-        if (request.getLmsTenureUnit() != null) {
-            config.setLmsTenureUnit(blankToNull(request.getLmsTenureUnit()));
-        }
-        if (request.getIntakeSegment() != null) {
-            config.setIntakeSegment(request.getIntakeSegment().name());
-        }
-        if (request.getIntakeIdentitySchema() != null) {
-            config.setIntakeIdentitySchema(request.getIntakeIdentitySchema());
-        }
-        if (request.getIntakeConfig() != null) {
-            config.setIntakeConfig(sanitizeIntakeConfig(request.getLoanProduct() != null
-                    ? request.getLoanProduct()
-                    : config.getLoanProduct(), request.getIntakeSegment() != null
-                    ? request.getIntakeSegment().name()
-                    : config.getIntakeSegment(), copyJsonMap(request.getIntakeConfig())));
-        }
-        config.setBureauEnabled(request.getBureauEnabled() == null || request.getBureauEnabled());
-        config.setAutoPullBureauAfterKycSuccess(
-                request.getAutoPullBureauAfterKycSuccess() == null
-                        || request.getAutoPullBureauAfterKycSuccess());
-        if (request.getSteps() != null) {
-            config.setSteps(request.getSteps());
-        }
-        config.setProcessNotificationMappings(request.getProcessNotificationMappings());
-        config.setManualOverridePolicies(request.getManualOverridePolicies());
-        config.setConditionalRules(request.getConditionalRules());
-        config.setVkycTriggerCondition(request.getVkycTriggerCondition());
-        config.setWorkflowPosition(request.getWorkflowPosition());
-        // Lender-facing lineage: new workflows start at version 1.
-        // Draft (inactive) authoring must NOT inflate version on every save — that made
-        // first-time lender journeys appear as "Version 8" after iterative edits.
-        // Active workflows still bump version on content change (Category lock identity).
-        if (config.isActive()) {
-            config.setVersion(config.getVersion() + 1);
-        } else if (config.getVersion() > 1) {
-            // Heal draft rows inflated by legacy per-save bumps so lender lineage returns to Version 1.
-            // Active Category locks use workflow_id + version of active configs; unbound drafts are safe to reset.
-            config.setVersion(1);
+        if (config.getWorkflowFamilyId() == null) {
+            config.setWorkflowFamilyId(config.getId());
         }
         config.setUpdatedAt(Instant.now());
 
@@ -137,6 +110,61 @@ public class WorkflowEngineServiceImpl implements IWorkflowEngineService {
         WorkflowConfigResponse after = toResponse(config);
         adminConfigAuditSupport.captureUpdate("WORKFLOW_CONFIG", workflowId.toString(), before, after, "Workflow updated");
         return after;
+    }
+
+    @Override
+    @Transactional
+    public WorkflowConfigResponse createNewVersion(UUID sourceWorkflowId, WorkflowConfigRequest request) {
+        WorkflowConfig source = workflowRepository.findById(sourceWorkflowId)
+                .orElseThrow(() -> new ResourceNotFoundException("Workflow not found: " + sourceWorkflowId));
+        UUID familyId = source.resolvedFamilyId();
+        int next = workflowRepository.findByWorkflowFamilyIdOrderByVersionAsc(familyId).stream()
+                .mapToInt(WorkflowConfig::getVersion)
+                .max()
+                .orElse(source.getVersion()) + 1;
+        WorkflowConfig created = WorkflowConfig.builder()
+                .name(source.getName())
+                .borrowerType(source.getBorrowerType())
+                .loanProduct(source.getLoanProduct())
+                .lmsProductCode(source.getLmsProductCode())
+                .lmsTenureUnit(source.getLmsTenureUnit())
+                .intakeSegment(source.getIntakeSegment())
+                .intakeIdentitySchema(source.getIntakeIdentitySchema())
+                .intakeConfig(source.getIntakeConfig())
+                .bureauEnabled(source.isBureauEnabled())
+                .autoPullBureauAfterKycSuccess(source.isAutoPullBureauAfterKycSuccess())
+                .steps(source.getSteps())
+                .processNotificationMappings(source.getProcessNotificationMappings())
+                .manualOverridePolicies(source.getManualOverridePolicies())
+                .conditionalRules(source.getConditionalRules())
+                .vkycTriggerCondition(source.getVkycTriggerCondition())
+                .workflowPosition(source.getWorkflowPosition())
+                .slaHoursPerStep(source.getSlaHoursPerStep())
+                .escalationEmails(source.getEscalationEmails())
+                .parallelGroups(source.getParallelGroups())
+                .active(false)
+                .version(next)
+                .workflowFamilyId(familyId)
+                .publicationStatus("DRAFT")
+                .build();
+        applyRequest(created, request);
+        created.setActive(false);
+        created.setPublicationStatus("DRAFT");
+        created.setVersion(next);
+        created.setWorkflowFamilyId(familyId);
+        created.setUpdatedAt(Instant.now());
+        created = workflowRepository.save(created);
+        if (created.getWorkflowFamilyId() == null) {
+            created.setWorkflowFamilyId(familyId);
+            created = workflowRepository.save(created);
+        }
+        log.info("Workflow new version created: {} family={} v{} id={}",
+                created.getName(), familyId, created.getVersion(), created.getId());
+        WorkflowConfigResponse saved = toResponse(created);
+        adminConfigAuditSupport.captureCreate(
+                "WORKFLOW_CONFIG", created.getId().toString(), saved,
+                "Workflow new version from " + sourceWorkflowId);
+        return saved;
     }
 
     @Override
@@ -173,10 +201,24 @@ public class WorkflowEngineServiceImpl implements IWorkflowEngineService {
                 .orElseThrow(() -> new ResourceNotFoundException("Workflow not found: " + workflowId));
 
         WorkflowConfigResponse before = toResponse(config);
-        // Multiple active workflows for the same borrower/product/segment are allowed (V84).
-        // Applications resolve via workflow_id binding when set, otherwise highest version.
         config.setActive(true);
+        config.setPublicationStatus("ACTIVE");
         config.setUpdatedAt(Instant.now());
+        UUID familyId = config.resolvedFamilyId();
+        if (config.getWorkflowFamilyId() == null) {
+            config.setWorkflowFamilyId(familyId);
+        }
+        for (WorkflowConfig sibling : workflowRepository.findByWorkflowFamilyIdOrderByVersionAsc(familyId)) {
+            if (sibling.getId() != null && sibling.getId().equals(workflowId)) {
+                continue;
+            }
+            if ("ACTIVE".equals(sibling.resolvedPublicationStatus()) || sibling.isActive()) {
+                sibling.setActive(false);
+                sibling.setPublicationStatus("SUPERSEDED");
+                sibling.setUpdatedAt(Instant.now());
+                workflowRepository.save(sibling);
+            }
+        }
         workflowRepository.save(config);
         log.info("Workflow activated: {}", config.getName());
         adminConfigAuditSupport.captureAction(
@@ -195,6 +237,9 @@ public class WorkflowEngineServiceImpl implements IWorkflowEngineService {
                 .orElseThrow(() -> new ResourceNotFoundException("Workflow not found: " + workflowId));
         WorkflowConfigResponse before = toResponse(config);
         config.setActive(false);
+        if ("ACTIVE".equals(config.resolvedPublicationStatus())) {
+            config.setPublicationStatus("SUPERSEDED");
+        }
         workflowRepository.save(config);
         log.info("Workflow deactivated: {}", config.getName());
         adminConfigAuditSupport.captureAction(
@@ -211,12 +256,12 @@ public class WorkflowEngineServiceImpl implements IWorkflowEngineService {
     public void deleteWorkflow(UUID workflowId) {
         WorkflowConfig config = workflowRepository.findById(workflowId)
                 .orElseThrow(() -> new ResourceNotFoundException("Workflow not found: " + workflowId));
-        if (config.isActive()) {
+        if (config.isActive() || config.isImmutablePublished()) {
             throw new BusinessRuleException(
-                    "Cannot delete an active workflow. Deactivate it first, or delete a draft (inactive) configuration.",
+                    "Cannot delete a published Workflow Version. Only DRAFT versions can be deleted.",
                     "WORKFLOW_ACTIVE_DELETE_FORBIDDEN",
                     "DEACTIVATE_FIRST",
-                    null);
+                    Map.of("publicationStatus", config.resolvedPublicationStatus()));
         }
         WorkflowConfigResponse before = toResponse(config);
         workflowRepository.delete(config);
@@ -440,7 +485,55 @@ public class WorkflowEngineServiceImpl implements IWorkflowEngineService {
                 .workflowPosition(config.getWorkflowPosition())
                 .active(config.isActive())
                 .version(config.getVersion())
+                .workflowFamilyId(config.resolvedFamilyId())
+                .publicationStatus(config.resolvedPublicationStatus())
                 .createdAt(config.getCreatedAt())
                 .build();
+    }
+
+    private void applyRequest(WorkflowConfig config, WorkflowConfigRequest request) {
+        if (request == null) {
+            return;
+        }
+        if (request.getName() != null) {
+            config.setName(request.getName());
+        }
+        if (request.getBorrowerType() != null) {
+            config.setBorrowerType(request.getBorrowerType().name());
+        }
+        if (request.getLoanProduct() != null) {
+            config.setLoanProduct(request.getLoanProduct());
+        }
+        if (request.getLmsProductCode() != null) {
+            config.setLmsProductCode(blankToNull(request.getLmsProductCode()));
+        }
+        if (request.getLmsTenureUnit() != null) {
+            config.setLmsTenureUnit(blankToNull(request.getLmsTenureUnit()));
+        }
+        if (request.getIntakeSegment() != null) {
+            config.setIntakeSegment(request.getIntakeSegment().name());
+        }
+        if (request.getIntakeIdentitySchema() != null) {
+            config.setIntakeIdentitySchema(request.getIntakeIdentitySchema());
+        }
+        if (request.getIntakeConfig() != null) {
+            config.setIntakeConfig(sanitizeIntakeConfig(request.getLoanProduct() != null
+                    ? request.getLoanProduct()
+                    : config.getLoanProduct(), request.getIntakeSegment() != null
+                    ? request.getIntakeSegment().name()
+                    : config.getIntakeSegment(), copyJsonMap(request.getIntakeConfig())));
+        }
+        config.setBureauEnabled(request.getBureauEnabled() == null || request.getBureauEnabled());
+        config.setAutoPullBureauAfterKycSuccess(
+                request.getAutoPullBureauAfterKycSuccess() == null
+                        || request.getAutoPullBureauAfterKycSuccess());
+        if (request.getSteps() != null) {
+            config.setSteps(request.getSteps());
+        }
+        config.setProcessNotificationMappings(request.getProcessNotificationMappings());
+        config.setManualOverridePolicies(request.getManualOverridePolicies());
+        config.setConditionalRules(request.getConditionalRules());
+        config.setVkycTriggerCondition(request.getVkycTriggerCondition());
+        config.setWorkflowPosition(request.getWorkflowPosition());
     }
 }

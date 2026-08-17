@@ -79,6 +79,20 @@ public class WorkflowConfig {
     @Column
     private int version;
 
+    /**
+     * Stable journey identity. Immutable Workflow Version rows in one family share this id.
+     */
+    @Column(name = "workflow_family_id", nullable = false)
+    private UUID workflowFamilyId;
+
+    /**
+     * DRAFT | ACTIVE | SUPERSEDED | RETIRED.
+     * ACTIVE / SUPERSEDED / RETIRED rows must not be updated in place.
+     */
+    @Column(name = "publication_status", nullable = false, length = 20)
+    @Builder.Default
+    private String publicationStatus = "DRAFT";
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
     private Map<String, Integer> slaHoursPerStep;
@@ -128,4 +142,36 @@ public class WorkflowConfig {
     private Instant createdAt;
 
     private Instant updatedAt;
+
+    @PrePersist
+    void assignFamilyIdentity() {
+        if (id == null) {
+            id = UUID.randomUUID();
+        }
+        if (workflowFamilyId == null) {
+            workflowFamilyId = id;
+        }
+        if (publicationStatus == null || publicationStatus.isBlank()) {
+            publicationStatus = active ? "ACTIVE" : "DRAFT";
+        }
+    }
+
+    public boolean isImmutablePublished() {
+        if (active) {
+            return true;
+        }
+        String status = resolvedPublicationStatus();
+        return "ACTIVE".equals(status) || "SUPERSEDED".equals(status) || "RETIRED".equals(status);
+    }
+
+    public UUID resolvedFamilyId() {
+        return workflowFamilyId != null ? workflowFamilyId : id;
+    }
+
+    public String resolvedPublicationStatus() {
+        if (publicationStatus != null && !publicationStatus.isBlank()) {
+            return publicationStatus;
+        }
+        return active ? "ACTIVE" : "DRAFT";
+    }
 }

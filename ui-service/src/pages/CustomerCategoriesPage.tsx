@@ -116,8 +116,8 @@ function workflowPickerLabel(w: EligibleWorkflow): string {
     w.compatibilityStatus === 'COMPATIBLE' || w.compatibleWithCategory
       ? ' · COMPATIBLE'
       : ' · INCOMPATIBLE'
-  const active = w.active ? '' : ' · INACTIVE'
-  return `${w.workflowName} · v${w.workflowVersion}${steps}${active}${compat}`
+  const status = String(w.publicationStatus || (w.active ? 'ACTIVE' : 'DRAFT')).toUpperCase()
+  return `${w.workflowName} · v${w.workflowVersion} · ${status}${steps}${compat}`
 }
 
 function listPolicyTag(r: CustomerCategory): string {
@@ -1070,11 +1070,17 @@ export function CustomerCategoriesPage() {
                           {linkedWorkflowVersion != null ? ` · v${linkedWorkflowVersion}` : ''} (current)
                         </option>
                       ) : null}
-                      {pickerWorkflows.map((w) => (
-                        <option key={w.workflowId} value={w.workflowId}>
-                          {workflowPickerLabel(w)}
-                        </option>
-                      ))}
+                      {pickerWorkflows.map((w) => {
+                        const allowSelect =
+                          w.eligibleForNewBind !== false || w.workflowId === workflowId || w.active
+                        const lockedOut = editable && w.eligibleForNewBind === false && w.workflowId !== workflowId
+                        return (
+                          <option key={w.workflowId} value={w.workflowId} disabled={lockedOut}>
+                            {workflowPickerLabel(w)}
+                            {!allowSelect && lockedOut ? ' · not eligible for new bind' : ''}
+                          </option>
+                        )
+                      })}
                     </select>
                     {selectedEligibleWorkflow ? (
                       <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 space-y-1">

@@ -134,6 +134,8 @@ export interface WorkflowConfigResponse {
   workflowPosition?: string | null
   active: boolean
   version: number
+  workflowFamilyId?: string | null
+  publicationStatus?: 'DRAFT' | 'ACTIVE' | 'SUPERSEDED' | 'RETIRED' | string | null
   createdAt: string | null
 }
 

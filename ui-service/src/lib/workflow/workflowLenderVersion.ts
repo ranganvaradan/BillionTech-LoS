@@ -1,9 +1,9 @@
 /**
  * Lender-facing workflow version presentation.
  *
- * Persisted `version` is the content identity used by Category → Workflow Version locking.
- * Create starts at 1. Draft (inactive) updates must not inflate it (see backend).
- * Active updates still increment for content-identity tracking.
+ * `id` is the immutable Workflow Version identity.
+ * `workflowFamilyId` is the stable journey identity.
+ * `version` is a human-facing monotonic number within the family — not identity authority.
  */
 
 export function lenderFacingWorkflowVersion(w: {
@@ -18,8 +18,19 @@ export function lenderFacingWorkflowVersion(w: {
 export function formatLenderWorkflowVersionLabel(w: {
   version?: number | null
   active?: boolean | null
+  publicationStatus?: string | null
 }): string {
   const ver = lenderFacingWorkflowVersion(w)
-  const status = w.active ? 'Active' : 'Draft'
-  return `Version ${ver} · ${status}`
+  const raw = String(w.publicationStatus || (w.active ? 'ACTIVE' : 'DRAFT')).toUpperCase()
+  const pretty =
+    raw === 'DRAFT'
+      ? 'Draft'
+      : raw === 'ACTIVE'
+        ? 'Active'
+        : raw === 'SUPERSEDED'
+          ? 'Superseded'
+          : raw === 'RETIRED'
+            ? 'Retired'
+            : raw
+  return `Version ${ver} · ${pretty}`
 }

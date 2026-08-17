@@ -39,11 +39,37 @@ class WorkflowEngineServiceImplActivateWorkflowTest {
         UUID targetId = UUID.fromString("00000000-0000-0000-0000-000000000001");
         WorkflowConfig target = workflowConfig(targetId, false);
         when(workflowRepository.findById(targetId)).thenReturn(Optional.of(target));
+        when(workflowRepository.findByWorkflowFamilyIdOrderByVersionAsc(any())).thenReturn(List.of(target));
 
         workflowEngineService.activateWorkflow(targetId);
 
         assertTrue(target.isActive());
         verify(workflowRepository).save(target);
+    }
+
+    @Test
+    void activateWorkflow_supersedesActiveSiblingInSameFamily() {
+        UUID family = UUID.fromString("00000000-0000-0000-0000-000000000010");
+        UUID v1Id = UUID.fromString("00000000-0000-0000-0000-000000000001");
+        UUID v2Id = UUID.fromString("00000000-0000-0000-0000-000000000002");
+        WorkflowConfig v1 = workflowConfig(v1Id, true);
+        v1.setWorkflowFamilyId(family);
+        v1.setPublicationStatus("ACTIVE");
+        v1.setVersion(1);
+        WorkflowConfig v2 = workflowConfig(v2Id, false);
+        v2.setWorkflowFamilyId(family);
+        v2.setPublicationStatus("DRAFT");
+        v2.setVersion(2);
+        when(workflowRepository.findById(v2Id)).thenReturn(Optional.of(v2));
+        when(workflowRepository.findByWorkflowFamilyIdOrderByVersionAsc(family)).thenReturn(List.of(v1, v2));
+        when(workflowRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        workflowEngineService.activateWorkflow(v2Id);
+
+        assertTrue(v2.isActive());
+        org.junit.jupiter.api.Assertions.assertEquals("ACTIVE", v2.getPublicationStatus());
+        org.junit.jupiter.api.Assertions.assertFalse(v1.isActive());
+        org.junit.jupiter.api.Assertions.assertEquals("SUPERSEDED", v1.getPublicationStatus());
     }
 
     @Test

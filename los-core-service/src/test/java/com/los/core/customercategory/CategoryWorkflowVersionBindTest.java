@@ -85,6 +85,8 @@ class CategoryWorkflowVersionBindTest {
                 .intakeSegment("BORROWER")
                 .version(1)
                 .active(true)
+                .workflowFamilyId(id)
+                .publicationStatus("ACTIVE")
                 .steps(List.of(
                         Map.of("stepKey", "INTAKE"),
                         Map.of("stepKey", "KYC"),
@@ -329,5 +331,66 @@ class CategoryWorkflowVersionBindTest {
         assertEquals(wfId, res.workflowId());
         // No application repository interactions — Category bind does not touch loan_applications.workflow_id
         verifyNoInteractions(ruleSetRepository);
+    }
+
+    @Test
+    void activationValidatesExactBoundVersion_notLatestSibling() {
+        WorkflowConfig v1 = compatibleWorkflow(wfId);
+        v1.setVersion(1);
+        v1.setActive(false);
+        v1.setPublicationStatus("SUPERSEDED");
+        WorkflowConfig v3 = compatibleWorkflow(wfId2);
+        v3.setName("Starter Journey");
+        v3.setVersion(3);
+        v3.setWorkflowFamilyId(wfId);
+        v3.setPublicationStatus("ACTIVE");
+        String hash = WorkflowContentHash.of(v1);
+        CustomerCategoryEntity e = CustomerCategoryEntity.builder()
+                .id(UUID.randomUUID()).code("CC_PIN_V1").versionNo(1).name("Pinned v1")
+                .status(ConfigLifecycleStatus.APPROVED)
+                .borrowerType("INDIVIDUAL").loanProduct("BUSINESS_TERM_LOAN").intakeSegment("BORROWER")
+                .workflowId(wfId).workflowVersion(1)
+                .workflowContentHash(hash)
+                .workflowName(v1.getName())
+                .governanceJson(new LinkedHashMap<>())
+                .build();
+        when(categoryRepository.findById(e.getId())).thenReturn(Optional.of(e));
+        when(categoryRepository.findAll()).thenReturn(List.of(e));
+        when(workflowConfigRepository.findById(wfId)).thenReturn(Optional.of(v1));
+
+        var ready = categoryService.activationReadiness(e.getId());
+        assertTrue(ready.checks().stream().anyMatch(c ->
+                "WORKFLOW_CONTENT_IDENTITY_VALID".equals(c.code()) && c.ok()));
+        assertTrue(ready.checks().stream().anyMatch(c ->
+                c.detail() != null && c.detail().contains("exactVersionId=" + wfId)));
+        assertFalse(ready.checks().stream().anyMatch(c ->
+                c.detail() != null && c.detail().contains("current v3")));
+        assertEquals(wfId, e.getWorkflowId());
+        assertEquals(1, e.getWorkflowVersion());
+    }
+
+    @Test
+    void explicitRebindToLaterVersionValidatesThatVersion() {
+        WorkflowConfig v3 = compatibleWorkflow(wfId2);
+        v3.setVersion(3);
+        v3.setWorkflowFamilyId(wfId);
+        String hash = WorkflowContentHash.of(v3);
+        CustomerCategoryEntity e = CustomerCategoryEntity.builder()
+                .id(UUID.randomUUID()).code("CC_PIN_V3").versionNo(2).name("Pinned v3")
+                .status(ConfigLifecycleStatus.APPROVED)
+                .borrowerType("INDIVIDUAL").loanProduct("BUSINESS_TERM_LOAN").intakeSegment("BORROWER")
+                .workflowId(wfId2).workflowVersion(3)
+                .workflowContentHash(hash)
+                .workflowName(v3.getName())
+                .governanceJson(new LinkedHashMap<>())
+                .build();
+        when(categoryRepository.findById(e.getId())).thenReturn(Optional.of(e));
+        when(categoryRepository.findAll()).thenReturn(List.of(e));
+        when(workflowConfigRepository.findById(wfId2)).thenReturn(Optional.of(v3));
+
+        var ready = categoryService.activationReadiness(e.getId());
+        assertTrue(ready.checks().stream().anyMatch(c ->
+                "WORKFLOW_CONTENT_IDENTITY_VALID".equals(c.code()) && c.ok()
+                        && c.detail() != null && c.detail().contains("exactVersionId=" + wfId2)));
     }
 }

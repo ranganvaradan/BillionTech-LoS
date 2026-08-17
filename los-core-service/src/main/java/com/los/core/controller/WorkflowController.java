@@ -41,6 +41,15 @@ public class WorkflowController {
         return ResponseEntity.ok(workflowEngineService.updateWorkflow(workflowId, request));
     }
 
+    @PostMapping("/{workflowId}/versions")
+    @Operation(summary = "Create a new immutable Workflow Version in the same family (does not mutate the source version)")
+    public ResponseEntity<WorkflowConfigResponse> createNewVersion(
+            @PathVariable UUID workflowId,
+            @Valid @RequestBody WorkflowConfigRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(workflowEngineService.createNewVersion(workflowId, request));
+    }
+
     @GetMapping("/active")
     @Operation(summary = "Get active workflow for borrower type, loan product, and intake segment (defaults to BORROWER)")
     public ResponseEntity<WorkflowConfigResponse> getActive(

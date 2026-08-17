@@ -53,6 +53,8 @@ const REASON_MESSAGES: Record<string, string> = {
   WORKFLOW_VERSION_MISMATCH:
     'The selected Workflow Version does not match the Workflow catalogue. Re-select the Workflow, then save.',
   WORKFLOW_NOT_FOUND: 'The selected Workflow Version was not found.',
+  WORKFLOW_VERSION_IMMUTABLE:
+    'This Workflow Version is locked. Create a new version to make changes.',
   WORKFLOW_VERSION_MUTATED:
     'The linked Workflow content changed after this Category was bound. Re-select the Workflow Version (P1: immutable versions).',
   WORKFLOW_NOT_ELIGIBLE:

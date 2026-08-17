@@ -31,5 +31,9 @@ public class WorkflowConfigResponse {
     private String workflowPosition;
     private boolean active;
     private int version;
+    /** Stable journey identity shared by immutable version rows. */
+    private UUID workflowFamilyId;
+    /** DRAFT | ACTIVE | SUPERSEDED | RETIRED */
+    private String publicationStatus;
     private Instant createdAt;
 }

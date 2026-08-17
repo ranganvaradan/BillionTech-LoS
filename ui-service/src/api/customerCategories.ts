@@ -183,6 +183,9 @@ export interface EligibleWorkflow {
   workflowName: string
   workflowVersion: number
   active: boolean
+  publicationStatus?: string | null
+  workflowFamilyId?: string | null
+  eligibleForNewBind?: boolean
   entityTypeApplicability?: string | null
   customerRoleApplicability?: string | null
   productApplicability?: string | null

@@ -19,4 +19,6 @@ public interface WorkflowConfigRepository extends JpaRepository<WorkflowConfig, 
 
     List<WorkflowConfig> findByActiveTrue();
 
+    List<WorkflowConfig> findByWorkflowFamilyIdOrderByVersionAsc(UUID workflowFamilyId);
+
 }
