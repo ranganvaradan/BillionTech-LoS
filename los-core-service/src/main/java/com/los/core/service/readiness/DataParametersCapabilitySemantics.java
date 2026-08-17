@@ -4,6 +4,7 @@ import com.los.core.creditintelligence.policystudio.parameters.CanonicalParamete
 import com.los.core.creditintelligence.policystudio.parameters.derived.AuthoredDerivedCalculationSupport;
 import com.los.core.creditintelligence.policystudio.parameters.execution.CanonicalParameterCapabilityProjection;
 import com.los.core.creditintelligence.policystudio.sourceintegration.CanonicalSourceIntegrationAuthority;
+import com.los.core.creditintelligence.policystudio.sourceintegration.EquifaxRetailSourceCardUniverse;
 import com.los.core.creditintelligence.policystudio.truth.BusinessReadiness;
 import com.los.core.creditintelligence.policystudio.truth.BusinessReadinessReason;
 import com.los.core.creditintelligence.policystudio.truth.CanonicalParameterStateService;
@@ -178,6 +179,7 @@ public final class DataParametersCapabilitySemantics {
         String family = sourceFamily == null ? "" : sourceFamily.trim();
         SourcePlatform platform = resolveSourcePlatform(family, "");
         String lender = resolveLenderSubscription(family, "", platform, subscriptionProbe);
+        parameters = EquifaxRetailSourceCardUniverse.scopeIfEquifaxFamily(family, parameters);
 
         int raw = 0, derived = 0, noSupport = 0, calcMissing = 0, sourceMissing = 0, na = 0, other = 0;
         int canonicalDirect = 0, canonicalCalculated = 0, canonicalManual = 0, canonicalIngredient = 0;

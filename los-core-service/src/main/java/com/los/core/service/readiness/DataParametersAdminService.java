@@ -7,6 +7,7 @@ import com.los.core.creditintelligence.policystudio.parameters.CanonicalParamete
 import com.los.core.creditintelligence.policystudio.parameters.GacatCatalogueAuthority;
 import com.los.core.creditintelligence.policystudio.parameters.GacatCatalogueRepository;
 import com.los.core.creditintelligence.policystudio.parameters.PolicyStudioConvergencePresenter;
+import com.los.core.creditintelligence.policystudio.parameters.GacatSourceFamily;
 import com.los.core.creditintelligence.policystudio.sourceintegration.CanonicalSourceIntegrationAuthority;
 import com.los.core.creditintelligence.policystudio.sourceintegration.PlatformSourceConnectorCatalog;
 import com.los.core.creditintelligence.policystudio.truth.CanonicalParameterStateService;
@@ -246,7 +247,7 @@ public class DataParametersAdminService {
             row.put("liveCount", browse.get("liveCount"));
             row.put("count", browse.get("count"));
             List<CanonicalParameterDefinition> familyParams = reg.all().stream()
-                    .filter(d -> source.equals(d.evaluatedFrom()))
+                    .filter(d -> GacatSourceFamily.sameFamily(source, d.evaluatedFrom()))
                     .toList();
             Map<String, Object> capSummary = DataParametersCapabilitySemantics.sourceFamilySummary(
                     source, familyParams, probe);
@@ -267,7 +268,7 @@ public class DataParametersAdminService {
         List<Map<String, Object>> rows = new ArrayList<>();
         for (String source : reg.sources()) {
             List<CanonicalParameterDefinition> familyParams = reg.all().stream()
-                    .filter(d -> source.equals(d.evaluatedFrom()))
+                    .filter(d -> GacatSourceFamily.sameFamily(source, d.evaluatedFrom()))
                     .toList();
             if (familyParams.isEmpty()) continue;
             rows.add(DataParametersCapabilitySemantics.sourceFamilySummary(source, familyParams, probe));

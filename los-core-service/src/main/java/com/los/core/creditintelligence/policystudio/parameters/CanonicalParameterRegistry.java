@@ -1,5 +1,7 @@
 package com.los.core.creditintelligence.policystudio.parameters;
 
+import com.los.core.creditintelligence.policystudio.sourceintegration.EquifaxRetailSourceCardUniverse;
+
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -208,8 +210,9 @@ public class CanonicalParameterRegistry {
             ordered.put(s, Boolean.FALSE);
         }
         for (CanonicalParameterDefinition p : all) {
-            if (p.evaluatedFrom() != null && !p.evaluatedFrom().isBlank()) {
-                ordered.putIfAbsent(p.evaluatedFrom(), Boolean.TRUE);
+            String family = GacatSourceFamily.canonicalLabel(p.evaluatedFrom());
+            if (family != null && !family.isBlank()) {
+                ordered.putIfAbsent(family, Boolean.TRUE);
             }
         }
         return new ArrayList<>(ordered.keySet());
@@ -222,6 +225,10 @@ public class CanonicalParameterRegistry {
         List<Map<String, Object>> manual = new ArrayList<>();
         for (CanonicalParameterDefinition p : all) {
             if (!sourceMatches(p.evaluatedFrom(), src)) continue;
+            if (EquifaxRetailSourceCardUniverse.isEquifaxRetailFamily(src)
+                    && !EquifaxRetailSourceCardUniverse.belongsOnEquifaxCard(p)) {
+                continue;
+            }
             Map<String, Object> view = p.toBusinessView();
             if (CanonicalParameterDefinition.RAW.equals(p.type())) raw.add(view);
             else if (CanonicalParameterDefinition.MANUAL.equals(p.type())) manual.add(view);
@@ -278,6 +285,7 @@ public class CanonicalParameterRegistry {
     private static boolean sourceMatches(String evaluatedFrom, String selected) {
         if (selected == null || selected.isBlank()) return true;
         if (evaluatedFrom == null) return false;
+        if (GacatSourceFamily.sameFamily(evaluatedFrom, selected)) return true;
         String sel = selected.trim().toLowerCase(Locale.ROOT);
         String from = evaluatedFrom.toLowerCase(Locale.ROOT);
         if (from.equals(sel) || from.contains(sel) || sel.contains(from)) return true;

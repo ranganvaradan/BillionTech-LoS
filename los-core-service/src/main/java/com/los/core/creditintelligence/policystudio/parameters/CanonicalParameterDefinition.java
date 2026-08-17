@@ -30,6 +30,7 @@ public record CanonicalParameterDefinition(
     public static final String MANUAL = "MANUAL";
 
     public CanonicalParameterDefinition {
+        evaluatedFrom = GacatSourceFamily.canonicalLabel(evaluatedFrom);
         if (requiredPrimitives == null) requiredPrimitives = List.of();
         if (aliases == null) aliases = List.of();
         if (capability == null) {
