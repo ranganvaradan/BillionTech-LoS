@@ -468,6 +468,25 @@ export function CustomerCategoriesPage() {
     }
   }
 
+  async function onSubmit() {
+    if (!selected) return
+    setActionError(null)
+    if (!policyApplicabilityId) {
+      setActionError('Select a Policy Version before submitting.')
+      return
+    }
+    await runAction(
+      () =>
+        submitCustomerCategory(selected.id, {
+          remarks: reasonForChange || undefined,
+          policyApplicabilityId,
+          policyDocumentId,
+          policyVersionLabel,
+        }),
+      'Submit failed',
+    )
+  }
+
   async function openActivateModal() {
     if (!selected) return
     setActionError(null)
@@ -504,10 +523,11 @@ export function CustomerCategoriesPage() {
   const status = (selected?.status ?? 'DRAFT').toUpperCase()
   const editable = isCreating || (selected != null && isEditableStatus(status) && hasAction(selected.allowedActions, 'EDIT'))
   const allowed = selected?.allowedActions ?? []
-  const linkageRequired =
-    selected?.policyLinkageStatus === 'POLICY_LINKAGE_REQUIRED' || !policyApplicabilityId
-  const workflowLinkageRequired =
-    selected?.workflowLinkageStatus === 'WORKFLOW_LINKAGE_REQUIRED' || !workflowId
+  const linkageRequired = !policyApplicabilityId
+  const workflowLinkageRequired = !workflowId
+  const persistedLinked = selected?.policyLinkageStatus === 'LINKED'
+  const pendingPolicySelection =
+    Boolean(policyApplicabilityId) && selected?.policyLinkageStatus === 'POLICY_LINKAGE_REQUIRED'
   const linkedPolicyName =
     selected?.policyName ||
     eligiblePolicies.find((p) => p.policyApplicabilityId === policyApplicabilityId)?.policyName
@@ -659,7 +679,7 @@ export function CustomerCategoriesPage() {
                 footer={
                   <DetailActions>
                     {editable ? (
-                      <button type="button" onClick={() => void onSave()} disabled={saving} className="bt-btn bt-btn-secondary">
+                      <button type="button" onClick={() => void onSave()} disabled={saving} className="bt-btn bt-btn-secondary" data-testid="category-save">
                         {saving ? 'Saving…' : isCreating ? 'Create draft' : 'Save'}
                       </button>
                     ) : null}
@@ -668,12 +688,8 @@ export function CustomerCategoriesPage() {
                         type="button"
                         disabled={saving}
                         className="bt-btn bt-btn-primary"
-                        onClick={() =>
-                          void runAction(
-                            () => submitCustomerCategory(selected!.id, { remarks: reasonForChange || undefined }),
-                            'Submit failed',
-                          )
-                        }
+                        data-testid="category-submit"
+                        onClick={() => void onSubmit()}
                       >
                         Submit
                       </button>
@@ -761,13 +777,19 @@ export function CustomerCategoriesPage() {
                 {linkageRequired ? (
                   <BtAlert tone="warning">
                     <strong>POLICY LINKAGE REQUIRED</strong> — select a Policy Studio Policy Version for this Category.
-                    Activation cannot proceed until a Policy is linked.
+                    Save or Submit to persist the link. Activation cannot proceed until a Policy is linked.
+                  </BtAlert>
+                ) : pendingPolicySelection ? (
+                  <BtAlert tone="info">
+                    Selected Policy: {linkedPolicyName}
+                    {linkedPolicyVersion ? ` · ${linkedPolicyVersion}` : ''} — Save or Submit to persist this link.
                   </BtAlert>
                 ) : linkedPolicyName ? (
                   <BtAlert tone="success">
                     Linked Policy: {linkedPolicyName}
                     {linkedPolicyVersion ? ` · ${linkedPolicyVersion}` : ''}
                     {selected?.policyBusinessStatus ? ` · ${selected.policyBusinessStatus}` : ''}
+                    {persistedLinked ? ' · saved' : ''}
                   </BtAlert>
                 ) : null}
 

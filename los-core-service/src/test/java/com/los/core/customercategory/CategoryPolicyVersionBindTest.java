@@ -9,6 +9,7 @@ import com.los.core.creditintelligence.policystudio.lifecycle.repository.CiPolic
 import com.los.core.customercategory.CustomerCategoryDtos.Actor;
 import com.los.core.customercategory.CustomerCategoryDtos.CategoryRequest;
 import com.los.core.customercategory.CustomerCategoryDtos.CategoryResponse;
+import com.los.core.customercategory.CustomerCategoryDtos.LifecycleActionRequest;
 import com.los.core.exception.BusinessRuleException;
 import com.los.core.repository.UnderwritingRuleSetRepository;
 import com.los.core.repository.UnderwritingScorecardRepository;
@@ -288,5 +289,87 @@ class CategoryPolicyVersionBindTest {
         assertEquals(CategoryPolicyBindService.LINKAGE_REQUIRED, res.policyLinkageStatus());
         assertNull(res.policyApplicabilityId());
         verify(applicabilityRepository, never()).findById(any());
+    }
+
+    @Test
+    void submitWithoutPersistedLink_rejectedAndStaysDraft() {
+        UUID id = UUID.randomUUID();
+        CustomerCategoryEntity e = draftUnlinked(id);
+        when(categoryRepository.findById(id)).thenReturn(Optional.of(e));
+        BusinessRuleException ex = assertThrows(BusinessRuleException.class, () ->
+                categoryService.submit(id, new LifecycleActionRequest("please review", null), actor));
+        assertEquals(CategoryPolicyBindService.LINKAGE_REQUIRED, ex.getReason());
+        assertEquals(ConfigLifecycleStatus.DRAFT, e.getStatus());
+        assertEquals(CategoryPolicyBindService.LINKAGE_REQUIRED, CategoryPolicyBindService.linkageStatus(e));
+    }
+
+    @Test
+    void submitWithPendingApplicability_persistsCanonicalLinkAndTransitions() {
+        UUID id = UUID.randomUUID();
+        CustomerCategoryEntity e = draftUnlinked(id);
+        when(categoryRepository.findById(id)).thenReturn(Optional.of(e));
+        when(categoryRepository.findAll()).thenReturn(List.of(e));
+        when(categoryRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(applicabilityRepository.findById(appId)).thenReturn(Optional.of(approvedPolicy()));
+
+        CategoryResponse res = categoryService.submit(id,
+                new LifecycleActionRequest("please review", null, appId, docId, "v1"), actor);
+
+        assertEquals("IN_REVIEW", res.status());
+        assertEquals("LINKED", res.policyLinkageStatus());
+        assertEquals(appId, res.policyApplicabilityId());
+        assertEquals(docId, res.policyDocumentId());
+        assertEquals("v1", res.policyVersionLabel());
+        assertEquals(appId, e.getPolicyApplicabilityId());
+        assertEquals(ConfigLifecycleStatus.IN_REVIEW, e.getStatus());
+        assertNotEquals(CategoryPolicyBindService.LINKAGE_REQUIRED, res.policyLinkageStatus());
+    }
+
+    @Test
+    void updateThenReadBack_sameApplicabilityId() {
+        UUID id = UUID.randomUUID();
+        CustomerCategoryEntity e = draftUnlinked(id);
+        when(categoryRepository.findById(id)).thenReturn(Optional.of(e));
+        when(categoryRepository.findAll()).thenReturn(List.of(e));
+        when(categoryRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(applicabilityRepository.findById(appId)).thenReturn(Optional.of(approvedPolicy()));
+
+        CategoryResponse saved = categoryService.update(id, new CategoryRequest(
+                e.getCode(), e.getName(), null,
+                e.getBorrowerType(), e.getLoanProduct(), e.getIntakeSegment(),
+                e.getMinAmount(), e.getMaxAmount(),
+                null, null, null, null,
+                null, null, appId, docId, "v1"), actor);
+        assertEquals(appId, saved.policyApplicabilityId());
+        assertEquals("LINKED", saved.policyLinkageStatus());
+
+        CategoryResponse read = categoryService.get(id);
+        assertEquals(saved.policyApplicabilityId(), read.policyApplicabilityId());
+        assertEquals("LINKED", read.policyLinkageStatus());
+    }
+
+    @Test
+    void wrongApplicabilityId_rejectedDeterministically() {
+        UUID missing = UUID.randomUUID();
+        when(applicabilityRepository.findById(missing)).thenReturn(Optional.empty());
+        BusinessRuleException ex = assertThrows(BusinessRuleException.class, () ->
+                policyBindService.resolveBind(missing, docId, "v1"));
+        assertEquals(CategoryPolicyBindService.POLICY_NOT_FOUND, ex.getReason());
+    }
+
+    private static CustomerCategoryEntity draftUnlinked(UUID id) {
+        return CustomerCategoryEntity.builder()
+                .id(id)
+                .code("VIKCAT_T")
+                .versionNo(1)
+                .name("Vikasan Bureau")
+                .status(ConfigLifecycleStatus.DRAFT)
+                .borrowerType("INDIVIDUAL")
+                .loanProduct("BUSINESS_TERM_LOAN")
+                .intakeSegment("BORROWER")
+                .minAmount(new BigDecimal("10000"))
+                .maxAmount(new BigDecimal("1000000"))
+                .governanceJson(new LinkedHashMap<>())
+                .build();
     }
 }

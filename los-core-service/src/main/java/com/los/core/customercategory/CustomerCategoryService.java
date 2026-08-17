@@ -288,18 +288,8 @@ public class CustomerCategoryService {
                             "POLICY_SET_NOT_FOUND", Map.of("policySetId", req.policySetId().toString())));
             e.setPolicySetId(ps.getId());
         }
-        if (req.policyApplicabilityId() != null) {
-            CategoryPolicyBindService.ResolvedPolicyBind bind = policyBindService.resolveBind(
-                    req.policyApplicabilityId(), req.policyDocumentId(), req.policyVersionLabel());
-            Instant from = req.effectiveFrom() != null ? req.effectiveFrom() : e.getEffectiveFrom();
-            Instant until = req.effectiveUntil() != null ? req.effectiveUntil() : e.getEffectiveUntil();
-            policyBindService.requireScopeCompatible(
-                    new CustomerCategoryPolicyScopeCompatibility.CategoryScope(
-                            e.getIntakeSegment(), e.getBorrowerType(), e.getLoanProduct(),
-                            e.getMinAmount(), e.getMaxAmount(), from, until),
-                    req.policyApplicabilityId());
-            policyBindService.applyBind(e, bind);
-        }
+        applyPendingPolicyBind(e, req.policyApplicabilityId(), req.policyDocumentId(), req.policyVersionLabel(),
+                req.effectiveFrom(), req.effectiveUntil());
         if (req.workflowId() != null) {
             CategoryWorkflowBindService.ResolvedWorkflowBind wb = workflowBindService.resolveBind(
                     req.workflowId(), req.workflowVersion());
@@ -339,11 +329,16 @@ public class CustomerCategoryService {
                 e.getBorrowerType(), e.getLoanProduct(), e.getIntakeSegment(),
                 e.getMinAmount(), e.getMaxAmount());
         validator.validateEffectiveDates(e.getEffectiveFrom(), e.getEffectiveUntil());
+        if (body != null && body.policyApplicabilityId() != null) {
+            applyPendingPolicyBind(e, body.policyApplicabilityId(), body.policyDocumentId(),
+                    body.policyVersionLabel(), null, null);
+        }
         if (!"LINKED".equals(CategoryPolicyBindService.linkageStatus(e))) {
             throw CustomerCategoryValidator.biz(
-                    "POLICY LINKAGE REQUIRED — select a Policy Studio Policy Version before submit",
+                    "Select a Policy Studio Policy Version and save, or Submit with that selection.",
                     CategoryPolicyBindService.LINKAGE_REQUIRED,
-                    Map.of("id", e.getId().toString(), "code", e.getCode()));
+                    Map.of("id", e.getId().toString(), "code", e.getCode(),
+                            "policyApplicabilityId", e.getPolicyApplicabilityId() == null ? "" : e.getPolicyApplicabilityId().toString()));
         }
         // Re-validate catalogue row still exists + scope still covers Category
         policyBindService.requireApplicability(e.getPolicyApplicabilityId());
@@ -781,6 +776,32 @@ public class CustomerCategoryService {
             return true;
         }
         return false;
+    }
+
+    /**
+     * Persist the exact Policy Studio applicability selection onto the category row.
+     * Overwrites the same columns — never creates a second link row.
+     */
+    private void applyPendingPolicyBind(
+            CustomerCategoryEntity e,
+            UUID policyApplicabilityId,
+            UUID policyDocumentId,
+            String policyVersionLabel,
+            Instant requestFrom,
+            Instant requestUntil) {
+        if (policyApplicabilityId == null) {
+            return;
+        }
+        CategoryPolicyBindService.ResolvedPolicyBind bind = policyBindService.resolveBind(
+                policyApplicabilityId, policyDocumentId, policyVersionLabel);
+        Instant from = requestFrom != null ? requestFrom : e.getEffectiveFrom();
+        Instant until = requestUntil != null ? requestUntil : e.getEffectiveUntil();
+        policyBindService.requireScopeCompatible(
+                new CustomerCategoryPolicyScopeCompatibility.CategoryScope(
+                        e.getIntakeSegment(), e.getBorrowerType(), e.getLoanProduct(),
+                        e.getMinAmount(), e.getMaxAmount(), from, until),
+                policyApplicabilityId);
+        policyBindService.applyBind(e, bind);
     }
 
     private static boolean policyChanged(CustomerCategoryEntity e, CategoryRequest req) {

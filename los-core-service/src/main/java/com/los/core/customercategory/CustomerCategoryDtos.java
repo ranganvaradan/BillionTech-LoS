@@ -22,7 +22,21 @@ public final class CustomerCategoryDtos {
         }
     }
 
-    public record LifecycleActionRequest(String remarks, String reason) {}
+    /**
+     * Governance action body. Optional Policy bind fields let Submit persist a pending
+     * Policy Version selection atomically before the DRAFT → IN_REVIEW transition.
+     */
+    public record LifecycleActionRequest(
+            String remarks,
+            String reason,
+            UUID policyApplicabilityId,
+            UUID policyDocumentId,
+            String policyVersionLabel
+    ) {
+        public LifecycleActionRequest(String remarks, String reason) {
+            this(remarks, reason, null, null, null);
+        }
+    }
 
     public record PolicySetRequest(
             String code,

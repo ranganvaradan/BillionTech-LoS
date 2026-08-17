@@ -15,6 +15,10 @@ export type LifecycleAction =
 export interface LifecycleActionRequest {
   remarks?: string | null
   reason?: string | null
+  /** Exact Policy Studio catalogue row. Submit may persist this before transitioning. */
+  policyApplicabilityId?: string | null
+  policyDocumentId?: string | null
+  policyVersionLabel?: string | null
 }
 
 export interface ActivationCheck {
