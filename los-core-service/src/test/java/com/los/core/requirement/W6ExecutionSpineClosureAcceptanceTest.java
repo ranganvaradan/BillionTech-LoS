@@ -1,5 +1,6 @@
 package com.los.core.requirement;
 
+import com.los.core.creditintelligence.policystudio.parameters.GacatCatalogueSeed;
 import com.los.core.creditintelligence.policystudio.parameters.derived.CiGacatDerivedCalculationDefinition;
 import com.los.core.creditintelligence.policystudio.parameters.derived.DerivedCalculationDefinitionService;
 import com.los.core.creditintelligence.policystudio.parameters.execution.CanonicalParameterCapabilityParityService;
@@ -79,6 +80,8 @@ class W6ExecutionSpineClosureAcceptanceTest {
     @Mock com.los.core.creditintelligence.bureau.repository.CiBureauTradelineRepository tradelineRepository;
     @Mock com.los.core.creditintelligence.bureau.repository.CiBureauPaymentHistoryRepository paymentHistoryRepository;
     @Mock com.los.core.creditintelligence.bureau.repository.CiBureauInquiryRepository inquiryRepository;
+    @Mock com.los.core.creditintelligence.bureau.repository.CiBureauReportSummaryRepository reportSummaryRepository;
+    @Mock com.los.core.creditintelligence.bureau.repository.CiBureauScoringElementRepository scoringElementRepository;
     @Mock RequirementItemRepository itemRepository;
     @Mock RequirementStateTransitionRepository transitionRepository;
 
@@ -143,7 +146,8 @@ class W6ExecutionSpineClosureAcceptanceTest {
         evalFactory = new W6EvaluationContextFactory(
                 snapshotRepository, factRepository,
                 bureauReportRepository, tradelineRepository,
-                paymentHistoryRepository, inquiryRepository);
+                paymentHistoryRepository, inquiryRepository,
+                reportSummaryRepository, scoringElementRepository);
         executor = new W6CanonicalParameterExecutor();
         transitionService = new RequirementItemTransitionService(itemRepository, transitionRepository);
         reconciler = new CanonicalFactReadinessReconciler(
@@ -509,7 +513,7 @@ class W6ExecutionSpineClosureAcceptanceTest {
     @Test
     void surfaceParity169_zeroMismatch() {
         Map<String, Object> report = new CanonicalParameterCapabilityParityService(spine).runParityCheck();
-        assertThat(report.get("catalogueCount")).isEqualTo(169);
+        assertThat(report.get("catalogueCount")).isEqualTo(GacatCatalogueSeed.all().size());
         assertThat(report.get("dataParametersVsPolicyStudioDisagreementCount")).isEqualTo(0);
         assertThat(report.get("surfaceVsSpineDisagreementCount")).isEqualTo(0);
     }

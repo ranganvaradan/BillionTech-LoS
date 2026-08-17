@@ -58,16 +58,19 @@ public class BureauProductTaxonomyService {
             String descUpper = desc.toUpperCase(Locale.ROOT);
             for (CiBureauProductMapping m : mappings) {
                 if (m.getProviderProductCode() == null
-                        && m.getProviderProductDesc() != null
-                        && descUpper.equals(m.getProviderProductDesc().trim().toUpperCase(Locale.ROOT))) {
-                    return toResolution(m, version);
+                        && m.getProviderProductDesc() != null) {
+                    String md = normalize(m.getProviderProductDesc());
+                    if (md != null && descUpper.equals(md.toUpperCase(Locale.ROOT))) {
+                        return toResolution(m, version);
+                    }
                 }
             }
             // Contains match for free-text AccountType like "Consumer Loan"
             for (CiBureauProductMapping m : mappings) {
-                if (m.getProviderProductDesc() != null) {
-                    String md = m.getProviderProductDesc().trim().toUpperCase(Locale.ROOT);
-                    if (descUpper.contains(md) || md.contains(descUpper)) {
+                String md = normalize(m.getProviderProductDesc());
+                if (md != null) {
+                    String mdUpper = md.toUpperCase(Locale.ROOT);
+                    if (descUpper.contains(mdUpper) || mdUpper.contains(descUpper)) {
                         return toResolution(m, version);
                     }
                 }
@@ -110,7 +113,12 @@ public class BureauProductTaxonomyService {
         if (s == null) {
             return null;
         }
-        String t = s.trim();
+        String t = s.trim()
+                .replace('\u2013', '-')
+                .replace('\u2014', '-')
+                .replace('\u2212', '-');
+        t = t.replaceAll("\\s*-\\s*", "-");
+        t = t.replaceAll("\\s+", " ").trim();
         return t.isEmpty() ? null : t;
     }
 }

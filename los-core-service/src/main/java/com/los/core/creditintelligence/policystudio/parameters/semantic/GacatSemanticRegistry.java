@@ -283,6 +283,29 @@ public final class GacatSemanticRegistry {
             card = GacatSemanticTaxonomy.Cardinality.COLLECTION;
             issue = issueOr(issue, "INQUIRY_FIELD_OR_EVENT; use bureau.inquiries collection at execution boundary");
         }
+        if (id.startsWith("bureau.scoring_element.")) {
+            cls = GacatSemanticTaxonomy.ParameterClass.INGREDIENT;
+            selectable = false;
+            card = GacatSemanticTaxonomy.Cardinality.COLLECTION;
+            issue = issueOr(issue, "SCORING_ELEMENT_FIELD; Equifax ScoringElements not CIBIL ReasonCode");
+        }
+        if ("bureau.recent.inquiries_90d".equals(id) || "bureau.recent_inquiries_90d".equals(id)) {
+            aliasGroup = "bureau.recent_inquiries_raw_vs_derived";
+            overlap = GacatSemanticTaxonomy.OverlapRelation.SEMANTICALLY_DISTINCT;
+            overlapNote = "Equifax RecentActivities/TotalInquiries RAW ≠ LOS trailing-90d DERIVED count";
+        }
+        if ("bureau.summary.age_of_oldest_trade_months".equals(id)
+                || "bureau.oldest_tradeline_vintage_months".equals(id)
+                || "bureau.summary.oldest_account_narrative".equals(id)) {
+            aliasGroup = "bureau.oldest_trade_raw_vs_derived";
+            overlap = GacatSemanticTaxonomy.OverlapRelation.SEMANTICALLY_DISTINCT;
+            overlapNote = "Equifax AgeOfOldestTrade / OldestAccount narrative RAW ≠ LOS derived vintage months";
+        }
+        if ("bureau.enquiry.summary.purpose".equals(id) || "bureau.inquiry.purpose".equals(id)) {
+            aliasGroup = "bureau.enquiry_purpose_summary_vs_row";
+            overlap = GacatSemanticTaxonomy.OverlapRelation.SEMANTICALLY_DISTINCT;
+            overlapNote = "EnquirySummary/Purpose filter ≠ per-enquiry Enquiries/RequestPurpose";
+        }
         if (d.unit() != null && "FLAG".equalsIgnoreCase(d.unit()) && vt == GacatSemanticTaxonomy.ValueType.BOOLEAN) {
             // normalized FLAG→BOOLEAN OK
         } else if (d.unit() != null && ambiguousUnit(d.unit())) {
@@ -342,14 +365,22 @@ public final class GacatSemanticRegistry {
 
     private static boolean isBusinessFacingRaw(String id) {
         return "bureau.score".equals(id)
+                || "bureau.score.name".equals(id)
                 || "bureau.commercial.score".equals(id)
                 || "bureau.report.date".equals(id)
+                || "bureau.hit_code".equals(id)
+                || "bureau.success_code".equals(id)
+                || "bureau.report_order_no".equals(id)
+                || id.startsWith("bureau.summary.")
+                || id.startsWith("bureau.enquiry.summary.")
+                || id.startsWith("bureau.recent.")
                 || id.startsWith("kyc.");
     }
 
     private static boolean isFieldIngredient(String id) {
         return id.startsWith("bureau.tradeline.")
                 || id.startsWith("bureau.inquiry")
+                || id.startsWith("bureau.scoring_element.")
                 || id.startsWith("bureau.commercial.facility.")
                 || id.startsWith("bureau.commercial.relationship.")
                 || id.startsWith("bank.transaction.")

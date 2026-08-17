@@ -85,13 +85,13 @@ public class CiBureauTradeline {
     @Column(name = "asset_classification", length = 80)
     private String assetClassification;
 
-    @Column(name = "suit_filed", nullable = false)
-    @Builder.Default
-    private boolean suitFiled = false;
+    /** Null = provider did not supply Yes/No. Do not treat missing as false. */
+    @Column(name = "suit_filed")
+    private Boolean suitFiled;
 
-    @Column(name = "wilful_default", nullable = false)
-    @Builder.Default
-    private boolean wilfulDefault = false;
+    /** Null = provider did not supply Yes/No. Do not treat missing as false. */
+    @Column(name = "wilful_default")
+    private Boolean wilfulDefault;
 
     @Column(name = "written_off_amount", precision = 18, scale = 2)
     private BigDecimal writtenOffAmount;
@@ -116,6 +116,21 @@ public class CiBureauTradeline {
 
     @Column(name = "collateral_value", precision = 18, scale = 2)
     private BigDecimal collateralValue;
+
+    @Column(name = "last_payment_amount", precision = 18, scale = 2)
+    private BigDecimal lastPaymentAmount;
+
+    @Column(name = "last_payment_date")
+    private LocalDate lastPaymentDate;
+
+    @Column(name = "term_frequency", length = 40)
+    private String termFrequency;
+
+    @Column(name = "dispute_code", length = 40)
+    private String disputeCode;
+
+    @Column(name = "closure_reason", length = 120)
+    private String closureReason;
 
     @Column(name = "account_status", length = 80)
     private String accountStatus;

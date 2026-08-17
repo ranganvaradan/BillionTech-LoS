@@ -308,8 +308,9 @@ public class EquifaxBureauProvider implements IBureauProvider {
 
             Map<String, Object> reportData = new LinkedHashMap<>();
             reportData.put("creditScore", creditScore);
-            reportData.put("scoreVersion",
-                    scoreName != null && !scoreName.isBlank() ? scoreName.trim() : "ERS 3.0");
+            if (scoreName != null && !scoreName.isBlank()) {
+                reportData.put("scoreVersion", scoreName.trim());
+            }
             reportData.put("panId", panId != null ? panId : "");
             reportData.put("fullName", fullName != null ? fullName : "");
 
@@ -370,7 +371,7 @@ public class EquifaxBureauProvider implements IBureauProvider {
                         totalSanctioned = totalSanctioned.add(new BigDecimal(sanctioned));
                     } catch (NumberFormatException ignored) {}
                 }
-                if ("Closed".equalsIgnoreCase(accountStatus)) {
+                if (accountStatus != null && accountStatus.toLowerCase(java.util.Locale.ROOT).contains("closed")) {
                     closedAccounts++;
                 } else {
                     activeAccounts++;

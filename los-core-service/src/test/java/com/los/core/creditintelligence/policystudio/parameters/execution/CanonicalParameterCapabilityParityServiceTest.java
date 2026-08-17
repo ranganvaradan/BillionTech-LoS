@@ -1,5 +1,6 @@
 package com.los.core.creditintelligence.policystudio.parameters.execution;
 
+import com.los.core.creditintelligence.policystudio.parameters.GacatCatalogueSeed;
 import com.los.core.creditintelligence.policystudio.parameters.derived.DerivedCalculationDefinitionService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -29,7 +30,7 @@ class CanonicalParameterCapabilityParityServiceTest {
     @Test
     void afterConvergence_zeroDisagreementsAndSpineAligned() {
         Map<String, Object> report = parity.runParityCheck();
-        assertThat(report.get("catalogueCount")).isEqualTo(169);
+        assertThat(report.get("catalogueCount")).isEqualTo(GacatCatalogueSeed.all().size());
         assertThat(report.get("dataParametersVsPolicyStudioDisagreementCount")).isEqualTo(0);
         assertThat(report.get("surfaceVsSpineDisagreementCount")).isEqualTo(0);
         assertThat(report.get("parityPass")).isEqualTo(true);
@@ -40,9 +41,12 @@ class CanonicalParameterCapabilityParityServiceTest {
                 (List<Map<String, Object>>) report.get("known12DisagreementsAfter");
         assertThat(golden).hasSize(12);
         for (Map<String, Object> row : golden) {
-            assertThat(row.get("policyStudioClaimsExecutable")).isEqualTo(false);
-            assertThat(row.get("dataParametersClaimsExecutable")).isEqualTo(false);
-            assertThat(row.get("spineHasExecutionCapability")).isEqualTo(false);
+            String id = String.valueOf(row.get("canonicalParameterId"));
+            boolean mapped = com.los.core.creditintelligence.policystudio.sourceintegration
+                    .PlatformNormalizedRawFieldCatalog.isStructurallyMapped(id);
+            assertThat(row.get("policyStudioClaimsExecutable")).as(id).isEqualTo(mapped);
+            assertThat(row.get("dataParametersClaimsExecutable")).as(id).isEqualTo(mapped);
+            assertThat(row.get("spineHasExecutionCapability")).as(id).isEqualTo(mapped);
         }
 
         System.out.println("SPINE_POLICY_TEST_CAPABLE_COUNT=" + report.get("spineHasExecutionCapabilityCount"));

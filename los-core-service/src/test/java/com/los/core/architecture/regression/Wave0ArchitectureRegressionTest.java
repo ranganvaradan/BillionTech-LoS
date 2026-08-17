@@ -68,8 +68,9 @@ class Wave0ArchitectureRegressionTest {
     }
 
     @Test
-    void gacatCatalogue_is169() {
-        assertThat(CanonicalParameterRegistry.fromSeedForTestsOnly().all()).hasSize(169);
+    void gacatCatalogue_matchesSeedInventory() {
+        assertThat(CanonicalParameterRegistry.fromSeedForTestsOnly().all())
+                .hasSize(com.los.core.creditintelligence.policystudio.parameters.GacatCatalogueSeed.all().size());
     }
 
     @Test

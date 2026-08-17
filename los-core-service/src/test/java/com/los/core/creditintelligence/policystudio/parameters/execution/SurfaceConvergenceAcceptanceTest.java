@@ -1,5 +1,6 @@
 package com.los.core.creditintelligence.policystudio.parameters.execution;
 
+import com.los.core.creditintelligence.policystudio.parameters.GacatCatalogueSeed;
 import com.los.core.creditintelligence.policystudio.parameters.ParameterExecutabilitySupport;
 import com.los.core.creditintelligence.policystudio.parameters.PolicyStudioConvergencePresenter;
 import com.los.core.creditintelligence.policystudio.parameters.lifecycle.PolicyRuleLifecycleProjection;
@@ -42,7 +43,7 @@ class SurfaceConvergenceAcceptanceTest {
     @Test
     void fullCatalogue_dpPsSpine_executionParity() {
         Map<String, Object> report = parity.runParityCheck();
-        assertThat(report.get("catalogueCount")).isEqualTo(169);
+        assertThat(report.get("catalogueCount")).isEqualTo(GacatCatalogueSeed.all().size());
         assertThat(report.get("dataParametersVsPolicyStudioDisagreementCount")).isEqualTo(0);
         assertThat(report.get("surfaceVsSpineDisagreementCount")).isEqualTo(0);
         assertThat(report.get("parityPass")).isEqualTo(true);

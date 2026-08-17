@@ -59,7 +59,11 @@ public final class GacatCollectionElementContracts {
                 field("settled", "BOOLEAN", null),
                 field("is_live", "BOOLEAN", null),
                 field("lender", "STRING", null),
-                field("ownership", "ENUM", null)
+                field("ownership", "ENUM", null),
+                field("last_payment_amount", "MONEY", null),
+                field("last_payment_date", "DATE", null),
+                field("term_frequency", "ENUM", null),
+                field("closure_reason", "STRING", null)
         ));
         return m;
     }
@@ -88,7 +92,9 @@ public final class GacatCollectionElementContracts {
                 field("tradeline_ref", "STRING", null),
                 field("observationId", "STRING", null),
                 field("sourceReference", "STRING", null),
-                field("estimated", "BOOLEAN", null)
+                field("estimated", "BOOLEAN", null),
+                field("suit_filed_status", "ENUM", null),
+                field("asset_classification_status", "ENUM", null)
         ));
         return m;
     }
@@ -111,7 +117,9 @@ public final class GacatCollectionElementContracts {
                 field("date", "DATE", "Alias"),
                 field("member_name", "STRING", null),
                 field("purpose", "ENUM", null),
-                field("amount", "MONEY", null)
+                field("amount", "MONEY", null),
+                field("inquiry_time", "STRING", null),
+                field("time", "STRING", "Alias")
         ));
         return m;
     }

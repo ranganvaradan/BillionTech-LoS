@@ -37,6 +37,11 @@ public final class GacatCatalogueSeed {
         return p;
     }
 
+    /** Current seed inventory size. Tests should assert against this rather than a stale literal. */
+    public static int inventorySize() {
+        return all().size();
+    }
+
     private static final String BR = "Bureau Retail";
     private static final String BC = "Bureau Commercial";
     private static final String BS = "Bank Statement";
@@ -56,12 +61,36 @@ public final class GacatCatalogueSeed {
                 List.of("cibil score", "credit bureau score", "bureau score", "credit score", "cibil"),
                 "BureauMetricService / CreditControl bureauScore",
                 "BUREAU_SCORE", "BUREAU_SCORE", true, true, false, true, true);
-        raw(p, "bureau.report.date", "Bureau report date", BR, "DATE", "SCALAR",
-                "InquiryResponseHeader/Date", List.of("report date"), null, null, null,
+        raw(p, "bureau.score.name", "Bureau score product name", BR, "TEXT", "SCALAR",
+                "InquiryResponse/Score/Name", List.of("score name", "ERS"),
+                "CiBureauReport.scoreType / ci_bureau_report_summary.score_name", null, null,
                 true, true, false, true, true);
+        raw(p, "bureau.report.date", "Bureau report date", BR, "DATE", "SCALAR",
+                "InquiryResponseHeader/Date", List.of("report date"),
+                "CiBureauReport.reportDate", null, null,
+                true, true, false, true, true);
+        raw(p, "bureau.report.time", "Bureau report time", BR, "TEXT", "SCALAR",
+                "InquiryResponseHeader/Time", List.of("report time"),
+                "ci_bureau_report_summary.report_time", null, null,
+                true, true, false, true, true);
+        raw(p, "bureau.hit_code", "Equifax hit code", BR, "CODE", "SCALAR",
+                "InquiryResponseHeader/HitCode", List.of("hit code"),
+                "ci_bureau_report_summary.hit_code", null, null, true, true, false, true, true);
+        raw(p, "bureau.success_code", "Equifax success code", BR, "CODE", "SCALAR",
+                "InquiryResponseHeader/SuccessCode", List.of("success code"),
+                "ci_bureau_report_summary.success_code", null, null, true, true, false, true, true);
+        raw(p, "bureau.report_order_no", "Bureau report order number", BR, "TEXT", "SCALAR",
+                "InquiryResponseHeader/ReportOrderNO", List.of("report order no"),
+                "ci_bureau_report_summary.report_order_no", null, null, true, true, false, true, true);
         raw(p, "bureau.reason_code", "Bureau reason code", BR, "CODE", "PER_SCORE",
-                "Score/ReasonCode (when present)", List.of("reason code", "score reason"), null, null, null,
+                "Score/ReasonCode (when present; not Equifax ScoringElements)", List.of("reason code", "score reason"), null, null, null,
                 true, false, false, false, false);
+        raw(p, "bureau.scoring_element.code", "Bureau scoring element code", BR, "CODE", "PER_SCORE",
+                "ScoringElements/ScoringElement/Code", List.of("scoring element code"),
+                "ci_bureau_scoring_element.code", null, null, true, true, false, true, true);
+        raw(p, "bureau.scoring_element.description", "Bureau scoring element description", BR, "TEXT", "PER_SCORE",
+                "ScoringElements/ScoringElement/Description", List.of("scoring element"),
+                "ci_bureau_scoring_element.description", null, null, true, true, false, true, true);
 
         // Tradeline identity & profile — Equifax Account + CiBureauTradeline
         raw(p, "bureau.tradeline.account_type", "Account type", BR, "CODE", "PER_TRADELINE",
@@ -142,25 +171,158 @@ public final class GacatCatalogueSeed {
                 "CiBureauPaymentHistory.dpd", null, null, true, true, false, true, true);
         raw(p, "bureau.tradeline.secured_flag", "Secured / unsecured flag", BR, "FLAG", "PER_TRADELINE",
                 "Derived from taxonomy mapping of AccountType", List.of("secured", "unsecured"),
-                "CiBureauTradeline.secured (EQUIFAX_TAXONOMY_V1)", null, null,
+                "CiBureauTradeline.secured (taxonomy + collateral evidence override)", null, null,
                 true, true, false, true, true);
+
+        raw(p, "bureau.tradeline.last_payment_amount", "Last payment amount", BR, "INR", "PER_TRADELINE",
+                "Account/LastPayment", List.of("last payment"),
+                "CiBureauTradeline.lastPaymentAmount", null, null, true, true, false, true, true);
+        raw(p, "bureau.tradeline.last_payment_date", "Last payment date", BR, "DATE", "PER_TRADELINE",
+                "Account/LastPaymentDate", List.of("last payment date"),
+                "CiBureauTradeline.lastPaymentDate", null, null, true, true, false, true, true);
+        raw(p, "bureau.tradeline.term_frequency", "Term frequency", BR, "CODE", "PER_TRADELINE",
+                "Account/TermFrequency", List.of("term frequency"),
+                "CiBureauTradeline.termFrequency", null, null, true, true, false, true, true);
+        raw(p, "bureau.tradeline.dispute_code", "Dispute code", BR, "CODE", "PER_TRADELINE",
+                "Account/DisputeCode", List.of("dispute code"),
+                "CiBureauTradeline.disputeCode", null, null, true, true, false, true, true);
+        raw(p, "bureau.tradeline.closure_reason", "Account closure reason", BR, "TEXT", "PER_TRADELINE",
+                "Account/Reason", List.of("closure reason"),
+                "CiBureauTradeline.closureReason", null, null, true, true, false, true, true);
+        raw(p, "bureau.tradeline.suit_filed_month", "Suit filed status (month)", BR, "CODE", "PER_MONTH",
+                "History48Months/Month/SuitFiledStatus", List.of("monthly suit filed"),
+                "CiBureauPaymentHistory.suitFiledStatus", null, null, true, true, false, true, true);
+        raw(p, "bureau.tradeline.asset_classification_month", "Asset classification (month)", BR, "CODE", "PER_MONTH",
+                "History48Months/Month/AssetClassificationStatus", List.of("monthly sma"),
+                "CiBureauPaymentHistory.assetClassificationStatus", null, null, true, true, false, true, true);
+
+        // Equifax native AccountSummary / OtherKeyInd / EnquirySummary / RecentActivities
+        raw(p, "bureau.summary.account_count", "Provider account count", BR, "COUNT", "SCALAR",
+                "AccountSummary/NoOfAccounts", List.of("no of accounts"),
+                "ci_bureau_report_summary.account_count", null, null, true, true, false, true, true);
+        raw(p, "bureau.summary.active_account_count", "Provider active account count", BR, "COUNT", "SCALAR",
+                "AccountSummary/NoOfActiveAccounts", List.of("active accounts"),
+                "ci_bureau_report_summary.active_account_count", null, null, true, true, false, true, true);
+        raw(p, "bureau.summary.writeoff_count", "Provider write-off count", BR, "COUNT", "SCALAR",
+                "AccountSummary/NoOfWriteOffs", List.of("writeoff count"),
+                "ci_bureau_report_summary.writeoff_count", null, null, true, true, false, true, true);
+        raw(p, "bureau.summary.total_past_due", "Provider total past due", BR, "INR", "SCALAR",
+                "AccountSummary/TotalPastDue", List.of("total past due"),
+                "ci_bureau_report_summary.total_past_due", null, null, true, true, false, true, true);
+        raw(p, "bureau.summary.most_severe_status_24m", "Most severe status within 24 months", BR, "CODE", "SCALAR",
+                "AccountSummary/MostSevereStatusWithIn24Months", List.of("most severe status"),
+                "ci_bureau_report_summary.most_severe_status_24m", null, null, true, true, false, true, true);
+        raw(p, "bureau.summary.total_balance", "Provider total balance", BR, "INR", "SCALAR",
+                "AccountSummary/TotalBalanceAmount", List.of("total balance"),
+                "ci_bureau_report_summary.total_balance", null, null, true, true, false, true, true);
+        raw(p, "bureau.summary.total_sanction", "Provider total sanction", BR, "INR", "SCALAR",
+                "AccountSummary/TotalSanctionAmount", List.of("total sanction"),
+                "ci_bureau_report_summary.total_sanction", null, null, true, true, false, true, true);
+        raw(p, "bureau.summary.total_credit_limit", "Provider total credit limit", BR, "INR", "SCALAR",
+                "AccountSummary/TotalCreditLimit", List.of("total credit limit"),
+                "ci_bureau_report_summary.total_credit_limit", null, null, true, true, false, true, true);
+        raw(p, "bureau.summary.total_monthly_payment", "Provider total monthly payment", BR, "INR", "SCALAR",
+                "AccountSummary/TotalMonthlyPaymentAmount", List.of("total monthly payment"),
+                "ci_bureau_report_summary.total_monthly_payment", null, null, true, true, false, true, true);
+        raw(p, "bureau.summary.highest_sanction", "Provider highest sanction", BR, "INR", "SCALAR",
+                "AccountSummary/SingleHighestSanctionAmount", List.of("highest sanction"),
+                "ci_bureau_report_summary.highest_sanction", null, null, true, true, false, true, true);
+        raw(p, "bureau.summary.highest_balance", "Provider highest balance", BR, "INR", "SCALAR",
+                "AccountSummary/SingleHighestBalance", List.of("highest balance"),
+                "ci_bureau_report_summary.highest_balance", null, null, true, true, false, true, true);
+        raw(p, "bureau.summary.average_open_balance", "Provider average open balance", BR, "INR", "SCALAR",
+                "AccountSummary/AverageOpenBalance", List.of("average open balance"),
+                "ci_bureau_report_summary.average_open_balance", null, null, true, true, false, true, true);
+        raw(p, "bureau.summary.age_of_oldest_trade_months", "Provider age of oldest trade (months)", BR, "MONTHS", "SCALAR",
+                "OtherKeyInd/AgeOfOldestTrade", List.of("age of oldest trade"),
+                "ci_bureau_report_summary.age_of_oldest_trade_months (RAW Equifax; not bureau.oldest_tradeline_vintage_months)",
+                null, null, true, true, false, true, true);
+        raw(p, "bureau.summary.open_trade_count", "Provider open trade count", BR, "COUNT", "SCALAR",
+                "OtherKeyInd/NumberOfOpenTrades", List.of("open trades"),
+                "ci_bureau_report_summary.open_trade_count", null, null, true, true, false, true, true);
+        raw(p, "bureau.summary.past_due_account_count", "Provider past-due account count", BR, "COUNT", "SCALAR",
+                "AccountSummary/NoOfPastDueAccounts", List.of("past due accounts"),
+                "ci_bureau_report_summary.past_due_account_count", null, null, true, true, false, true, true);
+        raw(p, "bureau.summary.zero_balance_account_count", "Provider zero-balance account count", BR, "COUNT", "SCALAR",
+                "AccountSummary/NoOfZeroBalanceAccounts", List.of("zero balance accounts"),
+                "ci_bureau_report_summary.zero_balance_account_count", null, null, true, true, false, true, true);
+        raw(p, "bureau.summary.highest_credit", "Provider single highest credit", BR, "INR", "SCALAR",
+                "AccountSummary/SingleHighestCredit", List.of("single highest credit"),
+                "ci_bureau_report_summary.highest_credit", null, null, true, true, false, true, true);
+        raw(p, "bureau.summary.total_high_credit", "Provider total high credit", BR, "INR", "SCALAR",
+                "AccountSummary/TotalHighCredit", List.of("total high credit"),
+                "ci_bureau_report_summary.total_high_credit", null, null, true, true, false, true, true);
+        raw(p, "bureau.summary.recent_account_narrative", "Provider recent account narrative", BR, "TEXT", "SCALAR",
+                "AccountSummary/RecentAccount", List.of("recent account"),
+                "ci_bureau_report_summary.recent_account_narrative (RAW narrative; not a derived open-date calc)",
+                null, null, true, true, false, true, true);
+        raw(p, "bureau.summary.oldest_account_narrative", "Provider oldest account narrative", BR, "TEXT", "SCALAR",
+                "AccountSummary/OldestAccount", List.of("oldest account"),
+                "ci_bureau_report_summary.oldest_account_narrative (RAW narrative; distinct from AgeOfOldestTrade and derived vintage)",
+                null, null, true, true, false, true, true);
+        raw(p, "bureau.summary.all_lines_ever_written", "Provider all lines ever written off", BR, "INR", "SCALAR",
+                "OtherKeyInd/AllLinesEVERWritten", List.of("all lines ever written"),
+                "ci_bureau_report_summary.all_lines_ever_written", null, null, true, true, false, true, true);
+        raw(p, "bureau.summary.all_lines_ever_written_9m", "Provider all lines written off (9 months)", BR, "INR", "SCALAR",
+                "OtherKeyInd/AllLinesEVERWrittenIn9Months", List.of("all lines written 9 months"),
+                "ci_bureau_report_summary.all_lines_ever_written_9m", null, null, true, true, false, true, true);
+        raw(p, "bureau.summary.all_lines_ever_written_6m", "Provider all lines written off (6 months)", BR, "INR", "SCALAR",
+                "OtherKeyInd/AllLinesEVERWrittenIn6Months", List.of("all lines written 6 months"),
+                "ci_bureau_report_summary.all_lines_ever_written_6m", null, null, true, true, false, true, true);
+
+        raw(p, "bureau.enquiry.summary.total", "Provider enquiry total", BR, "COUNT", "SCALAR",
+                "EnquirySummary/Total", List.of("enquiry total"),
+                "ci_bureau_report_summary.enquiry_total", null, null, true, true, false, true, true);
+        raw(p, "bureau.enquiry.summary.past_30d", "Provider enquiries past 30 days", BR, "COUNT", "SCALAR",
+                "EnquirySummary/Past30Days", List.of("enquiries 30 days"),
+                "ci_bureau_report_summary.enquiry_past_30d", null, null, true, true, false, true, true);
+        raw(p, "bureau.enquiry.summary.past_12m", "Provider enquiries past 12 months", BR, "COUNT", "SCALAR",
+                "EnquirySummary/Past12Months", List.of("enquiries 12 months"),
+                "ci_bureau_report_summary.enquiry_past_12m", null, null, true, true, false, true, true);
+        raw(p, "bureau.enquiry.summary.past_24m", "Provider enquiries past 24 months", BR, "COUNT", "SCALAR",
+                "EnquirySummary/Past24Months", List.of("enquiries 24 months"),
+                "ci_bureau_report_summary.enquiry_past_24m", null, null, true, true, false, true, true);
+        raw(p, "bureau.enquiry.summary.recent_date", "Provider most recent enquiry date", BR, "DATE", "SCALAR",
+                "EnquirySummary/Recent", List.of("recent enquiry date"),
+                "ci_bureau_report_summary.enquiry_recent_date", null, null, true, true, false, true, true);
+        raw(p, "bureau.enquiry.summary.purpose", "Provider enquiry summary purpose filter", BR, "CODE", "SCALAR",
+                "EnquirySummary/Purpose", List.of("enquiry summary purpose"),
+                "ci_bureau_report_summary.enquiry_summary_purpose (summary filter; distinct from per-enquiry bureau.inquiry.purpose)",
+                null, null, true, true, false, true, true);
+
+        raw(p, "bureau.recent.accounts_opened_90d", "Accounts opened (Equifax recent activity)", BR, "COUNT", "SCALAR",
+                "RecentActivities/AccountsOpened", List.of("accounts opened 90d"),
+                "ci_bureau_report_summary.recent_accounts_opened_90d", null, null, true, true, false, true, true);
+        raw(p, "bureau.recent.accounts_updated_90d", "Accounts updated (Equifax recent activity)", BR, "COUNT", "SCALAR",
+                "RecentActivities/AccountsUpdated", List.of("accounts updated 90d"),
+                "ci_bureau_report_summary.recent_accounts_updated_90d", null, null, true, true, false, true, true);
+        raw(p, "bureau.recent.accounts_delinquent_90d", "Accounts delinquent (Equifax recent activity)", BR, "COUNT", "SCALAR",
+                "RecentActivities/AccountsDeliquent", List.of("accounts delinquent 90d"),
+                "ci_bureau_report_summary.recent_accounts_delinquent_90d", null, null, true, true, false, true, true);
+        raw(p, "bureau.recent.inquiries_90d", "Inquiries in Equifax recent activity window", BR, "COUNT", "SCALAR",
+                "RecentActivities/TotalInquiries", List.of("recent inquiries"),
+                "ci_bureau_report_summary.recent_inquiries_90d (RAW Equifax; not bureau.recent_inquiries_90d DERIVED)",
+                null, null, true, true, false, true, true);
 
         // Enquiries
         raw(p, "bureau.inquiry", "Bureau enquiry event", BR, "EVENT", "PER_ENQUIRY",
-                "Enquiry|Inquiry (+ EnquiryDate/InquiryDate)", List.of("enquiry event", "inquiry event"),
-                "EquifaxBureauAccountExtractor inquiries", null, null, true, true, false, true, true);
+                "Enquiries|Enquiry|Inquiry", List.of("enquiry event", "inquiry event"),
+                "EquifaxBureauAccountExtractor → CiBureauInquiry", null, null, true, true, false, true, true);
         raw(p, "bureau.inquiry.date", "Enquiry date", BR, "DATE", "PER_ENQUIRY",
-                "Enquiry/EnquiryDate|InquiryDate", List.of("enquiry date"), null, null, null,
-                true, true, false, true, true);
+                "Enquiries/Date", List.of("enquiry date"),
+                "CiBureauInquiry.inquiryDate", null, null, true, true, false, true, true);
         raw(p, "bureau.inquiry.purpose", "Enquiry purpose", BR, "CODE", "PER_ENQUIRY",
-                "Enquiry purpose field when present in report", List.of("enquiry purpose"), null, null, null,
-                true, false, false, false, false);
+                "Enquiries/RequestPurpose|Purpose", List.of("enquiry purpose"),
+                "CiBureauInquiry.purpose", null, null, true, true, false, true, true);
         raw(p, "bureau.inquiry.amount", "Enquiry amount", BR, "INR", "PER_ENQUIRY",
-                "Enquiry amount field when present", List.of("enquiry amount"), null, null, null,
-                true, false, false, false, false);
+                "Enquiries/Amount", List.of("enquiry amount"),
+                "CiBureauInquiry.amount", null, null, true, true, false, true, true);
         raw(p, "bureau.inquiry.member", "Enquiring member", BR, "TEXT", "PER_ENQUIRY",
-                "Enquiry member/institution when present", List.of("enquiring member"), null, null, null,
-                true, false, false, false, false);
+                "Enquiries/Institution|MemberName", List.of("enquiring member"),
+                "CiBureauInquiry.memberName", null, null, true, true, false, true, true);
+        raw(p, "bureau.inquiry.time", "Enquiry time", BR, "TEXT", "PER_ENQUIRY",
+                "Enquiries/Time", List.of("enquiry time"),
+                "CiBureauInquiry.inquiryTime", null, null, true, true, false, true, true);
     }
 
     private static void bureauRetailDerived(List<CanonicalParameterDefinition> p) {

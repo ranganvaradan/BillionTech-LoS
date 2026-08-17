@@ -104,6 +104,29 @@ class EquifaxBureauAccountExtractorTest {
         assertEquals(13, accounts.size());
         assertTrue(accounts.stream().anyMatch(a -> "Personal Loan".equals(a.get("AccountType"))));
         assertTrue(accounts.stream().anyMatch(a -> "Property Loan".equals(a.get("AccountType"))));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> inquiries = (List<Map<String, Object>>) data.get("inquiries");
+        assertNotNull(inquiries);
+        assertEquals(2, inquiries.size());
+        assertEquals("0E", inquiries.get(0).get("purpose"));
+        assertNotNull(inquiries.get(0).get("inquiryTime"));
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> scoring = (List<Map<String, Object>>) data.get("scoringElements");
+        assertNotNull(scoring);
+        assertEquals(3, scoring.size());
+        assertEquals("10", data.get("hitCode"));
+        assertEquals("1", data.get("successCode"));
+        assertEquals("758", String.valueOf(data.get("creditScore")));
+        assertEquals("ERS4.0", data.get("scoreName"));
+        assertEquals("2026-03-12", data.get("reportDate"));
+        @SuppressWarnings("unchecked")
+        Map<String, String> acctSum = (Map<String, String>) data.get("nativeAccountSummary");
+        assertEquals("13", acctSum.get("NoOfAccounts"));
+        assertEquals("0", acctSum.get("NoOfWriteOffs"));
+        assertFalse(accounts.get(0).containsKey("WrittenOffAmount") && accounts.stream()
+                .anyMatch(a -> a.get("WrittenOffAmount") != null && !String.valueOf(a.get("WrittenOffAmount")).isBlank()));
     }
 
     @Test

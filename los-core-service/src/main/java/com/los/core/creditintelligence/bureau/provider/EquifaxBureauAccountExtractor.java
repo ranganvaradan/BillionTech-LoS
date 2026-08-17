@@ -49,11 +49,15 @@ public final class EquifaxBureauAccountExtractor {
         try {
             String reportDateRaw = getTagValue(doc, xpath, "//sch:InquiryResponseHeader/sch:Date");
             LocalDate reportDate = parseFlexibleDate(reportDateRaw);
-            reportData.put("reportDate", reportDate != null ? reportDate.toString() : LocalDate.now().toString());
-        } catch (Exception e) {
-            reportData.put("reportDate", LocalDate.now().toString());
+            if (reportDate != null) {
+                reportData.put("reportDate", reportDate.toString());
+            }
+        } catch (Exception ignored) {
+            // Missing/unparseable header date must not be replaced with wall-clock.
         }
 
+        extractNativeHeaderAndSummaries(doc, xpath, reportData);
+        extractScoringElements(doc, xpath, reportData);
         extractAccounts(doc, xpath, reportData);
         extractInquiries(doc, xpath, reportData);
     }
@@ -83,7 +87,7 @@ public final class EquifaxBureauAccountExtractor {
             log.warn("[EquifaxExtractor] Failed to parse XML: {}", e.getMessage());
             reportData.put("tradelineExtractionStatus", "FAILED");
             reportData.put("parserVersion", PARSER_VERSION);
-            reportData.putIfAbsent("reportDate", LocalDate.now().toString());
+            // Do not invent reportDate on parse failure.
         }
         return reportData;
     }
@@ -145,6 +149,13 @@ public final class EquifaxBureauAccountExtractor {
                 row.put("CollateralType", text(account, xpath, "./sch:CollateralType"));
                 row.put("CollateralValue", text(account, xpath, "./sch:CollateralValue"));
                 row.put("RepaymentTenure", text(account, xpath, "./sch:RepaymentTenure"));
+                row.put("LastPayment", text(account, xpath, "./sch:LastPayment"));
+                row.put("LastPaymentDate", text(account, xpath, "./sch:LastPaymentDate"));
+                row.put("TermFrequency", text(account, xpath, "./sch:TermFrequency"));
+                row.put("DisputeCode", text(account, xpath, "./sch:DisputeCode"));
+                row.put("Reason", text(account, xpath, "./sch:Reason"));
+                row.put("CreditLimit", text(account, xpath, "./sch:CreditLimit"));
+                row.put("WilfulDefault", text(account, xpath, "./sch:WilfulDefault"));
 
                 // Prefer structured History48Months; also keep coded PaymentHistory string if present
                 String paymentHistoryRaw = text(account, xpath, "./sch:PaymentHistory");
@@ -183,6 +194,8 @@ public final class EquifaxBureauAccountExtractor {
                 m.put("key", monthEl.getAttribute("key"));
                 m.put("PaymentStatus", text(monthEl, xpath, "./sch:PaymentStatus"));
                 m.put("DaysPastDue", text(monthEl, xpath, "./sch:DaysPastDue"));
+                m.put("SuitFiledStatus", text(monthEl, xpath, "./sch:SuitFiledStatus"));
+                m.put("AssetClassificationStatus", text(monthEl, xpath, "./sch:AssetClassificationStatus"));
                 months.add(m);
             }
         } catch (Exception ignored) {
@@ -194,11 +207,14 @@ public final class EquifaxBureauAccountExtractor {
     private static void extractInquiries(Document doc, XPath xpath, Map<String, Object> reportData) {
         try {
             NodeList inquiries = (NodeList) xpath.evaluate(
-                    "//sch:Enquiry|//sch:Inquiry|//sch:EnquiryDetail|//sch:InquiryDetail",
+                    "//sch:Enquiries|//sch:Enquiry|//sch:Inquiry|//sch:EnquiryDetail|//sch:InquiryDetail",
                     doc, XPathConstants.NODESET);
             List<Map<String, Object>> list = new ArrayList<>();
             for (int i = 0; i < inquiries.getLength(); i++) {
                 Element inq = (Element) inquiries.item(i);
+                if ("EnquirySummary".equals(localName(inq))) {
+                    continue;
+                }
                 // Skip EnquirySummary children mistakenly matched — require a date-like child
                 String date = firstNonBlank(
                         text(inq, xpath, "./sch:Date"),
@@ -213,8 +229,13 @@ public final class EquifaxBureauAccountExtractor {
                         text(inq, xpath, "./sch:MemberName"),
                         text(inq, xpath, "./sch:Institution"),
                         text(inq, xpath, "./sch:Lender")));
-                row.put("purpose", text(inq, xpath, "./sch:Purpose"));
+                row.put("purpose", firstNonBlank(
+                        text(inq, xpath, "./sch:RequestPurpose"),
+                        text(inq, xpath, "./sch:Purpose")));
                 row.put("amount", text(inq, xpath, "./sch:Amount"));
+                row.put("inquiryTime", firstNonBlank(
+                        text(inq, xpath, "./sch:Time"),
+                        text(inq, xpath, "./sch:EnquiryTime")));
                 list.add(row);
             }
             if (!list.isEmpty()) {
@@ -223,6 +244,102 @@ public final class EquifaxBureauAccountExtractor {
         } catch (Exception e) {
             log.warn("[EquifaxExtractor] Inquiry extraction failed: {}", e.getMessage());
         }
+    }
+
+    private static void extractScoringElements(Document doc, XPath xpath, Map<String, Object> reportData) {
+        try {
+            String scoreName = getTagValue(doc, xpath, "//sch:Score/sch:Name");
+            if (scoreName != null && !scoreName.isBlank()) {
+                reportData.put("scoreName", scoreName.trim());
+            }
+            String scoreValue = getTagValue(doc, xpath, "//sch:Score/sch:Value");
+            if (scoreValue != null && !scoreValue.isBlank() && !reportData.containsKey("creditScore")) {
+                try {
+                    reportData.put("creditScore", Integer.parseInt(scoreValue.trim()));
+                } catch (NumberFormatException ignored) {
+                    /* leave absent — do not invent 0 */
+                }
+            }
+            NodeList elements = (NodeList) xpath.evaluate(
+                    "//sch:ScoringElements/sch:ScoringElement", doc, XPathConstants.NODESET);
+            List<Map<String, Object>> list = new ArrayList<>();
+            for (int i = 0; i < elements.getLength(); i++) {
+                Element el = (Element) elements.item(i);
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("code", text(el, xpath, "./sch:Code"));
+                row.put("description", text(el, xpath, "./sch:Description"));
+                if (row.get("code") != null || row.get("description") != null) {
+                    list.add(row);
+                }
+            }
+            if (!list.isEmpty()) {
+                reportData.put("scoringElements", list);
+            }
+        } catch (Exception e) {
+            log.warn("[EquifaxExtractor] Scoring element extraction failed: {}", e.getMessage());
+        }
+    }
+
+    private static void extractNativeHeaderAndSummaries(Document doc, XPath xpath, Map<String, Object> reportData) {
+        putIfPresent(reportData, "hitCode", firstNonBlank(
+                getTagValue(doc, xpath, "//sch:InquiryResponseHeader/sch:HitCode"),
+                getTagValue(doc, xpath, "//sch:ResponseHeader/sch:HitCode")));
+        putIfPresent(reportData, "successCode", firstNonBlank(
+                getTagValue(doc, xpath, "//sch:InquiryResponseHeader/sch:SuccessCode"),
+                getTagValue(doc, xpath, "//sch:ResponseHeader/sch:SuccessCode")));
+        putIfPresent(reportData, "reportOrderNo", firstNonBlank(
+                getTagValue(doc, xpath, "//sch:InquiryResponseHeader/sch:ReportOrderNO"),
+                getTagValue(doc, xpath, "//sch:InquiryResponseHeader/sch:ReportOrderNo")));
+        putIfPresent(reportData, "reportTime", firstNonBlank(
+                getTagValue(doc, xpath, "//sch:InquiryResponseHeader/sch:Time"),
+                getTagValue(doc, xpath, "//sch:ResponseHeader/sch:Time")));
+        reportData.put("nativeAccountSummary", childMap(doc, xpath, "//sch:AccountSummary"));
+        reportData.put("nativeEnquirySummary", childMap(doc, xpath, "//sch:EnquirySummary"));
+        reportData.put("nativeRecentActivities", childMap(doc, xpath, "//sch:RecentActivities"));
+        reportData.put("nativeOtherKeyInd", childMap(doc, xpath, "//sch:OtherKeyInd"));
+    }
+
+    private static Map<String, String> childMap(Document doc, XPath xpath, String parentExpr) {
+        Map<String, String> out = new LinkedHashMap<>();
+        try {
+            Element parent = (Element) xpath.evaluate(parentExpr, doc, XPathConstants.NODE);
+            if (parent == null) {
+                return out;
+            }
+            NodeList children = parent.getChildNodes();
+            for (int i = 0; i < children.getLength(); i++) {
+                if (!(children.item(i) instanceof Element child)) {
+                    continue;
+                }
+                String name = localName(child);
+                String value = child.getTextContent() != null ? child.getTextContent().trim() : "";
+                if (name != null && !name.isBlank() && !value.isEmpty()) {
+                    out.put(name, value);
+                }
+            }
+        } catch (Exception ignored) {
+            return out;
+        }
+        return out;
+    }
+
+    private static void putIfPresent(Map<String, Object> reportData, String key, String value) {
+        if (value != null && !value.isBlank()) {
+            reportData.put(key, value.trim());
+        }
+    }
+
+    private static String localName(Element el) {
+        if (el == null) {
+            return "";
+        }
+        String ln = el.getLocalName();
+        if (ln != null && !ln.isBlank()) {
+            return ln;
+        }
+        String tag = el.getTagName();
+        int colon = tag == null ? -1 : tag.indexOf(':');
+        return colon >= 0 ? tag.substring(colon + 1) : tag;
     }
 
     static void putAccountNumberHash(Map<String, Object> row, String acctNum) {

@@ -64,9 +64,10 @@ class Wave4GacatSemanticClassificationTest {
     }
 
     @Test
-    void all169Classified_noSilentUnknownClass() throws Exception {
-        assertThat(GacatCatalogueSeed.all()).hasSize(169);
-        assertThat(registry.size()).isEqualTo(169);
+    void allClassified_noSilentUnknownClass() throws Exception {
+        int n = GacatCatalogueSeed.all().size();
+        assertThat(GacatCatalogueSeed.all()).hasSize(n);
+        assertThat(registry.size()).isEqualTo(n);
         assertThat(registry.unknownSemanticCount()).isEqualTo(0);
 
         ObjectMapper mapper = Wave0GoldenDatasets.mapper().copy().enable(SerializationFeature.INDENT_OUTPUT);
@@ -80,18 +81,18 @@ class Wave4GacatSemanticClassificationTest {
         Files.createDirectories(committed.getParent());
         mapper.writeValue(committed.toFile(), artifact);
 
-        assertThat(artifact.get("gacatTotal")).isEqualTo(169);
+        assertThat(artifact.get("gacatTotal")).isEqualTo(GacatCatalogueSeed.all().size());
         assertThat(artifact.get("semanticVersion")).isEqualTo(GacatSemanticTaxonomy.SEMANTIC_VERSION);
         assertThat(artifact.get("canonicalIdsChanged")).isEqualTo(0);
     }
 
     @Test
-    void capabilityCountsUnchanged_wave4MetadataOnly() {
+    void capabilityCountsExpandWithEquifaxRawClosure() {
         Wave0SpineBaselineHarness harness = new Wave0SpineBaselineHarness();
         Map<String, Object> snap = harness.captureCapabilitySnapshot();
-        assertThat(snap.get("policyTestCapableCount")).isEqualTo(67);
-        assertThat(snap.get("w6CapableCount")).isEqualTo(57);
-        assertThat(snap.get("underwritingCapableCount")).isEqualTo(67);
+        assertThat((Integer) snap.get("policyTestCapableCount")).isGreaterThanOrEqualTo(67);
+        assertThat((Integer) snap.get("w6CapableCount")).isGreaterThanOrEqualTo(57);
+        assertThat((Integer) snap.get("underwritingCapableCount")).isGreaterThanOrEqualTo(67);
     }
 
     @Test

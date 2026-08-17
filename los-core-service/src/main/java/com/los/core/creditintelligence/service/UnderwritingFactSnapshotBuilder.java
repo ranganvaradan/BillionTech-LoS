@@ -141,6 +141,8 @@ public class UnderwritingFactSnapshotBuilder {
     private final com.los.core.creditintelligence.bureau.repository.CiBureauTradelineRepository tradelineRepository;
     private final com.los.core.creditintelligence.bureau.repository.CiBureauPaymentHistoryRepository paymentHistoryRepository;
     private final com.los.core.creditintelligence.bureau.repository.CiBureauInquiryRepository inquiryRepository;
+    private final com.los.core.creditintelligence.bureau.repository.CiBureauReportSummaryRepository reportSummaryRepository;
+    private final com.los.core.creditintelligence.bureau.repository.CiBureauScoringElementRepository scoringElementRepository;
 
     public record FoundationPrep(CiFactSnapshot snapshot, List<CiUnderwritingFact> facts) {
     }
@@ -851,8 +853,10 @@ public class UnderwritingFactSnapshotBuilder {
         }
         List<com.los.core.creditintelligence.bureau.domain.CiBureauInquiry> inquiries =
                 inquiryRepository.findByBureauReportId(reportId);
+        var summary = reportSummaryRepository.findById(reportId).orElse(null);
+        var scoring = scoringElementRepository.findByBureauReportIdOrderBySeqNoAsc(reportId);
         var bundle = com.los.core.creditintelligence.policystudio.parameters.execution.CanonicalFactMaterializer
-                .fromBureauEntities(canonical.report(), tradelines, histories, inquiries);
+                .fromBureauEntities(canonical.report(), tradelines, histories, inquiries, summary, scoring);
         Map<String, Object> baseMeta = new LinkedHashMap<>();
         baseMeta.put("originService", "CanonicalFactMaterializer");
         baseMeta.put("wave", "WAVE_3");
@@ -886,6 +890,44 @@ public class UnderwritingFactSnapshotBuilder {
                     FactClassification.EXTRACTED.name(),
                     bureauSourceId != null ? List.of(bureauSourceId) : List.of(),
                     m));
+            pending.add(fact(
+                    "bureau.inquiry",
+                    "COLLECTION", bundle.inquiries(),
+                    FactClassification.EXTRACTED.name(),
+                    bureauSourceId != null ? List.of(bureauSourceId) : List.of(),
+                    m));
+        }
+        if (bundle.scoringSourcePresent() && bundle.scoringElements() != null) {
+            Map<String, Object> m = new LinkedHashMap<>(baseMeta);
+            m.put("rowCount", bundle.scoringElements().size());
+            pending.add(fact(
+                    "bureau.scoring_element.code",
+                    "LIST",
+                    bundle.scoringElements().stream().map(r -> r.get("code")).filter(java.util.Objects::nonNull).toList(),
+                    FactClassification.EXTRACTED.name(),
+                    bureauSourceId != null ? List.of(bureauSourceId) : List.of(),
+                    m));
+            pending.add(fact(
+                    "bureau.scoring_element.description",
+                    "LIST",
+                    bundle.scoringElements().stream().map(r -> r.get("description")).filter(java.util.Objects::nonNull).toList(),
+                    FactClassification.EXTRACTED.name(),
+                    bureauSourceId != null ? List.of(bureauSourceId) : List.of(),
+                    m));
+        }
+        if (bundle.exactScalars() != null) {
+            for (Map.Entry<String, Object> e : bundle.exactScalars().entrySet()) {
+                if (e.getKey() == null || e.getValue() == null) {
+                    continue;
+                }
+                pending.add(fact(
+                        e.getKey(),
+                        "SCALAR",
+                        e.getValue(),
+                        FactClassification.EXTRACTED.name(),
+                        bureauSourceId != null ? List.of(bureauSourceId) : List.of(),
+                        new LinkedHashMap<>(baseMeta)));
+            }
         }
     }
 

@@ -40,6 +40,8 @@ public class BureauNormalizationService {
     private final CiBureauTradelineRepository tradelineRepository;
     private final CiBureauPaymentHistoryRepository paymentHistoryRepository;
     private final CiBureauInquiryRepository inquiryRepository;
+    private final CiBureauReportSummaryRepository reportSummaryRepository;
+    private final CiBureauScoringElementRepository scoringElementRepository;
     private final CiBureauDuplicateGroupRepository duplicateGroupRepository;
     private final SourceRegistryService sourceRegistryService;
     private final BureauProductTaxonomyService taxonomyService;
@@ -110,9 +112,6 @@ public class BureauNormalizationService {
         }
 
         LocalDate reportDate = parseDate(str(data.get("reportDate")));
-        if (reportDate == null) {
-            reportDate = LocalDate.now();
-        }
 
         Integer score = null;
         Object scoreObj = data.get("creditScore");
@@ -155,7 +154,7 @@ public class BureauNormalizationService {
                 .providerReportRef(transactionId)
                 .reportDate(reportDate)
                 .score(score)
-                .scoreType(str(data.get("scoreVersion")))
+                .scoreType(firstNonBlank(str(data.get("scoreVersion")), str(data.get("scoreName"))))
                 .qualityStatus("OK")
                 .parserVersion(str(data.getOrDefault("parserVersion", EquifaxBureauAccountExtractor.PARSER_VERSION)))
                 .normalizerVersion(NORMALIZER_VERSION)
@@ -198,29 +197,139 @@ public class BureauNormalizationService {
                     tradelines.add(p.tradeline());
                 }
             }
+        }
 
-            if (data.get("inquiries") instanceof List<?> inquiries && persistTradelines) {
-                for (Object inqObj : inquiries) {
-                    if (!(inqObj instanceof Map<?, ?> raw)) {
-                        continue;
-                    }
-                    @SuppressWarnings("unchecked")
-                    Map<String, Object> inq = (Map<String, Object>) raw;
-                    inquiryRepository.save(CiBureauInquiry.builder()
-                            .bureauReportId(report.getId())
-                            .inquiryDate(parseDate(str(inq.get("inquiryDate"))))
-                            .memberName(str(inq.get("memberName")))
-                            .purpose(str(inq.get("purpose")))
-                            .amount(toBd(inq.get("amount")))
-                            .sourceReference("report:" + report.getId())
-                            .metadata(Map.of())
-                            .build());
-                }
-            }
+        if (persistTradelines) {
+            persistInquiries(report.getId(), data);
+            persistScoringElements(report.getId(), data);
+            persistProviderSummary(report, data);
         }
 
         List<CiMetricResult> metrics = metricService.computeAndPersist(report, tradelines, data);
         return new NormalizationResult(report, tradelines, metrics, false);
+    }
+
+    private void persistInquiries(UUID reportId, Map<String, Object> data) {
+        if (!(data.get("inquiries") instanceof List<?> inquiries)) {
+            return;
+        }
+        for (Object inqObj : inquiries) {
+            if (!(inqObj instanceof Map<?, ?> raw)) {
+                continue;
+            }
+            @SuppressWarnings("unchecked")
+            Map<String, Object> inq = (Map<String, Object>) raw;
+            inquiryRepository.save(CiBureauInquiry.builder()
+                    .bureauReportId(reportId)
+                    .inquiryDate(parseDate(str(inq.get("inquiryDate"))))
+                    .memberName(str(inq.get("memberName")))
+                    .purpose(str(inq.get("purpose")))
+                    .amount(toBd(inq.get("amount")))
+                    .inquiryTime(str(inq.get("inquiryTime")))
+                    .sourceReference("report:" + reportId)
+                    .metadata(Map.of())
+                    .build());
+        }
+    }
+
+    private void persistScoringElements(UUID reportId, Map<String, Object> data) {
+        if (!(data.get("scoringElements") instanceof List<?> elements)) {
+            return;
+        }
+        int seq = 0;
+        for (Object elObj : elements) {
+            if (!(elObj instanceof Map<?, ?> raw)) {
+                continue;
+            }
+            @SuppressWarnings("unchecked")
+            Map<String, Object> el = (Map<String, Object>) raw;
+            scoringElementRepository.save(CiBureauScoringElement.builder()
+                    .bureauReportId(reportId)
+                    .seqNo(seq++)
+                    .code(str(el.get("code")))
+                    .description(str(el.get("description")))
+                    .build());
+        }
+    }
+
+    private void persistProviderSummary(CiBureauReport report, Map<String, Object> data) {
+        Map<String, String> accounts = stringMap(data.get("nativeAccountSummary"));
+        Map<String, String> enquiry = stringMap(data.get("nativeEnquirySummary"));
+        Map<String, String> recent = stringMap(data.get("nativeRecentActivities"));
+        Map<String, String> other = stringMap(data.get("nativeOtherKeyInd"));
+        String scoreName = firstNonBlank(str(data.get("scoreName")), str(data.get("scoreVersion")));
+        CiBureauReportSummary summary = CiBureauReportSummary.builder()
+                .bureauReportId(report.getId())
+                .hitCode(str(data.get("hitCode")))
+                .successCode(str(data.get("successCode")))
+                .reportOrderNo(str(data.get("reportOrderNo")))
+                .scoreName(scoreName)
+                .accountCount(toInt(firstNonBlank(accounts.get("NoOfAccounts"), accounts.get("noOfAccounts"))))
+                .activeAccountCount(toInt(accounts.get("NoOfActiveAccounts")))
+                .writeoffCount(toInt(accounts.get("NoOfWriteOffs")))
+                .totalPastDue(toBd(accounts.get("TotalPastDue")))
+                .mostSevereStatus24m(firstNonBlank(accounts.get("MostSevereStatusWithIn24Months"),
+                        accounts.get("MostSevereStatusWithin24Months")))
+                .totalBalance(toBd(accounts.get("TotalBalanceAmount")))
+                .totalSanction(toBd(accounts.get("TotalSanctionAmount")))
+                .totalCreditLimit(toBd(accounts.get("TotalCreditLimit")))
+                .totalMonthlyPayment(toBd(accounts.get("TotalMonthlyPaymentAmount")))
+                .highestSanction(toBd(accounts.get("SingleHighestSanctionAmount")))
+                .highestBalance(toBd(accounts.get("SingleHighestBalance")))
+                .averageOpenBalance(toBd(accounts.get("AverageOpenBalance")))
+                .ageOfOldestTradeMonths(toInt(other.get("AgeOfOldestTrade")))
+                .openTradeCount(toInt(other.get("NumberOfOpenTrades")))
+                .pastDueAccountCount(toInt(accounts.get("NoOfPastDueAccounts")))
+                .zeroBalanceAccountCount(toInt(accounts.get("NoOfZeroBalanceAccounts")))
+                .highestCredit(toBd(accounts.get("SingleHighestCredit")))
+                .totalHighCredit(toBd(accounts.get("TotalHighCredit")))
+                .enquiryTotal(toInt(enquiry.get("Total")))
+                .enquiryPast30d(toInt(enquiry.get("Past30Days")))
+                .enquiryPast12m(toInt(enquiry.get("Past12Months")))
+                .enquiryPast24m(toInt(enquiry.get("Past24Months")))
+                .enquiryRecentDate(parseDate(enquiry.get("Recent")))
+                .recentAccountsOpened90d(toInt(recent.get("AccountsOpened")))
+                .recentAccountsUpdated90d(toInt(recent.get("AccountsUpdated")))
+                .recentAccountsDelinquent90d(toInt(firstNonBlank(
+                        recent.get("AccountsDeliquent"), recent.get("AccountsDelinquent"))))
+                .recentInquiries90d(toInt(recent.get("TotalInquiries")))
+                .reportTime(str(data.get("reportTime")))
+                .enquirySummaryPurpose(enquiry.get("Purpose"))
+                .allLinesEverWritten(toBd(other.get("AllLinesEVERWritten")))
+                .allLinesEverWritten9m(toBd(other.get("AllLinesEVERWrittenIn9Months")))
+                .allLinesEverWritten6m(toBd(other.get("AllLinesEVERWrittenIn6Months")))
+                .recentAccountNarrative(accounts.get("RecentAccount"))
+                .oldestAccountNarrative(accounts.get("OldestAccount"))
+                .build();
+        reportSummaryRepository.save(summary);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, String> stringMap(Object raw) {
+        if (!(raw instanceof Map<?, ?> m) || m.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> out = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> e : m.entrySet()) {
+            if (e.getKey() == null || e.getValue() == null) {
+                continue;
+            }
+            String v = String.valueOf(e.getValue()).trim();
+            if (!v.isEmpty()) {
+                out.put(String.valueOf(e.getKey()), v);
+            }
+        }
+        return out;
+    }
+
+    private static String firstNonBlank(String a, String b) {
+        if (a != null && !a.isBlank()) {
+            return a;
+        }
+        if (b != null && !b.isBlank()) {
+            return b;
+        }
+        return null;
     }
 
     private PendingTradeline buildPendingTradeline(
@@ -269,6 +378,24 @@ public class BureauNormalizationService {
         }
         meta.put("taxonomyKnown", tax.known());
 
+        Boolean secured = tax.secured();
+        String collateralType = str(acct.get("CollateralType"));
+        BigDecimal collateralValue = toBd(acct.get("CollateralValue"));
+        if (collateralType != null && collateralValue != null && collateralValue.compareTo(BigDecimal.ZERO) > 0) {
+            if (!Boolean.TRUE.equals(secured)) {
+                meta.put("securedOverride", "COLLATERAL_EVIDENCE");
+            }
+            secured = true;
+        }
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> historyMonths = acct.get("HistoryMonths") instanceof List<?> hl
+                ? (List<Map<String, Object>>) hl : List.of();
+        Boolean wilful = parseTriStateYesNo(str(acct.get("WilfulDefault")));
+        if (wilful == null) {
+            wilful = wilfulFromHistory(historyMonths);
+        }
+
         String quality = "OK";
         if ("WARNING".equals(live.qualityFlag())) {
             quality = "WARNING";
@@ -277,9 +404,6 @@ public class BureauNormalizationService {
             quality = "PARTIAL";
         }
 
-        @SuppressWarnings("unchecked")
-        List<Map<String, Object>> historyMonths = acct.get("HistoryMonths") instanceof List<?> hl
-                ? (List<Map<String, Object>>) hl : List.of();
         String paymentHistoryRaw = str(acct.get("PaymentHistory"));
         if (historyMonths.isEmpty() && paymentHistoryRaw != null) {
             quality = "PARTIAL";
@@ -294,26 +418,32 @@ public class BureauNormalizationService {
                 .accountTypeRaw(productDesc != null ? productDesc : productCode)
                 .productCategory(tax.category().name())
                 .ownershipType(str(acct.get("Ownership")))
-                .secured(tax.secured())
+                .secured(secured)
                 .revolving(tax.revolving())
                 .openedDate(parseDate(str(acct.get("DateOpened"))))
                 .closedDate(parseDate(str(acct.get("DateClosed"))))
                 .lastReportedDate(lastReported)
                 .sanctionedAmount(toBd(acct.get("SanctionAmount")))
-                .highCredit(toBd(acct.get("HighCredit")))
+                .highCredit(firstBd(acct, "HighCredit", "CreditLimit"))
                 .currentBalance(balance)
                 .overdueAmount(toBd(acct.get("PastDueAmount")))
                 .emiAmount(firstBd(acct, "InstallmentAmount", "EMI"))
                 .interestRate(toBd(acct.get("InterestRate")))
                 .tenureMonths(toInt(acct.get("RepaymentTenure")))
                 .assetClassification(str(acct.get("AssetClassification")))
-                .suitFiled(isYes(str(acct.get("SuitFiledStatus"))))
+                .suitFiled(parseTriStateYesNo(str(acct.get("SuitFiledStatus"))))
+                .wilfulDefault(wilful)
                 .writtenOffAmount(writtenOffAmt)
                 .settlementAmount(settlementAmt)
                 .settled(settled)
                 .writtenOff(writtenOff)
-                .collateralType(str(acct.get("CollateralType")))
-                .collateralValue(toBd(acct.get("CollateralValue")))
+                .collateralType(collateralType)
+                .collateralValue(collateralValue)
+                .lastPaymentAmount(toBd(acct.get("LastPayment")))
+                .lastPaymentDate(parseDate(str(acct.get("LastPaymentDate"))))
+                .termFrequency(str(acct.get("TermFrequency")))
+                .disputeCode(str(acct.get("DisputeCode")))
+                .closureReason(str(acct.get("Reason")))
                 .accountStatus(status)
                 .dataQualityStatus(quality)
                 .isLive(live.live())
@@ -429,6 +559,8 @@ public class BureauNormalizationService {
                         .status(dpd != null && dpd > 0 ? "DPD" : "CURRENT")
                         .providerRawStatus(rawStatus)
                         .estimated(false)
+                        .suitFiledStatus(blankToNull(str(m.get("SuitFiledStatus"))))
+                        .assetClassificationStatus(blankToNull(str(m.get("AssetClassificationStatus"))))
                         .sourceReference("History48Months")
                         .build());
             }
@@ -504,6 +636,48 @@ public class BureauNormalizationService {
 
     private static boolean isYes(String s) {
         return s != null && (s.equalsIgnoreCase("Yes") || s.equalsIgnoreCase("Y") || s.equalsIgnoreCase("true"));
+    }
+
+    /** Yes → true, No → false, missing / * / unknown → null. Never invent false. */
+    private static Boolean parseTriStateYesNo(String s) {
+        if (s == null || s.isBlank() || "*".equals(s.trim())) {
+            return null;
+        }
+        if (isYes(s)) {
+            return true;
+        }
+        if (s.equalsIgnoreCase("No") || s.equalsIgnoreCase("N") || s.equalsIgnoreCase("false")) {
+            return false;
+        }
+        return null;
+    }
+
+    private static Boolean wilfulFromHistory(List<Map<String, Object>> historyMonths) {
+        if (historyMonths == null || historyMonths.isEmpty()) {
+            return null;
+        }
+        boolean sawToken = false;
+        for (Map<String, Object> m : historyMonths) {
+            String st = str(m.get("PaymentStatus"));
+            if (st == null) {
+                continue;
+            }
+            String u = st.toUpperCase(Locale.ROOT);
+            if (u.contains("WDF") || u.contains("WILFUL")) {
+                sawToken = true;
+                if (!u.contains("N") && !u.equals("000")) {
+                    return true;
+                }
+            }
+        }
+        return sawToken ? false : null;
+    }
+
+    private static String blankToNull(String s) {
+        if (s == null || s.isBlank() || "*".equals(s.trim())) {
+            return s != null && "*".equals(s.trim()) ? "*" : null;
+        }
+        return s;
     }
 
     private static LocalDate parseDate(String raw) {

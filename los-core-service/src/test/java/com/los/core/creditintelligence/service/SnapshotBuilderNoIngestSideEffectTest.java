@@ -69,7 +69,9 @@ class SnapshotBuilderNoIngestSideEffectTest {
                 reconciliationIngestionService,
                 mock(com.los.core.creditintelligence.bureau.repository.CiBureauTradelineRepository.class),
                 mock(com.los.core.creditintelligence.bureau.repository.CiBureauPaymentHistoryRepository.class),
-                mock(com.los.core.creditintelligence.bureau.repository.CiBureauInquiryRepository.class));
+                mock(com.los.core.creditintelligence.bureau.repository.CiBureauInquiryRepository.class),
+                mock(com.los.core.creditintelligence.bureau.repository.CiBureauReportSummaryRepository.class),
+                mock(com.los.core.creditintelligence.bureau.repository.CiBureauScoringElementRepository.class));
 
         org.mockito.Mockito.lenient().when(bureauReportRepository.findFirstByApplicationIdOrderByCreatedAtDesc(any()))
                 .thenReturn(Optional.empty());

@@ -77,4 +77,19 @@ class BureauProductTaxonomyServiceTest {
         assertTrue(r.revolving());
         assertFalse(r.secured());
     }
+
+    @Test
+    void resolvesHyphenAndEnDashAccountTypeVariants() {
+        service.seedCache("EQUIFAX", BureauProductTaxonomyService.EQUIFAX_TAXONOMY_V1, List.of(
+                CiBureauProductMapping.builder()
+                        .providerCode("EQUIFAX").providerProductCode(null)
+                        .providerProductDesc("Business Loan - General")
+                        .canonicalCategory("PERSONAL_LOAN").secured(false).revolving(false)
+                        .mappingVersion(BureauProductTaxonomyService.EQUIFAX_TAXONOMY_V1).build()
+        ));
+        var hyphen = service.resolve("EQUIFAX", null, "Business Loan - General");
+        var enDash = service.resolve("EQUIFAX", null, "Business Loan – General");
+        assertEquals(hyphen.category(), enDash.category());
+        assertEquals(BureauProductCategory.PERSONAL_LOAN, enDash.category());
+    }
 }

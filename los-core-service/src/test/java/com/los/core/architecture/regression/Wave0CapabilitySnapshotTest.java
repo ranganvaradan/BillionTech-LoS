@@ -2,6 +2,7 @@ package com.los.core.architecture.regression;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import com.los.core.creditintelligence.policystudio.parameters.GacatCatalogueSeed;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
@@ -36,14 +37,14 @@ class Wave0CapabilitySnapshotTest {
             mapper.writeValue(committed.toFile(), snapshot);
         }
 
-        assertThat(snapshot.get("totalParameters")).isEqualTo(169);
+        assertThat(snapshot.get("totalParameters")).isEqualTo(GacatCatalogueSeed.all().size());
         assertThat((Integer) snapshot.get("policyTestCapableCount")).isGreaterThan(0);
         assertThat((Integer) snapshot.get("w6CapableCount")).isGreaterThan(0);
         assertThat((Integer) snapshot.get("underwritingCapableCount")).isGreaterThan(0);
 
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> params = (List<Map<String, Object>>) snapshot.get("parameters");
-        assertThat(params).hasSize(169);
+        assertThat(params).hasSize(GacatCatalogueSeed.all().size());
 
         // MUST_PRESERVE: catalogue flags must not equal capability for overdue unsupported
         Map<String, Object> cc = params.stream()

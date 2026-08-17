@@ -7,6 +7,8 @@ import com.los.core.creditintelligence.bureau.domain.CiBureauTradeline;
 import com.los.core.creditintelligence.bureau.repository.CiBureauInquiryRepository;
 import com.los.core.creditintelligence.bureau.repository.CiBureauPaymentHistoryRepository;
 import com.los.core.creditintelligence.bureau.repository.CiBureauReportRepository;
+import com.los.core.creditintelligence.bureau.repository.CiBureauReportSummaryRepository;
+import com.los.core.creditintelligence.bureau.repository.CiBureauScoringElementRepository;
 import com.los.core.creditintelligence.bureau.repository.CiBureauTradelineRepository;
 import com.los.core.creditintelligence.domain.CiFactSnapshot;
 import com.los.core.creditintelligence.domain.CiUnderwritingFact;
@@ -43,6 +45,8 @@ public class W6EvaluationContextFactory {
     private final CiBureauTradelineRepository tradelineRepository;
     private final CiBureauPaymentHistoryRepository paymentHistoryRepository;
     private final CiBureauInquiryRepository inquiryRepository;
+    private final CiBureauReportSummaryRepository reportSummaryRepository;
+    private final CiBureauScoringElementRepository scoringElementRepository;
 
     public EvaluationContext build(
             UUID applicationId,
@@ -156,7 +160,10 @@ public class W6EvaluationContextFactory {
             }
         }
         List<CiBureauInquiry> inquiries = inquiryRepository.findByBureauReportId(report.getId());
-        return CanonicalFactMaterializer.fromBureauEntities(report, tradelines, histories, inquiries);
+        var summary = reportSummaryRepository.findById(report.getId()).orElse(null);
+        var scoring = scoringElementRepository.findByBureauReportIdOrderBySeqNoAsc(report.getId());
+        return CanonicalFactMaterializer.fromBureauEntities(
+                report, tradelines, histories, inquiries, summary, scoring);
     }
 
     /**

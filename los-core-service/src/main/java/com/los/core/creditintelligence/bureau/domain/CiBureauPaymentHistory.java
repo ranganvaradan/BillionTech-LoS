@@ -40,6 +40,12 @@ public class CiBureauPaymentHistory {
     @Builder.Default
     private boolean estimated = false;
 
+    @Column(name = "suit_filed_status", length = 40)
+    private String suitFiledStatus;
+
+    @Column(name = "asset_classification_status", length = 40)
+    private String assetClassificationStatus;
+
     @Column(name = "source_reference", length = 300)
     private String sourceReference;
 

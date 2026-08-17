@@ -40,6 +40,9 @@ public class CiBureauInquiry {
     @Column(name = "amount", precision = 18, scale = 2)
     private BigDecimal amount;
 
+    @Column(name = "inquiry_time", length = 16)
+    private String inquiryTime;
+
     @Column(name = "source_reference", length = 300)
     private String sourceReference;
 
