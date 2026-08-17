@@ -29,6 +29,8 @@ export type PolicyStudioOperandPresentation = {
   showManualResolver: boolean
   showMapResolver: boolean
   resolverActionLabel: string | null
+  /** Inner setup-flow hint (e.g. Review proposed calculation) — not the primary action */
+  setupFlowHint: string | null
   explanation: string | null
   capability: boolean
 }
@@ -100,6 +102,7 @@ export function derivePolicyStudioOperandPresentation(
       showManualResolver: false,
       showMapResolver: false,
       resolverActionLabel: null,
+      setupFlowHint: null,
       explanation: 'Source ingredient — calculation setup not applicable',
       capability,
     }
@@ -114,6 +117,7 @@ export function derivePolicyStudioOperandPresentation(
       showManualResolver: false,
       showMapResolver: true,
       resolverActionLabel: 'Resolve parameter',
+      setupFlowHint: null,
       explanation: null,
       capability: false,
     }
@@ -128,6 +132,7 @@ export function derivePolicyStudioOperandPresentation(
       showManualResolver: true,
       showMapResolver: false,
       resolverActionLabel: 'Provide manual input',
+      setupFlowHint: null,
       explanation: truth.calculationExplanation ? String(truth.calculationExplanation) : null,
       capability: true,
     }
@@ -142,41 +147,52 @@ export function derivePolicyStudioOperandPresentation(
       showManualResolver: false,
       showMapResolver: false,
       resolverActionLabel: null,
+      setupFlowHint: null,
       explanation: truth.calculationExplanation ? String(truth.calculationExplanation) : null,
       capability: true,
     }
   }
 
-  // Not executable — calculation setup path
-  if (opts?.proposalReadyForReview) {
+  // CALCULATION-SETUP-ACTION-INVARIANT: outer primary action is always Set up calculation
+  // when calculation is not defined. Proposal review / clarification live inside that flow.
+  const calcSetup =
+    readinessReason === 'CALCULATION_NOT_DEFINED' ||
+    readinessReason === 'CALCULATION_INVALID' ||
+    primaryStatus === 'CALCULATION_NEEDS_SETUP' ||
+    (op.calculationRequired === true &&
+      readinessReason !== 'DEPENDENCY_NOT_READY' &&
+      readinessReason !== 'MANUAL_INPUT' &&
+      readinessReason !== 'SOURCE_NOT_INTEGRATED' &&
+      readinessReason !== 'RAW_FIELD_NOT_AVAILABLE')
+
+  if (calcSetup || opts?.proposalReadyForReview) {
     return {
-      case: 'REVIEW_PROPOSAL',
+      case: 'SETUP_CALCULATION',
       parameterLabel: primary.label || 'Calculation not defined',
       parameterState: 'NOT_READY',
       showCalculationResolver: true,
       showManualResolver: false,
       showMapResolver: false,
-      resolverActionLabel: 'Review proposed calculation',
-      explanation: 'A proposed calculation is ready for review — not executable until accepted.',
+      resolverActionLabel: 'Set up calculation',
+      setupFlowHint: opts?.proposalReadyForReview ? 'Review proposed calculation' : null,
+      explanation: opts?.proposalReadyForReview
+        ? 'A proposed calculation is ready for review inside Set up calculation — not executable until accepted.'
+        : truth.calculationExplanation != null
+          ? String(truth.calculationExplanation)
+          : 'Parameter is not ready because its calculation is not defined.',
       capability: false,
     }
   }
 
-  const calcSetup =
-    readinessReason === 'CALCULATION_NOT_DEFINED' ||
-    readinessReason === 'CALCULATION_INVALID' ||
-    readinessReason === 'DEPENDENCY_NOT_READY' ||
-    primaryStatus === 'NOT_READY' ||
-    primaryStatus === 'CALCULATION_NEEDS_SETUP'
-
   return {
-    case: calcSetup ? 'SETUP_CALCULATION' : 'SETUP_CALCULATION',
+    case: 'CHANGE_PARAMETER',
     parameterLabel: primary.label || 'Not ready',
-    parameterState: 'NOT_READY',
-    showCalculationResolver: calcSetup,
+    parameterState: primaryStatus || 'NOT_READY',
+    showCalculationResolver: false,
     showManualResolver: false,
     showMapResolver: false,
-    resolverActionLabel: calcSetup ? 'Set up calculation' : null,
+    resolverActionLabel: truth.nextAction != null ? String(truth.nextAction) : null,
+    setupFlowHint: null,
     explanation:
       truth.calculationExplanation != null
         ? String(truth.calculationExplanation)

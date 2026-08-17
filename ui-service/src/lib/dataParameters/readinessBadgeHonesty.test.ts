@@ -63,7 +63,7 @@ describe('POLICY-DERIVED-CALCULATION-BUSINESS-ASSISTANT-1', () => {
       resolve(__dirname, '../../components/dataParameters/SuggestCalculationWorkflow.tsx'),
       'utf8',
     )
-    expect(src).toContain('Calculation needs setup')
+    expect(src).toContain('SETUP_CALCULATION_ACTION')
     expect(src).toContain('Work it out for me')
     expect(src).toContain('Use this calculation')
     expect(src).toContain('I can calculate this')
@@ -155,7 +155,7 @@ describe('POLICY-DERIVED-CALCULATION-BUSINESS-ASSISTANT-1', () => {
     )
     expect(src).toContain('Parameters used by this policy')
     expect(src).not.toContain('Policy parameter inventory (GACAT)')
-    expect(src).toContain('Complete setup')
+    expect(src).toContain('SETUP_CALCULATION_ACTION')
     expect(src).toContain('Advanced details')
   })
 

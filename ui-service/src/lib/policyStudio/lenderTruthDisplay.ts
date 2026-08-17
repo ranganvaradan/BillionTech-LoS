@@ -14,9 +14,52 @@ export type CanonicalTruthLike = {
   certificationLabel?: string | null
   executionLabel?: string | null
   parameterClassLabel?: string | null
+  presentation?: {
+    allowedActions?: unknown
+    businessReadinessReason?: string | null
+    primaryStatus?: string | null
+  } | null
   liveUseDisplay?: { label?: string; status?: string; available?: boolean } | null
   execution?: { capability?: boolean; status?: string | null; valueAvailable?: boolean } | null
   certification?: { certificationStatus?: string; status?: string } | null
+}
+
+/** Canonical primary lender action for missing calculation definitions. */
+export const SETUP_CALCULATION_ACTION = 'Set up calculation'
+
+/**
+ * Sole consumer-facing gate for Set up calculation.
+ * Do NOT use legacy parameterSupport / SUPPORTED_DERIVED as authority.
+ */
+export function requiresCalculationSetupAction(
+  truth: CanonicalTruthLike | null | undefined,
+  extras?: {
+    calculationRequired?: boolean | null
+    allowedActions?: unknown
+    businessReadinessReason?: string | null
+    nextAction?: string | null
+  },
+): boolean {
+  const reason = String(
+    extras?.businessReadinessReason ??
+      truth?.businessReadinessReason ??
+      truth?.presentation?.businessReadinessReason ??
+      '',
+  )
+  if (reason === 'CALCULATION_NOT_DEFINED' || reason === 'CALCULATION_INVALID') {
+    return true
+  }
+  const next = String(extras?.nextAction ?? truth?.nextAction ?? '')
+  if (next === SETUP_CALCULATION_ACTION) {
+    return true
+  }
+  const actionsRaw = extras?.allowedActions ?? truth?.presentation?.allowedActions
+  const actions = Array.isArray(actionsRaw) ? actionsRaw.map(String) : []
+  if (actions.includes(SETUP_CALCULATION_ACTION)) {
+    return true
+  }
+  // Explicit calculationRequired from CPS calculation.required — not legacy support buckets
+  return extras?.calculationRequired === true
 }
 
 /** Prefer backend primaryStatusLabel; never map catalogue PRODUCTION_READY to live. */

@@ -5,6 +5,7 @@ import {
 } from '@/components/policy/policyParameterInventoryState'
 import { SuggestCalculationWorkflow } from '@/components/dataParameters/SuggestCalculationWorkflow'
 import { lenderPrimaryStatus } from '@/lib/policyStudio/lenderUxCopy'
+import { requiresCalculationSetupAction, SETUP_CALCULATION_ACTION } from '@/lib/policyStudio/lenderTruthDisplay'
 import { ApiError } from '@/api/http'
 import { fetchPolicyParameterInventory } from '@/api/dp3PolicyGraph'
 import { useEffect, useState } from 'react'
@@ -82,12 +83,21 @@ export function PolicyParameterInventoryPanel({ documentId }: { documentId: stri
     unresolvedCount,
   })
   const unresolved = unresolvedTokens(rows)
-  const needsSetup = rows.filter(
-    (r) =>
-      r.primaryStatus === 'NOT_READY' ||
-      r.primaryStatus === 'CALCULATION_NEEDS_SETUP' ||
-      r.businessReadiness === 'NOT_READY' ||
-      (r.calculationRequired === true && !r.primaryStatusLabel),
+  const needsSetup = rows.filter((r) =>
+    requiresCalculationSetupAction(
+      {
+        primaryStatus: r.primaryStatus,
+        primaryStatusLabel: r.primaryStatusLabel,
+        businessReadiness: r.businessReadiness,
+        businessReadinessReason: r.businessReadinessReason,
+        nextAction: r.nextAction,
+      },
+      {
+        calculationRequired: r.calculationRequired === true,
+        businessReadinessReason: r.businessReadinessReason,
+        nextAction: r.nextAction,
+      },
+    ),
   ).length
 
   return (
@@ -156,15 +166,17 @@ export function PolicyParameterInventoryPanel({ documentId }: { documentId: stri
                   productionReady: r.productionReady === true,
                   unresolved: !r.canonicalParameterId,
                 })
-                const setupAction =
-                  r.primaryStatus === 'NOT_READY' ||
-                  r.primaryStatus === 'CALCULATION_NEEDS_SETUP' ||
-                  r.businessReadiness === 'NOT_READY' ||
-                  (r.calculationRequired === true &&
-                    r.primaryStatus !== 'READY' &&
-                    r.primaryStatus !== 'READY_TO_TEST' &&
-                    r.primaryStatus !== 'CAN_CALCULATE_WHEN_DATA_AVAILABLE' &&
-                    r.primaryStatus !== 'APPROVED_FOR_LIVE_USE')
+                const setupAction = requiresCalculationSetupAction({
+                  primaryStatus: r.primaryStatus,
+                  primaryStatusLabel: r.primaryStatusLabel,
+                  businessReadiness: r.businessReadiness,
+                  businessReadinessReason: r.businessReadinessReason,
+                  nextAction: r.nextAction,
+                }, {
+                  calculationRequired: r.calculationRequired === true,
+                  businessReadinessReason: r.businessReadinessReason,
+                  nextAction: r.nextAction,
+                })
                 return (
                   <tr
                     key={`${r.canonicalParameterId ?? r.originalToken}-${i}`}
@@ -208,6 +220,7 @@ export function PolicyParameterInventoryPanel({ documentId }: { documentId: stri
                         <button
                           type="button"
                           className="text-[11px] font-medium text-sky-700 underline"
+                          data-testid="inventory-setup-calculation"
                           onClick={() =>
                             setActiveCalcId(
                               activeCalcId === r.canonicalParameterId
@@ -216,7 +229,7 @@ export function PolicyParameterInventoryPanel({ documentId }: { documentId: stri
                             )
                           }
                         >
-                          {r.nextAction || 'Complete setup'}
+                          {SETUP_CALCULATION_ACTION}
                         </button>
                       ) : (
                         <span className="text-slate-400">—</span>
@@ -278,6 +291,10 @@ export function PolicyParameterInventoryPanel({ documentId }: { documentId: stri
             rows.find((r) => r.canonicalParameterId === activeCalcId)?.businessName || undefined
           }
           calculationRequired
+          businessReadinessReason={
+            rows.find((r) => r.canonicalParameterId === activeCalcId)?.businessReadinessReason
+          }
+          nextAction={SETUP_CALCULATION_ACTION}
           onChanged={reload}
         />
       ) : null}

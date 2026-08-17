@@ -55,20 +55,25 @@ describe('policyStudioResolverState golden readiness', () => {
     expect(p.showCalculationResolver).toBe(false)
   })
 
-  it('manual shows manual resolver', () => {
-    const p = derivePolicyStudioOperandPresentation({
-      primaryStatus: 'READY',
-      primaryStatusLabel: 'Needs manual input',
-      canonicalParameterState: {
-        primaryStatus: 'READY',
-        primaryStatusLabel: 'Needs manual input',
-        businessReadinessReason: 'MANUAL_INPUT',
-        execution: { capability: true },
-        semantic: { parameterClass: 'MANUAL_INPUT', calculationMode: 'MANUAL' },
+  it('proposal ready still exposes Set up calculation as primary outer action', () => {
+    const p = derivePolicyStudioOperandPresentation(
+      {
+        canonicalParameterId: 'bureau.cc_overdue_amount',
+        canonicalParameterState: {
+          primaryStatus: 'NOT_READY',
+          primaryStatusLabel: 'Calculation not defined',
+          businessReadiness: 'NOT_READY',
+          businessReadinessReason: 'CALCULATION_NOT_DEFINED',
+          execution: { capability: false },
+          semantic: { parameterClass: 'BUSINESS_PARAMETER', calculationMode: 'AUTHORED' },
+        },
+        calculationRequired: true,
       },
-    })
-    expect(p.case).toBe('MANUAL_INPUT')
-    expect(p.showManualResolver).toBe(true)
-    expect(p.showCalculationResolver).toBe(false)
+      { proposalReadyForReview: true },
+    )
+    expect(p.case).toBe('SETUP_CALCULATION')
+    expect(p.resolverActionLabel).toBe('Set up calculation')
+    expect(p.setupFlowHint).toBe('Review proposed calculation')
+    expect(p.showCalculationResolver).toBe(true)
   })
 })

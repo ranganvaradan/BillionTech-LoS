@@ -14,12 +14,20 @@ import {
   formatCanCalculateNarrative,
   sanitizeLenderTechnicalPhrase,
 } from '@/lib/policyStudio/lenderUxCopy'
+import {
+  SETUP_CALCULATION_ACTION,
+  requiresCalculationSetupAction,
+} from '@/lib/policyStudio/lenderTruthDisplay'
 
 type Props = {
   canonicalParameterId: string
   businessName?: string
   supportStatus?: string
   calculationRequired?: boolean
+  /** Canonical businessReadinessReason — sole setup authority with allowedActions/nextAction */
+  businessReadinessReason?: string | null
+  nextAction?: string | null
+  allowedActions?: unknown
   /** Already-implemented calculation: show How I'll calculate it + Accept/Change */
   knownExisting?: boolean
   existingExplanation?: string
@@ -59,6 +67,9 @@ export function SuggestCalculationWorkflow({
   businessName,
   supportStatus,
   calculationRequired,
+  businessReadinessReason,
+  nextAction,
+  allowedActions,
   knownExisting = false,
   existingExplanation,
   primitives = [],
@@ -68,8 +79,17 @@ export function SuggestCalculationWorkflow({
   onChanged,
   onMeaningAccepted,
 }: Props) {
+  // CALCULATION-SETUP-ACTION-INVARIANT: canonical readiness/actions own setup visibility.
+  // Legacy supportStatus is never sufficient alone to suppress setup when CALCULATION_NOT_DEFINED.
   const needsSetup =
-    calculationRequired === true ||
+    requiresCalculationSetupAction(
+      {
+        businessReadinessReason,
+        nextAction,
+        presentation: { allowedActions, businessReadinessReason },
+      },
+      { calculationRequired, allowedActions, businessReadinessReason, nextAction },
+    ) ||
     supportStatus === 'CALCULATION_NOT_IMPLEMENTED' ||
     supportStatus === 'SUPPORT_CALCULATION_NOT_IMPLEMENTED'
 
@@ -322,34 +342,30 @@ export function SuggestCalculationWorkflow({
           {needsSetup && phase === 'idle' ? (
             <>
               <div className="font-medium" data-testid="lender-calc-setup-title">
-                {resolverActionHint === 'Review proposed calculation'
-                  ? 'Review proposed calculation'
-                  : 'Calculation needs setup'}
+                {SETUP_CALCULATION_ACTION}
               </div>
               <p className="mt-1 text-xs leading-relaxed">
                 {resolverActionHint === 'Review proposed calculation'
-                  ? `A proposed calculation for “${displayName}” is ready for your review. It is not executable until you accept it.`
-                  : `I have related bureau or application data, but I need to understand what you mean by “${displayName}” before I can apply this rule.`}
+                  ? `A proposed calculation for “${displayName}” may be ready for review after you open setup. It is not executable until you accept it.`
+                  : `“${displayName}” is not ready because its calculation is not defined yet. Set up the calculation to continue.`}
               </p>
-              <label className="mt-3 block text-xs font-medium text-amber-950">
-                How should I calculate it?
-              </label>
-              <textarea
-                className="bt-input mt-1 min-h-[72px] text-xs"
-                placeholder="Describe it in your own words…"
-                value={businessDefinition}
-                onChange={(e) => setBusinessDefinition(e.target.value)}
-                data-testid="lender-business-definition"
-              />
-              <p className="mt-1 text-[11px] text-amber-800/90">Example: {LENDER_SETUP_EXAMPLE}</p>
               <button
                 type="button"
                 className="bt-btn bt-btn-primary bt-btn-sm mt-3"
                 disabled={busy}
-                onClick={() => void runResearch()}
+                onClick={() => {
+                  // Enter setup workflow; clarification / proposal review happen inside.
+                  if (resolverActionHint === 'Review proposed calculation') {
+                    setPhase('research')
+                    void runResearch()
+                    return
+                  }
+                  setPhase('change')
+                  setShowChangeSurface(true)
+                }}
                 data-testid="suggest-calculation-btn"
               >
-                Work it out for me
+                {SETUP_CALCULATION_ACTION}
               </button>
             </>
           ) : null}

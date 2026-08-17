@@ -839,7 +839,13 @@ export function CiPolicyRulesTab({
                                                 '',
                                             )}
                                             calculationRequired
-                                            resolverActionHint={presentation.resolverActionLabel}
+                                            businessReadinessReason={String(
+                                              asRecord(op.canonicalParameterState).businessReadinessReason ??
+                                                op.businessReadinessReason ??
+                                                '',
+                                            )}
+                                            nextAction={presentation.resolverActionLabel}
+                                            resolverActionHint={presentation.setupFlowHint}
                                             onChanged={() => {
                                               void onRefresh?.()
                                             }}

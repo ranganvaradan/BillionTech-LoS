@@ -20,7 +20,7 @@ import {
   sourceTypeLabel,
   type Dp1ListFilters,
 } from '@/lib/dataParameters/dp1Display'
-import { lenderPrimaryFromTruth, type CanonicalTruthLike } from '@/lib/policyStudio/lenderTruthDisplay'
+import { lenderPrimaryFromTruth, requiresCalculationSetupAction, type CanonicalTruthLike } from '@/lib/policyStudio/lenderTruthDisplay'
 import { SuggestCalculationWorkflow } from '@/components/dataParameters/SuggestCalculationWorkflow'
 
 function asList(v: unknown): unknown[] {
@@ -156,8 +156,13 @@ function ParameterCard({
       p.calculationSummary ??
       '',
   ).trim()
-  const needsSetup =
-    primaryLabel === 'Calculation needs setup' || primaryLabel === 'Needs manual input'
+  const calcSetup = requiresCalculationSetupAction({
+    primaryStatusLabel: primaryLabel,
+    businessReadinessReason: String(p.businessReadinessReason ?? truth.businessReadinessReason ?? ''),
+    nextAction: String(p.nextAction ?? truth.nextAction ?? ''),
+    presentation: asRecord(truth.presentation) as CanonicalTruthLike['presentation'],
+  })
+  const needsSetup = calcSetup || primaryLabel === 'Needs manual input'
   const advanced = asRecord(p.advanced)
   const cap = capabilityFromParameter(p)
   const id = String(p.id ?? '')
@@ -261,6 +266,25 @@ function ParameterDetailPanel({
   const design = asRecord(capability.policyDesign ?? parameter.policyDesign)
   const live = asRecord(capability.liveUse ?? parameter.liveUse)
   const support = asRecord(capability.parameterSupport ?? parameter.parameterSupport)
+  const truth = asRecord(parameter.canonicalTruth ?? parameter.canonicalParameterState)
+  const presentation = asRecord(truth.presentation)
+  const readinessReason = String(
+    parameter.businessReadinessReason ?? truth.businessReadinessReason ?? presentation.businessReadinessReason ?? '',
+  )
+  const nextAction = String(parameter.nextAction ?? truth.nextAction ?? '')
+  const calcSetup = requiresCalculationSetupAction(
+    {
+      businessReadinessReason: readinessReason,
+      nextAction,
+      presentation: presentation as CanonicalTruthLike['presentation'],
+    },
+    {
+      calculationRequired: parameter.calculationRequired === true,
+      allowedActions: presentation.allowedActions,
+      businessReadinessReason: readinessReason,
+      nextAction,
+    },
+  )
 
   return (
     <section
@@ -383,6 +407,10 @@ function ParameterDetailPanel({
           String,
         )}
         supportStatus={String(nestStatus(support) || support.status || '')}
+        calculationRequired={calcSetup}
+        businessReadinessReason={readinessReason}
+        nextAction={nextAction || null}
+        allowedActions={presentation.allowedActions}
       />
 
       <div className="grid gap-4 lg:grid-cols-2">

@@ -7,6 +7,7 @@ import {
   type ReviewRuleBody,
 } from '@/api/creditIntelligence'
 import { SuggestCalculationWorkflow } from '@/components/dataParameters/SuggestCalculationWorkflow'
+import { requiresCalculationSetupAction } from '@/lib/policyStudio/lenderTruthDisplay'
 
 function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {}
@@ -253,7 +254,21 @@ export function CiParameterResolverPanel({
                       : 'Needs review'}
                 </p>
               ) : null}
-              {(suggestion.calculationRequired === true ||
+              {(requiresCalculationSetupAction(
+                {
+                  businessReadinessReason: String(
+                    suggestion.businessReadinessReason ?? '',
+                  ),
+                  nextAction: String(suggestion.nextAction ?? ''),
+                },
+                {
+                  calculationRequired: suggestion.calculationRequired === true,
+                  businessReadinessReason: String(
+                    suggestion.businessReadinessReason ?? '',
+                  ),
+                  nextAction: String(suggestion.nextAction ?? ''),
+                },
+              ) ||
                 String(suggestion.executionState ?? '').includes('CALCULATION') ||
                 String(suggestion.supportStatus ?? '') === 'CALCULATION_NOT_IMPLEMENTED') &&
               suggestion.canonicalParameter ? (
@@ -261,6 +276,8 @@ export function CiParameterResolverPanel({
                   canonicalParameterId={String(suggestion.canonicalParameter)}
                   businessName={String(suggestion.businessName ?? suggestion.canonicalParameter)}
                   calculationRequired
+                  businessReadinessReason={String(suggestion.businessReadinessReason ?? '')}
+                  nextAction={String(suggestion.nextAction ?? 'Set up calculation')}
                 />
               ) : null}
               {suggestion.productionReady !== true && suggestion.policyTestReady === true ? (
