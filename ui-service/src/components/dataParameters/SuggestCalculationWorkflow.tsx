@@ -8,7 +8,6 @@ import {
 import { ApiError } from '@/api/http'
 import { DefineDerivedCalculationPanel } from '@/components/dataParameters/DefineDerivedCalculationPanel'
 import {
-  LENDER_SETUP_EXAMPLE,
   businessFacingInputLabels,
   formatCalculationResultLabel,
   formatCanCalculateNarrative,
