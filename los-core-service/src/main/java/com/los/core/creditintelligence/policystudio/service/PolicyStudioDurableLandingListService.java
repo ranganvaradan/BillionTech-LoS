@@ -3,6 +3,7 @@ package com.los.core.creditintelligence.policystudio.service;
 import com.los.core.creditintelligence.policystudio.domain.CiPolicyDocument;
 import com.los.core.creditintelligence.policystudio.domain.CiPolicyStudioSessionSnapshot;
 import com.los.core.creditintelligence.policystudio.graph.CiPolicyRuleGraph;
+import com.los.core.creditintelligence.policystudio.lifecycle.PolicyCanonicalLifecycleAuthority;
 import com.los.core.creditintelligence.policystudio.lifecycle.PolicyLifecycleService;
 import com.los.core.creditintelligence.policystudio.lifecycle.PolicyScopeSupport;
 import com.los.core.creditintelligence.policystudio.lifecycle.domain.CiPolicyApplicability;
@@ -141,39 +142,47 @@ public class PolicyStudioDurableLandingListService {
         row.put("documentVersion", docVersion == null ? 1 : docVersion);
         row.put("policyVersion", "v" + (docVersion == null ? 1 : docVersion));
 
-        String docStatus = document == null || document.getStatus() == null
-                ? "DRAFT" : document.getStatus();
-        String lifecycleStatus = null;
-        String approvalStatus = null;
+        String sessionStatus = null;
         if (memorySession != null && lifecycleService != null) {
             try {
                 Map<String, Object> life = lifecycleService.settingsView(memorySession);
                 Object biz = life.get("businessStatus");
                 if (biz != null && !String.valueOf(biz).isBlank()) {
-                    lifecycleStatus = String.valueOf(biz);
+                    sessionStatus = String.valueOf(biz);
                 }
             } catch (Exception ignored) {
-                // keep document status
+                // fall through to document metadata / catalogue
             }
         }
-        if (lifecycleStatus == null && document != null && document.getMetadata() != null) {
+        if (sessionStatus == null && document != null && document.getMetadata() != null) {
             Object life = document.getMetadata().get(PolicyLifecycleService.META_KEY);
             if (life instanceof Map<?, ?> m && m.get("businessStatus") != null
                     && !String.valueOf(m.get("businessStatus")).isBlank()) {
-                lifecycleStatus = String.valueOf(m.get("businessStatus"));
+                sessionStatus = String.valueOf(m.get("businessStatus"));
             }
         }
-        if (applicability != null && applicability.getBusinessStatus() != null
-                && !applicability.getBusinessStatus().isBlank()) {
-            approvalStatus = applicability.getBusinessStatus();
+        String catalogueStatus = null;
+        UUID applicabilityId = null;
+        Boolean catalogueImmutable = null;
+        if (applicability != null) {
+            catalogueStatus = applicability.getBusinessStatus();
+            applicabilityId = applicability.getId();
+            catalogueImmutable = applicability.getContentImmutable();
         }
-        String status = lifecycleStatus != null ? lifecycleStatus
-                : (approvalStatus != null ? approvalStatus : docStatus);
+        PolicyCanonicalLifecycleAuthority.Projection projection =
+                PolicyCanonicalLifecycleAuthority.project(
+                        sessionStatus, catalogueStatus, applicabilityId, catalogueImmutable);
+        String status = projection.businessStatus();
         row.put("status", status);
-        row.put("lifecycleStatus", lifecycleStatus != null ? lifecycleStatus : status);
-        row.put("approvalStatus", approvalStatus);
+        row.put("lifecycleStatus", status);
+        row.put("approvalStatus", status);
+        row.put("catalogueBusinessStatus", catalogueStatus);
         row.put("statusMeaning", "POLICY_VERSION_LIFECYCLE");
         row.put("statusAxis", "POLICY_VERSION_LIFECYCLE");
+        row.put("lifecycleAuthority", projection.lifecycleAuthority());
+        row.put("lifecycleOwnerType", projection.ownerType());
+        row.put("lifecycleOwnerId", projection.ownerId());
+        row.put("contentEditable", projection.contentEditable());
 
         if (applicability != null) {
             row.put("applicabilityId", applicability.getId() == null
@@ -195,6 +204,7 @@ public class PolicyStudioDurableLandingListService {
                     "label", "Not yet configured",
                     "detail", "Draft scope not published"));
         }
+        row.put("versionIdentity", docId + "/" + row.get("policyVersion"));
 
         PolicyStudioSession enrichSession = memorySession;
         boolean hydratedFromSnapshot = false;

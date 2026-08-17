@@ -20,6 +20,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -57,6 +58,19 @@ public class PolicyCatalogueService {
             out.add(toBusinessRow(a));
         }
         return out;
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<CiPolicyApplicability> findLatestByDocument(UUID tenantId, UUID documentId) {
+        if (documentId == null) {
+            return Optional.empty();
+        }
+        List<CiPolicyApplicability> rows = applicabilityRepository
+                .findByTenantIdAndPolicyDocumentIdOrderByUpdatedAtDesc(tenantOrDefault(tenantId), documentId);
+        if (rows == null || rows.isEmpty()) {
+            return Optional.empty();
+        }
+        return Optional.of(rows.get(0));
     }
 
     @Transactional(readOnly = true)
@@ -408,8 +422,15 @@ public class PolicyCatalogueService {
         m.put("productionAuthority", "DISABLED");
         m.put("allowCanonicalAuthority", false);
         m.put("documentId", a.getPolicyDocumentId() == null ? null : a.getPolicyDocumentId().toString());
-        m.put("applicationsEvaluatedShadow",
-                a.getId() == null ? 0 : routingRepository.countBySelectedApplicabilityId(a.getId()));
+        long evaluated = 0L;
+        try {
+            if (a.getId() != null && routingRepository != null) {
+                evaluated = routingRepository.countBySelectedApplicabilityId(a.getId());
+            }
+        } catch (RuntimeException e) {
+            log.debug("shadow evaluation count skipped for {}: {}", a.getId(), e.getClass().getSimpleName());
+        }
+        m.put("applicationsEvaluatedShadow", evaluated);
         return m;
     }
 

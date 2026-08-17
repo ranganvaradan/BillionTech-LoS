@@ -155,6 +155,9 @@ describe('POLICY-UX-SHELL-1', () => {
     expect(afterSession).not.toContain('<PoliciesWorkspaceNav')
     expect(afterSession).toContain('data-testid="policy-primary-tabs"')
     expect(afterSession).toContain('data-testid="save-draft"')
+    expect(afterSession).toContain('contentEditable')
+    expect(afterSession).toContain('data-testid="create-new-version"')
+    expect(page).toContain('businessLifecycleStatus')
     expect(afterSession).toContain('data-testid="policy-details-entry"')
     expect(afterSession).toContain('Development / demo')
     // No stacked amber unsaved banner + draft-only banner in session shell

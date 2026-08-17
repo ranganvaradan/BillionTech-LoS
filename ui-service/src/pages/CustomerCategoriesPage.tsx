@@ -87,13 +87,15 @@ function fromLocalInput(v: string): string | null {
 function policyPickerLabel(p: EligiblePolicy): string {
   const base = `${p.policyName} · ${p.policyVersionLabel}`
   const status = p.businessStatus ? ` · ${p.businessStatus}` : ''
+  const eligible =
+    p.eligibleForCategoryLinkage === false ? ' · NOT ELIGIBLE' : p.eligibleForCategoryLinkage ? ' · ELIGIBLE' : ''
   const compat =
     p.compatibilityStatus === 'COMPATIBLE'
       ? ' · COMPATIBLE'
       : p.compatibilityStatus === 'NEEDS_ADDITIONAL_SCOPE_CONTEXT'
         ? ' · NEEDS CONTEXT'
         : ' · INCOMPATIBLE'
-  return `${base}${status}${compat}`
+  return `${base}${status}${eligible}${compat}`
 }
 
 function formatScopeLine(p: EligiblePolicy): string {
@@ -294,8 +296,17 @@ export function CustomerCategoriesPage() {
   }, [rows, listSearch, showPlatformCatalogue])
 
   function selectPolicy(applicabilityId: string) {
-    setPolicyApplicabilityId(applicabilityId)
+    if (!applicabilityId) {
+      setPolicyApplicabilityId('')
+      setPolicyDocumentId(null)
+      setPolicyVersionLabel(null)
+      return
+    }
     const hit = eligiblePolicies.find((p) => p.policyApplicabilityId === applicabilityId)
+    if (hit && hit.eligibleForCategoryLinkage === false) {
+      return
+    }
+    setPolicyApplicabilityId(applicabilityId)
     if (hit) {
       setPolicyDocumentId(hit.policyDocumentId)
       setPolicyVersionLabel(hit.policyVersionLabel)
@@ -950,7 +961,11 @@ export function CustomerCategoriesPage() {
                         </option>
                       ) : null}
                       {pickerPolicies.map((p) => (
-                        <option key={p.policyApplicabilityId} value={p.policyApplicabilityId}>
+                        <option
+                          key={p.policyApplicabilityId}
+                          value={p.policyApplicabilityId}
+                          disabled={p.eligibleForCategoryLinkage === false}
+                        >
                           {policyPickerLabel(p)}
                         </option>
                       ))}
@@ -960,7 +975,18 @@ export function CustomerCategoriesPage() {
                         <div>
                           <span className="font-semibold">Status:</span>{' '}
                           {selectedEligiblePolicy.businessStatus || '—'}
+                          {selectedEligiblePolicy.lifecycleAuthority
+                            ? ` · ${selectedEligiblePolicy.lifecycleAuthority}`
+                            : ''}
                         </div>
+                        {selectedEligiblePolicy.eligibleForCategoryLinkage === false ? (
+                          <div className="text-amber-900">
+                            Not eligible for linkage
+                            {selectedEligiblePolicy.ineligibleReason
+                              ? ` (${selectedEligiblePolicy.ineligibleReason})`
+                              : ''}
+                          </div>
+                        ) : null}
                         <div>
                           <span className="font-semibold">Scope:</span>{' '}
                           {formatScopeLine(selectedEligiblePolicy)}

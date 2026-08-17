@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   copyPolicyStudioDocument,
+  createLifecycleVersion,
   createPolicyFromScratch,
   deleteDraftLifecyclePolicy,
   getPolicyStudioLanding,
@@ -475,8 +476,20 @@ export function CiPolicyStudioPage() {
   const uwStats = underwritingRuleStats(ruleCards)
   const isDirty = dirty || scopeDirty || rulesDirty
   const contentTab: TabId = detailsOpen ? (detailsSection as TabId) : tab
+  const lifecycle = asRecord(session?.lifecycle)
+  const lifecycleActions = asList(lifecycle.actions).map((a) => String(a).toUpperCase())
+  const contentEditable =
+    typeof lifecycle.contentEditable === 'boolean'
+      ? lifecycle.contentEditable
+      : lifecycleActions.includes('SAVE_DRAFT')
+  const showCreateNewVersion = lifecycleActions.includes('CREATE_NEW_VERSION')
   const shellStatus = formatShellStatusLine({
-    lifecycleStatus: String(header.status ?? 'DRAFT'),
+    lifecycleStatus: String(
+      asRecord(session).businessLifecycleStatus ??
+        lifecycle.businessStatus ??
+        header.status ??
+        'DRAFT',
+    ),
     ready: uwStats.ready,
     needsInput: uwStats.needsInput,
     dirty: isDirty,
@@ -535,15 +548,45 @@ export function CiPolicyStudioPage() {
           ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            className="bt-btn bt-btn-primary bt-btn-sm"
-            disabled={busy || !documentId}
-            onClick={() => void saveDraft()}
-            data-testid="save-draft"
-          >
-            Save Draft
-          </button>
+          {contentEditable ? (
+            <button
+              type="button"
+              className="bt-btn bt-btn-primary bt-btn-sm"
+              disabled={busy || !documentId}
+              onClick={() => void saveDraft()}
+              data-testid="save-draft"
+            >
+              Save Draft
+            </button>
+          ) : null}
+          {showCreateNewVersion && documentId ? (
+            <button
+              type="button"
+              className="bt-btn bt-btn-primary bt-btn-sm"
+              disabled={busy}
+              data-testid="create-new-version"
+              onClick={() => {
+                setBusy(true)
+                setError(null)
+                void createLifecycleVersion(documentId, { reasonForChange: 'Create New Version' })
+                  .then((data) => {
+                    const rec = data as unknown as Record<string, unknown>
+                    const hdr = asRecord(rec.policyHeader)
+                    const newId = String(hdr.documentId ?? rec.documentId ?? '')
+                    enterSession(data, 'scope')
+                    if (newId && newId !== documentId) {
+                      setSavedLabel('Opened new draft version')
+                    }
+                  })
+                  .catch((e) => {
+                    setError(e instanceof ApiError ? e.message : 'Could not create new version')
+                  })
+                  .finally(() => setBusy(false))
+              }}
+            >
+              Create New Version
+            </button>
+          ) : null}
           {tab === 'simulation' && !detailsOpen ? (
             <button
               type="button"

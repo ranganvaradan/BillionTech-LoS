@@ -156,6 +156,12 @@ export interface EligiblePolicy {
   compatibilityNotes?: string[]
   /** Business-facing scope summary */
   scopeSummary?: string | null
+  /** Server authority — do not infer from name/status on the client. */
+  eligibleForCategoryLinkage?: boolean
+  linkageOwnerType?: string | null
+  linkageOwnerId?: string | null
+  lifecycleAuthority?: string | null
+  ineligibleReason?: string | null
 }
 
 export interface CategoryPolicyCompatibilityReportRow {

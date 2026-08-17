@@ -254,7 +254,13 @@ public final class CustomerCategoryDtos {
             List<String> compatibilityReasons,
             List<String> compatibilityNotes,
             /** Business-facing scope summary (not raw JSON). */
-            String scopeSummary
+            String scopeSummary,
+            /** APPROVED/SCHEDULED/ACTIVE only — from {@code PolicyCanonicalLifecycleAuthority}. */
+            boolean eligibleForCategoryLinkage,
+            String linkageOwnerType,
+            String linkageOwnerId,
+            String lifecycleAuthority,
+            String ineligibleReason
     ) {}
 
     /** Read-only scan of DRAFT Categories vs catalogue (no data mutation). */

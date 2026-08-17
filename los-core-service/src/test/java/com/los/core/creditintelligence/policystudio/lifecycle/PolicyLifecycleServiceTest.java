@@ -103,6 +103,8 @@ class PolicyLifecycleServiceTest {
                 "effectiveFrom", "2026-09-01",
                 "reasonForChange", "Initial DigiLeap schedule"));
         assertThat(saved.get("businessStatus")).isEqualTo(PolicyBusinessLifecycleStatus.DRAFT);
+        assertThat(saved.get("contentEditable")).isEqualTo(true);
+        assertThat(saved.get("lifecycleAuthority")).isEqualTo(PolicyCanonicalLifecycleAuthority.NAME);
         assertThat(saved.get("allowCanonicalAuthority")).isEqualTo(false);
 
         Map<String, Object> submitted = lifecycle.submitForReview(session, Map.of());

@@ -2,6 +2,7 @@ package com.los.core.customercategory;
 
 import com.los.core.audit.AdminConfigAuditSupport;
 import com.los.core.creditintelligence.config.CreditIntelligenceProperties;
+import com.los.core.creditintelligence.policystudio.lifecycle.PolicyCanonicalLifecycleAuthority;
 import com.los.core.creditintelligence.policystudio.lifecycle.PolicyCatalogueService;
 import com.los.core.creditintelligence.policystudio.lifecycle.domain.CiPolicyApplicability;
 import com.los.core.creditintelligence.policystudio.lifecycle.repository.CiPolicyApplicabilityRepository;
@@ -220,6 +221,37 @@ class CategoryPolicyVersionBindTest {
         assertEquals(1, views.size());
         assertTrue(views.get(0).compatibleWithCategory());
         assertEquals(appId, views.get(0).policyApplicabilityId());
+        assertTrue(views.get(0).eligibleForCategoryLinkage());
+        assertEquals(PolicyCanonicalLifecycleAuthority.NAME, views.get(0).lifecycleAuthority());
+        assertEquals(PolicyCanonicalLifecycleAuthority.OWNER_TYPE, views.get(0).linkageOwnerType());
+    }
+
+    @Test
+    void draftPolicy_notEligibleForCategoryLinkage() {
+        when(policyCatalogueService.listCatalogue(tenant)).thenReturn(List.of(Map.of(
+                "applicabilityId", appId.toString(),
+                "documentId", docId.toString(),
+                "policyName", "Draft Only Policy",
+                "policyVersion", "v1",
+                "status", "DRAFT",
+                "products", List.of("BUSINESS_TERM_LOAN"),
+                "borrowerTypes", List.of("INDIVIDUAL")
+        )));
+        var views = policyBindService.listEligiblePolicies(
+                "INDIVIDUAL", "BUSINESS_TERM_LOAN", "BORROWER", null, null);
+        assertEquals(1, views.size());
+        assertFalse(views.get(0).eligibleForCategoryLinkage());
+        assertEquals("DRAFT_NOT_ELIGIBLE", views.get(0).ineligibleReason());
+    }
+
+    @Test
+    void resolveBind_rejectsDraftLifecycle() {
+        CiPolicyApplicability draft = approvedPolicy();
+        draft.setBusinessStatus("DRAFT");
+        when(applicabilityRepository.findById(appId)).thenReturn(Optional.of(draft));
+        BusinessRuleException ex = assertThrows(BusinessRuleException.class, () ->
+                policyBindService.resolveBind(appId, docId, "v1"));
+        assertEquals(CategoryPolicyBindService.POLICY_LIFECYCLE_NOT_ELIGIBLE, ex.getReason());
     }
 
     @Test

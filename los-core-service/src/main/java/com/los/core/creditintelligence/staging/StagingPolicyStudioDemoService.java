@@ -1580,6 +1580,8 @@ public class StagingPolicyStudioDemoService {
                 out.put("readyToSchedule", life.get("readyToSchedule"));
                 out.put("businessLifecycleStatus", life.get("businessStatus"));
                 out.put("currentExecutionReadiness", life.get("currentExecutionReadiness"));
+                out.put("contentEditable", life.get("contentEditable"));
+                out.put("lifecycleAuthority", life.get("lifecycleAuthority"));
             } catch (Exception e) {
                 log.debug("lifecycle enrich skipped: {}", e.getClass().getSimpleName());
             }

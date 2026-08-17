@@ -5,6 +5,8 @@ import com.los.core.creditintelligence.policystudio.domain.CiPolicyRuleCandidate
 import com.los.core.creditintelligence.policystudio.domain.CiPolicyStudioSessionSnapshot;
 import com.los.core.creditintelligence.policystudio.graph.CiPolicyRuleGraph;
 import com.los.core.creditintelligence.policystudio.lifecycle.PolicyBusinessLifecycleStatus;
+import com.los.core.creditintelligence.policystudio.lifecycle.PolicyCanonicalLifecycleAuthority;
+import com.los.core.creditintelligence.policystudio.lifecycle.PolicyLifecycleService;
 import com.los.core.creditintelligence.policystudio.lifecycle.domain.CiPolicyApplicability;
 import com.los.core.creditintelligence.policystudio.model.PolicyStudioSession;
 import org.junit.jupiter.api.BeforeEach;
@@ -281,6 +283,61 @@ class PolicyStudioDurableLandingListServiceTest {
                 .findFirst().orElseThrow();
         assertThat(vRow.get("underwritingRuleCount")).isEqualTo(13L);
         assertThat(vRow.get("sessionExists")).isEqualTo(false);
+    }
+
+    @Test
+    void sessionDraftAndCatalogueApproved_sameCanonicalLifecycle() {
+        CiPolicyDocument doc = document(VIKASAM_ID, "Vikasam Bureau", "DRAFT_READY");
+        Map<String, Object> life = new LinkedHashMap<>();
+        life.put("businessStatus", PolicyBusinessLifecycleStatus.DRAFT);
+        doc.getMetadata().put(PolicyLifecycleService.META_KEY, life);
+        PolicyStudioSession session = sessionWithRules(doc, 13);
+        CiPolicyApplicability app = CiPolicyApplicability.builder()
+                .id(UUID.randomUUID())
+                .tenantId(TENANT)
+                .policyDocumentId(VIKASAM_ID)
+                .policyName("Vikasam Bureau")
+                .policyVersionLabel("v1")
+                .businessStatus(PolicyBusinessLifecycleStatus.APPROVED)
+                .contentImmutable(true)
+                .build();
+
+        List<Map<String, Object>> rows = service.listFromFixtures(
+                TENANT, List.of(doc), List.of(), List.of(app), List.of(),
+                Map.of(VIKASAM_ID, session), null, Map.of());
+
+        Map<String, Object> row = rows.get(0);
+        assertThat(row.get("status")).isEqualTo(PolicyBusinessLifecycleStatus.APPROVED);
+        assertThat(row.get("lifecycleStatus")).isEqualTo(PolicyBusinessLifecycleStatus.APPROVED);
+        assertThat(row.get("approvalStatus")).isEqualTo(row.get("status"));
+        assertThat(row.get("contentEditable")).isEqualTo(false);
+        assertThat(row.get("lifecycleAuthority")).isEqualTo(PolicyCanonicalLifecycleAuthority.NAME);
+    }
+
+    @Test
+    void sessionActiveAndCatalogueApproved_canonicalActive() {
+        CiPolicyDocument doc = document(VIKASAM_ID, "Vikasam Policy I", "DRAFT_READY");
+        Map<String, Object> life = new LinkedHashMap<>();
+        life.put("businessStatus", PolicyBusinessLifecycleStatus.ACTIVE);
+        doc.getMetadata().put(PolicyLifecycleService.META_KEY, life);
+        PolicyStudioSession session = sessionWithRules(doc, 4);
+        CiPolicyApplicability app = CiPolicyApplicability.builder()
+                .id(UUID.randomUUID())
+                .tenantId(TENANT)
+                .policyDocumentId(VIKASAM_ID)
+                .policyName("Vikasam Policy I")
+                .policyVersionLabel("v1")
+                .businessStatus(PolicyBusinessLifecycleStatus.APPROVED)
+                .contentImmutable(true)
+                .build();
+
+        List<Map<String, Object>> rows = service.listFromFixtures(
+                TENANT, List.of(doc), List.of(), List.of(app), List.of(),
+                Map.of(VIKASAM_ID, session), null, Map.of());
+
+        assertThat(rows.get(0).get("status")).isEqualTo(PolicyBusinessLifecycleStatus.ACTIVE);
+        assertThat(rows.get(0).get("lifecycleStatus")).isEqualTo(PolicyBusinessLifecycleStatus.ACTIVE);
+        assertThat(rows.get(0).get("contentEditable")).isEqualTo(false);
     }
 
     @Test

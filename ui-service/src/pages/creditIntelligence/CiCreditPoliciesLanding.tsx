@@ -167,7 +167,11 @@ export function CiCreditPoliciesLanding({
 
       <PoliciesWorkspaceNav />
 
-      {loading ? <p className="text-sm text-slate-600">Loading policies…</p> : null}
+      {loading && policies.length === 0 ? (
+        <p className="text-sm text-slate-600" data-testid="policies-loading">
+          Loading policies…
+        </p>
+      ) : null}
       {error ? (
         <p
           className="mb-4 rounded border border-rose-300 bg-rose-50 px-3 py-3 text-sm font-medium text-rose-900 shadow-sm"
@@ -253,10 +257,9 @@ export function CiCreditPoliciesLanding({
                       </td>
                       <td className="px-4 py-3">
                         <div data-testid={`policy-status-${docId}`}>{String(row.status ?? 'DRAFT')}</div>
-                        {row.approvalStatus &&
-                        String(row.approvalStatus).toUpperCase() !== status ? (
-                          <div className="text-xs text-slate-500">
-                            Approval: {String(row.approvalStatus)}
+                        {row.versionIdentity ? (
+                          <div className="text-[11px] text-slate-500" data-testid={`policy-version-identity-${docId}`}>
+                            {String(row.policyVersion ?? 'v1')}
                           </div>
                         ) : null}
                       </td>

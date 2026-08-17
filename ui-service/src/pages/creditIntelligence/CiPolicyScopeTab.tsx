@@ -214,6 +214,13 @@ export function CiPolicyScopeTab({
     return <p className="text-sm text-slate-600">Loading policy scope…</p>
   }
 
+  const contentEditable =
+    typeof settings?.contentEditable === 'boolean'
+      ? Boolean(settings.contentEditable)
+      : !['APPROVED', 'SCHEDULED', 'ACTIVE', 'RETIRED', 'SUPERSEDED'].includes(
+          String(settings?.businessStatus ?? 'DRAFT').toUpperCase().replace('_', ' '),
+        )
+
   const toggleProduct = (code: string) => {
     markDirty()
     setProductMode('INCLUDE')
@@ -277,9 +284,14 @@ export function CiPolicyScopeTab({
         </div>
       ) : null}
 
-      <CiSection title="Policy applies to" description="Include-only. Unset dimensions mean All. Save Draft anytime.">
+      <CiSection title="Policy applies to" description={contentEditable ? "Include-only. Unset dimensions mean All. Save Draft anytime." : "This version is not editable. Create New Version to change scope."}>
+        {!contentEditable ? (
+          <p className="mb-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+            Lifecycle {String(settings?.businessStatus ?? 'ACTIVE')} — scope is read-only on this version.
+          </p>
+        ) : null}
         <div className="space-y-4">
-          <fieldset>
+          <fieldset disabled={!contentEditable || busy}>
             <legend className="text-sm font-medium text-slate-800">Product</legend>
             <div className="mt-2 flex flex-wrap gap-3 text-sm">
               <label className="inline-flex items-center gap-2">
@@ -327,7 +339,7 @@ export function CiPolicyScopeTab({
             ) : null}
           </fieldset>
 
-          <fieldset>
+          <fieldset disabled={!contentEditable || busy}>
             <legend className="text-sm font-medium text-slate-800">Borrower type</legend>
             <div className="mt-2 flex flex-wrap gap-3 text-sm">
               <label className="inline-flex items-center gap-2">
@@ -396,7 +408,7 @@ export function CiPolicyScopeTab({
             </span>
           </label>
 
-          <fieldset>
+          <fieldset disabled={!contentEditable || busy}>
             <legend className="text-sm font-medium text-slate-800">Requested amount</legend>
             <div className="mt-2 grid gap-3 sm:grid-cols-2">
               <label className="text-sm">
@@ -430,7 +442,7 @@ export function CiPolicyScopeTab({
             </div>
           </fieldset>
 
-          <fieldset>
+          <fieldset disabled={!contentEditable || busy}>
             <legend className="text-sm font-medium text-slate-800">Effective period</legend>
             <div className="mt-2 grid gap-3 sm:grid-cols-2">
               <label className="text-sm">
@@ -477,14 +489,16 @@ export function CiPolicyScopeTab({
         </div>
 
         <div className="mt-4 flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            className="bt-btn bt-btn-primary bt-btn-sm"
-            disabled={busy || !localDirty}
-            onClick={() => void saveScope()}
-          >
-            Save Draft
-          </button>
+          {contentEditable ? (
+            <button
+              type="button"
+              className="bt-btn bt-btn-primary bt-btn-sm"
+              disabled={busy || !localDirty}
+              onClick={() => void saveScope()}
+            >
+              Save Draft
+            </button>
+          ) : null}
           {localDirty ? (
             <span className="text-xs text-amber-800">Scope has unsaved changes (rules are separate).</span>
           ) : null}

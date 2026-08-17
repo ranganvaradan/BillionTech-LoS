@@ -100,8 +100,18 @@ public class PolicyLifecycleService {
         out.put("submitBlockers", submitBlockers);
         out.put("approveBlockers", approveBlockers);
         out.put("businessStatus", life.get("businessStatus"));
+        out.put("lifecycleAuthority", PolicyCanonicalLifecycleAuthority.NAME);
+        out.put("lifecycleOwnerType", PolicyCanonicalLifecycleAuthority.OWNER_TYPE);
+        out.put("lifecycleOwnerId", life.get("durableApplicabilityId"));
+        boolean contentEditable = PolicyCanonicalLifecycleAuthority.contentEditable(
+                str(life, "businessStatus", PolicyBusinessLifecycleStatus.DRAFT))
+                && !Boolean.TRUE.equals(life.get("contentImmutable"));
+        out.put("contentEditable", contentEditable);
         out.put("statusMapping", PolicyBusinessLifecycleStatus.statusMapping());
         List<String> actions = availableActions(session, life);
+        if (!contentEditable) {
+            actions.remove("SAVE_DRAFT");
+        }
         out.put("actions", actions);
         out.put("history", historyFor(session));
         Map<String, Object> cmView = creditManagerLifecycleView(session, life, impl, submitBlockers, approveBlockers, actions);
@@ -121,7 +131,8 @@ public class PolicyLifecycleService {
     public Map<String, Object> saveDraft(PolicyStudioSession session, Map<String, Object> body) {
         Map<String, Object> life = ensureLifecycle(session);
         String status = str(life, "businessStatus", PolicyBusinessLifecycleStatus.DRAFT);
-        if (isImmutable(status)) {
+        if (isImmutable(status) || Boolean.TRUE.equals(life.get("contentImmutable"))
+                || !PolicyCanonicalLifecycleAuthority.contentEditable(status)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Approved / active policy content is immutable. Use Create New Version.");
         }
@@ -815,10 +826,63 @@ public class PolicyLifecycleService {
             meta.put(META_KEY, life);
             doc.setMetadata(meta);
         }
+        overlayCanonicalLifecycle(session, life);
         // Refresh readiness flags each read
         List<String> blockers = scheduleReadinessBlockers(session, life);
         refreshReadyFlag(session, life);
         return life;
+    }
+
+    /**
+     * Read-path overlay: durable catalogue status for this document/version is reconciled
+     * with session metadata. Does not write catalogue rows or invent ACTIVE from dates.
+     */
+    private void overlayCanonicalLifecycle(PolicyStudioSession session, Map<String, Object> life) {
+        if (session == null || session.getDocument() == null || life == null) {
+            return;
+        }
+        String sessionStatus = str(life, "businessStatus", PolicyBusinessLifecycleStatus.DRAFT);
+        String catalogueStatus = null;
+        UUID applicabilityId = null;
+        Boolean catalogueImmutable = null;
+        try {
+            if (catalogueService != null && session.getDocument().getId() != null) {
+                var row = catalogueService.findLatestByDocument(
+                        session.getDocument().getTenantId(), session.getDocument().getId());
+                if (row.isPresent()) {
+                    var a = row.get();
+                    catalogueStatus = a.getBusinessStatus();
+                    applicabilityId = a.getId();
+                    catalogueImmutable = a.getContentImmutable();
+                    if (a.getPolicyVersionLabel() != null && !a.getPolicyVersionLabel().isBlank()
+                            && life.get("policyVersion") == null) {
+                        life.put("policyVersion", a.getPolicyVersionLabel());
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.debug("canonical lifecycle catalogue overlay skipped: {}", e.getClass().getSimpleName());
+        }
+        PolicyCanonicalLifecycleAuthority.Projection projection =
+                PolicyCanonicalLifecycleAuthority.project(
+                        sessionStatus, catalogueStatus, applicabilityId, catalogueImmutable);
+        life.put("businessStatus", projection.businessStatus());
+        life.put("lifecycleAuthority", projection.lifecycleAuthority());
+        life.put("lifecycleOwnerType", projection.ownerType());
+        if (projection.ownerId() != null) {
+            life.put("durableApplicabilityId", projection.ownerId());
+        }
+        if (Boolean.TRUE.equals(catalogueImmutable) || !projection.contentEditable()) {
+            if (PolicyCanonicalLifecycleAuthority.eligibleForCustomerCategoryLinkage(projection.businessStatus())
+                    || !PolicyCanonicalLifecycleAuthority.contentEditable(projection.businessStatus())) {
+                life.put("contentImmutable", !projection.contentEditable());
+            }
+        }
+        CiPolicyDocument doc = session.getDocument();
+        Map<String, Object> meta = doc.getMetadata() == null
+                ? new LinkedHashMap<>() : new LinkedHashMap<>(doc.getMetadata());
+        meta.put(META_KEY, life);
+        doc.setMetadata(meta);
     }
 
     private void refreshReadyFlag(PolicyStudioSession session, Map<String, Object> life) {

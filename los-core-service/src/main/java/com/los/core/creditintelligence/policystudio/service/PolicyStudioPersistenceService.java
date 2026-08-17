@@ -241,9 +241,19 @@ public class PolicyStudioPersistenceService {
         return removed != null;
     }
 
-    /** POLICY-CREATION-1 — list in-memory sessions for Credit Policies landing. */
+    /** POLICY-CREATION-1 — list in-memory sessions for Credit Policies landing.
+     * Prefer the live cache object (same identity as {@link #loadSession}) so List/Versions
+     * cannot silently split after schedule/save that has not yet deep-copied into the store. */
     public List<PolicyStudioSession> listAllSessions() {
-        return new ArrayList<>(storeByDocumentId.values());
+        LinkedHashMap<UUID, PolicyStudioSession> out = new LinkedHashMap<>();
+        for (Map.Entry<UUID, PolicyStudioSession> e : storeByDocumentId.entrySet()) {
+            PolicyStudioSession live = cacheByDocumentId.get(e.getKey());
+            out.put(e.getKey(), live != null ? live : e.getValue());
+        }
+        for (Map.Entry<UUID, PolicyStudioSession> e : cacheByDocumentId.entrySet()) {
+            out.putIfAbsent(e.getKey(), e.getValue());
+        }
+        return new ArrayList<>(out.values());
     }
 
     public Optional<CiPolicyParameter> findParameter(UUID tenantId, String code) {

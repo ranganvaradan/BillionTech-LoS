@@ -1,10 +1,15 @@
 package com.los.core.customercategory;
 
 import com.los.core.creditintelligence.config.CreditIntelligenceProperties;
+import com.los.core.creditintelligence.policystudio.lifecycle.PolicyCanonicalLifecycleAuthority;
 import com.los.core.creditintelligence.policystudio.lifecycle.PolicyCatalogueService;
+import com.los.core.creditintelligence.policystudio.lifecycle.PolicyLifecycleService;
 import com.los.core.creditintelligence.policystudio.lifecycle.domain.CiPolicyApplicability;
 import com.los.core.creditintelligence.policystudio.lifecycle.repository.CiPolicyApplicabilityRepository;
+import com.los.core.creditintelligence.policystudio.model.PolicyStudioSession;
+import com.los.core.creditintelligence.policystudio.service.PolicyStudioPersistenceService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,10 +34,19 @@ public class CategoryPolicyBindService {
     public static final String POLICY_VERSION_INVALID = "POLICY_VERSION_INVALID";
     public static final String POLICY_DOCUMENT_MISMATCH = "POLICY_DOCUMENT_MISMATCH";
     public static final String POLICY_VERSION_LABEL_MISMATCH = "POLICY_VERSION_LABEL_MISMATCH";
+    public static final String POLICY_LIFECYCLE_NOT_ELIGIBLE = "POLICY_LIFECYCLE_NOT_ELIGIBLE";
 
     private final CiPolicyApplicabilityRepository applicabilityRepository;
     private final PolicyCatalogueService policyCatalogueService;
     private final CreditIntelligenceProperties creditIntelligenceProperties;
+
+    /** Optional — same live session identity as Policy Studio when the JVM has the version open. */
+    private PolicyStudioPersistenceService persistenceService;
+
+    @Autowired(required = false)
+    public void setPersistenceService(PolicyStudioPersistenceService persistenceService) {
+        this.persistenceService = persistenceService;
+    }
 
     public UUID defaultTenantId() {
         return creditIntelligenceProperties.getDefaultTenantId();
@@ -87,6 +101,17 @@ public class CategoryPolicyBindService {
                     POLICY_VERSION_INVALID,
                     Map.of("policyApplicabilityId", a.getId().toString()));
         }
+        String canonical = PolicyCanonicalLifecycleAuthority.reconcile(
+                sessionBusinessStatus(a.getPolicyDocumentId()), a.getBusinessStatus());
+        if (!PolicyCanonicalLifecycleAuthority.eligibleForCustomerCategoryLinkage(canonical)) {
+            throw CustomerCategoryValidator.biz(
+                    "Policy Version is not eligible for Customer Category linkage (requires APPROVED/SCHEDULED/ACTIVE)",
+                    POLICY_LIFECYCLE_NOT_ELIGIBLE,
+                    Map.of(
+                            "policyApplicabilityId", a.getId().toString(),
+                            "businessStatus", canonical == null ? "" : canonical,
+                            "lifecycleAuthority", PolicyCanonicalLifecycleAuthority.NAME));
+        }
         return new ResolvedPolicyBind(
                 a.getId(),
                 a.getPolicyDocumentId(),
@@ -138,7 +163,12 @@ public class CategoryPolicyBindService {
                 customerRole, entityType, loanProduct, minAmount, maxAmount, effectiveFrom, effectiveUntil);
         List<CustomerCategoryDtos.EligiblePolicyView> out = new ArrayList<>();
         for (Map<String, Object> row : rows) {
-            out.add(toPickerView(row, catScope));
+            try {
+                out.add(toPickerView(row, catScope));
+            } catch (RuntimeException e) {
+                // Never fail the picker closed — a single corrupt catalogue row must not 500 the screen.
+                out.add(fallbackPickerView(row, e));
+            }
         }
         return out;
     }
@@ -182,13 +212,23 @@ public class CategoryPolicyBindService {
             notes.add(0, "Scope compatible — Policy fully covers Category dimensions");
         }
 
+        String catalogueStatus = str(row.get("status"));
+        String sessionStatus = sessionBusinessStatus(parseUuid(row.get("documentId")));
+        UUID applicabilityId = parseUuid(row.get("applicabilityId"));
+        PolicyCanonicalLifecycleAuthority.Projection projection =
+                PolicyCanonicalLifecycleAuthority.project(
+                        sessionStatus,
+                        catalogueStatus,
+                        applicabilityId,
+                        row.get("contentImmutable") instanceof Boolean b ? b : null);
+
         return new CustomerCategoryDtos.EligiblePolicyView(
-                parseUuid(row.get("applicabilityId")),
+                applicabilityId,
                 parseUuid(row.get("documentId")),
                 str(row.get("policyName")),
                 str(row.get("policyVersion")),
                 parseUuid(row.get("policyVersionId")),
-                str(row.get("status")),
+                projection.businessStatus(),
                 str(row.get("effectiveFrom")),
                 str(row.get("effectiveUntil")),
                 products,
@@ -207,7 +247,57 @@ public class CategoryPolicyBindService {
                 compat.status(),
                 compat.reasons(),
                 notes,
-                compat.scopeSummary());
+                compat.scopeSummary(),
+                projection.eligibleForCustomerCategoryLinkage(),
+                projection.ownerType(),
+                projection.ownerId(),
+                projection.lifecycleAuthority(),
+                projection.ineligibleReason());
+    }
+
+    private CustomerCategoryDtos.EligiblePolicyView fallbackPickerView(Map<String, Object> row, Exception error) {
+        UUID applicabilityId = parseUuid(row == null ? null : row.get("applicabilityId"));
+        String catalogueStatus = row == null ? null : str(row.get("status"));
+        PolicyCanonicalLifecycleAuthority.Projection projection =
+                PolicyCanonicalLifecycleAuthority.project(null, catalogueStatus, applicabilityId, null);
+        return new CustomerCategoryDtos.EligiblePolicyView(
+                applicabilityId,
+                parseUuid(row == null ? null : row.get("documentId")),
+                row == null ? null : str(row.get("policyName")),
+                row == null ? null : str(row.get("policyVersion")),
+                null,
+                projection.businessStatus(),
+                null, null, List.of(), List.of(), null, null, null,
+                null, null, null, null, false, "DISABLED", false,
+                false,
+                CustomerCategoryPolicyScopeCompatibility.STATUS_NEEDS_CONTEXT,
+                List.of("PICKER_ROW_UNREADABLE"),
+                List.of("Policy row could not be fully evaluated: " + error.getClass().getSimpleName()),
+                null,
+                projection.eligibleForCustomerCategoryLinkage(),
+                projection.ownerType(),
+                projection.ownerId(),
+                projection.lifecycleAuthority(),
+                projection.ineligibleReason());
+    }
+
+    private String sessionBusinessStatus(UUID documentId) {
+        if (persistenceService == null || documentId == null) {
+            return null;
+        }
+        try {
+            PolicyStudioSession session = persistenceService.loadSession(documentId);
+            if (session == null || session.getDocument() == null || session.getDocument().getMetadata() == null) {
+                return null;
+            }
+            Object life = session.getDocument().getMetadata().get(PolicyLifecycleService.META_KEY);
+            if (life instanceof Map<?, ?> m && m.get("businessStatus") != null) {
+                return String.valueOf(m.get("businessStatus"));
+            }
+        } catch (RuntimeException ignored) {
+            return null;
+        }
+        return null;
     }
 
     /**
@@ -319,13 +409,15 @@ public class CategoryPolicyBindService {
         }
 
         String st = a.getBusinessStatus() == null ? "" : a.getBusinessStatus().trim().toUpperCase(Locale.ROOT);
-        // Future activation may require ACTIVE; readiness documents current state honestly.
-        boolean lifecycleOk = List.of("APPROVED", "SCHEDULED", "ACTIVE").contains(st);
+        String sessionStatus = sessionBusinessStatus(a.getPolicyDocumentId());
+        String canonical = PolicyCanonicalLifecycleAuthority.reconcile(sessionStatus, st);
+        boolean lifecycleOk = PolicyCanonicalLifecycleAuthority.eligibleForCustomerCategoryLinkage(canonical);
         checks.add(new CustomerCategoryDtos.ActivationCheck(
                 "POLICY_LIFECYCLE_OK",
                 "Policy Version in governed lifecycle state (APPROVED/SCHEDULED/ACTIVE)",
                 lifecycleOk,
-                "Policy business status: " + a.getBusinessStatus()
+                "Policy business status: " + canonical
+                        + " (authority=" + PolicyCanonicalLifecycleAuthority.NAME + ")"
                         + (lifecycleOk ? "" : " — not eligible for Category activation yet")));
 
         boolean deprecated = List.of("RETIRED", "SUPERSEDED").contains(st);

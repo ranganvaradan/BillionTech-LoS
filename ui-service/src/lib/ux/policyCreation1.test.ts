@@ -20,6 +20,9 @@ describe('POLICY-CREATION-1', () => {
     expect(landing).toContain('Examples &amp; templates')
     expect(landing).not.toContain('What should I do next?')
     expect(landing).not.toContain('BillionTech will')
+    expect(landing).toContain('policies.length === 0')
+    expect(landing).toContain('data-testid="policies-loading"')
+    expect(landing).not.toContain('Approval:')
   })
 
   it('studio page wires create/copy/open into same session shell', () => {
