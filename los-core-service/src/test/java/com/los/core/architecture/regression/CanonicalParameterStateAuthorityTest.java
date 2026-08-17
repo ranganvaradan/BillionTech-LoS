@@ -222,6 +222,15 @@ class CanonicalParameterStateAuthorityTest {
         String resolver = Files.readString(uiRoot.resolve("lib/policyStudio/policyStudioResolverState.ts"));
         // GUARD 8 — frontend maps enum→label; cannot use Needs review as parameter label
         assertThat(resolver).contains("Needs review' ? 'Needs your input'");
+        String scoreTab = Files.readString(uiRoot.resolve("pages/creditIntelligence/CiPolicyScorecardTab.tsx"));
+        assertThat(scoreTab).contains("resolveScorecardLinkageDisplay");
+        assertThat(scoreTab).contains("scorecard-linkage-loading");
+        String linkage = Files.readString(javaRoot.resolve(
+                "com/los/core/creditintelligence/policystudio/scorecard/PolicyVersionScorecardLinkage.java"));
+        assertThat(linkage).contains("ci_policy_document.scorecard_id");
+        String persist = Files.readString(javaRoot.resolve(
+                "com/los/core/creditintelligence/policystudio/service/PolicyStudioPersistenceService.java"));
+        assertThat(persist).contains("overlayFromDurableDocument");
     }
 
     @Test

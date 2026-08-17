@@ -12,6 +12,7 @@ import com.los.core.creditintelligence.policystudio.graph.PolicyRuleGraphMateria
 import com.los.core.creditintelligence.policystudio.model.PolicyStudioSession;
 import com.los.core.creditintelligence.policystudio.repository.CiPolicyDocumentRepository;
 import com.los.core.creditintelligence.policystudio.repository.CiPolicyStudioSessionSnapshotRepository;
+import com.los.core.creditintelligence.policystudio.scorecard.PolicyVersionScorecardLinkage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -154,6 +155,7 @@ public class PolicyStudioPersistenceService {
     public PolicyStudioSession loadSession(UUID documentId) {
         PolicyStudioSession cached = cacheByDocumentId.get(documentId);
         if (cached != null) {
+            overlayAuthoritativeDocumentFields(cached);
             return cached;
         }
         PolicyStudioSession stored = storeByDocumentId.get(documentId);
@@ -168,6 +170,7 @@ public class PolicyStudioPersistenceService {
             }
         }
         PolicyStudioSession reloaded = deepCopy(stored);
+        overlayAuthoritativeDocumentFields(reloaded);
         cacheByDocumentId.put(documentId, reloaded);
         return reloaded;
     }
@@ -321,6 +324,7 @@ public class PolicyStudioPersistenceService {
             } else if (!(doc.getMetadata() instanceof LinkedHashMap)) {
                 doc.setMetadata(new LinkedHashMap<>(doc.getMetadata()));
             }
+            preserveAuthoritativeScorecardId(doc);
             documentRepository.saveAndFlush(doc);
             Map<String, Object> payload = PolicyStudioSessionSnapshotCodec.toPayload(session);
             CiPolicyStudioSessionSnapshot snap = sessionSnapshotRepository.findById(doc.getId())
@@ -353,6 +357,7 @@ public class PolicyStudioPersistenceService {
                 return null;
             }
             PolicyStudioSession session = PolicyStudioSessionSnapshotCodec.fromPayload(opt.get().getPayload());
+            overlayAuthoritativeDocumentFields(session);
             if (session != null && session.getDocument() != null) {
                 log.info("policy-studio durable session rebound documentId={} rules={}",
                         documentId,
@@ -454,9 +459,45 @@ public class PolicyStudioPersistenceService {
                 .language(src.getLanguage())
                 .sourceText(src.getSourceText())
                 .metadata(copyMap(src.getMetadata()))
+                .scorecardId(src.getScorecardId())
+                .ruleGraphImmutable(src.getRuleGraphImmutable())
                 .version(src.getVersion())
                 .createdAt(src.getCreatedAt())
                 .build();
+    }
+
+    /**
+     * SCORECARD-LINKAGE-PROJECTION-INVARIANT-1 — durable document FK wins over stale
+     * snapshot / in-memory session scorecardId (including a genuine null unlink).
+     */
+    private void overlayAuthoritativeDocumentFields(PolicyStudioSession session) {
+        if (session == null || session.getDocument() == null || session.getDocument().getId() == null
+                || documentRepository == null) {
+            return;
+        }
+        try {
+            documentRepository.findById(session.getDocument().getId()).ifPresent(durable ->
+                    PolicyVersionScorecardLinkage.overlayFromDurableDocument(session.getDocument(), durable));
+        } catch (Exception e) {
+            log.debug("policy-studio scorecard overlay skipped documentId={} reason={}",
+                    session.getDocument().getId(), e.toString());
+        }
+    }
+
+    /**
+     * Session snapshot writes must not clobber {@code ci_policy_document.scorecard_id}.
+     */
+    private void preserveAuthoritativeScorecardId(CiPolicyDocument doc) {
+        if (documentRepository == null || doc == null || doc.getId() == null) {
+            return;
+        }
+        try {
+            documentRepository.findById(doc.getId()).ifPresent(existing ->
+                    doc.setScorecardId(existing.getScorecardId()));
+        } catch (Exception e) {
+            log.debug("policy-studio scorecard preserve skipped documentId={} reason={}",
+                    doc.getId(), e.toString());
+        }
     }
 
     private Map<String, Object> copyMap(Map<String, Object> m) {

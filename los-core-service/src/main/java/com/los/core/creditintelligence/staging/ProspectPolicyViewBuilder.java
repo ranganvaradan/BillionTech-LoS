@@ -10,6 +10,7 @@ import com.los.core.creditintelligence.policystudio.domain.CiPolicyRuleCandidate
 import com.los.core.creditintelligence.policystudio.domain.ClauseType;
 import com.los.core.creditintelligence.policystudio.domain.DocumentStatus;
 import com.los.core.creditintelligence.policystudio.model.PolicyStudioSession;
+import com.los.core.creditintelligence.policystudio.scorecard.PolicyVersionScorecardLinkage;
 import com.los.core.creditintelligence.policystudio.service.PolicyImplementabilityService;
 
 import java.time.Instant;
@@ -44,7 +45,11 @@ final class ProspectPolicyViewBuilder {
         if (doc != null && doc.getId() != null) {
             header.put("documentId", doc.getId().toString());
         }
+        PolicyVersionScorecardLinkage.applyProjection(header, doc);
         out.put("policyHeader", header);
+        out.put("scorecardId", header.get("scorecardId"));
+        out.put("scorecardLinkageKnown", header.get("scorecardLinkageKnown"));
+        out.put("scorecardLinkageAuthority", header.get("scorecardLinkageAuthority"));
 
         out.put("summaryCards", summaryCards(session));
         out.put("counts", counts(session));

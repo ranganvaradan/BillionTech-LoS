@@ -25,6 +25,10 @@ import com.los.core.creditintelligence.policystudio.service.PolicyImplementabili
 import com.los.core.creditintelligence.policystudio.service.PolicyReviewService;
 import com.los.core.creditintelligence.policystudio.service.PolicyStudioDurableLandingListService;
 import com.los.core.creditintelligence.policystudio.service.PolicyStudioOrchestrator;
+import com.los.core.creditintelligence.policystudio.scorecard.PolicyVersionScorecardLinkage;
+import com.los.core.creditintelligence.policystudio.repository.CiPolicyDocumentRepository;
+import com.los.core.model.entity.UnderwritingScorecard;
+import com.los.core.repository.UnderwritingScorecardRepository;
 import com.los.core.creditintelligence.policystudio.service.PolicyTextExtractionService;
 import com.los.core.creditintelligence.policystudio.service.RuleCandidateFactory;
 import com.los.core.creditintelligence.validation.service.PolicyAuthoringRegistry;
@@ -64,6 +68,11 @@ public class StagingPolicyStudioDemoService {
     private final CatalogueCapabilityDraftService catalogueDraftService;
     private final CmRuleAuthoringService cmRuleAuthoringService;
     private final PolicyStudioDurableLandingListService durableLandingListService;
+
+    /** Optional — overlays durable ci_policy_document.scorecard_id at projection time. */
+    private CiPolicyDocumentRepository documentRepository;
+    /** Optional — resolve linked scorecard identity by canonical id only. */
+    private UnderwritingScorecardRepository scorecardRepository;
 
     /** documentId → meta used to rebuild prospect view after resolve/review */
     private final ConcurrentHashMap<UUID, Map<String, Object>> sessionMeta = new ConcurrentHashMap<>();
@@ -109,6 +118,16 @@ public class StagingPolicyStudioDemoService {
             BusinessMeasureDesignerService measureDesigner) {
         this(properties, orchestrator, textExtractionService, measureDesigner, null, null,
                 new CmRuleAuthoringService(), new PolicyStudioDurableLandingListService());
+    }
+
+    @Autowired(required = false)
+    public void setDocumentRepository(CiPolicyDocumentRepository documentRepository) {
+        this.documentRepository = documentRepository;
+    }
+
+    @Autowired(required = false)
+    public void setScorecardRepository(UnderwritingScorecardRepository scorecardRepository) {
+        this.scorecardRepository = scorecardRepository;
     }
 
     /** Unit-test convenience with lifecycle + durable landing list. */
@@ -1547,9 +1566,11 @@ public class StagingPolicyStudioDemoService {
         if (session.getDocument() != null && session.getDocument().getId() != null) {
             sessionMeta.put(session.getDocument().getId(), meta);
         }
+        overlayAuthoritativeScorecardLinkage(session);
         Map<String, Object> out = new LinkedHashMap<>();
         StagingDemoWorkspaceService.stampSafety(out);
         ProspectPolicyViewBuilder.enrich(out, session, meta);
+        enrichLinkedScorecardIdentity(out, session);
         if (lifecycleService != null && session.getDocument() != null) {
             try {
                 Map<String, Object> life = lifecycleService.settingsView(session);
@@ -1558,6 +1579,7 @@ public class StagingPolicyStudioDemoService {
                 out.put("implementationStatus", life.get("implementationStatus"));
                 out.put("readyToSchedule", life.get("readyToSchedule"));
                 out.put("businessLifecycleStatus", life.get("businessStatus"));
+                out.put("currentExecutionReadiness", life.get("currentExecutionReadiness"));
             } catch (Exception e) {
                 log.debug("lifecycle enrich skipped: {}", e.getClass().getSimpleName());
             }
@@ -1574,6 +1596,63 @@ public class StagingPolicyStudioDemoService {
                 "path", "Portfolio Intelligence → Policy Impact Lab",
                 "enabled", false));
         return out;
+    }
+
+    /**
+     * Durable {@code ci_policy_document.scorecard_id} wins over stale session/snapshot values.
+     */
+    private void overlayAuthoritativeScorecardLinkage(PolicyStudioSession session) {
+        if (session == null || session.getDocument() == null || session.getDocument().getId() == null
+                || documentRepository == null) {
+            return;
+        }
+        try {
+            documentRepository.findById(session.getDocument().getId()).ifPresent(durable ->
+                    PolicyVersionScorecardLinkage.overlayFromDurableDocument(session.getDocument(), durable));
+        } catch (Exception e) {
+            log.debug("scorecard linkage overlay skipped: {}", e.getClass().getSimpleName());
+        }
+    }
+
+    /**
+     * Resolve scorecard identity by the canonical document FK only — never by
+     * {@code underwriting_scorecards.policy_document_id}.
+     */
+    @SuppressWarnings("unchecked")
+    private void enrichLinkedScorecardIdentity(Map<String, Object> out, PolicyStudioSession session) {
+        Object headerObj = out.get("policyHeader");
+        if (!(headerObj instanceof Map<?, ?>)) {
+            return;
+        }
+        Map<String, Object> header = (Map<String, Object>) headerObj;
+        CiPolicyDocument doc = session == null ? null : session.getDocument();
+        UUID canonical = doc == null ? null : doc.getScorecardId();
+        PolicyVersionScorecardLinkage.ScorecardIdentity identity = null;
+        if (canonical != null && scorecardRepository != null) {
+            try {
+                UnderwritingScorecard found = scorecardRepository.findById(canonical).orElse(null);
+                if (found != null) {
+                    identity = new PolicyVersionScorecardLinkage.ScorecardIdentity(
+                            found.getId(),
+                            found.getName(),
+                            found.getStatus(),
+                            found.getScoringMode());
+                }
+            } catch (Exception e) {
+                log.debug("scorecard identity lookup skipped: {}", e.getClass().getSimpleName());
+            }
+        }
+        PolicyVersionScorecardLinkage.applyProjection(header, doc, identity);
+        out.put("scorecardId", header.get("scorecardId"));
+        out.put("scorecardName", header.get("scorecardName"));
+        out.put("scorecardStatus", header.get("scorecardStatus"));
+        out.put("scorecardScoringMode", header.get("scorecardScoringMode"));
+        out.put("scorecardLinked", header.get("scorecardLinked"));
+        out.put("scorecardLinkageKnown", header.get("scorecardLinkageKnown"));
+        out.put("scorecardLinkageAuthority", header.get("scorecardLinkageAuthority"));
+        out.put("scorecardLinkOwnerType", header.get("scorecardLinkOwnerType"));
+        out.put("scorecardLinkOwnerId", header.get("scorecardLinkOwnerId"));
+        out.put("scorecardLinkOwnerVersion", header.get("scorecardLinkOwnerVersion"));
     }
 
     private Map<String, Object> demoMeta(String kind, String fileName, String resource, String text) {

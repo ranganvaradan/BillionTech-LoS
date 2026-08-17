@@ -7,6 +7,7 @@ import {
 import { createScorecard, listScorecards, updateScorecard } from '@/api/scorecards'
 import { ApiError } from '@/api/http'
 import { CiExecutiveSummary, CiSection } from '@/components/creditIntelligence/CiSection'
+import { resolveScorecardLinkageDisplay } from '@/lib/policyStudio/scorecardLinkageDisplay'
 
 type FactorRow = {
   canonicalParameterId: string
@@ -34,6 +35,10 @@ export function CiPolicyScorecardTab({
   loanProduct,
   borrowerType,
   linkedScorecardId,
+  linkedScorecardName,
+  linkedScorecardStatus,
+  linkedScorecardScoringMode,
+  scorecardLinkageKnown,
   busy,
   setBusy,
   onError,
@@ -44,13 +49,25 @@ export function CiPolicyScorecardTab({
   loanProduct?: string
   borrowerType?: string
   linkedScorecardId?: string | null
+  linkedScorecardName?: string | null
+  linkedScorecardStatus?: string | null
+  linkedScorecardScoringMode?: string | null
+  scorecardLinkageKnown?: boolean
   busy: boolean
   setBusy: (v: boolean) => void
   onError: (msg: string | null) => void
   onLinked?: (scorecardId: string) => void
 }) {
+  const linkage = resolveScorecardLinkageDisplay({
+    sessionLoaded: true,
+    linkageKnown: scorecardLinkageKnown === true,
+    scorecardId: linkedScorecardId,
+    scorecardName: linkedScorecardName,
+    scorecardStatus: linkedScorecardStatus,
+    scorecardScoringMode: linkedScorecardScoringMode,
+  })
   const [mode, setMode] = useState<'NONE' | 'LINK' | 'CREATE'>(
-    linkedScorecardId ? 'LINK' : 'NONE',
+    linkage.kind === 'LINKED' ? 'LINK' : linkage.kind === 'NONE' ? 'NONE' : 'LINK',
   )
   const [picker, setPicker] = useState<Array<Record<string, unknown>>>([])
   const [catalogue, setCatalogue] = useState<Array<{ id: string; name: string; scoringMode?: string }>>(
@@ -300,6 +317,34 @@ export function CiPolicyScorecardTab({
       </CiExecutiveSummary>
 
       <CiSection title="Scorecard linkage">
+        {linkage.kind === 'LOADING' ? (
+          <p className="text-sm text-slate-600" data-testid="scorecard-linkage-loading">
+            Loading scorecard linkage…
+          </p>
+        ) : null}
+
+        {linkage.kind === 'LINKED' ? (
+          <div
+            className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-950"
+            data-testid="scorecard-linkage-linked"
+          >
+            <p className="font-semibold">Linked scorecard</p>
+            <p data-testid="linked-scorecard-name">
+              {linkage.name || 'Scorecard'}
+            </p>
+            <p className="mt-1 font-mono text-xs" data-testid="linked-scorecard-id">
+              {linkage.scorecardId}
+            </p>
+            <p className="mt-1 text-xs" data-testid="linked-scorecard-status">
+              Status: {linkage.status || '—'}
+            </p>
+            <p className="text-xs" data-testid="linked-scorecard-scoring-mode">
+              Scoring mode: {linkage.scoringMode || '—'}
+            </p>
+          </div>
+        ) : null}
+
+        {linkage.kind !== 'LOADING' ? (
         <div className="flex flex-wrap gap-2">
           {(
             [
@@ -320,14 +365,15 @@ export function CiPolicyScorecardTab({
             </button>
           ))}
         </div>
+        ) : null}
 
-        {mode === 'NONE' ? (
-          <p className="mt-3 text-sm text-slate-600">
+        {linkage.kind === 'NONE' && mode === 'NONE' ? (
+          <p className="mt-3 text-sm text-slate-600" data-testid="scorecard-linkage-none">
             This Policy will underwrite with hard rules only. You can add a scorecard later.
           </p>
         ) : null}
 
-        {mode === 'LINK' ? (
+        {linkage.kind !== 'LOADING' && mode === 'LINK' ? (
           <div className="mt-3 space-y-2">
             <select
               className="bt-input max-w-xl"
@@ -336,6 +382,12 @@ export function CiPolicyScorecardTab({
               data-testid="link-scorecard-select"
             >
               <option value="">Select scorecard…</option>
+              {linkage.kind === 'LINKED' && !catalogue.some((c) => c.id === linkage.scorecardId) ? (
+                <option value={linkage.scorecardId}>
+                  {linkage.name || 'Linked scorecard'}
+                  {linkage.scoringMode ? ` · ${linkage.scoringMode}` : ''}
+                </option>
+              ) : null}
               {catalogue.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
@@ -368,7 +420,7 @@ export function CiPolicyScorecardTab({
         ) : null}
       </CiSection>
 
-      {mode !== 'NONE' ? (
+      {linkage.kind !== 'LOADING' && mode !== 'NONE' ? (
         <CiSection
           title="Factors (Policy parameters only)"
           description="Raw weights do not need to total 100 — they are normalized for scoring. Hard rules are configured separately."

@@ -101,6 +101,8 @@ public class PolicyStudioSessionDurableWriter {
             managed.setLanguage(doc.getLanguage());
             managed.setSourceText(doc.getSourceText());
             managed.setMetadata(doc.getMetadata());
+            // SCORECARD-LINKAGE-PROJECTION-INVARIANT-1 — scorecardId and ruleGraphImmutable
+            // stay on the durable document row. Session snapshot writes must not clobber them.
             documentRepository.saveAndFlush(managed);
             return;
         }

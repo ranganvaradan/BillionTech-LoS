@@ -1017,6 +1017,9 @@ public class PolicyLifecycleService {
         h.put("status", life.get("businessStatus"));
         h.put("replaces", life.get("replacesVersion"));
         h.put("reasonForChange", life.get("reasonForChange"));
+        if (session.getDocument() != null && session.getDocument().getId() != null) {
+            h.put("documentId", session.getDocument().getId().toString());
+        }
         return h;
     }
 

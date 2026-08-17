@@ -1034,6 +1034,30 @@ export function CiPolicyStudioPage() {
                   ? String(asRecord(session).scorecardId)
                   : null
             }
+            linkedScorecardName={
+              header.scorecardName != null
+                ? String(header.scorecardName)
+                : asRecord(session).scorecardName != null
+                  ? String(asRecord(session).scorecardName)
+                  : null
+            }
+            linkedScorecardStatus={
+              header.scorecardStatus != null
+                ? String(header.scorecardStatus)
+                : asRecord(session).scorecardStatus != null
+                  ? String(asRecord(session).scorecardStatus)
+                  : null
+            }
+            linkedScorecardScoringMode={
+              header.scorecardScoringMode != null
+                ? String(header.scorecardScoringMode)
+                : asRecord(session).scorecardScoringMode != null
+                  ? String(asRecord(session).scorecardScoringMode)
+                  : null
+            }
+            scorecardLinkageKnown={
+              header.scorecardLinkageKnown === true || asRecord(session).scorecardLinkageKnown === true
+            }
             busy={busy}
             setBusy={setBusy}
             onError={setError}

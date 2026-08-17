@@ -47,7 +47,10 @@ export function CiPolicyLifecycleTab({
   onOpenScorecardTab?: () => void
   session?: StagingPolicyStudio | null
 }) {
-  const [settings, setSettings] = useState<Record<string, unknown> | null>(null)
+  const lifeFromSession = asRecord(asRecord(session).lifecycle)
+  const [settings, setSettings] = useState<Record<string, unknown> | null>(
+    Object.keys(lifeFromSession).length ? lifeFromSession : null,
+  )
   const [history, setHistory] = useState<unknown[]>([])
   const [loading, setLoading] = useState(true)
   const [feedback, setFeedback] = useState<string | null>(null)
@@ -235,6 +238,9 @@ export function CiPolicyLifecycleTab({
             <h2 className="text-xl font-semibold text-slate-900" data-testid="lifecycle-status">
               {progressCurrent}
             </h2>
+            <p className="mt-1 font-mono text-[11px] text-slate-500" data-testid="lifecycle-document-id">
+              Policy version: {documentId}
+            </p>
             <p
               className="mt-1 text-sm font-medium text-slate-800"
               data-testid="current-execution-readiness"
