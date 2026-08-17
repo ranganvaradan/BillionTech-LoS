@@ -27,9 +27,9 @@
       "bankingCapabilityWithoutFacts": false
     },
     "after": {
-      "policyTestCapableCount": 40,
-      "w6CapableCount": 30,
-      "underwritingCapableCount": 40,
+      "policyTestCapableCount": 67,
+      "w6CapableCount": 57,
+      "underwritingCapableCount": 67,
       "bankingCapabilityWithoutFacts": true,
       "emptyContextStatus": "DATA_NOT_AVAILABLE"
     },

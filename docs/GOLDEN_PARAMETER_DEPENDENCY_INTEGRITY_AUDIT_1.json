@@ -1,0 +1,489 @@
+{
+  "TOTAL_DERIVED_PARAMETERS" : 60,
+  "READY_DERIVED_WITH_NOT_READY_DEPENDENCY_COUNT" : 0,
+  "UNRESOLVED_DEPENDENCY_ID_COUNT" : 0,
+  "DUPLICATE_CANONICAL_DEPENDENCY_COUNT" : 0,
+  "ALIAS_DEPENDENCY_DIVERGENCE_COUNT" : 0,
+  "MISSING_CALCULATION_DEFINITION_BUT_READY_COUNT" : 0,
+  "rows" : [ {
+    "canonicalParameterId" : "bureau.max_dpd_6m",
+    "displayName" : "Maximum DPD (6 months)",
+    "dependencyCanonicalIds" : [ "bureau.tradeline.payment_history", "bureau.tradeline.dpd_month" ],
+    "dependencyBusinessReadiness" : [ "READY", "READY" ],
+    "dependencyBusinessReadinessReasons" : [ "READY", "READY" ],
+    "derivedBusinessReadiness" : "READY",
+    "derivedBusinessReadinessReason" : "READY"
+  }, {
+    "canonicalParameterId" : "bureau.max_dpd_12m",
+    "displayName" : "Maximum DPD (12 months)",
+    "dependencyCanonicalIds" : [ "bureau.tradeline.payment_history" ],
+    "dependencyBusinessReadiness" : [ "READY" ],
+    "dependencyBusinessReadinessReasons" : [ "READY" ],
+    "derivedBusinessReadiness" : "READY",
+    "derivedBusinessReadinessReason" : "READY"
+  }, {
+    "canonicalParameterId" : "bureau.max_dpd_24m",
+    "displayName" : "Maximum DPD (24 months)",
+    "dependencyCanonicalIds" : [ "bureau.tradeline.payment_history" ],
+    "dependencyBusinessReadiness" : [ "READY" ],
+    "dependencyBusinessReadinessReasons" : [ "READY" ],
+    "derivedBusinessReadiness" : "READY",
+    "derivedBusinessReadinessReason" : "READY"
+  }, {
+    "canonicalParameterId" : "bureau.inquiries.current_month",
+    "displayName" : "Bureau enquiries (current month)",
+    "dependencyCanonicalIds" : [ "bureau.inquiry", "bureau.inquiry.date" ],
+    "dependencyBusinessReadiness" : [ "READY", "READY" ],
+    "dependencyBusinessReadinessReasons" : [ "READY", "READY" ],
+    "derivedBusinessReadiness" : "READY",
+    "derivedBusinessReadinessReason" : "READY"
+  }, {
+    "canonicalParameterId" : "bureau.inquiries.last_3m",
+    "displayName" : "Bureau enquiries (last 3 calendar months)",
+    "dependencyCanonicalIds" : [ "bureau.inquiry", "bureau.inquiry.date" ],
+    "dependencyBusinessReadiness" : [ "READY", "READY" ],
+    "dependencyBusinessReadinessReasons" : [ "READY", "READY" ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "bureau.recent_inquiries_90d",
+    "displayName" : "Bureau enquiries (90 days)",
+    "dependencyCanonicalIds" : [ "bureau.inquiry" ],
+    "dependencyBusinessReadiness" : [ "READY" ],
+    "dependencyBusinessReadinessReasons" : [ "READY" ],
+    "derivedBusinessReadiness" : "READY",
+    "derivedBusinessReadinessReason" : "READY"
+  }, {
+    "canonicalParameterId" : "bureau.live_unsecured_loan_count",
+    "displayName" : "Live unsecured loans",
+    "dependencyCanonicalIds" : [ "bureau.tradeline.account_status", "bureau.tradeline.secured_flag", "bureau.tradeline.current_balance" ],
+    "dependencyBusinessReadiness" : [ "READY", "READY", "READY" ],
+    "dependencyBusinessReadinessReasons" : [ "READY", "READY", "READY" ],
+    "derivedBusinessReadiness" : "READY",
+    "derivedBusinessReadinessReason" : "READY"
+  }, {
+    "canonicalParameterId" : "bureau.total_live_exposure",
+    "displayName" : "Total live exposure",
+    "dependencyCanonicalIds" : [ "bureau.tradeline.current_balance" ],
+    "dependencyBusinessReadiness" : [ "READY" ],
+    "dependencyBusinessReadinessReasons" : [ "READY" ],
+    "derivedBusinessReadiness" : "READY",
+    "derivedBusinessReadinessReason" : "READY"
+  }, {
+    "canonicalParameterId" : "bureau.secured_live_exposure",
+    "displayName" : "Secured live exposure",
+    "dependencyCanonicalIds" : [ "bureau.tradeline.current_balance", "bureau.tradeline.secured_flag" ],
+    "dependencyBusinessReadiness" : [ "READY", "READY" ],
+    "dependencyBusinessReadinessReasons" : [ "READY", "READY" ],
+    "derivedBusinessReadiness" : "READY",
+    "derivedBusinessReadinessReason" : "READY"
+  }, {
+    "canonicalParameterId" : "bureau.unsecured_live_exposure",
+    "displayName" : "Unsecured live exposure",
+    "dependencyCanonicalIds" : [ "bureau.tradeline.current_balance", "bureau.tradeline.secured_flag" ],
+    "dependencyBusinessReadiness" : [ "READY", "READY" ],
+    "dependencyBusinessReadinessReasons" : [ "READY", "READY" ],
+    "derivedBusinessReadiness" : "READY",
+    "derivedBusinessReadinessReason" : "READY"
+  }, {
+    "canonicalParameterId" : "bureau.total_monthly_obligation",
+    "displayName" : "Total monthly obligation (bureau EMI)",
+    "dependencyCanonicalIds" : [ "bureau.tradeline.emi" ],
+    "dependencyBusinessReadiness" : [ "READY" ],
+    "dependencyBusinessReadinessReasons" : [ "READY" ],
+    "derivedBusinessReadiness" : "READY",
+    "derivedBusinessReadinessReason" : "READY"
+  }, {
+    "canonicalParameterId" : "bureau.settled_account_count",
+    "displayName" : "Settled account count",
+    "dependencyCanonicalIds" : [ "bureau.tradeline.account_status" ],
+    "dependencyBusinessReadiness" : [ "READY" ],
+    "dependencyBusinessReadinessReasons" : [ "READY" ],
+    "derivedBusinessReadiness" : "READY",
+    "derivedBusinessReadinessReason" : "READY"
+  }, {
+    "canonicalParameterId" : "bureau.written_off_account_count",
+    "displayName" : "Written-off account count",
+    "dependencyCanonicalIds" : [ "bureau.tradeline.write_off_amount", "bureau.tradeline.account_status" ],
+    "dependencyBusinessReadiness" : [ "READY", "READY" ],
+    "dependencyBusinessReadinessReasons" : [ "READY", "READY" ],
+    "derivedBusinessReadiness" : "READY",
+    "derivedBusinessReadinessReason" : "READY"
+  }, {
+    "canonicalParameterId" : "bureau.accounts.writeoff_non_cc",
+    "displayName" : "Non-credit-card write-off count",
+    "dependencyCanonicalIds" : [ "bureau.tradeline.write_off_amount", "bureau.tradeline.account_status" ],
+    "dependencyBusinessReadiness" : [ "READY", "READY" ],
+    "dependencyBusinessReadinessReasons" : [ "READY", "READY" ],
+    "derivedBusinessReadiness" : "READY",
+    "derivedBusinessReadinessReason" : "READY"
+  }, {
+    "canonicalParameterId" : "bureau.accounts.cc_writeoff",
+    "displayName" : "Credit-card write-off count",
+    "dependencyCanonicalIds" : [ "bureau.tradeline.write_off_amount", "bureau.tradeline.account_status" ],
+    "dependencyBusinessReadiness" : [ "READY", "READY" ],
+    "dependencyBusinessReadinessReasons" : [ "READY", "READY" ],
+    "derivedBusinessReadiness" : "READY",
+    "derivedBusinessReadinessReason" : "READY"
+  }, {
+    "canonicalParameterId" : "bureau.cc_overdue_amount",
+    "displayName" : "Credit-card overdue amount",
+    "dependencyCanonicalIds" : [ "bureau.tradeline.overdue_amount" ],
+    "dependencyBusinessReadiness" : [ "READY" ],
+    "dependencyBusinessReadinessReasons" : [ "READY" ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "bureau.overdue.age_months",
+    "displayName" : "Overdue age (months)",
+    "dependencyCanonicalIds" : [ "bureau.tradeline.overdue_amount" ],
+    "dependencyBusinessReadiness" : [ "READY" ],
+    "dependencyBusinessReadinessReasons" : [ "READY" ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "bureau.overdue.amount",
+    "displayName" : "Overdue amount",
+    "dependencyCanonicalIds" : [ "bureau.tradeline.overdue_amount" ],
+    "dependencyBusinessReadiness" : [ "READY" ],
+    "dependencyBusinessReadinessReasons" : [ "READY" ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "bureau.credit_after_overdue.exists",
+    "displayName" : "New credit after overdue",
+    "dependencyCanonicalIds" : [ "bureau.tradeline.account_open_date" ],
+    "dependencyBusinessReadiness" : [ "READY" ],
+    "dependencyBusinessReadinessReasons" : [ "READY" ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "bureau.credit_after_overdue.clean_history_months",
+    "displayName" : "Clean history months (post-overdue)",
+    "dependencyCanonicalIds" : [ "bureau.tradeline.payment_history", "bureau.max_dpd_6m" ],
+    "dependencyBusinessReadiness" : [ "READY", "READY" ],
+    "dependencyBusinessReadinessReasons" : [ "READY", "READY" ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "bureau.dpd_30_plus_count_6m",
+    "displayName" : "Count of 30+ DPD months (6m)",
+    "dependencyCanonicalIds" : [ "bureau.tradeline.dpd_month" ],
+    "dependencyBusinessReadiness" : [ "READY" ],
+    "dependencyBusinessReadinessReasons" : [ "READY" ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "bureau.dpd_60_plus_count_6m",
+    "displayName" : "Count of 60+ DPD months (6m)",
+    "dependencyCanonicalIds" : [ "bureau.tradeline.dpd_month" ],
+    "dependencyBusinessReadiness" : [ "READY" ],
+    "dependencyBusinessReadinessReasons" : [ "READY" ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "bureau.dpd_90_plus_count_6m",
+    "displayName" : "Count of 90+ DPD months (6m)",
+    "dependencyCanonicalIds" : [ "bureau.tradeline.dpd_month" ],
+    "dependencyBusinessReadiness" : [ "READY" ],
+    "dependencyBusinessReadinessReasons" : [ "READY" ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "bureau.months_since_last_delinquency",
+    "displayName" : "Months since last delinquency",
+    "dependencyCanonicalIds" : [ "bureau.tradeline.dpd_month" ],
+    "dependencyBusinessReadiness" : [ "READY" ],
+    "dependencyBusinessReadinessReasons" : [ "READY" ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "bureau.oldest_tradeline_vintage_months",
+    "displayName" : "Oldest tradeline vintage (months)",
+    "dependencyCanonicalIds" : [ "bureau.tradeline.account_open_date" ],
+    "dependencyBusinessReadiness" : [ "READY" ],
+    "dependencyBusinessReadinessReasons" : [ "READY" ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "bureau.average_account_age_months",
+    "displayName" : "Average account age (months)",
+    "dependencyCanonicalIds" : [ "bureau.tradeline.account_open_date" ],
+    "dependencyBusinessReadiness" : [ "READY" ],
+    "dependencyBusinessReadinessReasons" : [ "READY" ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "bureau.cc_utilisation",
+    "displayName" : "Credit-card utilisation",
+    "dependencyCanonicalIds" : [ "bureau.tradeline.current_balance", "bureau.tradeline.credit_limit" ],
+    "dependencyBusinessReadiness" : [ "READY", "READY" ],
+    "dependencyBusinessReadinessReasons" : [ "READY", "READY" ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "bureau.thin_file_indicator",
+    "displayName" : "Thin-file / NTC indicator",
+    "dependencyCanonicalIds" : [ "bureau.score" ],
+    "dependencyBusinessReadiness" : [ "READY" ],
+    "dependencyBusinessReadinessReasons" : [ "READY" ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "bureau.status_ntc",
+    "displayName" : "Bureau NTC / thin-file status",
+    "dependencyCanonicalIds" : [ "bureau.score" ],
+    "dependencyBusinessReadiness" : [ "READY" ],
+    "dependencyBusinessReadinessReasons" : [ "READY" ],
+    "derivedBusinessReadiness" : "READY",
+    "derivedBusinessReadinessReason" : "READY"
+  }, {
+    "canonicalParameterId" : "bureau.commercial.total_facility_exposure",
+    "displayName" : "Total commercial facility exposure",
+    "dependencyCanonicalIds" : [ "bureau.commercial.facility.current_balance" ],
+    "dependencyBusinessReadiness" : [ "NOT_READY" ],
+    "dependencyBusinessReadinessReasons" : [ "SOURCE_NOT_INTEGRATED" ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "bureau.commercial.total_sanction",
+    "displayName" : "Total commercial sanction",
+    "dependencyCanonicalIds" : [ "bureau.commercial.facility.sanction_amount" ],
+    "dependencyBusinessReadiness" : [ "NOT_READY" ],
+    "dependencyBusinessReadinessReasons" : [ "SOURCE_NOT_INTEGRATED" ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "bureau.commercial.utilisation",
+    "displayName" : "Commercial utilisation",
+    "dependencyCanonicalIds" : [ "bureau.commercial.facility.current_balance", "bureau.commercial.facility.sanction_amount" ],
+    "dependencyBusinessReadiness" : [ "NOT_READY", "NOT_READY" ],
+    "dependencyBusinessReadinessReasons" : [ "SOURCE_NOT_INTEGRATED", "SOURCE_NOT_INTEGRATED" ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "banking.avg_daily_balance_3m",
+    "displayName" : "Average daily balance",
+    "dependencyCanonicalIds" : [ "bank.account.closing_balance" ],
+    "dependencyBusinessReadiness" : [ "NOT_READY" ],
+    "dependencyBusinessReadinessReasons" : [ "RAW_FIELD_NOT_AVAILABLE" ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "DEPENDENCY_NOT_READY"
+  }, {
+    "canonicalParameterId" : "banking.monthly_credits_3m",
+    "displayName" : "Monthly credits",
+    "dependencyCanonicalIds" : [ ],
+    "dependencyBusinessReadiness" : [ ],
+    "dependencyBusinessReadinessReasons" : [ ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "banking.cheque_return_count_3m",
+    "displayName" : "Cheque return count",
+    "dependencyCanonicalIds" : [ ],
+    "dependencyBusinessReadiness" : [ ],
+    "dependencyBusinessReadinessReasons" : [ ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "banking.emi_bounce_count_3m",
+    "displayName" : "EMI bounce count",
+    "dependencyCanonicalIds" : [ ],
+    "dependencyBusinessReadiness" : [ ],
+    "dependencyBusinessReadinessReasons" : [ ],
+    "derivedBusinessReadiness" : "READY",
+    "derivedBusinessReadinessReason" : "READY"
+  }, {
+    "canonicalParameterId" : "banking.settlement.count_monthly_avg_3m",
+    "displayName" : "Average monthly settlements",
+    "dependencyCanonicalIds" : [ ],
+    "dependencyBusinessReadiness" : [ ],
+    "dependencyBusinessReadinessReasons" : [ ],
+    "derivedBusinessReadiness" : "READY",
+    "derivedBusinessReadinessReason" : "READY"
+  }, {
+    "canonicalParameterId" : "banking.settlement.avg_daily_3m",
+    "displayName" : "Average daily settlements",
+    "dependencyCanonicalIds" : [ ],
+    "dependencyBusinessReadiness" : [ ],
+    "dependencyBusinessReadinessReasons" : [ ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "banking.transaction_count.average_monthly_3m",
+    "displayName" : "Average monthly transactions",
+    "dependencyCanonicalIds" : [ ],
+    "dependencyBusinessReadiness" : [ ],
+    "dependencyBusinessReadinessReasons" : [ ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "banking.inward_return.ratio_3m",
+    "displayName" : "Inward return ratio",
+    "dependencyCanonicalIds" : [ ],
+    "dependencyBusinessReadiness" : [ ],
+    "dependencyBusinessReadinessReasons" : [ ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "banking.adjusted_business_credits_12m",
+    "displayName" : "Adjusted business credits (12m)",
+    "dependencyCanonicalIds" : [ "bank.transaction.classification" ],
+    "dependencyBusinessReadiness" : [ "NOT_READY" ],
+    "dependencyBusinessReadinessReasons" : [ "RAW_FIELD_NOT_AVAILABLE" ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "banking.monthly_obligation",
+    "displayName" : "Detected monthly EMI obligation",
+    "dependencyCanonicalIds" : [ ],
+    "dependencyBusinessReadiness" : [ ],
+    "dependencyBusinessReadinessReasons" : [ ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "banking.negative_balance_days_3m",
+    "displayName" : "Negative balance days (3m)",
+    "dependencyCanonicalIds" : [ "bank.account.closing_balance" ],
+    "dependencyBusinessReadiness" : [ "NOT_READY" ],
+    "dependencyBusinessReadinessReasons" : [ "RAW_FIELD_NOT_AVAILABLE" ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "banking.cash_intensity_3m",
+    "displayName" : "Cash intensity (3m)",
+    "dependencyCanonicalIds" : [ "bank.transaction.classification" ],
+    "dependencyBusinessReadiness" : [ "NOT_READY" ],
+    "dependencyBusinessReadinessReasons" : [ "RAW_FIELD_NOT_AVAILABLE" ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "banking.od_utilisation",
+    "displayName" : "OD / CC utilisation (banking)",
+    "dependencyCanonicalIds" : [ "bank.account.od_limit", "bank.account.closing_balance" ],
+    "dependencyBusinessReadiness" : [ "NOT_READY", "NOT_READY" ],
+    "dependencyBusinessReadinessReasons" : [ "RAW_FIELD_NOT_AVAILABLE", "RAW_FIELD_NOT_AVAILABLE" ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "gst.turnover.trailing_12m",
+    "displayName" : "GST turnover (12 months)",
+    "dependencyCanonicalIds" : [ "gst.return.taxable_value" ],
+    "dependencyBusinessReadiness" : [ "NOT_READY" ],
+    "dependencyBusinessReadinessReasons" : [ "RAW_FIELD_NOT_AVAILABLE" ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "DEPENDENCY_NOT_READY"
+  }, {
+    "canonicalParameterId" : "gst.turnover.trailing_3m",
+    "displayName" : "GST turnover (3 months)",
+    "dependencyCanonicalIds" : [ "gst.return.taxable_value" ],
+    "dependencyBusinessReadiness" : [ "NOT_READY" ],
+    "dependencyBusinessReadinessReasons" : [ "RAW_FIELD_NOT_AVAILABLE" ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "gst.turnover.trailing_6m",
+    "displayName" : "GST turnover (6 months)",
+    "dependencyCanonicalIds" : [ "gst.return.taxable_value" ],
+    "dependencyBusinessReadiness" : [ "NOT_READY" ],
+    "dependencyBusinessReadinessReasons" : [ "RAW_FIELD_NOT_AVAILABLE" ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "gst.filing.timeliness_score",
+    "displayName" : "GST filing timeliness score",
+    "dependencyCanonicalIds" : [ "gst.return.filing_status" ],
+    "dependencyBusinessReadiness" : [ "NOT_READY" ],
+    "dependencyBusinessReadinessReasons" : [ "RAW_FIELD_NOT_AVAILABLE" ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "gst.gstr1_gstr3b_turnover_variance",
+    "displayName" : "GSTR-1 vs GSTR-3B turnover variance",
+    "dependencyCanonicalIds" : [ "gst.return.taxable_value" ],
+    "dependencyBusinessReadiness" : [ "NOT_READY" ],
+    "dependencyBusinessReadinessReasons" : [ "RAW_FIELD_NOT_AVAILABLE" ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "gst.return.missing_count_12m",
+    "displayName" : "Missing GST returns (12m)",
+    "dependencyCanonicalIds" : [ "gst.return.filing_status" ],
+    "dependencyBusinessReadiness" : [ "NOT_READY" ],
+    "dependencyBusinessReadinessReasons" : [ "RAW_FIELD_NOT_AVAILABLE" ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "RAW_FIELD_NOT_AVAILABLE"
+  }, {
+    "canonicalParameterId" : "gst.return.late_count_12m",
+    "displayName" : "Late GST returns (12m)",
+    "dependencyCanonicalIds" : [ "gst.return.filing_status" ],
+    "dependencyBusinessReadiness" : [ "NOT_READY" ],
+    "dependencyBusinessReadinessReasons" : [ "RAW_FIELD_NOT_AVAILABLE" ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "RAW_FIELD_NOT_AVAILABLE"
+  }, {
+    "canonicalParameterId" : "financial.dscr",
+    "displayName" : "DSCR",
+    "dependencyCanonicalIds" : [ "financial.pat", "financial.interest", "financial.debt" ],
+    "dependencyBusinessReadiness" : [ "NOT_READY", "NOT_READY", "NOT_READY" ],
+    "dependencyBusinessReadinessReasons" : [ "SOURCE_NOT_INTEGRATED", "SOURCE_NOT_INTEGRATED", "SOURCE_NOT_INTEGRATED" ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "financial.interest_coverage",
+    "displayName" : "Interest coverage",
+    "dependencyCanonicalIds" : [ "financial.interest" ],
+    "dependencyBusinessReadiness" : [ "NOT_READY" ],
+    "dependencyBusinessReadinessReasons" : [ "SOURCE_NOT_INTEGRATED" ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "financial.debt_equity",
+    "displayName" : "Debt / Equity",
+    "dependencyCanonicalIds" : [ "financial.debt", "financial.net_worth" ],
+    "dependencyBusinessReadiness" : [ "NOT_READY", "NOT_READY" ],
+    "dependencyBusinessReadinessReasons" : [ "SOURCE_NOT_INTEGRATED", "SOURCE_NOT_INTEGRATED" ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "financial.tol_tnw",
+    "displayName" : "TOL / TNW",
+    "dependencyCanonicalIds" : [ "financial.debt", "financial.net_worth" ],
+    "dependencyBusinessReadiness" : [ "NOT_READY", "NOT_READY" ],
+    "dependencyBusinessReadinessReasons" : [ "SOURCE_NOT_INTEGRATED", "SOURCE_NOT_INTEGRATED" ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "financial.pat_positive",
+    "displayName" : "PAT positive",
+    "dependencyCanonicalIds" : [ "financial.pat" ],
+    "dependencyBusinessReadiness" : [ "NOT_READY" ],
+    "dependencyBusinessReadinessReasons" : [ "SOURCE_NOT_INTEGRATED" ],
+    "derivedBusinessReadiness" : "NOT_READY",
+    "derivedBusinessReadinessReason" : "CALCULATION_NOT_DEFINED"
+  }, {
+    "canonicalParameterId" : "kyc.quality",
+    "displayName" : "KYC quality",
+    "dependencyCanonicalIds" : [ ],
+    "dependencyBusinessReadiness" : [ ],
+    "dependencyBusinessReadinessReasons" : [ ],
+    "derivedBusinessReadiness" : "READY",
+    "derivedBusinessReadinessReason" : "READY"
+  }, {
+    "canonicalParameterId" : "obligation.ratio",
+    "displayName" : "Obligation ratio (FOIR)",
+    "dependencyCanonicalIds" : [ ],
+    "dependencyBusinessReadiness" : [ ],
+    "dependencyBusinessReadinessReasons" : [ ],
+    "derivedBusinessReadiness" : "READY",
+    "derivedBusinessReadinessReason" : "READY"
+  }, {
+    "canonicalParameterId" : "collateral.ltv",
+    "displayName" : "LTV",
+    "dependencyCanonicalIds" : [ "application.requested_amount" ],
+    "dependencyBusinessReadiness" : [ "READY" ],
+    "dependencyBusinessReadinessReasons" : [ "MANUAL_INPUT" ],
+    "derivedBusinessReadiness" : "READY",
+    "derivedBusinessReadinessReason" : "READY"
+  } ]
+}

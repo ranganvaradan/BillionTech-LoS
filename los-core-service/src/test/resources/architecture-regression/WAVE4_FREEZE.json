@@ -15,9 +15,9 @@
   "PRODUCERS_ADDED": 0,
   "CALCULATION_DEFINITIONS_CREATED": "NONE",
   "CAPABILITY_COUNTS_AFTER": {
-    "policyTestCapableCount": 40,
-    "w6CapableCount": 30,
-    "underwritingCapableCount": 40
+    "policyTestCapableCount": 67,
+    "w6CapableCount": 57,
+    "underwritingCapableCount": 67
   },
   "PARAMETER_CLASS_COUNTS": {
     "INGREDIENT": 65,

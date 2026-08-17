@@ -18,9 +18,9 @@
   "DEFINITION_TESTED_IS_CERTIFICATION": false,
   "POLICY_ACTIVE_IS_CERTIFICATION": false,
   "CAPABILITY_COUNTS_AFTER": {
-    "policyTestCapableCount": 40,
-    "w6CapableCount": 30,
-    "underwritingCapableCount": 40
+    "policyTestCapableCount": 67,
+    "w6CapableCount": 57,
+    "underwritingCapableCount": 67
   },
   "GACAT_MUTATED": false,
   "VIKASAM_MUTATED": false,

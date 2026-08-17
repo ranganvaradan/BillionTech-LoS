@@ -136,6 +136,9 @@ public final class CanonicalParameterTruthProjection {
                 def, semantic, capability, calcRequired, manual, raw));
         calculation.put("catalogueDerivationDefinedLegacy", derivationDefined);
         calculation.put("setupNotApplicable", ingredient);
+        List<String> structuralDeps = BusinessReadinessProjector.structuralDependencyIds(def, execution);
+        calculation.put("structuralDependencies", structuralDeps);
+        calculation.put("dependencyCanonicalIds", structuralDeps);
         out.put("calculation", calculation);
 
         // --- certification (Wave-8) ---

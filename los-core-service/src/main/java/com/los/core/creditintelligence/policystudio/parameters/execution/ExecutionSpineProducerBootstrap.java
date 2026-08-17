@@ -1,6 +1,7 @@
 package com.los.core.creditintelligence.policystudio.parameters.execution;
 
 import com.los.core.creditintelligence.policystudio.parameters.derived.DerivedCalculationDefinitionService;
+import com.los.core.creditintelligence.policystudio.sourceintegration.PlatformNormalizedRawFieldCatalog;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
@@ -60,8 +61,9 @@ public class ExecutionSpineProducerBootstrap {
 
     public static void registerDefaults(
             ProducerRegistry registry, AuthoredDerivedProducer.AuthoredDefinitionSource authored) {
-        RawFactProducer raw = new RawFactProducer(RAW_FACT_IDS);
-        for (String id : RAW_FACT_IDS) {
+        Set<String> rawIds = PlatformNormalizedRawFieldCatalog.mergeIntoRawFactIds(RAW_FACT_IDS);
+        RawFactProducer raw = new RawFactProducer(rawIds);
+        for (String id : rawIds) {
             registry.registerExact(id, raw);
         }
 

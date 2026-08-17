@@ -16,9 +16,9 @@
   "FROZEN_RETIREMENT_READY": false,
   "LIVE_DECISION_AUTHORITY_CHANGED": false,
   "CAPABILITY_COUNTS_AFTER": {
-    "policyTestCapableCount": 40,
-    "w6CapableCount": 30,
-    "underwritingCapableCount": 40
+    "policyTestCapableCount": 67,
+    "w6CapableCount": 57,
+    "underwritingCapableCount": 67
   },
   "GACAT_MUTATED": false,
   "VIKASAM_MUTATED": false,

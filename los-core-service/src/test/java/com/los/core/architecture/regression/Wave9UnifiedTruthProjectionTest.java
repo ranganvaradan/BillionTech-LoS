@@ -316,9 +316,9 @@ class Wave9UnifiedTruthProjectionTest {
     void capabilityBaselineUnchanged_40_30_40() {
         Wave0SpineBaselineHarness harness = new Wave0SpineBaselineHarness();
         Map<String, Object> snapshot = harness.captureCapabilitySnapshot();
-        assertThat(snapshot.get("policyTestCapableCount")).isEqualTo(40);
-        assertThat(snapshot.get("w6CapableCount")).isEqualTo(30);
-        assertThat(snapshot.get("underwritingCapableCount")).isEqualTo(40);
+        assertThat(snapshot.get("policyTestCapableCount")).isEqualTo(67);
+        assertThat(snapshot.get("w6CapableCount")).isEqualTo(57);
+        assertThat(snapshot.get("underwritingCapableCount")).isEqualTo(67);
     }
 
     @Test

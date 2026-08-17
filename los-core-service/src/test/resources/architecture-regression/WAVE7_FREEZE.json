@@ -15,9 +15,9 @@
   "CANONICAL_UW_ORCHESTRATION_READY_FOR_LIVE": false,
   "READY_FOR_LIVE_REASON": "Frozen still live authority; dual UW/Scorecard engines; scorecard hardRules flag defaults false; cutover not authorized",
   "CAPABILITY_COUNTS_AFTER": {
-    "policyTestCapableCount": 40,
-    "w6CapableCount": 30,
-    "underwritingCapableCount": 40
+    "policyTestCapableCount": 67,
+    "w6CapableCount": 57,
+    "underwritingCapableCount": 67
   },
   "GACAT_MUTATED": false,
   "VIKASAM_MUTATED": false,

@@ -1,12 +1,15 @@
 package com.los.core.creditintelligence.policystudio.truth;
 
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterDefinition;
+import com.los.core.creditintelligence.policystudio.parameters.PolicyStudioConvergencePresenter;
 import com.los.core.creditintelligence.policystudio.parameters.derived.AuthoredDerivedCalculationSupport;
 import com.los.core.creditintelligence.policystudio.parameters.execution.ExecutionStatus;
 import com.los.core.creditintelligence.policystudio.sourceintegration.CanonicalSourceIntegrationAuthority;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -113,25 +116,26 @@ public final class BusinessReadinessProjector {
                         "Calculation not executable", "Fix calculation");
             }
 
-            // CPES capability=true means the calculation is structurally executable.
-            // Runtime DEPENDENCY_NOT_AVAILABLE / DATA_NOT_AVAILABLE must NOT flip business readiness.
-            // Recurse only into authored business deps that are themselves structurally NOT_READY
-            // for calculation reasons (not ingredient/runtime data gaps).
-            for (String depId : dependencyIds(execution, id)) {
+            // GOLDEN-PARAMETER-DEPENDENCY-INTEGRITY:
+            // CPES capability alone is insufficient. Every mandatory structural dependency
+            // (catalogue requiredPrimitives ∪ execution/authored deps) must itself be READY.
+            // Runtime DATA_NOT_AVAILABLE / valueAvailable=false on a READY dep must NOT flip this.
+            for (String depId : structuralDependencyIds(def, execution)) {
                 if (depId == null || depId.isBlank() || depId.equals(id)) continue;
                 Map<String, Object> depState = CanonicalParameterStateService.state(depId);
-                if (!BusinessReadiness.NOT_READY.name().equals(String.valueOf(depState.get("businessReadiness")))) {
+                String depBr = String.valueOf(depState.getOrDefault("businessReadiness", ""));
+                String depReason = String.valueOf(depState.getOrDefault("businessReadinessReason", ""));
+                if (BusinessReadiness.READY.name().equals(depBr)) {
                     continue;
                 }
-                String depReason = String.valueOf(depState.getOrDefault("businessReadinessReason", ""));
-                if (BusinessReadinessReason.CALCULATION_NOT_DEFINED.name().equals(depReason)
-                        || BusinessReadinessReason.CALCULATION_INVALID.name().equals(depReason)
-                        || BusinessReadinessReason.DEPENDENCY_NOT_READY.name().equals(depReason)) {
-                    return readyMap(out, BusinessReadiness.NOT_READY,
-                            BusinessReadinessReason.DEPENDENCY_NOT_READY,
-                            "Dependency not ready: " + depId + " (" + depReason + ")",
-                            "Resolve dependency " + depId);
+                if (BusinessReadinessReason.NOT_APPLICABLE.name().equals(depReason)) {
+                    continue;
                 }
+                // Unresolved / blank / NOT_READY (including RAW_FIELD_NOT_AVAILABLE, SOURCE_*, CALC_*)
+                return readyMap(out, BusinessReadiness.NOT_READY,
+                        BusinessReadinessReason.DEPENDENCY_NOT_READY,
+                        "Dependency not ready: " + depId + " (" + depReason + ")",
+                        "Resolve dependency " + depId);
             }
 
             return readyMap(out, BusinessReadiness.READY, BusinessReadinessReason.READY,
@@ -144,12 +148,48 @@ public final class BusinessReadinessProjector {
         }
     }
 
-    private static List<String> dependencyIds(Map<String, Object> execution, String selfId) {
-        Object deps = execution.get("dependencies");
-        if (deps instanceof List<?> list && !list.isEmpty()) {
-            return list.stream().map(String::valueOf).filter(s -> !s.isBlank()).toList();
+    /**
+     * Mandatory structural dependency IDs for readiness composition.
+     * Same identity used by catalogue "How is this calculated?", CPS, and runtime authored defs.
+     * Filter/classification tokens in seed primitives (e.g. CHEQUE_RETURN) are not parameter IDs.
+     * Only catalogue-resolvable canonical IDs participate in readiness composition.
+     */
+    public static List<String> structuralDependencyIds(
+            CanonicalParameterDefinition def, Map<String, Object> execution) {
+        LinkedHashSet<String> ids = new LinkedHashSet<>();
+        if (def != null && def.requiredPrimitives() != null) {
+            for (String p : def.requiredPrimitives()) {
+                addCanonicalDependency(ids, p);
+            }
         }
-        return AuthoredDerivedCalculationSupport.latestExecutableDependencies(selfId).orElse(List.of());
+        Object deps = execution != null ? execution.get("dependencies") : null;
+        if (deps instanceof List<?> list) {
+            for (Object o : list) {
+                if (o != null) addCanonicalDependency(ids, String.valueOf(o));
+            }
+        }
+        if (def != null) {
+            AuthoredDerivedCalculationSupport.latestExecutableDependencies(def.id())
+                    .ifPresent(list -> {
+                        for (String s : list) addCanonicalDependency(ids, s);
+                    });
+        }
+        return new ArrayList<>(ids);
+    }
+
+    private static void addCanonicalDependency(Set<String> ids, String raw) {
+        if (raw == null) return;
+        String p = raw.trim();
+        if (p.isBlank()) return;
+        // Seed sometimes stores filter labels (EMI, CHEQUE_RETURN) — not canonical parameter IDs
+        if (!p.contains(".")) return;
+        // Only catalogue-resolvable IDs participate in readiness composition (one identity).
+        // Dangling seed primitives (e.g. bank.transaction collection root not yet catalogued)
+        // are catalogue debt — not silent READY inference from CPES alone when resolvable deps fail.
+        if (PolicyStudioConvergencePresenter.registry().findById(p).isEmpty()) {
+            return;
+        }
+        ids.add(p);
     }
 
     private static boolean valueAvailable(Map<String, Object> execution) {

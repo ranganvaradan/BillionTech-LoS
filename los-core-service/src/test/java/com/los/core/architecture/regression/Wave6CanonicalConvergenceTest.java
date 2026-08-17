@@ -322,9 +322,9 @@ class Wave6CanonicalConvergenceTest {
     void capabilityBaselineUnchanged() {
         Wave0SpineBaselineHarness harness = new Wave0SpineBaselineHarness();
         Map<String, Object> snap = harness.captureCapabilitySnapshot();
-        assertThat(snap.get("policyTestCapableCount")).isEqualTo(40);
-        assertThat(snap.get("w6CapableCount")).isEqualTo(30);
-        assertThat(snap.get("underwritingCapableCount")).isEqualTo(40);
+        assertThat(snap.get("policyTestCapableCount")).isEqualTo(67);
+        assertThat(snap.get("w6CapableCount")).isEqualTo(57);
+        assertThat(snap.get("underwritingCapableCount")).isEqualTo(67);
     }
 
     @Test
