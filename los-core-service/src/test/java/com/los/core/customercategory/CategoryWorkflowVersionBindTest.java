@@ -367,6 +367,10 @@ class CategoryWorkflowVersionBindTest {
                 c.detail() != null && c.detail().contains("current v3")));
         assertEquals(wfId, e.getWorkflowId());
         assertEquals(1, e.getWorkflowVersion());
+        assertTrue(ready.checks().stream().anyMatch(c ->
+                "WORKFLOW_APPLICABILITY_COMPATIBLE".equals(c.code()) && c.ok()));
+        assertTrue(ready.checks().stream().noneMatch(c ->
+                c.detail() != null && c.detail().contains("WORKFLOW_NOT_ACTIVE")));
     }
 
     @Test

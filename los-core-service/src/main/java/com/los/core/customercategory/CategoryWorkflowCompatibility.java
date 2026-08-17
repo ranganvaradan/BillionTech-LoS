@@ -45,13 +45,17 @@ public final class CategoryWorkflowCompatibility {
         List<Check> checks = new ArrayList<>();
         List<String> reasons = new ArrayList<>();
 
-        boolean active = wf != null && wf.isActive();
+        boolean governed = wf != null && (
+                wf.isActive()
+                        || "ACTIVE".equals(wf.resolvedPublicationStatus())
+                        || "SUPERSEDED".equals(wf.resolvedPublicationStatus()));
         checks.add(new Check(
                 "WORKFLOW_ACTIVE",
-                "Workflow Version is active/governed for use",
-                active,
-                wf == null ? "Missing" : (active ? "active=true" : "active=false")));
-        if (!active) {
+                "Workflow Version is governed for Category use (ACTIVE or SUPERSEDED)",
+                governed,
+                wf == null ? "Missing" : ("publication=" + wf.resolvedPublicationStatus()
+                        + " active=" + wf.isActive())));
+        if (!governed) {
             reasons.add(WORKFLOW_NOT_ACTIVE);
         }
 
@@ -95,7 +99,7 @@ public final class CategoryWorkflowCompatibility {
                 + " · " + nullToEmpty(wf.getBorrowerType())
                 + " / " + nullToEmpty(wf.getLoanProduct())
                 + " / " + nullToEmpty(wf.getIntakeSegment())
-                + (wf.isActive() ? " · ACTIVE" : " · INACTIVE");
+                + " · " + wf.resolvedPublicationStatus();
         return new Result(
                 compatible ? STATUS_COMPATIBLE : STATUS_INCOMPATIBLE,
                 compatible,
