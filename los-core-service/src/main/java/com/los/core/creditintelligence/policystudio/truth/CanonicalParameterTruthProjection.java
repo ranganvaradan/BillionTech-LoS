@@ -166,12 +166,11 @@ public final class CanonicalParameterTruthProjection {
         out.put("certification", certification);
 
         // --- source integration (canonical authority — not GACAT heuristics) ---
-        // Prefer explicit sourceDomain / evaluatedFrom; fall back to canonical id so
-        // bureau.* / gst.* / bank.* lineage maps to the connector catalogue (not UNKNOWN).
-        String sourceFamily = firstNonBlank(
+        // Prefer canonical id for connector mapping when present — GACAT sourceDomain may be
+        // "computed"/internal even for bureau.* business parameters.
+        String sourceFamily = firstNonBlank(def.id(), 
                 String.valueOf(semantic.getOrDefault("sourceDomain", "")),
-                def.evaluatedFrom(),
-                def.id());
+                def.evaluatedFrom());
         Map<String, Object> source = CanonicalSourceIntegrationAuthority.forParameter(
                 def.evaluatedFrom(), sourceFamily, def.type());
         out.put("source", source);
