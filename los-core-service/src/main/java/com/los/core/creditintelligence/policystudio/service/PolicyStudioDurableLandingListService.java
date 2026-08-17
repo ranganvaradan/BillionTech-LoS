@@ -215,7 +215,8 @@ public class PolicyStudioDurableLandingListService {
         row.put("underwritingRuleCount", ruleCount);
         row.put("needsInputCount", needsInput);
         row.put("needsInputMeaning", "CURRENT_STRUCTURAL_PARAMETER_BLOCKERS");
-        row.put("needsInputAuthority", "PolicyExecutionReadiness.currentParameterBlockers");
+        row.put("needsInputAuthority",
+                "PolicyRuleParticipation+PolicyExecutionReadiness.currentParameterBlockers");
 
         List<String> landingActions = List.of("OPEN", "COPY");
         if (lifecycleService != null) {

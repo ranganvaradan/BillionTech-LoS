@@ -15,6 +15,7 @@ import com.los.core.creditintelligence.policystudio.parameters.CanonicalParamete
 import com.los.core.creditintelligence.policystudio.parameters.ParameterResolutionSupport;
 import com.los.core.creditintelligence.policystudio.parameters.PolicyStudioConvergencePresenter;
 import com.los.core.creditintelligence.policystudio.parameters.RuleOperandPresenter;
+import com.los.core.creditintelligence.policystudio.parameters.lifecycle.PolicyRuleParticipation;
 import com.los.core.creditintelligence.policystudio.truth.CanonicalParameterStateService;
 import com.los.core.creditintelligence.policystudio.parameters.execution.BuiltInBankingMetricProducer;
 import com.los.core.creditintelligence.policystudio.parameters.execution.CanonicalParameterExecutionService;
@@ -85,7 +86,8 @@ public class PolicyStudioTestExperienceService {
     public Map<String, Object> testContext(UUID documentId, String tenantHeader) {
         PolicyStudioSession session = requireSession(documentId, tenantHeader);
         List<Map<String, Object>> required = requiredParameters(session);
-        Map<String, Object> readiness = readinessSummary(required);
+        List<Map<String, Object>> ignoredDiagnostics = ignoredRuleParameters(session, required);
+        Map<String, Object> readiness = readinessSummary(required, ignoredDiagnostics);
 
         Map<String, Object> appsPayload = prospectSimulationService.listApplications(
                 StagingProspectSimulationCatalog.DATA_SOURCE_VALIDATION_FIXTURES);
@@ -113,6 +115,7 @@ public class PolicyStudioTestExperienceService {
                         "description", "Future — portfolio historical corpus is not wired into Policy Studio Test.",
                         "future", true)));
         out.put("requiredParameters", required);
+        out.put("ignoredRuleParameters", ignoredDiagnostics);
         out.put("readiness", readiness);
         out.put("applications", apps);
         out.put("applicationNote",
@@ -203,7 +206,7 @@ public class PolicyStudioTestExperienceService {
         out.put("valueProvenance", valueProvenance);
         out.put("executionSpineTrace", spine.trace());
         out.put("executionSpineUsed", true);
-        out.put("readiness", readinessSummary(required));
+        out.put("readiness", readinessSummary(required, ignoredRuleParameters(session, required)));
         out.put("blockers", remainingBlockers);
         out.put("cannotFullyEvaluate", !remainingBlockers.isEmpty()
                 && "DATA INSUFFICIENT".equals(evaluation.get("simulatedDecisionCode")));
@@ -312,7 +315,9 @@ public class PolicyStudioTestExperienceService {
         readiness.put("derived", derived);
         readiness.put("manualInputRequired", manual);
         readiness.put("unresolved", unresolved);
+        readiness.put("unresolvedForPolicyReadiness", unresolved);
         readiness.put("needsAttention", needsAttention);
+        readiness.put("ruleParticipationAuthority", PolicyRuleParticipation.AUTHORITY);
 
         Map<String, Object> out = baseResult(session, documentId, "APPLICATION");
         out.put("testType", "APPLICATION");
@@ -355,11 +360,59 @@ public class PolicyStudioTestExperienceService {
     // ─── Required parameters ───────────────────────────────────────────────
 
     List<Map<String, Object>> requiredParameters(PolicyStudioSession session) {
-        // Distinct canonical IDs → one PolicyTestInput stamped from CanonicalParameterStateService.
+        // Distinct canonical IDs from PARTICIPATING rules only → one PolicyTestInput
+        // stamped from CanonicalParameterStateService.
         Map<String, Map<String, Object>> byCanonical = new LinkedHashMap<>();
         for (CiPolicyRuleCandidate r : session.getRuleCandidates()) {
             if (PolicyStudioConvergencePresenter.isCompoundChild(r.getSystemRuleId())) continue;
             if (isDataCalculationOnly(r)) continue;
+            if (!PolicyRuleParticipation.participatesInPolicyReadiness(r)) continue;
+            collectRuleParameters(r, byCanonical);
+        }
+        List<Map<String, Object>> required = dedupePolicyTestInputs(new ArrayList<>(byCanonical.values()));
+        for (Map<String, Object> p : required) {
+            p.put("participatesInPolicyReadiness", true);
+            p.put("policyRequirementRole", "POLICY_REQUIRED");
+        }
+        return required;
+    }
+
+    List<Map<String, Object>> ignoredRuleParameters(
+            PolicyStudioSession session, List<Map<String, Object>> required) {
+        Map<String, Map<String, Object>> ignored = new LinkedHashMap<>();
+        java.util.Set<String> requiredIds = new java.util.LinkedHashSet<>();
+        if (required != null) {
+            for (Map<String, Object> p : required) {
+                String cid = firstNonBlank(p.get("canonicalParameterId"), p.get("metricId"));
+                if (cid != null) requiredIds.add(cid);
+            }
+        }
+        if (session == null || session.getRuleCandidates() == null) {
+            return List.of();
+        }
+        for (CiPolicyRuleCandidate r : session.getRuleCandidates()) {
+            if (PolicyStudioConvergencePresenter.isCompoundChild(r.getSystemRuleId())) continue;
+            if (isDataCalculationOnly(r)) continue;
+            if (PolicyRuleParticipation.participatesInPolicyReadiness(r)) continue;
+            if (!PolicyRuleParticipation.isIgnoredDisposition(r)) {
+                continue;
+            }
+            Map<String, Map<String, Object>> bucket = new LinkedHashMap<>();
+            collectRuleParameters(r, bucket);
+            for (Map.Entry<String, Map<String, Object>> e : bucket.entrySet()) {
+                if (requiredIds.contains(e.getKey())) continue;
+                Map<String, Object> row = new LinkedHashMap<>(e.getValue());
+                row.put("participatesInPolicyReadiness", false);
+                row.put("policyRequirementRole", "IGNORED_NON_PARTICIPATING");
+                row.put("diagnosticKind", PolicyRuleParticipation.classify(r).name());
+                ignored.putIfAbsent(e.getKey(), row);
+            }
+        }
+        return new ArrayList<>(ignored.values());
+    }
+
+    private void collectRuleParameters(
+            CiPolicyRuleCandidate r, Map<String, Map<String, Object>> byCanonical) {
             List<String> dataUsed = extractMetricPaths(r.getExpression());
             Map<String, Object> meta = r.getMetadata() == null ? Map.of() : r.getMetadata();
             Map<String, Object> visual = PolicyStudioConvergencePresenter.isOverdueExceptionParent(r.getSystemRuleId())
@@ -391,8 +444,6 @@ public class PolicyStudioTestExperienceService {
             if (sys.contains("INWARD")) {
                 mergeParamByCanonical(byCanonical, fromMetricPath("banking.inward_return_count_3m", meta));
             }
-        }
-        return dedupePolicyTestInputs(new ArrayList<>(byCanonical.values()));
     }
 
     /**
@@ -678,6 +729,11 @@ public class PolicyStudioTestExperienceService {
     }
 
     private Map<String, Object> readinessSummary(List<Map<String, Object>> required) {
+        return readinessSummary(required, List.of());
+    }
+
+    private Map<String, Object> readinessSummary(
+            List<Map<String, Object>> required, List<Map<String, Object>> ignoredDiagnostics) {
         int auto = 0, derived = 0, manual = 0, unresolved = 0, unavailable = 0;
         List<Map<String, Object>> needs = new ArrayList<>();
         for (Map<String, Object> p : required) {
@@ -713,8 +769,11 @@ public class PolicyStudioTestExperienceService {
         out.put("derived", derived);
         out.put("manualInputRequired", manual);
         out.put("unresolved", unresolved);
+        out.put("unresolvedForPolicyReadiness", unresolved);
         out.put("unavailable", unavailable);
         out.put("needsAttention", needs);
+        out.put("ignoredNonParticipating", ignoredDiagnostics == null ? 0 : ignoredDiagnostics.size());
+        out.put("ruleParticipationAuthority", PolicyRuleParticipation.AUTHORITY);
         return out;
     }
 

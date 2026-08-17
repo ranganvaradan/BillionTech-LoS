@@ -5,6 +5,7 @@ import com.los.core.creditintelligence.policystudio.domain.CiPolicyRuleCandidate
 import com.los.core.creditintelligence.policystudio.model.PolicyStudioSession;
 import com.los.core.creditintelligence.policystudio.parameters.execution.EvaluationMode;
 import com.los.core.creditintelligence.policystudio.parameters.execution.ExecutionCapabilityAuthority;
+import com.los.core.creditintelligence.policystudio.parameters.lifecycle.PolicyRuleParticipation;
 import com.los.core.creditintelligence.policystudio.truth.CanonicalParameterStateService;
 
 import java.util.ArrayList;
@@ -90,6 +91,7 @@ public final class PolicyExecutionReadiness {
                         || BLOCKER_MATERIAL_AMBIGUITY.equals(String.valueOf(b.get("blockerType")))));
         out.put("allowCanonicalAuthority", false);
         out.put("authority", "PolicyExecutionReadiness.evaluate");
+        out.put("ruleParticipationAuthority", PolicyRuleParticipation.AUTHORITY);
         return out;
     }
 
@@ -163,8 +165,9 @@ public final class PolicyExecutionReadiness {
     }
 
     /**
-     * Unique current structural parameter blockers across all genuine UW rules
-     * (including ignored / keep-as). CanonicalParameterState is the parameter axis.
+     * Unique current structural parameter blockers from PARTICIPATING rules only.
+     * IGNORED / DELETED / genuine N/A / compound children do not contribute.
+     * CanonicalParameterState remains the parameter-readiness axis.
      */
     public static List<Map<String, Object>> currentParameterBlockers(PolicyStudioSession session) {
         LinkedHashMap<String, Map<String, Object>> unique = new LinkedHashMap<>();
@@ -172,7 +175,7 @@ public final class PolicyExecutionReadiness {
             return List.of();
         }
         for (CiPolicyRuleCandidate r : session.getRuleCandidates()) {
-            if (!isCurrentAttentionRule(r)) continue;
+            if (!PolicyRuleParticipation.participatesInPolicyReadiness(r)) continue;
             for (Map<String, Object> op : operandsOf(r)) {
                 String id = operandCanonicalId(op);
                 if (id == null && op.get("operandKey") != null) {
@@ -213,8 +216,8 @@ public final class PolicyExecutionReadiness {
 
     /**
      * POLICY-STUDIO-UX-CLOSURE-1 — current structural attention count.
-     * Unique canonical parameter blockers on genuine UW rules, including ignored / keep-as.
-     * Documentary / classification-only items remain excluded.
+     * Unique canonical parameter blockers on participating UW rules only.
+     * IGNORED-only NOT_READY parameters are not policy Need Input.
      */
     public static long countNeedsBusinessInput(PolicyStudioSession session) {
         return currentParameterBlockers(session).size();

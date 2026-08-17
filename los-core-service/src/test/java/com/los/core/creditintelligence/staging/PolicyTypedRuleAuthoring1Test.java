@@ -6,6 +6,7 @@ import com.los.core.creditintelligence.policystudio.parameters.CmRuleAuthoringSe
 import com.los.core.creditintelligence.policystudio.parameters.PolicyExecutionReadiness;
 import com.los.core.creditintelligence.policystudio.service.PolicyStudioOrchestrator;
 import com.los.core.creditintelligence.policystudio.service.PolicyTextExtractionService;
+import com.los.core.creditintelligence.policystudio.truth.CanonicalParameterStateService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -292,7 +293,8 @@ class PolicyTypedRuleAuthoring1Test {
     void readinessConvergence_doesNotRegress_andNoNewEngine() {
         assertThat(PolicyExecutionReadiness.class.getSimpleName()).isEqualTo("PolicyExecutionReadiness");
         assertThat(authoring.sources().get("allowCanonicalAuthority")).isEqualTo(false);
-        // Authored ADB>=EDI remains not execution-ready until EDI resolved
+        // Disposition B — obsolete after canonical model: Proposed EDI is GACAT MANUAL,
+        // not an unresolved "no runtime source" execution blocker.
         UUID docId = scratchDoc();
         demoService.addPlainEnglishRule(docId, Map.of(
                 "confirm", true,
@@ -306,11 +308,15 @@ class PolicyTypedRuleAuthoring1Test {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> eb = (List<Map<String, Object>>) session.get("executionBlockers");
         if (eb != null) {
-            assertThat(eb.stream().anyMatch(b ->
-                    String.valueOf(b.getOrDefault("reason", "")).toLowerCase().contains("edi")
-                            || String.valueOf(b.getOrDefault("parameterId", "")).contains("edi")))
-                    .isTrue();
+            assertThat(eb).noneMatch(b ->
+                    String.valueOf(b.getOrDefault("reason", "")).toLowerCase().contains("no runtime source")
+                            && (String.valueOf(b.getOrDefault("parameterId", "")).toLowerCase().contains("edi")
+                            || String.valueOf(b.getOrDefault("reason", "")).toLowerCase().contains("edi")));
         }
+        Map<String, Object> edi = CanonicalParameterStateService.state("application.proposed_edi");
+        assertThat(String.valueOf(edi.get("primaryStatus")))
+                .isNotEqualTo("UNRESOLVED");
+        assertThat(edi.get("businessReadiness")).isIn("READY", "NOT_READY");
     }
 
     private UUID scratchDoc() {

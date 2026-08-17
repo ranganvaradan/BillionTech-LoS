@@ -82,7 +82,11 @@ export function CiPolicySimulationTab({
   }, [documentId])
 
   const required = useMemo(() => asList(ctx?.requiredParameters).map(asRecord), [ctx])
+  const ignoredParams = useMemo(() => asList(ctx?.ignoredRuleParameters).map(asRecord), [ctx])
   const readiness = asRecord(ctx?.readiness)
+  const unresolvedForReadiness = Number(
+    readiness.unresolvedForPolicyReadiness ?? readiness.unresolved ?? 0,
+  )
   const needsAttention = asList(readiness.needsAttention).map(asRecord)
   const apps = useMemo(() => asList(ctx?.applications).map(asRecord), [ctx])
   const recent = asList(result?.recentTests ?? ctx?.recentTests).map(asRecord)
@@ -193,7 +197,7 @@ export function CiPolicySimulationTab({
 
       <CiSection
         title="Required parameters"
-        description={`${Number(readiness.required ?? required.length)} required · ${Number(readiness.availableAutomatically ?? 0)} automatic · ${Number(readiness.unresolved ?? 0)} unresolved`}
+        description={`${Number(readiness.required ?? required.length)} required · ${Number(readiness.availableAutomatically ?? 0)} automatic · ${unresolvedForReadiness} unresolved`}
       >
         {needsAttention.length ? (
           <div
@@ -210,6 +214,9 @@ export function CiPolicySimulationTab({
             </ul>
           </div>
         ) : null}
+        <p className="sr-only" data-testid="test-unresolved-for-policy-readiness">
+          {unresolvedForReadiness}
+        </p>
 
         <div className="grid gap-3 sm:grid-cols-2">
           {required.map((p) => {
@@ -281,6 +288,36 @@ export function CiPolicySimulationTab({
           })}
         </div>
       </CiSection>
+
+      {ignoredParams.length ? (
+        <CiSection
+          title="Ignored / non-participating rules"
+          description="Shown for inspection only — not current policy blockers."
+        >
+          <div className="grid gap-3 sm:grid-cols-2" data-testid="test-ignored-parameters">
+            {ignoredParams.map((p) => {
+              const key = String(p.parameterKey ?? p.canonicalParameterId ?? p.businessName)
+              return (
+                <div
+                  key={key}
+                  className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
+                  data-testid={`test-ignored-param-${key}`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-medium text-slate-900">{String(p.businessName)}</span>
+                    <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-slate-700">
+                      Ignored
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Non-participating rule diagnostic — not an unresolved policy requirement.
+                  </p>
+                </div>
+              )
+            })}
+          </div>
+        </CiSection>
+      ) : null}
 
       <div className="flex flex-wrap items-center gap-2">
         <button

@@ -444,6 +444,7 @@ export type PolicyTestContext = Record<string, unknown> & {
   title?: string
   modes?: Array<Record<string, unknown>>
   requiredParameters?: Array<Record<string, unknown>>
+  ignoredRuleParameters?: Array<Record<string, unknown>>
   readiness?: Record<string, unknown>
   applications?: Array<Record<string, unknown>>
   recentTests?: Array<Record<string, unknown>>

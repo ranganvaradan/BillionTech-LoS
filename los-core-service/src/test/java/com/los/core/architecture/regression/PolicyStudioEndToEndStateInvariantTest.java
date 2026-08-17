@@ -92,7 +92,7 @@ class PolicyStudioEndToEndStateInvariantTest {
 
     @Test
     void caseE_lifecycleActiveUnchanged_whenCurrentBlockersExist() {
-        PolicyStudioSession session = sessionWithIgnoredNotReady();
+        PolicyStudioSession session = sessionWithParticipatingNotReady();
         Map<String, Object> eval = PolicyExecutionReadiness.evaluate(session);
         assertThat(eval.get("currentExecutionReadiness")).isEqualTo("BLOCKED");
         assertThat(((List<?>) eval.get("currentParameterBlockers"))).isNotEmpty();
@@ -103,7 +103,7 @@ class PolicyStudioEndToEndStateInvariantTest {
 
     @Test
     void caseF_newDraftWithNotReadyParam_requiredParametersNotResolved() {
-        PolicyStudioSession session = sessionWithIgnoredNotReady();
+        PolicyStudioSession session = sessionWithParticipatingNotReady();
         Map<String, Object> eval = PolicyExecutionReadiness.evaluate(session);
         assertThat(eval.get("requiredParametersResolved")).isEqualTo(false);
     }
@@ -137,28 +137,41 @@ class PolicyStudioEndToEndStateInvariantTest {
     }
 
     @Test
-    void ignoredNotReadyStillCountsAsCurrentBlocker() {
+    void ignoredNotReadyDoesNotCountAsCurrentPolicyBlocker() {
         PolicyStudioSession session = sessionWithIgnoredNotReady();
         assertThat(PolicyExecutionReadiness.isIncludedExecutableRule(session.getRuleCandidates().get(0)))
                 .isFalse();
         assertThat(PolicyExecutionReadiness.isCurrentAttentionRule(session.getRuleCandidates().get(0)))
                 .isTrue();
-        assertThat(PolicyExecutionReadiness.countNeedsBusinessInput(session)).isGreaterThanOrEqualTo(1);
+        assertThat(PolicyExecutionReadiness.countNeedsBusinessInput(session)).isZero();
         assertThat(PolicyExecutionReadiness.currentParameterBlockers(session))
-                .anyMatch(b -> CC_OVERDUE.equals(String.valueOf(b.get("canonicalParameterId"))));
+                .noneMatch(b -> CC_OVERDUE.equals(String.valueOf(b.get("canonicalParameterId"))));
+        assertThat(CanonicalParameterStateService.state(CC_OVERDUE).get("businessReadiness"))
+                .isEqualTo("NOT_READY");
     }
 
     private static PolicyStudioSession sessionWithIgnoredNotReady() {
+        return sessionWithRule(CC_OVERDUE, "IGNORED", true, false, "CM_CC_OD_AMOUNT_GTE");
+    }
+
+    private static PolicyStudioSession sessionWithParticipatingNotReady() {
+        return sessionWithRule(CC_OVERDUE, "KEEP_AS_POLICY_REQUIREMENT", true, false,
+                "CM_CC_OD_AMOUNT_GTE");
+    }
+
+    private static PolicyStudioSession sessionWithRule(
+            String parameterId, String disposition, boolean excluded, boolean deleted, String systemId) {
         Map<String, Object> meta = new LinkedHashMap<>();
-        meta.put("disposition", "IGNORED");
-        meta.put("excludedFromActivation", true);
-        meta.put("parameterId", CC_OVERDUE);
+        meta.put("disposition", disposition);
+        meta.put("excludedFromActivation", excluded);
+        meta.put("deleted", deleted);
+        meta.put("parameterId", parameterId);
         CiPolicyRuleCandidate r = CiPolicyRuleCandidate.builder()
                 .id(UUID.randomUUID())
-                .systemRuleId("CM_CC_OD_AMOUNT_GTE")
+                .systemRuleId(systemId)
                 .expression(Map.of(
                         "op", "GTE",
-                        "left", Map.of("metric", CC_OVERDUE),
+                        "left", Map.of("metric", parameterId),
                         "right", Map.of("const", 0)))
                 .metadata(meta)
                 .build();

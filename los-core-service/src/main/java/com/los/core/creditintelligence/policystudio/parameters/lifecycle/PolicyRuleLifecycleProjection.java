@@ -110,7 +110,7 @@ public final class PolicyRuleLifecycleProjection {
         return out;
     }
 
-    static PolicyRuleLenderState deriveState(Facts f) {
+    public static PolicyRuleLenderState deriveState(Facts f) {
         // Genuine out-of-scope only. IGNORED / KEEP_AS are still policy rules — never N/A.
         if (!f.includedExecutable() && !f.ignored() && !f.policyRequirement()) {
             return PolicyRuleLenderState.NOT_APPLICABLE;
