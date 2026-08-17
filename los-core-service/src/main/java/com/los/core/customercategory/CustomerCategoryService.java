@@ -290,7 +290,9 @@ public class CustomerCategoryService {
         }
         applyPendingPolicyBind(e, req.policyApplicabilityId(), req.policyDocumentId(), req.policyVersionLabel(),
                 req.effectiveFrom(), req.effectiveUntil());
-        if (req.workflowId() != null) {
+        // Re-resolving an already-linked Workflow fails when the live catalogue
+        // version number moved (stale pin). Policy bind is independent — skip.
+        if (req.workflowId() != null && !req.workflowId().equals(e.getWorkflowId())) {
             CategoryWorkflowBindService.ResolvedWorkflowBind wb = workflowBindService.resolveBind(
                     req.workflowId(), req.workflowVersion());
             workflowBindService.requireCompatible(

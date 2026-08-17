@@ -396,7 +396,8 @@ export function CustomerCategoriesPage() {
       body.policyDocumentId = policyDocumentId
       body.policyVersionLabel = policyVersionLabel
     }
-    if (workflowId) {
+    const workflowChanged = !selected || selected.workflowId !== workflowId
+    if (workflowId && (isCreating || workflowChanged)) {
       body.workflowId = workflowId
       if (workflowVersion != null) body.workflowVersion = workflowVersion
     }

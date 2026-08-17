@@ -110,6 +110,12 @@ describe('customer category / policy set typed errors', () => {
     ).toMatch(/not found/i)
     expect(
       userFriendlyMessage(
+        new ApiError('wf', 422, null, { reason: 'WORKFLOW_VERSION_MISMATCH' }),
+        'fallback',
+      ),
+    ).toMatch(/does not match the Workflow catalogue/i)
+    expect(
+      userFriendlyMessage(
         new ApiError('wf', 422, null, { reason: 'WORKFLOW_VERSION_MUTATED' }),
         'fallback',
       ),
@@ -188,6 +194,7 @@ describe('customer category admin UI wiring', () => {
     expect(cat).toContain('policyApplicabilityId')
     expect(cat).toContain('Select a Policy Version before submitting.')
     expect(cat).toContain('pendingPolicySelection')
+    expect(cat).toContain('workflowChanged')
     expect(cat).not.toContain("selected?.policyLinkageStatus === 'POLICY_LINKAGE_REQUIRED' || !policyApplicabilityId")
     expect(cat).toContain('NOT ELIGIBLE')
     expect(cat).toContain('listEligibleWorkflows')

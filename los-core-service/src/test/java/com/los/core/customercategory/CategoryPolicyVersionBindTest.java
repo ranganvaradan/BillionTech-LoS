@@ -349,6 +349,34 @@ class CategoryPolicyVersionBindTest {
     }
 
     @Test
+    void updatePolicyLink_doesNotFailWhenPersistedWorkflowVersionIsStale() {
+        UUID id = UUID.randomUUID();
+        UUID wfId = UUID.randomUUID();
+        CustomerCategoryEntity e = draftUnlinked(id);
+        e.setWorkflowId(wfId);
+        e.setWorkflowVersion(1);
+        e.setWorkflowName("Vikasam Business Loan");
+        when(categoryRepository.findById(id)).thenReturn(Optional.of(e));
+        when(categoryRepository.findAll()).thenReturn(List.of(e));
+        when(categoryRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(applicabilityRepository.findById(appId)).thenReturn(Optional.of(approvedPolicy()));
+
+        CategoryResponse saved = categoryService.update(id, new CategoryRequest(
+                e.getCode(), e.getName(), null,
+                e.getBorrowerType(), e.getLoanProduct(), e.getIntakeSegment(),
+                e.getMinAmount(), e.getMaxAmount(),
+                null, null, null, null,
+                null, null, appId, docId, "v1",
+                wfId, 1), actor);
+        assertEquals("LINKED", saved.policyLinkageStatus());
+        assertEquals(appId, saved.policyApplicabilityId());
+        assertEquals(1, e.getWorkflowVersion());
+        assertEquals(wfId, e.getWorkflowId());
+        verify(workflowBindService, never()).resolveBind(any(), any());
+        verify(workflowBindService, never()).applyBind(any(), any());
+    }
+
+    @Test
     void wrongApplicabilityId_rejectedDeterministically() {
         UUID missing = UUID.randomUUID();
         when(applicabilityRepository.findById(missing)).thenReturn(Optional.empty());

@@ -50,6 +50,8 @@ const REASON_MESSAGES: Record<string, string> = {
     'Workflow linkage required — select a Workflow Version for this Category.',
   WORKFLOW_SCOPE_INCOMPATIBLE:
     'This Workflow Version’s applicability does not match the Category. Choose a compatible Workflow or adjust Category dimensions.',
+  WORKFLOW_VERSION_MISMATCH:
+    'The selected Workflow Version does not match the Workflow catalogue. Re-select the Workflow, then save.',
   WORKFLOW_NOT_FOUND: 'The selected Workflow Version was not found.',
   WORKFLOW_VERSION_MUTATED:
     'The linked Workflow content changed after this Category was bound. Re-select the Workflow Version (P1: immutable versions).',
