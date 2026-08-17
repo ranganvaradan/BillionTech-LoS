@@ -129,9 +129,9 @@ class Wave1ExecutionResultContractTest {
                 .fact("bureau.tradeline.payment_history", List.of(Map.of("month", "2026-01", "dpd", 0)))
                 .build();
         ExecutionResult r = spine.resolveAndExecute("bureau.dpd_30_plus_count_6m", ctx);
-        assertThat(r.capability()).isFalse();
-        assertThat(r.status()).isIn(
-                ExecutionStatus.CALCULATION_NOT_DEFINED, ExecutionStatus.NOT_EXECUTABLE);
+        assertThat(r.capability()).isTrue();
+        assertThat(r.status()).isEqualTo(ExecutionStatus.DATA_NOT_AVAILABLE);
+        assertThat(r.producerType()).isEqualTo(ProducerType.BUILT_IN);
     }
 
     @Test
@@ -142,7 +142,8 @@ class Wave1ExecutionResultContractTest {
                 .build();
         ExecutionResult r = spine.resolveAndExecute("bureau.credit_after_overdue.clean_history_months", ctx);
         assertThat(r.capability()).isTrue();
-        assertThat(r.status()).isEqualTo(ExecutionStatus.DEPENDENCY_NOT_AVAILABLE);
+        assertThat(r.status()).isEqualTo(ExecutionStatus.DATA_NOT_AVAILABLE);
+        assertThat(r.producerType()).isEqualTo(ProducerType.BUILT_IN);
     }
 
     @Test
@@ -151,7 +152,7 @@ class Wave1ExecutionResultContractTest {
                 .mode(EvaluationMode.POLICY_TEST)
                 .evaluationAsOf(LocalDate.of(2026, 8, 1))
                 .build();
-        ExecutionResult r = spine.resolveAndExecute("bureau.cc_overdue_amount", ctx);
+        ExecutionResult r = spine.resolveAndExecute("bureau.thin_file_indicator", ctx);
         assertThat(r.capability()).isFalse();
         assertThat(r.status()).isEqualTo(ExecutionStatus.NOT_EXECUTABLE);
     }
@@ -161,9 +162,9 @@ class Wave1ExecutionResultContractTest {
         EvaluationContext ctx = EvaluationContext.builder()
                 .mode(EvaluationMode.POLICY_TEST)
                 .evaluationAsOf(LocalDate.of(2026, 8, 1))
-                .input("bureau.cc_overdue_amount", 9999)
+                .input("bureau.thin_file_indicator", 9999)
                 .build();
-        ExecutionResult r = spine.resolveAndExecute("bureau.cc_overdue_amount", ctx);
+        ExecutionResult r = spine.resolveAndExecute("bureau.thin_file_indicator", ctx);
         assertThat(r.status()).isEqualTo(ExecutionStatus.VALUE_AVAILABLE);
         assertThat(r.capability()).isFalse();
         assertThat(r.simulatedValue()).isTrue();

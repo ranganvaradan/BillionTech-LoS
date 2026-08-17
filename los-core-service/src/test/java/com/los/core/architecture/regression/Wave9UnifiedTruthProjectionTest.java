@@ -134,7 +134,7 @@ class Wave9UnifiedTruthProjectionTest {
 
     @Test
     void dataParametersTruthProjection() {
-        Map<String, Object> row = dataParametersParameter("bureau.cc_overdue_amount");
+        Map<String, Object> row = dataParametersParameter("bureau.thin_file_indicator");
         assertThat(row).isNotNull();
         assertThat(row.get("primaryStatus")).isIn("NOT_READY", "NOT_YET_SUPPORTED");
         assertThat(String.valueOf(row.get("primaryStatusLabel"))).doesNotContainIgnoringCase("Derived automatically");
@@ -184,7 +184,7 @@ class Wave9UnifiedTruthProjectionTest {
     @Test
     void policyTestSimulationTruth_bannerWhenSimulatedWithoutCapability() {
         Map<String, Object> pt = SurfaceCanonicalTruthFacade.forSurface(
-                SurfaceCanonicalTruthFacade.POLICY_TEST, "bureau.cc_overdue_amount");
+                SurfaceCanonicalTruthFacade.POLICY_TEST, "bureau.thin_file_indicator");
         assertThat(pt.get("executionCapability")).isEqualTo(false);
         assertThat(pt.get("testSuccessDoesNotImplyCertification")).isEqualTo(true);
     }
@@ -237,12 +237,14 @@ class Wave9UnifiedTruthProjectionTest {
             @SuppressWarnings("unchecked")
             Map<String, Object> sem = (Map<String, Object>) g.get("semantic");
             assertThat(sem.get("parameterClass")).isEqualTo("BUSINESS_PARAMETER");
-            assertThat(sem.get("calculationMode")).isEqualTo("AUTHORED");
-            assertThat(SurfaceCanonicalTruthFacade.capability(g)).isFalse();
-            assertThat(g.get("primaryStatus")).isIn("NOT_READY", "NOT_YET_SUPPORTED");
+            assertThat(sem.get("calculationMode")).isEqualTo("BUILT_IN");
+            assertThat(SurfaceCanonicalTruthFacade.capability(g)).isTrue();
+            @SuppressWarnings("unchecked")
+            Map<String, Object> calc = (Map<String, Object>) g.get("calculation");
+            assertThat(calc.get("definitionPresent")).isEqualTo(false);
+            assertThat(g.get("primaryStatus")).isEqualTo("NOT_READY");
+            assertThat(g.get("businessReadinessReason")).isEqualTo("CALCULATION_NOT_DEFINED");
             assertThat(SurfaceCanonicalTruthFacade.certStatus(g)).isEqualTo("UNCERTIFIED");
-            assertThat(String.valueOf(g.get("calculationExplanation")))
-                    .containsIgnoringCase("not set up");
         });
     }
 
@@ -252,7 +254,7 @@ class Wave9UnifiedTruthProjectionTest {
             @SuppressWarnings("unchecked")
             Map<String, Object> sem = (Map<String, Object>) g.get("semantic");
             assertThat(sem.get("parameterClass")).isEqualTo("BUSINESS_PARAMETER");
-            assertThat(sem.get("calculationMode")).isEqualTo("AUTHORED");
+            assertThat(sem.get("calculationMode")).isEqualTo("BUILT_IN");
             // definition may exist → capability true iff spine has producer
             assertThat(g.get("execution")).isInstanceOf(Map.class);
             assertThat(SurfaceCanonicalTruthFacade.certStatus(g)).isEqualTo("UNCERTIFIED");
@@ -264,7 +266,7 @@ class Wave9UnifiedTruthProjectionTest {
         assertGolden("bureau.dpd_30_plus_count_6m", g -> {
             @SuppressWarnings("unchecked")
             Map<String, Object> sem = (Map<String, Object>) g.get("semantic");
-            assertThat(sem.get("calculationMode")).isEqualTo("AUTHORED");
+            assertThat(sem.get("calculationMode")).isEqualTo("BUILT_IN");
             // no invalid definition may claim executable if spine says false
             Boolean cap = SurfaceCanonicalTruthFacade.capability(g);
             assertThat(cap).isEqualTo(

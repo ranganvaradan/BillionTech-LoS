@@ -293,7 +293,7 @@ public final class AuthoredDerivedProducer implements ParameterProducer {
         if (expr == null || expr.isEmpty()) {
             return Optional.empty();
         }
-        if (!expressionMatchesTargetIntent(canonicalParameterId, expr)) {
+        if (!isSpineExecutableDefinition(canonicalParameterId, expr)) {
             return Optional.empty();
         }
         return Optional.of(def);
@@ -311,7 +311,20 @@ public final class AuthoredDerivedProducer implements ParameterProducer {
      */
     public static boolean isSpineExecutableDefinition(
             String canonicalParameterId, Map<String, Object> expr) {
+        if (isBuiltInCodeExpression(expr)) {
+            return false;
+        }
         return expressionMatchesTargetIntent(canonicalParameterId, expr);
+    }
+
+    /** Platform BUILT_IN_CODE rows are definition records, not spine formulas. */
+    public static boolean isBuiltInCodeExpression(Map<String, Object> expr) {
+        if (expr == null || expr.isEmpty()) {
+            return false;
+        }
+        String type = String.valueOf(expr.getOrDefault("type", "")).trim();
+        String calcType = String.valueOf(expr.getOrDefault("calculationType", "")).trim();
+        return "BUILT_IN_CODE".equalsIgnoreCase(type) || "BUILT_IN_CODE".equalsIgnoreCase(calcType);
     }
 
     /**

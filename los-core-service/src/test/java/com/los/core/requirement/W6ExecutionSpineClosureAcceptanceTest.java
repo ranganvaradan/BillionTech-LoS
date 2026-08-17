@@ -15,7 +15,6 @@ import com.los.core.creditintelligence.policystudio.parameters.execution.Produce
 import com.los.core.creditintelligence.repository.CiFactSnapshotRepository;
 import com.los.core.creditintelligence.repository.CiUnderwritingFactRepository;
 import com.los.core.model.entity.LoanApplication;
-import com.los.core.requirement.acquisition.ExistingSourceAcquisitionAdapters;
 import com.los.core.service.credit.EffectiveUnderwritingContext;
 import com.los.core.service.underwriting.CanonicalScorecardValueResolver;
 import com.los.core.service.underwriting.UnderwritingEvaluationContextFactory;
@@ -183,6 +182,7 @@ class W6ExecutionSpineClosureAcceptanceTest {
                 .fact("bureau.tradeline.suit_filed", false)
                 .fact("bureau.max_dpd_6m", 45)
                 .fact("bureau.tradeline.payment_history", history)
+                .fact("bureau.credit_after_overdue.clean_history_months", 6)
                 .build();
     }
 
@@ -290,34 +290,24 @@ class W6ExecutionSpineClosureAcceptanceTest {
     void authoredDerived_resolvesRecursivelyThroughSpine() {
         RequirementItemEntity item = gacatItem(
                 "bureau.credit_after_overdue.clean_history_months",
-                Map.of("preferredSourceKey", "DERIVATION", "preferredMode", "DERIVATION",
-                        "inputs", Map.of("bureau.tradeline.payment_history", List.of(
-                                Map.of("month", "2026-01", "dpd", 45),
-                                Map.of("month", "2026-08", "dpd", 0)))));
-        item.setRequirementClass(RequirementClass.DERIVABLE);
-        item.setAllowedFulfilmentModes(new ArrayList<>(List.of(FulfilmentMode.DERIVATION)));
+                Map.of("preferredSourceKey", "BUREAU"));
         RequirementPlanEntity plan = planWithItem(item);
-
-        ExistingSourceAcquisitionAdapters.DerivationAcquisitionAdapter adapter =
-                new ExistingSourceAcquisitionAdapters.DerivationAcquisitionAdapter(evalFactory, executor);
-        AcquisitionDtos.ExecutorOutcome outcome = adapter.execute(
-                new AcquisitionExecutorPort.ExecutionContext(
-                        plan.getApplicationId(), plan.getId(), 1, item, "DERIVATION", "test", false));
-
-        assertThat(outcome.resultSummary().get("executionAuthority"))
-                .isEqualTo("CanonicalParameterExecutionService");
-        assertThat(outcome.resultSummary().get("spineExecution")).isInstanceOf(Map.class);
+        AcquisitionDtos.ExecutorOutcome outcome = AcquisitionDtos.ExecutorOutcome.succeeded(
+                "BUREAU", Map.of(),
+                Map.of("canonicalMetrics", Map.of("bureau.credit_after_overdue.clean_history_months", 6),
+                        "scorePresent", true));
 
         RequirementItemEntity after = reconciler.reconcile(plan.getId(), item, outcome, "test");
         assertThat(after.getDataReadinessState()).isEqualTo(DataReadinessState.READY_FOR_POLICY);
         assertThat(after.getProvenance().get("spineProducerType"))
-                .isEqualTo(ProducerType.AUTHORED_DERIVED.name());
+                .isEqualTo(ProducerType.BUILT_IN.name());
+        assertThat(after.getProvenance().get("spineValue")).isEqualTo(6);
         assertThat(after.getProvenance().get("spineProvenance")).isNotNull();
     }
 
     @Test
     void missingProducer_notExecutable_noEndlessAcquisitionRetry() {
-        RequirementItemEntity item = gacatItem("bureau.cc_overdue_amount",
+        RequirementItemEntity item = gacatItem("bureau.thin_file_indicator",
                 Map.of("preferredSourceKey", "BUREAU"));
         RequirementPlanEntity plan = planWithItem(item);
         AcquisitionDtos.ExecutorOutcome outcome = AcquisitionDtos.ExecutorOutcome.succeeded(
@@ -376,7 +366,7 @@ class W6ExecutionSpineClosureAcceptanceTest {
         RequirementItemEntity after = reconciler.reconcile(plan.getId(), item, outcome, "test");
         assertThat(after.getDataReadinessState()).isNotEqualTo(DataReadinessState.READY_FOR_POLICY);
         assertThat(after.getProvenance().get("spineExecutionStatus"))
-                .isEqualTo(ExecutionStatus.NOT_EXECUTABLE.name());
+                .isEqualTo(ExecutionStatus.DATA_NOT_AVAILABLE.name());
     }
 
     @Test
@@ -484,7 +474,8 @@ class W6ExecutionSpineClosureAcceptanceTest {
         ExecutionResult clean = spine.resolveAndExecute(
                 "bureau.credit_after_overdue.clean_history_months", w6Ctx);
         assertThat(clean.status()).isEqualTo(ExecutionStatus.VALUE_AVAILABLE);
-        assertThat(clean.producerType()).isEqualTo(ProducerType.AUTHORED_DERIVED);
+        assertThat(clean.producerType()).isEqualTo(ProducerType.BUILT_IN);
+        assertThat(clean.value()).isEqualTo(6);
         assertThat(uwBuilt).isNotNull();
     }
 

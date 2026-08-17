@@ -48,6 +48,11 @@ public class CiGacatDerivedCalculationDefinition {
     @Builder.Default
     private String status = "DEFINED";
 
+    /** AUTHORED_EXPRESSION (spine formula) or BUILT_IN_CODE (BureauMetricService). */
+    @Column(name = "calculation_type", nullable = false, length = 40)
+    @Builder.Default
+    private String calculationType = "AUTHORED_EXPRESSION";
+
     @Column(name = "result_type", nullable = false, length = 40)
     @Builder.Default
     private String resultType = "NUMBER";

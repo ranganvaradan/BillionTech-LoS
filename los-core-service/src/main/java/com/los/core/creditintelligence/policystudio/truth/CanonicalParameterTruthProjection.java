@@ -125,13 +125,28 @@ public final class CanonicalParameterTruthProjection {
         // --- calculation ---
         Map<String, Object> calculation = new LinkedHashMap<>();
         boolean derivationDefined = def.capability() != null && def.capability().derivationDefined();
-        boolean authoredHowPresent = AuthoredDerivedCalculationSupport.latestExecutableHow(def.id()).isPresent();
+        Optional<Map<String, Object>> defMeta = AuthoredDerivedCalculationSupport.latestDefinitionPresent(def.id());
+        boolean defRowPresent = defMeta.isPresent();
+        boolean definitionPresent = defRowPresent; // NOT capability alone
         boolean calcRequired = !ingredient && authored && !capability;
         calculation.put("required", calcRequired);
-        calculation.put("definitionPresent", capability || authoredHowPresent);
-        calculation.put("definitionId", (capability || authoredHowPresent) ? def.id() : null);
-        calculation.put("definitionVersion", (capability || authoredHowPresent) ? "1" : null);
-        calculation.put("tested", false); // TESTED ≠ CERTIFIED; not inferred here
+        calculation.put("definitionPresent", definitionPresent);
+        if (defRowPresent) {
+            Map<String, Object> meta = defMeta.orElseThrow();
+            calculation.put("definitionId", meta.get("definitionId"));
+            calculation.put("definitionVersion", meta.get("versionNo"));
+            calculation.put("definitionType", meta.get("calculationType"));
+            calculation.put("executor", meta.get("executor"));
+            String st = meta.get("status") == null ? "" : String.valueOf(meta.get("status"));
+            calculation.put("tested",
+                    "TESTED".equalsIgnoreCase(st) || "PRODUCTION_READY".equalsIgnoreCase(st));
+        } else {
+            calculation.put("definitionId", null);
+            calculation.put("definitionVersion", null);
+            calculation.put("definitionType", null);
+            calculation.put("executor", null);
+            calculation.put("tested", false);
+        }
         calculation.put("explanation", LenderTruthDisplayMapper.calculationExplanation(
                 def, semantic, capability, calcRequired, manual, raw));
         calculation.put("catalogueDerivationDefinedLegacy", derivationDefined);

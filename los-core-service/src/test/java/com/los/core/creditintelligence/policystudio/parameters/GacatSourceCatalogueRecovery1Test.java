@@ -1,6 +1,7 @@
 package com.los.core.creditintelligence.policystudio.parameters;
 
 import com.los.core.creditintelligence.policystudio.metrics.PolicyBureauMetricService;
+import com.los.core.creditintelligence.policystudio.parameters.execution.BuiltInBureauMetricProducer;
 import com.los.core.service.readiness.DataParametersAdminService;
 import org.junit.jupiter.api.Test;
 
@@ -20,6 +21,34 @@ class GacatSourceCatalogueRecovery1Test {
 
     private final CanonicalParameterRegistry registry = new CanonicalParameterRegistry();
     private final DataParametersAdminService admin = new DataParametersAdminService();
+
+    @Test
+    void bureauRetailDerivedHonesty_emittedIdsImplementedNotCertified() {
+        List<CanonicalParameterDefinition> derived = GacatCatalogueSeed.all().stream()
+                .filter(d -> CanonicalParameterDefinition.DERIVED.equals(d.type()))
+                .filter(d -> "Bureau Retail".equals(d.evaluatedFrom()))
+                .toList();
+        assertThat(derived).hasSize(GacatCatalogueSeed.BUREAU_RETAIL_DERIVED_TARGET_COUNT);
+        for (String id : BuiltInBureauMetricProducer.EMITTED_IDS) {
+            CanonicalParameterDefinition d = registry.findById(id).orElseThrow();
+            assertThat(d.capability().implemented()).as(id).isTrue();
+            assertThat(d.capability().derivationDefined()).as(id).isTrue();
+            assertThat(d.capability().productionReady()).as(id).isFalse();
+            assertThat(d.existingImplementationBinding()).as(id).contains("BureauMetricService");
+            assertThat(d.existingImplementationBinding()).as(id).doesNotContain("PolicyBureauMetricService");
+            for (String prim : d.requiredPrimitives()) {
+                assertThat(prim).as(id + " primitive").contains(".");
+                CanonicalParameterDefinition raw = registry.findById(prim).orElseThrow();
+                assertThat(raw.type()).as(prim).isEqualTo(CanonicalParameterDefinition.RAW);
+            }
+        }
+        CanonicalParameterDefinition cc = registry.findById("bureau.cc_overdue_amount").orElseThrow();
+        assertThat(cc.calculationSummary()).containsIgnoringCase("MAX");
+        assertThat(cc.calculationSummary()).doesNotContainIgnoringCase("Sum of credit-card");
+        CanonicalParameterDefinition util = registry.findById("bureau.cc_utilisation").orElseThrow();
+        assertThat(util.calculationSummary()).containsIgnoringCase("SUM");
+        assertThat(util.capability().implemented()).isTrue();
+    }
 
     @Test
     void rawFieldRegistryIdsAreUnique() {
@@ -49,7 +78,8 @@ class GacatSourceCatalogueRecovery1Test {
         assertThat(d.type()).isEqualTo(CanonicalParameterDefinition.DERIVED);
         assertThat(d.calculationSummary()).containsIgnoringCase("trailing 6");
         assertThat(d.calculationSummary()).containsIgnoringCase("MAX");
-        assertThat(d.requiredPrimitives()).contains("bureau.tradeline.payment_history");
+        assertThat(d.requiredPrimitives()).contains("bureau.tradeline.dpd_month");
+        assertThat(d.requiredPrimitives()).doesNotContain("bureau.tradeline.payment_history");
         assertThat(d.capability().implemented()).isTrue();
         assertThat(d.capability().productionReady()).isFalse(); // not production-certified
         assertThat(d.existingImplementationBinding()).isEqualTo("BureauMetricService.evaluateMaxDpd");
@@ -83,11 +113,21 @@ class GacatSourceCatalogueRecovery1Test {
     void statusHonesty_definedNotImplementedVsProductionReady() {
         CanonicalParameterDefinition defined = registry.findById("bureau.dpd_30_plus_count_6m").orElseThrow();
         assertThat(defined.capability().derivationDefined()).isTrue();
-        assertThat(defined.capability().implemented()).isFalse();
+        assertThat(defined.capability().implemented()).isTrue();
         assertThat(defined.capability().productionReady()).isFalse();
+        assertThat(defined.existingImplementationBinding()).contains("BureauMetricService");
 
         CanonicalParameterDefinition live = registry.findById("bureau.live_unsecured_loan_count").orElseThrow();
-        assertThat(live.capability().productionReady()).isTrue();
+        assertThat(live.capability().implemented()).isTrue();
+        assertThat(live.capability().productionReady()).isFalse();
+
+        CanonicalParameterDefinition thin = registry.findById("bureau.thin_file_indicator").orElseThrow();
+        assertThat(thin.capability().implemented()).isFalse();
+        assertThat(thin.capability().missingDataTreatment()).contains("BUSINESS_DEFINITION_REQUIRED");
+
+        CanonicalParameterDefinition restructured = registry.findById("bureau.restructured_account_count").orElseThrow();
+        assertThat(restructured.capability().implemented()).isFalse();
+        assertThat(restructured.capability().missingDataTreatment()).contains("SOURCE_NOT_PROVEN");
     }
 
     @Test

@@ -12,6 +12,7 @@ import com.los.core.creditintelligence.policystudio.parameters.execution.Executi
 import com.los.core.creditintelligence.policystudio.parameters.execution.ExecutionResult;
 import com.los.core.creditintelligence.policystudio.parameters.execution.ExecutionSpineProducerBootstrap;
 import com.los.core.creditintelligence.policystudio.parameters.execution.ExecutionStatus;
+import com.los.core.creditintelligence.policystudio.parameters.execution.ProducerType;
 import com.los.core.creditintelligence.policystudio.parameters.PolicyStudioConvergencePresenter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -346,11 +347,12 @@ class Wave2GenericCalculationEngineTest {
                 .build();
         ExecutionResult clean = spine.resolveAndExecute(
                 "bureau.credit_after_overdue.clean_history_months", ctx);
-        assertThat(clean.status()).isEqualTo(ExecutionStatus.VALUE_AVAILABLE);
+        assertThat(clean.status()).isEqualTo(ExecutionStatus.DATA_NOT_AVAILABLE);
+        assertThat(clean.producerType()).isEqualTo(ProducerType.BUILT_IN);
 
         ExecutionResult dpd = spine.resolveAndExecute("bureau.dpd_30_plus_count_6m", ctx);
-        assertThat(dpd.status()).isEqualTo(ExecutionStatus.VALUE_AVAILABLE);
-        assertThat(((Number) dpd.value()).longValue()).isEqualTo(1L);
+        assertThat(dpd.status()).isEqualTo(ExecutionStatus.DATA_NOT_AVAILABLE);
+        assertThat(dpd.producerType()).isEqualTo(ProducerType.BUILT_IN);
     }
 
     @Test

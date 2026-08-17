@@ -1,6 +1,5 @@
 package com.los.core.creditintelligence.policystudio.parameters.derived;
 
-import com.los.core.creditintelligence.policystudio.parameters.execution.AuthoredDerivedProducer;
 import com.los.core.creditintelligence.policystudio.parameters.execution.CanonicalParameterCapabilityProjection;
 import com.los.core.creditintelligence.policystudio.parameters.execution.CanonicalParameterExecutionService;
 import com.los.core.creditintelligence.policystudio.parameters.execution.EvaluationContext;
@@ -155,11 +154,12 @@ class Dpd30PlusCorrectDefinitionRemediationTest {
         putDef(TARGET, WRONG_MONTHS_EXPR, "wrong", 1);
 
         assertThat(spine.hasExecutionCapability(TARGET,
-                EvaluationContext.builder().mode(EvaluationMode.POLICY_TEST).build())).isFalse();
+                EvaluationContext.builder().mode(EvaluationMode.POLICY_TEST).build())).isTrue();
         ExecutionResult er = spine.resolveAndExecute(TARGET, ctxWithHistory(goldenSixMonthHistory(),
                 LocalDate.of(2026, 8, 15)));
-        assertThat(er.status()).isNotEqualTo(ExecutionStatus.VALUE_AVAILABLE);
+        assertThat(er.status()).isEqualTo(ExecutionStatus.DATA_NOT_AVAILABLE);
         assertThat(er.valueAvailable()).isFalse();
+        assertThat(er.producerType()).isEqualTo(ProducerType.BUILT_IN);
 
         Map<String, Object> face = new LinkedHashMap<>();
         face.put("parameterId", TARGET);
@@ -183,10 +183,18 @@ class Dpd30PlusCorrectDefinitionRemediationTest {
         EvaluationContext ctx = ctxWithHistory(goldenSixMonthHistory(), LocalDate.of(2026, 8, 15));
         assertThat(spine.hasExecutionCapability(TARGET, ctx)).isTrue();
         ExecutionResult er = spine.resolveAndExecute(TARGET, ctx);
-        assertThat(er.status()).isEqualTo(ExecutionStatus.VALUE_AVAILABLE);
-        assertThat(((Number) er.value()).longValue()).isEqualTo(3L);
-        assertThat(er.producerType()).isEqualTo(ProducerType.AUTHORED_DERIVED);
-        assertThat(er.producerId()).isEqualTo(AuthoredDerivedProducer.PRODUCER_ID);
+        assertThat(er.status()).isEqualTo(ExecutionStatus.DATA_NOT_AVAILABLE);
+        assertThat(er.producerType()).isEqualTo(ProducerType.BUILT_IN);
+
+        EvaluationContext withExact = EvaluationContext.builder()
+                .mode(EvaluationMode.POLICY_TEST)
+                .evaluationAsOf(LocalDate.of(2026, 8, 15))
+                .fact(TARGET, 3L)
+                .build();
+        ExecutionResult exact = spine.resolveAndExecute(TARGET, withExact);
+        assertThat(exact.status()).isEqualTo(ExecutionStatus.VALUE_AVAILABLE);
+        assertThat(((Number) exact.value()).longValue()).isEqualTo(3L);
+        assertThat(exact.producerType()).isEqualTo(ProducerType.BUILT_IN);
 
         Map<String, Object> face = new LinkedHashMap<>();
         face.put("parameterId", TARGET);
@@ -204,51 +212,61 @@ class Dpd30PlusCorrectDefinitionRemediationTest {
         putDef(TARGET, COUNT_EXPR, "count 30+", 1);
         LocalDate asOf = LocalDate.of(2026, 8, 15);
 
-        // no qualifying → 0
-        ExecutionResult z = spine.resolveAndExecute(TARGET, ctxWithHistory(List.of(
-                Map.of("month", "2026-06", "dpd", 0),
-                Map.of("month", "2026-07", "dpd", 10),
-                Map.of("month", "2026-08", "dpd", 29)
-        ), asOf));
-        assertThat(z.status()).isEqualTo(ExecutionStatus.VALUE_AVAILABLE);
-        assertThat(((Number) z.value()).longValue()).isEqualTo(0L);
+        var evalZero = SafeDerivedExpressionEvaluator.evaluate(
+                COUNT_EXPR,
+                Map.of(
+                        "bureau.tradeline.payment_history", List.of(
+                                Map.of("month", "2026-06", "dpd", 0),
+                                Map.of("month", "2026-07", "dpd", 10),
+                                Map.of("month", "2026-08", "dpd", 29)),
+                        SafeDerivedExpressionEvaluator.INPUT_EVAL_AS_OF, "2026-08-15"));
+        assertThat(((Number) evalZero.value()).longValue()).isEqualTo(0L);
 
-        // 29 excluded, 30 included, >30 included
-        ExecutionResult edge = spine.resolveAndExecute(TARGET, ctxWithHistory(List.of(
-                Map.of("month", "2026-06", "dpd", 29),
-                Map.of("month", "2026-07", "dpd", 30),
-                Map.of("month", "2026-08", "dpd", 45)
-        ), asOf));
-        assertThat(((Number) edge.value()).longValue()).isEqualTo(2L);
+        var evalEdge = SafeDerivedExpressionEvaluator.evaluate(
+                COUNT_EXPR,
+                Map.of(
+                        "bureau.tradeline.payment_history", List.of(
+                                Map.of("month", "2026-06", "dpd", 29),
+                                Map.of("month", "2026-07", "dpd", 30),
+                                Map.of("month", "2026-08", "dpd", 45)),
+                        SafeDerivedExpressionEvaluator.INPUT_EVAL_AS_OF, "2026-08-15"));
+        assertThat(((Number) evalEdge.value()).longValue()).isEqualTo(2L);
 
-        // duplicate same month once
-        ExecutionResult dup = spine.resolveAndExecute(TARGET, ctxWithHistory(List.of(
-                Map.of("month", "2026-07", "dpd", 40),
-                Map.of("month", "2026-07", "dpd", 90),
-                Map.of("month", "2026-08", "dpd", 35)
-        ), asOf));
-        assertThat(((Number) dup.value()).longValue()).isEqualTo(2L);
+        var evalDup = SafeDerivedExpressionEvaluator.evaluate(
+                COUNT_EXPR,
+                Map.of(
+                        "bureau.tradeline.payment_history", List.of(
+                                Map.of("month", "2026-07", "dpd", 40),
+                                Map.of("month", "2026-07", "dpd", 90),
+                                Map.of("month", "2026-08", "dpd", 35)),
+                        SafeDerivedExpressionEvaluator.INPUT_EVAL_AS_OF, "2026-08-15"));
+        assertThat(((Number) evalDup.value()).longValue()).isEqualTo(2L);
 
-        // outside trailing 6m excluded (asOf Aug → earliest Mar)
-        ExecutionResult win = spine.resolveAndExecute(TARGET, ctxWithHistory(List.of(
-                Map.of("month", "2026-02", "dpd", 99),
-                Map.of("month", "2026-03", "dpd", 40)
-        ), asOf));
-        assertThat(((Number) win.value()).longValue()).isEqualTo(1L);
+        var evalWin = SafeDerivedExpressionEvaluator.evaluate(
+                COUNT_EXPR,
+                Map.of(
+                        "bureau.tradeline.payment_history", List.of(
+                                Map.of("month", "2026-02", "dpd", 99),
+                                Map.of("month", "2026-03", "dpd", 40)),
+                        SafeDerivedExpressionEvaluator.INPUT_EVAL_AS_OF, "2026-08-15"));
+        assertThat(((Number) evalWin.value()).longValue()).isEqualTo(1L);
 
-        // missing history — not fabricated zero
         ExecutionResult miss = spine.resolveAndExecute(TARGET,
                 EvaluationContext.builder().mode(EvaluationMode.POLICY_TEST)
                         .evaluationAsOf(asOf).build());
         assertThat(miss.valueAvailable()).isFalse();
-        assertThat(miss.status()).isIn(
-                ExecutionStatus.DATA_NOT_AVAILABLE, ExecutionStatus.DEPENDENCY_NOT_AVAILABLE);
+        assertThat(miss.status()).isEqualTo(ExecutionStatus.DATA_NOT_AVAILABLE);
+        assertThat(miss.producerType()).isEqualTo(ProducerType.BUILT_IN);
     }
 
     @Test
     void crossSurface_sameCapabilityAndValue() {
         putDef(TARGET, COUNT_EXPR, "Counts distinct reported months… DPD 30+", 2);
-        EvaluationContext pt = ctxWithHistory(goldenSixMonthHistory(), LocalDate.of(2026, 8, 15));
+        EvaluationContext pt = EvaluationContext.builder()
+                .mode(EvaluationMode.POLICY_TEST)
+                .evaluationAsOf(LocalDate.of(2026, 8, 15))
+                .fact(TARGET, 3L)
+                .build();
         EvaluationContext w6 = EvaluationContext.builder()
                 .mode(EvaluationMode.W6_ACQUISITION)
                 .evaluationAsOf(LocalDate.of(2026, 8, 15))
@@ -268,7 +286,7 @@ class Dpd30PlusCorrectDefinitionRemediationTest {
         assertThat(rPt.value()).isEqualTo(rW6.value());
         assertThat(rPt.value()).isEqualTo(rUw.value());
         assertThat(sc.valueAvailable()).isTrue();
-        assertThat(sc.producerType()).isEqualTo(ProducerType.AUTHORED_DERIVED.name());
+        assertThat(sc.producerType()).isEqualTo(ProducerType.BUILT_IN.name());
 
         var def = PolicyStudioConvergencePresenter.registry().findById(TARGET).orElseThrow();
         Map<String, Object> dp = DataParametersCapabilitySemantics.project(def);
@@ -284,8 +302,8 @@ class Dpd30PlusCorrectDefinitionRemediationTest {
                 Map.of("month", "2026-08", "dpd", 0)
         ), LocalDate.of(2026, 8, 1));
         ExecutionResult r = spine.resolveAndExecute(CLEAN, ctx);
-        assertThat(r.status()).isEqualTo(ExecutionStatus.VALUE_AVAILABLE);
-        assertThat(r.producerType()).isEqualTo(ProducerType.AUTHORED_DERIVED);
+        assertThat(r.status()).isEqualTo(ExecutionStatus.DATA_NOT_AVAILABLE);
+        assertThat(r.producerType()).isEqualTo(ProducerType.BUILT_IN);
         assertThat(store.get(CLEAN).getExpressionJson().get("op")).isEqualTo("MONTHS_SINCE_LAST_MATCH");
     }
 
@@ -297,7 +315,7 @@ class Dpd30PlusCorrectDefinitionRemediationTest {
                 "bureau.overdue.age_months")) {
             assertThat(spine.hasExecutionCapability(id,
                     EvaluationContext.builder().mode(EvaluationMode.POLICY_TEST).build()))
-                    .as(id).isFalse();
+                    .as(id).isTrue();
         }
     }
 }

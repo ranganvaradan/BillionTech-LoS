@@ -98,7 +98,7 @@ class Wave4GacatSemanticClassificationTest {
     @Test
     void legacyImplementedFlagAlone_doesNotChangeCpesCapability() {
         CanonicalParameterDefinition base = GacatCatalogueSeed.all().stream()
-                .filter(d -> "bureau.cc_overdue_amount".equals(d.id()))
+                .filter(d -> "bureau.thin_file_indicator".equals(d.id()))
                 .findFirst()
                 .orElseThrow();
         EvaluationContext ctx = EvaluationContext.builder().mode(EvaluationMode.POLICY_TEST).build();
@@ -193,11 +193,11 @@ class Wave4GacatSemanticClassificationTest {
         assertThat(byId.get("bureau.max_dpd_6m").calculationMode())
                 .isEqualTo(GacatSemanticTaxonomy.CalculationMode.BUILT_IN);
         assertThat(byId.get("bureau.credit_after_overdue.clean_history_months").calculationMode())
-                .isEqualTo(GacatSemanticTaxonomy.CalculationMode.AUTHORED);
+                .isEqualTo(GacatSemanticTaxonomy.CalculationMode.BUILT_IN);
         assertThat(byId.get("bureau.dpd_30_plus_count_6m").calculationMode())
-                .isEqualTo(GacatSemanticTaxonomy.CalculationMode.AUTHORED);
+                .isEqualTo(GacatSemanticTaxonomy.CalculationMode.BUILT_IN);
         assertThat(byId.get("bureau.cc_overdue_amount").calculationMode())
-                .isEqualTo(GacatSemanticTaxonomy.CalculationMode.AUTHORED);
+                .isEqualTo(GacatSemanticTaxonomy.CalculationMode.BUILT_IN);
         assertThat(byId.get("bureau.cc_overdue_amount").parameterClass())
                 .isEqualTo(GacatSemanticTaxonomy.ParameterClass.BUSINESS_PARAMETER);
 

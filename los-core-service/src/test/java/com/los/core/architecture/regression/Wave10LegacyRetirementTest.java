@@ -299,7 +299,7 @@ class Wave10LegacyRetirementTest {
 
     @Test
     void vikasamPostRetirementRegression() {
-        Map<String, Object> overdue = CanonicalParameterTruthProjection.project("bureau.cc_overdue_amount");
+        Map<String, Object> overdue = CanonicalParameterTruthProjection.project("bureau.thin_file_indicator");
         assertThat(SurfaceCanonicalTruthFacade.capability(overdue)).isFalse();
         assertThat(CanonicalCompatibilityRegistry.exactCanonicalIdForPath("BUREAU_ENQUIRIES_3M")).isNull();
         Wave0SpineBaselineHarness harness = new Wave0SpineBaselineHarness();

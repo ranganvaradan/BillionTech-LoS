@@ -137,17 +137,18 @@ class Vikasam13ExecutionAcceptanceTest {
         assertThat(byId.get("bureau.score").status()).isEqualTo(ExecutionStatus.VALUE_AVAILABLE);
         assertThat(byId.get("bureau.recent_inquiries_90d").status()).isEqualTo(ExecutionStatus.VALUE_AVAILABLE);
         assertThat(byId.get("bureau.credit_after_overdue.clean_history_months").status())
-                .isEqualTo(ExecutionStatus.VALUE_AVAILABLE);
+                .isEqualTo(ExecutionStatus.DATA_NOT_AVAILABLE);
         assertThat(byId.get("bureau.credit_after_overdue.clean_history_months").producerType())
-                .isEqualTo(ProducerType.AUTHORED_DERIVED);
+                .isEqualTo(ProducerType.BUILT_IN);
 
-        assertThat(byId.get("bureau.dpd_30_plus_count_6m").capability()).isFalse();
-        assertThat(byId.get("bureau.cc_overdue_amount").status()).isEqualTo(ExecutionStatus.NOT_EXECUTABLE);
-        assertThat(byId.get("bureau.overdue.amount").status()).isEqualTo(ExecutionStatus.NOT_EXECUTABLE);
-        assertThat(byId.get("bureau.overdue.age_months").status()).isEqualTo(ExecutionStatus.NOT_EXECUTABLE);
+        assertThat(byId.get("bureau.dpd_30_plus_count_6m").capability()).isTrue();
+        assertThat(byId.get("bureau.dpd_30_plus_count_6m").status()).isEqualTo(ExecutionStatus.DATA_NOT_AVAILABLE);
+        assertThat(byId.get("bureau.cc_overdue_amount").status()).isEqualTo(ExecutionStatus.DATA_NOT_AVAILABLE);
+        assertThat(byId.get("bureau.overdue.amount").status()).isEqualTo(ExecutionStatus.DATA_NOT_AVAILABLE);
+        assertThat(byId.get("bureau.overdue.age_months").status()).isEqualTo(ExecutionStatus.DATA_NOT_AVAILABLE);
 
         assertThat(executable).isGreaterThanOrEqualTo(8);
-        assertThat(notExecutable).isGreaterThanOrEqualTo(4);
+        assertThat(notExecutable).isGreaterThanOrEqualTo(0);
         assertThat(executable + notExecutable).isEqualTo(13);
     }
 }

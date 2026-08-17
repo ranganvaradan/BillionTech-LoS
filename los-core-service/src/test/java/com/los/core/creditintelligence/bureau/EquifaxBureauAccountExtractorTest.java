@@ -130,6 +130,32 @@ class EquifaxBureauAccountExtractorTest {
     }
 
     @Test
+    void extractsAllPanIdsWithoutRemovingPanId() {
+        String xml = """
+                <?xml version='1.0' encoding='UTF-8'?>
+                <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+                <soapenv:Body>
+                <sch:InquiryResponse xmlns:sch="http://services.equifax.com/eport/ws/schemas/1.0">
+                <sch:InquiryResponseHeader><sch:Date>22-10-2025</sch:Date></sch:InquiryResponseHeader>
+                <sch:PANId>abcde1234f</sch:PANId>
+                <sch:IDAndContactInfo><sch:PANId>xyzpan0001</sch:PANId></sch:IDAndContactInfo>
+                <sch:Account seq="1"><sch:AccountType>Personal Loan</sch:AccountType></sch:Account>
+                </sch:InquiryResponse>
+                </soapenv:Body>
+                </soapenv:Envelope>
+                """;
+        Map<String, Object> base = new LinkedHashMap<>();
+        base.put("panId", "abcde1234f");
+        Map<String, Object> data = EquifaxBureauAccountExtractor.enrichFromXml(xml, base);
+        assertEquals("abcde1234f", data.get("panId"));
+        @SuppressWarnings("unchecked")
+        List<String> pans = (List<String>) data.get("panIds");
+        assertEquals(2, pans.size());
+        assertTrue(pans.contains("abcde1234f"));
+        assertTrue(pans.contains("xyzpan0001"));
+    }
+
+    @Test
     void simulatedMissingDoesNotInventAccounts() {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("creditScore", 720);

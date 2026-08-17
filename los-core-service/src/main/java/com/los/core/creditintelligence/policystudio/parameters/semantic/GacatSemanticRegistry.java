@@ -50,19 +50,7 @@ public final class GacatSemanticRegistry {
 
     /** Authored design intent (may or may not have a definition). */
     private static final Set<String> AUTHORED_INTENT = Set.of(
-            "bureau.credit_after_overdue.clean_history_months",
-            "bureau.credit_after_overdue.exists",
-            "bureau.dpd_30_plus_count_6m",
-            "bureau.dpd_60_plus_count_6m",
-            "bureau.dpd_90_plus_count_6m",
-            "bureau.months_since_last_delinquency",
-            "bureau.oldest_tradeline_vintage_months",
-            "bureau.average_account_age_months",
-            "bureau.cc_utilisation",
             "bureau.thin_file_indicator",
-            "bureau.cc_overdue_amount",
-            "bureau.overdue.amount",
-            "bureau.overdue.age_months",
             "bureau.commercial.total_facility_exposure",
             "bureau.commercial.total_sanction",
             "bureau.commercial.utilisation",

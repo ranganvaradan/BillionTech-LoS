@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -29,12 +30,12 @@ public class AuthoredDerivedCalculationSupport {
     private final DerivedCalculationDefinitionService definitionService;
 
     @PostConstruct
-    void register() {
+    public void register() {
         INSTANCE = this;
     }
 
     @PreDestroy
-    void unregister() {
+    public void unregister() {
         if (INSTANCE == this) {
             INSTANCE = null;
         }
@@ -46,8 +47,28 @@ public class AuthoredDerivedCalculationSupport {
         inst.applyOverlay(face);
     }
 
+    public static boolean isBuiltInCodeDefinition(Map<String, Object> expr) {
+        return AuthoredDerivedProducer.isBuiltInCodeExpression(expr);
+    }
+
     /**
-     * Lender-facing calculation narrative for an authored definition the spine would execute.
+     * Latest non-retired definition row for UI / READY — includes BUILT_IN_CODE
+     * (not spine-executable as a formula).
+     */
+    public static Optional<Map<String, Object>> latestDefinitionPresent(String canonicalParameterId) {
+        AuthoredDerivedCalculationSupport inst = INSTANCE;
+        if (inst == null || canonicalParameterId == null || canonicalParameterId.isBlank()) {
+            return Optional.empty();
+        }
+        return inst.definitionService.latestFor(canonicalParameterId.trim(), null)
+                .filter(d -> d.getStatus() == null
+                        || !DerivedCalculationDefinitionService.STATUS_RETIRED.equalsIgnoreCase(d.getStatus()))
+                .map(AuthoredDerivedCalculationSupport::definitionMeta);
+    }
+
+    /**
+     * Lender-facing calculation narrative. BUILT_IN_CODE returns description without
+     * requiring a spine formula.
      */
     public static Optional<String> latestExecutableHow(String canonicalParameterId) {
         AuthoredDerivedCalculationSupport inst = INSTANCE;
@@ -55,8 +76,7 @@ public class AuthoredDerivedCalculationSupport {
             return Optional.empty();
         }
         return inst.definitionService.latestFor(canonicalParameterId.trim(), null)
-                .filter(d -> AuthoredDerivedProducer.isSpineExecutableDefinition(
-                        canonicalParameterId.trim(), d.getExpressionJson()))
+                .filter(d -> isHowEligible(canonicalParameterId.trim(), d))
                 .map(CiGacatDerivedCalculationDefinition::getDescription)
                 .filter(s -> s != null && !s.isBlank());
     }
@@ -67,10 +87,48 @@ public class AuthoredDerivedCalculationSupport {
             return Optional.empty();
         }
         return inst.definitionService.latestFor(canonicalParameterId.trim(), null)
-                .filter(d -> AuthoredDerivedProducer.isSpineExecutableDefinition(
-                        canonicalParameterId.trim(), d.getExpressionJson()))
+                .filter(d -> isHowEligible(canonicalParameterId.trim(), d))
                 .map(CiGacatDerivedCalculationDefinition::getDependencyIds)
                 .filter(deps -> deps != null && !deps.isEmpty());
+    }
+
+    private static boolean isHowEligible(String canonicalId, CiGacatDerivedCalculationDefinition d) {
+        if (d == null) return false;
+        if (isBuiltIn(d)) return true;
+        return AuthoredDerivedProducer.isSpineExecutableDefinition(canonicalId, d.getExpressionJson());
+    }
+
+    private static boolean isBuiltIn(CiGacatDerivedCalculationDefinition d) {
+        if (d == null) return false;
+        if (DerivedCalculationDefinitionService.CALCULATION_TYPE_BUILT_IN_CODE
+                .equalsIgnoreCase(d.getCalculationType() == null ? "" : d.getCalculationType())) {
+            return true;
+        }
+        return isBuiltInCodeDefinition(d.getExpressionJson());
+    }
+
+    private static Map<String, Object> definitionMeta(CiGacatDerivedCalculationDefinition d) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("definitionId", d.getId() == null ? null : d.getId().toString());
+        m.put("versionNo", d.getVersionNo());
+        m.put("status", d.getStatus());
+        String type = d.getCalculationType();
+        if (type == null || type.isBlank()) {
+            type = isBuiltInCodeDefinition(d.getExpressionJson())
+                    ? DerivedCalculationDefinitionService.CALCULATION_TYPE_BUILT_IN_CODE
+                    : DerivedCalculationDefinitionService.CALCULATION_TYPE_AUTHORED_EXPRESSION;
+        }
+        m.put("calculationType", type);
+        Object executor = null;
+        if (d.getExpressionJson() != null) {
+            executor = d.getExpressionJson().get("executor");
+        }
+        if (executor == null && d.getMetadata() != null) {
+            executor = d.getMetadata().get("executionAuthority");
+        }
+        m.put("executor", executor);
+        m.put("description", d.getDescription());
+        return m;
     }
 
     private void applyOverlay(Map<String, Object> face) {
@@ -89,10 +147,11 @@ public class AuthoredDerivedCalculationSupport {
         face.put("calculationDefinitionVersion", d.getVersionNo());
 
         Map<String, Object> expr = d.getExpressionJson();
+        boolean builtIn = isBuiltIn(d);
         boolean spineExecutable =
                 AuthoredDerivedProducer.isSpineExecutableDefinition(canonicalId, expr);
 
-        if (!spineExecutable) {
+        if (!spineExecutable && !builtIn) {
             // Stored row may exist (wrong op) — do NOT suppress lender calculation CTA
             face.put("calculationDefined", false);
             face.put("calculationDefinedButNotExecutable", true);

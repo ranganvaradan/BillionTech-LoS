@@ -49,6 +49,36 @@ public class BureauMetricService {
     /** Canonical NTC / no-hit flag (0/1). Distinct from bureau.score sentinel -1. */
     public static final String STATUS_NTC = "bureau.status_ntc";
 
+    public static final String INQUIRIES_CURRENT_MONTH = "bureau.inquiries.current_month";
+    public static final String INQUIRIES_LAST_3M = "bureau.inquiries.last_3m";
+    public static final String DPD_30_PLUS_COUNT_6M = "bureau.dpd_30_plus_count_6m";
+    public static final String DPD_60_PLUS_COUNT_6M = "bureau.dpd_60_plus_count_6m";
+    public static final String DPD_90_PLUS_COUNT_6M = "bureau.dpd_90_plus_count_6m";
+    public static final String MONTHS_SINCE_LAST_DELINQUENCY = "bureau.months_since_last_delinquency";
+    public static final String OLDEST_TRADELINE_VINTAGE_MONTHS = "bureau.oldest_tradeline_vintage_months";
+    public static final String AVERAGE_ACCOUNT_AGE_MONTHS = "bureau.average_account_age_months";
+    /** MAX overdue on CREDIT_CARD tradelines. */
+    public static final String CC_OVERDUE_AMOUNT = "bureau.cc_overdue_amount";
+    /** SUM(bal)/SUM(limit) open LIVE CC only; DI if any missing limit or sum limit=0. */
+    public static final String CC_UTILISATION = "bureau.cc_utilisation";
+    /** SUM non-CC overdue&gt;0 (explanatory; not BRE exception). */
+    public static final String OVERDUE_AMOUNT = "bureau.overdue.amount";
+    /** MAX age months of non-CC overdue using overdue EVENT month from PH. */
+    public static final String OVERDUE_AGE_MONTHS = "bureau.overdue.age_months";
+    public static final String CREDIT_AFTER_OVERDUE_EXISTS = "bureau.credit_after_overdue.exists";
+    /** Max consecutive CLEAN months on later loans — explanatory helper, not account-safe for BRE. */
+    public static final String CREDIT_AFTER_OVERDUE_CLEAN_HISTORY_MONTHS =
+            "bureau.credit_after_overdue.clean_history_months";
+    public static final String NON_CC_OVERDUE_EXCEPTION_VIOLATION_COUNT =
+            "bureau.non_cc_overdue_exception_violation_count";
+    public static final String SUIT_FILED_ACCOUNT_COUNT = "bureau.suit_filed_account_count";
+    public static final String PAN_DISTINCT_COUNT = "bureau.pan_distinct_count";
+    /*
+     * NOT emitted (unproven Equifax vocabulary on sample Standard/STD/SPM only):
+     * bureau.restructured_account_count, bureau.account_sold_count,
+     * bureau.dbt_account_count, bureau.pwos_account_count, bureau.lss_account_count.
+     */
+
     public static final String WRITEOFF_CALCULATOR = "BureauMetricService.computeWriteoffCounts";
     /** Shared calculator id for max DPD windows (6/12/24). */
     public static final String MAX_DPD_CALCULATOR = "BureauMetricService.evaluateMaxDpd";
@@ -62,12 +92,75 @@ public class BureauMetricService {
      * One payment-history month for shared max-DPD evaluation.
      * {@code period} is the provider reporting month (Equifax History48Months → YearMonth; stored as day-1 LocalDate).
      */
-    public record PaymentHistoryMonthInput(String tradelineRef, YearMonth period, Integer dpd) {
+    public record PaymentHistoryMonthInput(
+            String tradelineRef,
+            YearMonth period,
+            Integer dpd,
+            String providerRawStatus,
+            String assetClassificationStatus,
+            String suitFiledStatus) {
+        public PaymentHistoryMonthInput(String tradelineRef, YearMonth period, Integer dpd) {
+            this(tradelineRef, period, dpd, null, null, null);
+        }
+
         public static PaymentHistoryMonthInput of(String ref, LocalDate monthDate, Integer dpd) {
+            return of(ref, monthDate, dpd, null, null, null);
+        }
+
+        public static PaymentHistoryMonthInput of(
+                String ref,
+                LocalDate monthDate,
+                Integer dpd,
+                String providerRawStatus,
+                String assetClassificationStatus,
+                String suitFiledStatus) {
             if (monthDate == null) {
-                return new PaymentHistoryMonthInput(ref, null, dpd);
+                return new PaymentHistoryMonthInput(
+                        ref, null, dpd, providerRawStatus, assetClassificationStatus, suitFiledStatus);
             }
-            return new PaymentHistoryMonthInput(ref, YearMonth.from(monthDate), dpd);
+            return new PaymentHistoryMonthInput(
+                    ref, YearMonth.from(monthDate), dpd,
+                    providerRawStatus, assetClassificationStatus, suitFiledStatus);
+        }
+    }
+
+    public record CcOverdueInput(boolean creditCard, BigDecimal overdueAmount, boolean duplicate) {
+        public CcOverdueInput(boolean creditCard, BigDecimal overdueAmount) {
+            this(creditCard, overdueAmount, false);
+        }
+    }
+
+    /**
+     * Shared scalar result used by live persist and studio PolicyBureauMetricService delegates.
+     */
+    public record ScalarEvaluation(
+            String outcome,
+            Object value,
+            String quality,
+            Map<String, Object> evidence,
+            List<Object> included,
+            List<Object> excluded,
+            Map<String, Object> valueMap) {
+
+        public Map<String, Object> toStudioMap() {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("outcome", outcome);
+            m.put("v", value);
+            m.put("dataQualityStatus", quality);
+            if (evidence != null) {
+                Object reason = evidence.get("reason");
+                if (reason != null && BureauMetricOutcome.DATA_INSUFFICIENT.name().equals(outcome)) {
+                    m.put("reason", reason);
+                }
+                if (evidence.get("asOf") != null) {
+                    m.put("asOf", evidence.get("asOf"));
+                }
+                if (evidence.get("windowStart") != null) {
+                    m.put("windowStart", evidence.get("windowStart"));
+                }
+            }
+            m.put("evidence", evidence);
+            return m;
         }
     }
 
@@ -226,25 +319,80 @@ public class BureauMetricService {
                 evidence);
     }
 
+    /**
+     * Package-visible CLEAN_MONTH predicate (numeric dpd==0 and non-adverse monthly status).
+     */
+    static boolean isCleanMonth(Integer dpd, String providerRawStatus, String assetClassificationStatus) {
+        return BureauCleanMonth.isCleanMonth(dpd, providerRawStatus, assetClassificationStatus);
+    }
+
+    public ScalarEvaluation evaluateInquiriesCurrentMonth(List<LocalDate> inquiryDates, LocalDate asOf) {
+        return BureauDerivedMetricCalculator.inquiriesCurrentMonth(inquiryDates, asOf);
+    }
+
+    public ScalarEvaluation evaluateInquiriesLast3Months(List<LocalDate> inquiryDates, LocalDate asOf) {
+        return BureauDerivedMetricCalculator.inquiriesLast3Months(inquiryDates, asOf);
+    }
+
+    public ScalarEvaluation evaluateDpdPlusCount(
+            List<PaymentHistoryMonthInput> rows, LocalDate asOf, int windowMonths, int threshold) {
+        return BureauDerivedMetricCalculator.dpdPlusCount(rows, asOf, windowMonths, threshold);
+    }
+
+    public ScalarEvaluation evaluateMonthsSinceLastDelinquency(
+            List<PaymentHistoryMonthInput> rows, LocalDate asOf) {
+        return BureauDerivedMetricCalculator.monthsSinceLastDelinquency(rows, asOf);
+    }
+
+    public ScalarEvaluation evaluateCcOverdueAmount(List<CcOverdueInput> inputs) {
+        return BureauDerivedMetricCalculator.ccOverdueAmount(inputs);
+    }
+
+    public ScalarEvaluation evaluateCcUtilisation(List<CiBureauTradeline> tradelines) {
+        return BureauDerivedMetricCalculator.ccUtilisation(tradelines);
+    }
+
+    public ScalarEvaluation evaluatePanDistinctCount(Map<String, Object> reportData) {
+        return BureauDerivedMetricCalculator.panDistinctCount(reportData);
+    }
+
     @Transactional
     public List<CiMetricResult> computeAndPersist(
             CiBureauReport report,
             List<CiBureauTradeline> tradelines,
             Map<String, Object> reportData) {
         List<CiMetricResult> results = new ArrayList<>();
+        Map<UUID, List<PaymentHistoryMonthInput>> history = loadHistoryInputs(tradelines);
         results.add(persist(computeStatusNtc(report, reportData)));
         results.add(persist(computeLiveUnsecured(report, tradelines)));
         results.add(persist(computeExposure(report, tradelines, TOTAL_LIVE_EXPOSURE, null)));
         results.add(persist(computeExposure(report, tradelines, SECURED_LIVE_EXPOSURE, true)));
         results.add(persist(computeExposure(report, tradelines, UNSECURED_LIVE_EXPOSURE, false)));
         results.add(persist(computeMonthlyObligation(report, tradelines)));
-        results.add(persist(computeMaxDpd(report, tradelines, 6, MAX_DPD_6M, reportData)));
-        results.add(persist(computeMaxDpd(report, tradelines, 12, MAX_DPD_12M, reportData)));
-        results.add(persist(computeMaxDpd(report, tradelines, 24, MAX_DPD_24M, reportData)));
+        results.add(persist(computeMaxDpd(report, tradelines, 6, MAX_DPD_6M, reportData, history)));
+        results.add(persist(computeMaxDpd(report, tradelines, 12, MAX_DPD_12M, reportData, history)));
+        results.add(persist(computeMaxDpd(report, tradelines, 24, MAX_DPD_24M, reportData, history)));
         results.add(persist(computeInquiries90d(report, reportData)));
+        results.add(persist(computeInquiriesCurrentMonth(report, reportData)));
+        results.add(persist(computeInquiriesLast3Months(report, reportData)));
         results.add(persist(computeStatusCount(report, tradelines, SETTLED_ACCOUNT_COUNT, true, false)));
         results.add(persist(computeStatusCount(report, tradelines, WRITTEN_OFF_ACCOUNT_COUNT, false, true)));
         results.addAll(persistWriteoffPair(report, computeWriteoffCounts(report, tradelines, reportData)));
+        results.add(persist(computeDpdPlusCount(report, tradelines, history, 30, DPD_30_PLUS_COUNT_6M)));
+        results.add(persist(computeDpdPlusCount(report, tradelines, history, 60, DPD_60_PLUS_COUNT_6M)));
+        results.add(persist(computeDpdPlusCount(report, tradelines, history, 90, DPD_90_PLUS_COUNT_6M)));
+        results.add(persist(computeMonthsSinceLastDelinquency(report, tradelines, history, reportData)));
+        results.add(persist(computeVintage(report, tradelines, reportData, true, OLDEST_TRADELINE_VINTAGE_MONTHS)));
+        results.add(persist(computeVintage(report, tradelines, reportData, false, AVERAGE_ACCOUNT_AGE_MONTHS)));
+        results.add(persist(computeCcOverdueAmount(report, tradelines)));
+        results.add(persist(computeCcUtilisation(report, tradelines)));
+        results.add(persist(computeOverdueAmount(report, tradelines)));
+        results.add(persist(computeOverdueAgeMonths(report, tradelines, history, reportData)));
+        results.add(persist(computeCreditAfterOverdueExists(report, tradelines, history, reportData)));
+        results.add(persist(computeCreditAfterOverdueCleanHistory(report, tradelines, history, reportData)));
+        results.add(persist(computeNonCcOverdueExceptionViolations(report, tradelines, history, reportData)));
+        results.add(persist(computeSuitFiledAccountCount(report, tradelines, history)));
+        results.add(persist(computePanDistinctCount(report, reportData)));
         return results;
     }
 
@@ -832,29 +980,23 @@ public class BureauMetricService {
             List<CiBureauTradeline> tradelines,
             int months,
             String code,
-            Map<String, Object> reportData) {
+            Map<String, Object> reportData,
+            Map<UUID, List<PaymentHistoryMonthInput>> history) {
         if (!report.isTradelinesPresent() || isExtractionInsufficient(report)) {
             return insufficient(report, code, "TRADELINES_NOT_AVAILABLE");
         }
-        LocalDate asOf = report.getReportDate() != null ? report.getReportDate() : LocalDate.now();
-        List<PaymentHistoryMonthInput> rows = new ArrayList<>();
-        boolean anyPhRow = false;
-        for (CiBureauTradeline t : safe(tradelines)) {
-            if (t.getId() == null) {
-                continue;
-            }
-            List<CiBureauPaymentHistory> ph = paymentHistoryRepository.findByTradelineIdOrderByMonthDesc(t.getId());
-            for (CiBureauPaymentHistory row : ph) {
-                anyPhRow = true;
-                rows.add(PaymentHistoryMonthInput.of(refOf(t), row.getMonth(), row.getDpd()));
-            }
-        }
+        BureauDerivedMetricCalculator.AsOfResolution asOfRes =
+                BureauDerivedMetricCalculator.resolveAsOf(report.getReportDate(), reportData, false);
+        LocalDate asOf = asOfRes.asOf();
+        List<PaymentHistoryMonthInput> rows = flattenHistory(tradelines, history);
+        boolean anyPhRow = !rows.isEmpty();
 
         MaxDpdEvaluation eval = evaluateMaxDpd(rows, asOf, months);
         Map<String, Object> evidence = baseEvidence(report);
         evidence.putAll(eval.evidence());
         evidence.put("canonicalParameterId", code);
         evidence.put("windowMonths", months);
+        evidence.put("asOfSource", asOfRes.source());
 
         if (!anyPhRow || BureauMetricOutcome.DATA_INSUFFICIENT.name().equals(eval.outcome())) {
             // Soft aggregate signal in evidence only — metric DATA_INSUFFICIENT, not zero
@@ -886,7 +1028,11 @@ public class BureauMetricService {
         Integer count = null;
         Map<String, Object> evidence = baseEvidence(report);
         if (reportData != null && reportData.get("inquiries") instanceof List<?> list) {
-            LocalDate asOf = report.getReportDate() != null ? report.getReportDate() : LocalDate.now();
+            BureauDerivedMetricCalculator.AsOfResolution asOfRes =
+                    BureauDerivedMetricCalculator.resolveAsOf(report.getReportDate(), reportData, true);
+            LocalDate asOf = asOfRes.asOf();
+            evidence.put("asOf", asOf.toString());
+            evidence.put("asOfSource", asOfRes.source());
             LocalDate cutoff = asOf.minusDays(90);
             int c = 0;
             for (Object o : list) {
@@ -937,6 +1083,291 @@ public class BureauMetricService {
         }
         return result(report, code, BureauMetricOutcome.PASS.name(),
                 valueOf(count), "OK", included, List.of(), 0, baseEvidence(report));
+    }
+
+    private CiMetricResult computeInquiriesCurrentMonth(CiBureauReport report, Map<String, Object> reportData) {
+        BureauDerivedMetricCalculator.AsOfResolution asOfRes =
+                BureauDerivedMetricCalculator.resolveAsOf(report.getReportDate(), reportData, true);
+        List<LocalDate> dates = BureauDerivedMetricCalculator.inquiryDates(reportData);
+        ScalarEvaluation eval = dates == null
+                ? insufficientInquiryEval("NO_INQUIRY_DATA")
+                : evaluateInquiriesCurrentMonth(dates, asOfRes.asOf());
+        stampAsOf(eval, asOfRes);
+        return toMetric(report, INQUIRIES_CURRENT_MONTH, eval);
+    }
+
+    private CiMetricResult computeInquiriesLast3Months(CiBureauReport report, Map<String, Object> reportData) {
+        BureauDerivedMetricCalculator.AsOfResolution asOfRes =
+                BureauDerivedMetricCalculator.resolveAsOf(report.getReportDate(), reportData, true);
+        List<LocalDate> dates = BureauDerivedMetricCalculator.inquiryDates(reportData);
+        ScalarEvaluation eval = dates == null
+                ? insufficientInquiryEval("NO_INQUIRY_DATA")
+                : evaluateInquiriesLast3Months(dates, asOfRes.asOf());
+        stampAsOf(eval, asOfRes);
+        return toMetric(report, INQUIRIES_LAST_3M, eval);
+    }
+
+    private CiMetricResult computeDpdPlusCount(
+            CiBureauReport report,
+            List<CiBureauTradeline> tradelines,
+            Map<UUID, List<PaymentHistoryMonthInput>> history,
+            int threshold,
+            String code) {
+        if (!report.isTradelinesPresent() || isExtractionInsufficient(report)) {
+            return insufficient(report, code, "TRADELINES_NOT_AVAILABLE");
+        }
+        BureauDerivedMetricCalculator.AsOfResolution asOfRes =
+                BureauDerivedMetricCalculator.resolveAsOf(report.getReportDate(), null, false);
+        List<PaymentHistoryMonthInput> rows = flattenHistory(tradelines, history);
+        ScalarEvaluation eval = evaluateDpdPlusCount(rows, asOfRes.asOf(), 6, threshold);
+        stampAsOf(eval, asOfRes);
+        return toMetric(report, code, eval);
+    }
+
+    private CiMetricResult computeMonthsSinceLastDelinquency(
+            CiBureauReport report,
+            List<CiBureauTradeline> tradelines,
+            Map<UUID, List<PaymentHistoryMonthInput>> history,
+            Map<String, Object> reportData) {
+        if (!report.isTradelinesPresent() || isExtractionInsufficient(report)) {
+            return insufficient(report, MONTHS_SINCE_LAST_DELINQUENCY, "TRADELINES_NOT_AVAILABLE");
+        }
+        BureauDerivedMetricCalculator.AsOfResolution asOfRes =
+                BureauDerivedMetricCalculator.resolveAsOf(report.getReportDate(), reportData, false);
+        ScalarEvaluation eval = evaluateMonthsSinceLastDelinquency(
+                flattenHistory(tradelines, history), asOfRes.asOf());
+        stampAsOf(eval, asOfRes);
+        return toMetric(report, MONTHS_SINCE_LAST_DELINQUENCY, eval);
+    }
+
+    private CiMetricResult computeVintage(
+            CiBureauReport report,
+            List<CiBureauTradeline> tradelines,
+            Map<String, Object> reportData,
+            boolean oldest,
+            String code) {
+        CiMetricResult gated = tradelineGate(report, tradelines, code);
+        if (gated != null) {
+            return gated;
+        }
+        BureauDerivedMetricCalculator.AsOfResolution asOfRes =
+                BureauDerivedMetricCalculator.resolveAsOf(report.getReportDate(), reportData, false);
+        List<CiBureauTradeline> tls = emptyExtraction(report) ? List.of() : safe(tradelines);
+        ScalarEvaluation eval = BureauDerivedMetricCalculator.vintageOldestAndAverage(tls, asOfRes.asOf(), oldest);
+        stampAsOf(eval, asOfRes);
+        return toMetric(report, code, eval);
+    }
+
+    private CiMetricResult computeCcOverdueAmount(CiBureauReport report, List<CiBureauTradeline> tradelines) {
+        CiMetricResult gated = tradelineGate(report, tradelines, CC_OVERDUE_AMOUNT);
+        if (gated != null) {
+            return gated;
+        }
+        List<CcOverdueInput> inputs = new ArrayList<>();
+        for (CiBureauTradeline t : emptyExtraction(report) ? List.<CiBureauTradeline>of() : safe(tradelines)) {
+            inputs.add(new CcOverdueInput(
+                    BureauDerivedMetricCalculator.isCreditCard(t),
+                    t.getOverdueAmount(),
+                    t.getDuplicateOfTradelineId() != null));
+        }
+        return toMetric(report, CC_OVERDUE_AMOUNT, evaluateCcOverdueAmount(inputs));
+    }
+
+    private CiMetricResult computeCcUtilisation(CiBureauReport report, List<CiBureauTradeline> tradelines) {
+        CiMetricResult gated = tradelineGate(report, tradelines, CC_UTILISATION);
+        if (gated != null) {
+            return gated;
+        }
+        List<CiBureauTradeline> tls = emptyExtraction(report) ? List.of() : safe(tradelines);
+        return toMetric(report, CC_UTILISATION, evaluateCcUtilisation(tls));
+    }
+
+    private CiMetricResult computeOverdueAmount(CiBureauReport report, List<CiBureauTradeline> tradelines) {
+        CiMetricResult gated = tradelineGate(report, tradelines, OVERDUE_AMOUNT);
+        if (gated != null) {
+            return gated;
+        }
+        List<CiBureauTradeline> tls = emptyExtraction(report) ? List.of() : safe(tradelines);
+        return toMetric(report, OVERDUE_AMOUNT, BureauDerivedMetricCalculator.overdueAmountNonCc(tls));
+    }
+
+    private CiMetricResult computeOverdueAgeMonths(
+            CiBureauReport report,
+            List<CiBureauTradeline> tradelines,
+            Map<UUID, List<PaymentHistoryMonthInput>> history,
+            Map<String, Object> reportData) {
+        CiMetricResult gated = tradelineGate(report, tradelines, OVERDUE_AGE_MONTHS);
+        if (gated != null) {
+            return gated;
+        }
+        BureauDerivedMetricCalculator.AsOfResolution asOfRes =
+                BureauDerivedMetricCalculator.resolveAsOf(report.getReportDate(), reportData, false);
+        List<CiBureauTradeline> tls = emptyExtraction(report) ? List.of() : safe(tradelines);
+        ScalarEvaluation eval = BureauDerivedMetricCalculator.overdueAgeMonths(tls, history, asOfRes.asOf());
+        stampAsOf(eval, asOfRes);
+        return toMetric(report, OVERDUE_AGE_MONTHS, eval);
+    }
+
+    private CiMetricResult computeCreditAfterOverdueExists(
+            CiBureauReport report,
+            List<CiBureauTradeline> tradelines,
+            Map<UUID, List<PaymentHistoryMonthInput>> history,
+            Map<String, Object> reportData) {
+        CiMetricResult gated = tradelineGate(report, tradelines, CREDIT_AFTER_OVERDUE_EXISTS);
+        if (gated != null) {
+            return gated;
+        }
+        BureauDerivedMetricCalculator.AsOfResolution asOfRes =
+                BureauDerivedMetricCalculator.resolveAsOf(report.getReportDate(), reportData, false);
+        List<CiBureauTradeline> tls = emptyExtraction(report) ? List.of() : safe(tradelines);
+        ScalarEvaluation eval = BureauDerivedMetricCalculator.creditAfterOverdueExists(tls, history, asOfRes.asOf());
+        stampAsOf(eval, asOfRes);
+        return toMetric(report, CREDIT_AFTER_OVERDUE_EXISTS, eval);
+    }
+
+    private CiMetricResult computeCreditAfterOverdueCleanHistory(
+            CiBureauReport report,
+            List<CiBureauTradeline> tradelines,
+            Map<UUID, List<PaymentHistoryMonthInput>> history,
+            Map<String, Object> reportData) {
+        CiMetricResult gated = tradelineGate(report, tradelines, CREDIT_AFTER_OVERDUE_CLEAN_HISTORY_MONTHS);
+        if (gated != null) {
+            return gated;
+        }
+        BureauDerivedMetricCalculator.AsOfResolution asOfRes =
+                BureauDerivedMetricCalculator.resolveAsOf(report.getReportDate(), reportData, false);
+        List<CiBureauTradeline> tls = emptyExtraction(report) ? List.of() : safe(tradelines);
+        ScalarEvaluation eval = BureauDerivedMetricCalculator.creditAfterOverdueCleanHistoryMonths(
+                tls, history, asOfRes.asOf());
+        stampAsOf(eval, asOfRes);
+        return toMetric(report, CREDIT_AFTER_OVERDUE_CLEAN_HISTORY_MONTHS, eval);
+    }
+
+    private CiMetricResult computeNonCcOverdueExceptionViolations(
+            CiBureauReport report,
+            List<CiBureauTradeline> tradelines,
+            Map<UUID, List<PaymentHistoryMonthInput>> history,
+            Map<String, Object> reportData) {
+        CiMetricResult gated = tradelineGate(report, tradelines, NON_CC_OVERDUE_EXCEPTION_VIOLATION_COUNT);
+        if (gated != null) {
+            return gated;
+        }
+        BureauDerivedMetricCalculator.AsOfResolution asOfRes =
+                BureauDerivedMetricCalculator.resolveAsOf(report.getReportDate(), reportData, false);
+        List<CiBureauTradeline> tls = emptyExtraction(report) ? List.of() : safe(tradelines);
+        ScalarEvaluation eval = BureauDerivedMetricCalculator.nonCcOverdueExceptionViolationCount(
+                tls, history, asOfRes.asOf());
+        stampAsOf(eval, asOfRes);
+        return toMetric(report, NON_CC_OVERDUE_EXCEPTION_VIOLATION_COUNT, eval);
+    }
+
+    private CiMetricResult computeSuitFiledAccountCount(
+            CiBureauReport report,
+            List<CiBureauTradeline> tradelines,
+            Map<UUID, List<PaymentHistoryMonthInput>> history) {
+        CiMetricResult gated = tradelineGate(report, tradelines, SUIT_FILED_ACCOUNT_COUNT);
+        if (gated != null) {
+            return gated;
+        }
+        List<CiBureauTradeline> tls = emptyExtraction(report) ? List.of() : safe(tradelines);
+        return toMetric(report, SUIT_FILED_ACCOUNT_COUNT,
+                BureauDerivedMetricCalculator.suitFiledAccountCount(tls, history));
+    }
+
+    private CiMetricResult computePanDistinctCount(CiBureauReport report, Map<String, Object> reportData) {
+        return toMetric(report, PAN_DISTINCT_COUNT, evaluatePanDistinctCount(reportData));
+    }
+
+    private Map<UUID, List<PaymentHistoryMonthInput>> loadHistoryInputs(List<CiBureauTradeline> tradelines) {
+        Map<UUID, List<PaymentHistoryMonthInput>> out = new LinkedHashMap<>();
+        if (paymentHistoryRepository == null) {
+            return out;
+        }
+        for (CiBureauTradeline t : safe(tradelines)) {
+            if (t.getId() == null) {
+                continue;
+            }
+            List<CiBureauPaymentHistory> ph = paymentHistoryRepository.findByTradelineIdOrderByMonthDesc(t.getId());
+            out.put(t.getId(), BureauDerivedMetricCalculator.toInputs(t, ph));
+        }
+        return out;
+    }
+
+    private static List<PaymentHistoryMonthInput> flattenHistory(
+            List<CiBureauTradeline> tradelines,
+            Map<UUID, List<PaymentHistoryMonthInput>> history) {
+        List<PaymentHistoryMonthInput> rows = new ArrayList<>();
+        if (history == null) {
+            return rows;
+        }
+        for (CiBureauTradeline t : safe(tradelines)) {
+            if (t.getId() == null) {
+                continue;
+            }
+            List<PaymentHistoryMonthInput> ph = history.get(t.getId());
+            if (ph != null) {
+                rows.addAll(ph);
+            }
+        }
+        return rows;
+    }
+
+    private static CiMetricResult tradelineGate(
+            CiBureauReport report, List<CiBureauTradeline> tradelines, String code) {
+        if (!report.isTradelinesPresent() || isExtractionInsufficient(report)) {
+            return insufficient(report, code, "TRADELINES_NOT_AVAILABLE");
+        }
+        if (emptyExtraction(report)) {
+            return null;
+        }
+        if (tradelines == null || tradelines.isEmpty()) {
+            return insufficient(report, code, "TRADELINE_LIST_EMPTY_WITHOUT_EMPTY_STATUS");
+        }
+        return null;
+    }
+
+    private static boolean emptyExtraction(CiBureauReport report) {
+        return "EMPTY".equalsIgnoreCase(nullToEmpty(report.getTradelineExtractionStatus()));
+    }
+
+    private static ScalarEvaluation insufficientInquiryEval(String reason) {
+        Map<String, Object> evidence = new LinkedHashMap<>();
+        evidence.put("reason", reason);
+        return new ScalarEvaluation(
+                BureauMetricOutcome.DATA_INSUFFICIENT.name(), null, "DATA_INSUFFICIENT",
+                evidence, List.of(), List.of(), null);
+    }
+
+    private static void stampAsOf(ScalarEvaluation eval, BureauDerivedMetricCalculator.AsOfResolution asOfRes) {
+        if (eval != null && eval.evidence() != null && asOfRes != null) {
+            eval.evidence().putIfAbsent("asOf", asOfRes.asOf() != null ? asOfRes.asOf().toString() : null);
+            eval.evidence().put("asOfSource", asOfRes.source());
+        }
+    }
+
+    private static CiMetricResult toMetric(CiBureauReport report, String code, ScalarEvaluation eval) {
+        Map<String, Object> evidence = baseEvidence(report);
+        if (eval.evidence() != null) {
+            evidence.putAll(eval.evidence());
+        }
+        Map<String, Object> value;
+        if (eval.valueMap() != null) {
+            value = eval.valueMap();
+        } else if (BureauMetricOutcome.DATA_INSUFFICIENT.name().equals(eval.outcome())) {
+            value = null;
+        } else {
+            value = valueOf(eval.value());
+        }
+        return result(
+                report,
+                code,
+                eval.outcome(),
+                value,
+                eval.quality() != null ? eval.quality() : "OK",
+                eval.included() != null ? eval.included() : List.of(),
+                eval.excluded() != null ? eval.excluded() : List.of(),
+                0,
+                evidence);
     }
 
     private CiMetricResult persist(CiMetricResult r) {

@@ -58,6 +58,7 @@ public final class EquifaxBureauAccountExtractor {
 
         extractNativeHeaderAndSummaries(doc, xpath, reportData);
         extractScoringElements(doc, xpath, reportData);
+        extractPanIds(doc, xpath, reportData);
         extractAccounts(doc, xpath, reportData);
         extractInquiries(doc, xpath, reportData);
     }
@@ -243,6 +244,31 @@ public final class EquifaxBureauAccountExtractor {
             }
         } catch (Exception e) {
             log.warn("[EquifaxExtractor] Inquiry extraction failed: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Collects every {@code sch:PANId} text into reportData {@code panIds} without removing {@code panId}.
+     */
+    private static void extractPanIds(Document doc, XPath xpath, Map<String, Object> reportData) {
+        try {
+            NodeList nodes = (NodeList) xpath.evaluate("//sch:PANId", doc, XPathConstants.NODESET);
+            if (nodes == null || nodes.getLength() == 0) {
+                nodes = (NodeList) xpath.evaluate("//*[local-name()='PANId']", doc, XPathConstants.NODESET);
+            }
+            List<String> pans = new ArrayList<>();
+            if (nodes != null) {
+                for (int i = 0; i < nodes.getLength(); i++) {
+                    String raw = nodes.item(i) != null && nodes.item(i).getTextContent() != null
+                            ? nodes.item(i).getTextContent().trim() : "";
+                    if (!raw.isEmpty()) {
+                        pans.add(raw);
+                    }
+                }
+            }
+            reportData.put("panIds", pans);
+        } catch (Exception e) {
+            log.warn("[EquifaxExtractor] PAN extraction failed: {}", e.getMessage());
         }
     }
 

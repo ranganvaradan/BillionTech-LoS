@@ -27,7 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PolicyStudioEndToEndStateInvariantTest {
 
     private static final String DPD30 = "bureau.dpd_30_plus_count_6m";
-    private static final String CC_OVERDUE = "bureau.cc_overdue_amount";
+    private static final String NOT_READY_PARAM = "bureau.thin_file_indicator";
 
     @BeforeEach
     void setUp() {
@@ -67,7 +67,7 @@ class PolicyStudioEndToEndStateInvariantTest {
 
     @Test
     void caseC_notReadyCalculation_needsReview_setupAction() {
-        Map<String, Object> cps = CanonicalParameterStateService.state(CC_OVERDUE);
+        Map<String, Object> cps = CanonicalParameterStateService.state(NOT_READY_PARAM);
         assertThat(cps.get("businessReadiness")).isEqualTo("NOT_READY");
         assertThat(cps.get("businessReadinessReason")).isEqualTo("CALCULATION_NOT_DEFINED");
         var facts = new PolicyRuleLifecycleProjection.Facts(
@@ -145,17 +145,17 @@ class PolicyStudioEndToEndStateInvariantTest {
                 .isTrue();
         assertThat(PolicyExecutionReadiness.countNeedsBusinessInput(session)).isZero();
         assertThat(PolicyExecutionReadiness.currentParameterBlockers(session))
-                .noneMatch(b -> CC_OVERDUE.equals(String.valueOf(b.get("canonicalParameterId"))));
-        assertThat(CanonicalParameterStateService.state(CC_OVERDUE).get("businessReadiness"))
+                .noneMatch(b -> NOT_READY_PARAM.equals(String.valueOf(b.get("canonicalParameterId"))));
+        assertThat(CanonicalParameterStateService.state(NOT_READY_PARAM).get("businessReadiness"))
                 .isEqualTo("NOT_READY");
     }
 
     private static PolicyStudioSession sessionWithIgnoredNotReady() {
-        return sessionWithRule(CC_OVERDUE, "IGNORED", true, false, "CM_CC_OD_AMOUNT_GTE");
+        return sessionWithRule(NOT_READY_PARAM, "IGNORED", true, false, "CM_CC_OD_AMOUNT_GTE");
     }
 
     private static PolicyStudioSession sessionWithParticipatingNotReady() {
-        return sessionWithRule(CC_OVERDUE, "KEEP_AS_POLICY_REQUIREMENT", true, false,
+        return sessionWithRule(NOT_READY_PARAM, "KEEP_AS_POLICY_REQUIREMENT", true, false,
                 "CM_CC_OD_AMOUNT_GTE");
     }
 

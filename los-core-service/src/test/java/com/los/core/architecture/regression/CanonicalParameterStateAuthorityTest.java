@@ -31,7 +31,7 @@ import static org.mockito.Mockito.when;
 class CanonicalParameterStateAuthorityTest {
 
     private static final String DPD30 = "bureau.dpd_30_plus_count_6m";
-    private static final String CC_OVERDUE = "bureau.cc_overdue_amount";
+    private static final String NOT_READY_PARAM = "bureau.thin_file_indicator";
     private static final String CLEAN = "bureau.credit_after_overdue.clean_history_months";
 
     @BeforeEach
@@ -69,17 +69,17 @@ class CanonicalParameterStateAuthorityTest {
     @Test
     void inventoryStamp_andDpEnrich_andScorecard_samePrimary() {
         Map<String, Object> row = new LinkedHashMap<>();
-        CanonicalParameterStateService.stamp(row, CC_OVERDUE);
-        Map<String, Object> state = CanonicalParameterStateService.state(CC_OVERDUE);
+        CanonicalParameterStateService.stamp(row, NOT_READY_PARAM);
+        Map<String, Object> state = CanonicalParameterStateService.state(NOT_READY_PARAM);
         assertThat(row.get("primaryStatus")).isEqualTo(state.get("primaryStatus"));
         assertThat(String.valueOf(state.get("primaryStatus"))).isEqualTo("NOT_READY");
         assertThat(String.valueOf(state.get("businessReadiness"))).isEqualTo("NOT_READY");
         assertThat(String.valueOf(state.get("businessReadinessReason"))).isEqualTo("CALCULATION_NOT_DEFINED");
         // Surface facade + stamp must agree
         Map<String, Object> dpView = SurfaceCanonicalTruthFacade.forSurface(
-                SurfaceCanonicalTruthFacade.DATA_PARAMETERS, CC_OVERDUE);
+                SurfaceCanonicalTruthFacade.DATA_PARAMETERS, NOT_READY_PARAM);
         Map<String, Object> scView = SurfaceCanonicalTruthFacade.forSurface(
-                SurfaceCanonicalTruthFacade.SCORECARD_PICKER, CC_OVERDUE);
+                SurfaceCanonicalTruthFacade.SCORECARD_PICKER, NOT_READY_PARAM);
         assertThat(dpView.get("primaryStatus")).isEqualTo(state.get("primaryStatus"));
         assertThat(scView.get("primaryStatus")).isEqualTo(state.get("primaryStatus"));
         assertThat(scView.get("setupIncomplete")).isEqualTo(true);
@@ -235,7 +235,7 @@ class CanonicalParameterStateAuthorityTest {
 
     @Test
     void cleanHistory_andDpd_shareStateAuthority() {
-        for (String id : List.of(DPD30, CLEAN, CC_OVERDUE)) {
+        for (String id : List.of(DPD30, CLEAN, NOT_READY_PARAM)) {
             Map<String, Object> st = CanonicalParameterStateService.state(id);
             assertThat(st.get("stateAuthority")).isEqualTo(CanonicalParameterStateService.AUTHORITY);
             Map<String, Object> stamped = new LinkedHashMap<>();

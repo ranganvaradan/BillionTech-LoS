@@ -325,68 +325,63 @@ public final class GacatCatalogueSeed {
                 "CiBureauInquiry.inquiryTime", null, null, true, true, false, true, true);
     }
 
+    /** Bureau Retail derived inventory size (honesty + calculation-definition closure). */
+    public static final int BUREAU_RETAIL_DERIVED_TARGET_COUNT = 37;
+
     private static void bureauRetailDerived(List<CanonicalParameterDefinition> p) {
         String maxDpd6mHow = """
-                Highest days-past-due across tradeline payment-history months in a trailing 6 calendar-month window.
-                Raw inputs: per-tradeline monthly DPD (Equifax History48Months → YearMonth).
+                Highest days-past-due across tradeline monthly DPD in a trailing 6 calendar-month window.
+                Raw inputs: bureau.tradeline.dpd_month (Equifax History48Months → YearMonth).
                 Period representation: YearMonth (provider month key stored as first-of-month LocalDate).
                 asOf: bureau report / evaluation date; as-of month is included.
                 Window: inclusive [YearMonth(asOf) − 5, YearMonth(asOf)] (six months).
                 Future periods after as-of month are excluded. Exact lower-bound month is included.
                 Filters: no product-type exclusion (CC/closed/settled included when history exists).
                 Null/malformed periods skipped; null DPD skipped (not zero). Aggregation: MAX.
-                Missing data: no payment-history rows → DATA_INSUFFICIENT (not zero).
+                Missing data: no DPD month rows → DATA_INSUFFICIENT (not zero).
                 Calculator: BureauMetricService.evaluateMaxDpd (shared studio + live).
                 """.trim().replace('\n', ' ');
 
         derived(p, "bureau.max_dpd_6m", "Maximum DPD (6 months)", BR, "DAYS", "TRAILING_6M",
                 maxDpd6mHow,
-                List.of("bureau.tradeline.payment_history", "bureau.tradeline.dpd_month"),
+                List.of("bureau.tradeline.dpd_month"),
                 "BureauMetricService.evaluateMaxDpd",
                 List.of("max dpd", "days past due", "dpd last 6 months", "maximum dpd 6 months", "maximum dpd"),
                 null, null,
                 cap("BUREAU_RETAIL", true, true, true, true, false, "SCALAR",
                         "History48Months/Month/DaysPastDue",
-                        "DATA_INSUFFICIENT when no payment history on any tradeline",
-                        "Tradelines with payment history; YearMonth trailing window shared with live",
+                        "DATA_INSUFFICIENT when no monthly DPD on any tradeline",
+                        "Tradelines with monthly DPD; YearMonth trailing window shared with live",
                         "Month DPD numeric value as normalized YearMonth period",
                         "MAX"),
                 true, true, true, true, false);
 
-        derived(p, "bureau.max_dpd_12m", "Maximum DPD (12 months)", BR, "DAYS", "TRAILING_12M",
-                "Highest DPD across payment-history months in trailing 12 months",
-                List.of("bureau.tradeline.payment_history"),
-                "BureauMetricService.computeMaxDpd → bureau.max_dpd_12m",
-                List.of("max dpd 12m", "dpd 12 months"), null, null,
-                prodBureau(true), true, true, true, true, true);
+        bureauBuiltIn(p, "bureau.max_dpd_12m", "Maximum DPD (12 months)", "DAYS", "TRAILING_12M",
+                "Highest DPD across monthly DPD in trailing 12 months. Aggregation: MAX. Calculator: BureauMetricService.evaluateMaxDpd.",
+                List.of("bureau.tradeline.dpd_month"),
+                "BureauMetricService.evaluateMaxDpd",
+                List.of("max dpd 12m", "dpd 12 months"));
+        bureauBuiltIn(p, "bureau.max_dpd_24m", "Maximum DPD (24 months)", "DAYS", "TRAILING_24M",
+                "Highest DPD across monthly DPD in trailing 24 months. Aggregation: MAX. Calculator: BureauMetricService.evaluateMaxDpd.",
+                List.of("bureau.tradeline.dpd_month"),
+                "BureauMetricService.evaluateMaxDpd",
+                List.of("max dpd 24m"));
 
-        derived(p, "bureau.max_dpd_24m", "Maximum DPD (24 months)", BR, "DAYS", "TRAILING_24M",
-                "Highest DPD across payment-history months in trailing 24 months",
-                List.of("bureau.tradeline.payment_history"),
-                "BureauMetricService.computeMaxDpd → bureau.max_dpd_24m",
-                List.of("max dpd 24m"), null, null,
-                prodBureau(true), true, true, true, true, true);
-
-        derived(p, "bureau.inquiries.current_month", "Bureau enquiries (current month)", BR, "COUNT", "CURRENT_MONTH",
+        bureauBuiltIn(p, "bureau.inquiries.current_month", "Bureau enquiries (current month)", "COUNT", "CURRENT_MONTH",
                 "Count of bureau enquiries whose date falls in the current evaluation month",
-                List.of("bureau.inquiry", "bureau.inquiry.date"),
-                "PolicyBureauMetricService.inquiriesCurrentMonth",
-                List.of("enquiries", "inquiries", "bureau enquiry", "current month enquiries"), null, null,
-                studioImpl(), true, true, true, true, false);
-
-        derived(p, "bureau.inquiries.last_3m", "Bureau enquiries (last 3 calendar months)", BR, "COUNT", "TRAILING_3M",
+                List.of("bureau.inquiry.date"),
+                "BureauMetricService.evaluateInquiriesCurrentMonth",
+                List.of("enquiries", "inquiries", "bureau enquiry", "current month enquiries"));
+        bureauBuiltIn(p, "bureau.inquiries.last_3m", "Bureau enquiries (last 3 calendar months)", "COUNT", "TRAILING_3M",
                 "Count of bureau enquiries in the trailing 3 calendar months (distinct from current month and from 90 days)",
-                List.of("bureau.inquiry", "bureau.inquiry.date"),
-                "PolicyBureauMetricService.inquiriesLast3Months",
-                List.of("enquiries last 3 months", "inquiries 3 months"), null, null,
-                studioImpl(), true, true, true, true, false);
-
-        derived(p, "bureau.recent_inquiries_90d", "Bureau enquiries (90 days)", BR, "COUNT", "TRAILING_90D",
+                List.of("bureau.inquiry.date"),
+                "BureauMetricService.evaluateInquiriesLast3Months",
+                List.of("enquiries last 3 months", "inquiries 3 months"));
+        bureauBuiltIn(p, "bureau.recent_inquiries_90d", "Bureau enquiries (90 days)", "COUNT", "TRAILING_90D",
                 "Count of individual enquiries in trailing 90 days; summary-only reports may be data-insufficient",
-                List.of("bureau.inquiry"),
+                List.of("bureau.inquiry.date"),
                 "BureauMetricService.computeInquiries90d",
-                List.of("enquiries 90d", "inquiries 90 days", "last 90 days"), null, null,
-                prodBureau(true), true, true, true, true, true);
+                List.of("enquiries 90d", "inquiries 90 days", "last 90 days"));
 
         derived(p, "bureau.live_unsecured_loan_count", "Live unsecured loans", BR, "COUNT", "PIT",
                 "Count of LIVE tradelines that are secured=false, category≠UNKNOWN, non-duplicate (BUREAU_LIVE_ACCOUNT_DEFINITION_V1)",
@@ -394,49 +389,36 @@ public final class GacatCatalogueSeed {
                 "BureauMetricService.computeLiveUnsecured",
                 List.of("live unsecured", "unsecured loan count"),
                 "LIVE_UNSECURED_LOAN_COUNT", null,
-                prodBureau(true), true, true, true, true, true);
+                studioImpl(), true, true, true, true, false);
 
-        derived(p, "bureau.total_live_exposure", "Total live exposure", BR, "INR", "PIT",
+        bureauBuiltIn(p, "bureau.total_live_exposure", "Total live exposure", "INR", "PIT",
                 "Sum of current balance on LIVE non-duplicate tradelines",
-                List.of("bureau.tradeline.current_balance"),
+                List.of("bureau.tradeline.current_balance", "bureau.tradeline.account_status"),
                 "BureauMetricService",
-                List.of("live exposure", "total exposure"), null, null,
-                prodBureau(true), true, true, true, true, true);
-
-        derived(p, "bureau.secured_live_exposure", "Secured live exposure", BR, "INR", "PIT",
+                List.of("live exposure", "total exposure"));
+        bureauBuiltIn(p, "bureau.secured_live_exposure", "Secured live exposure", "INR", "PIT",
                 "Sum of balances on LIVE secured tradelines",
-                List.of("bureau.tradeline.current_balance", "bureau.tradeline.secured_flag"),
-                "BureauMetricService", List.of("secured exposure"), null, null,
-                prodBureau(true), true, true, true, true, true);
-
-        derived(p, "bureau.unsecured_live_exposure", "Unsecured live exposure", BR, "INR", "PIT",
+                List.of("bureau.tradeline.current_balance", "bureau.tradeline.secured_flag", "bureau.tradeline.account_status"),
+                "BureauMetricService", List.of("secured exposure"));
+        bureauBuiltIn(p, "bureau.unsecured_live_exposure", "Unsecured live exposure", "INR", "PIT",
                 "Sum of balances on LIVE unsecured tradelines",
-                List.of("bureau.tradeline.current_balance", "bureau.tradeline.secured_flag"),
-                "BureauMetricService", List.of("unsecured exposure"), null, null,
-                prodBureau(true), true, true, true, true, true);
-
-        derived(p, "bureau.total_monthly_obligation", "Total monthly obligation (bureau EMI)", BR, "INR", "PIT",
+                List.of("bureau.tradeline.current_balance", "bureau.tradeline.secured_flag", "bureau.tradeline.account_status"),
+                "BureauMetricService", List.of("unsecured exposure"));
+        bureauBuiltIn(p, "bureau.total_monthly_obligation", "Total monthly obligation (bureau EMI)", "INR", "PIT",
                 "Sum of provider EMI on qualifying tradelines; never invents EMI %; PARTIAL if some missing",
                 List.of("bureau.tradeline.emi"),
-                "BureauMetricService", List.of("monthly obligation", "bureau emi total"), null, null,
-                prodBureau(true), true, true, true, true, true);
-
-        derived(p, "bureau.settled_account_count", "Settled account count", BR, "COUNT", "PIT",
+                "BureauMetricService", List.of("monthly obligation", "bureau emi total"));
+        bureauBuiltIn(p, "bureau.settled_account_count", "Settled account count", "COUNT", "PIT",
                 "Count of tradelines with settled status",
                 List.of("bureau.tradeline.account_status"),
-                "BureauMetricService", List.of("settled accounts"), null, null,
-                prodBureau(true), true, true, true, true, true);
-
-        derived(p, "bureau.written_off_account_count", "Written-off account count", BR, "COUNT", "PIT",
+                "BureauMetricService", List.of("settled accounts"));
+        bureauBuiltIn(p, "bureau.written_off_account_count", "Written-off account count", "COUNT", "PIT",
                 "Count of tradelines with written-off status",
                 List.of("bureau.tradeline.write_off_amount", "bureau.tradeline.account_status"),
                 "BureauMetricService",
                 List.of("write off count", "write-off count", "written off accounts", "written-off accounts",
-                        "loan write offs", "loan write-offs"),
-                null, null,
-                prodBureau(true), true, true, true, true, true);
+                        "loan write offs", "loan write-offs"));
 
-        // Gate-3 / P0-4: non-CC write-off uses shared BureauMetricService; runtime ready, not production-certified.
         derived(p, "bureau.accounts.writeoff_non_cc", "Non-credit-card write-off count", BR, "COUNT", "PIT",
                 "Count of written-off tradelines excluding credit cards (BureauMetricService.computeWriteoffCounts)",
                 List.of("bureau.tradeline.write_off_amount", "bureau.tradeline.account_status"),
@@ -444,82 +426,84 @@ public final class GacatCatalogueSeed {
                 List.of("non cc write off", "write-off except credit card", "loan write-offs except credit cards"),
                 "WRITEOFF_NON_CC", null,
                 studioImpl(), true, true, true, true, false);
-        derived(p, "bureau.accounts.cc_writeoff", "Credit-card write-off count", BR, "COUNT", "PIT",
+        bureauBuiltIn(p, "bureau.accounts.cc_writeoff", "Credit-card write-off count", "COUNT", "PIT",
                 "Count of written-off credit-card tradelines (BureauMetricService.computeWriteoffCounts)",
                 List.of("bureau.tradeline.write_off_amount", "bureau.tradeline.account_status"),
                 "BureauMetricService.computeWriteoffCounts",
-                List.of("credit card write off", "cc write-off"),
-                null, null,
-                studioImpl(), true, true, true, true, false);
+                List.of("credit card write off", "cc write-off"));
 
-        derived(p, "bureau.cc_overdue_amount", "Credit-card overdue amount", BR, "INR", "PIT",
-                "Sum of credit-card overdue amounts",
+        bureauBuiltIn(p, "bureau.cc_overdue_amount", "Credit-card overdue amount", "INR", "PIT",
+                "MAX of credit-card overdue amounts (not SUM). Null overdue treated as zero. Duplicates excluded.",
                 List.of("bureau.tradeline.overdue_amount"),
-                "PolicyBureauMetricService",
-                List.of("credit card overdue", "cc overdue"), null, null,
-                studioImpl(), true, true, true, true, false);
-
-        derived(p, "bureau.overdue.age_months", "Overdue age (months)", BR, "MONTHS", "PIT",
-                "Age in months of the overdue since it started",
+                "BureauMetricService.evaluateCcOverdueAmount",
+                List.of("credit card overdue", "cc overdue"));
+        bureauBuiltIn(p, "bureau.overdue.age_months", "Overdue age (months)", "MONTHS", "PIT",
+                "MAX age in months of non-CC overdue using overdue EVENT month from monthly DPD history",
+                List.of("bureau.tradeline.overdue_amount", "bureau.tradeline.dpd_month"),
+                "BureauMetricService",
+                List.of("overdue age", "overdue older than"));
+        bureauBuiltIn(p, "bureau.overdue.amount", "Overdue amount", "INR", "PIT",
+                "SUM of non-CC overdue amounts where overdue > 0 (explanatory; not BRE exception)",
                 List.of("bureau.tradeline.overdue_amount"),
-                "PolicyBureauMetricService",
-                List.of("overdue age", "overdue older than"), null, null,
-                studioImpl(), true, true, true, true, false);
-
-        derived(p, "bureau.overdue.amount", "Overdue amount", BR, "INR", "PIT",
-                "Current overdue amount on qualifying tradelines",
-                List.of("bureau.tradeline.overdue_amount"),
-                "PolicyBureauMetricService",
-                List.of("overdue amount", "overdue below"), null, null,
-                studioImpl(), true, true, true, true, false);
-
-        derived(p, "bureau.credit_after_overdue.exists", "New credit after overdue", BR, "BOOLEAN", "PIT",
-                "Whether a new credit facility was opened after the overdue event",
-                List.of("bureau.tradeline.account_open_date"),
-                "PolicyBureauMetricService.creditAfterOverdueExists",
-                List.of("new credit after overdue", "credit after overdue"), null, null,
-                studioImpl(), true, true, true, true, false);
+                "BureauMetricService",
+                List.of("overdue amount", "overdue below"));
+        bureauBuiltIn(p, "bureau.credit_after_overdue.exists", "New credit after overdue", "BOOLEAN", "PIT",
+                "Whether a new credit facility was opened after the global overdue event",
+                List.of("bureau.tradeline.account_open_date", "bureau.tradeline.overdue_amount"),
+                "BureauMetricService",
+                List.of("new credit after overdue", "credit after overdue"));
 
         derived(p, "bureau.credit_after_overdue.clean_history_months", "Clean history months (post-overdue)",
-                BR, "MONTHS", "CUSTOMER_DEFINED",
-                "Months of clean credit history after overdue — definition must be confirmed by Credit Manager",
-                List.of("bureau.tradeline.payment_history", "bureau.max_dpd_6m"),
-                "PolicyBureauMetricService.cleanHistoryMonths (vocabulary-gated)",
+                BR, "MONTHS", "PIT",
+                "Max consecutive CLEAN months on loans opened after the overdue event — explanatory helper, not account-safe for BRE. Calculator: BureauMetricService.",
+                List.of("bureau.tradeline.dpd_month", "bureau.tradeline.account_open_date", "bureau.tradeline.overdue_amount"),
+                "BureauMetricService",
                 List.of("clean history", "clean credit history", "clean string", "6 months clean"),
                 null, "REPAYMENT_HISTORY",
-                // Raw primitives exist; executable months derivation is not certified (stub/vocabulary-gated).
+                studioImpl(), true, true, true, true, false);
+
+        bureauBuiltIn(p, "bureau.dpd_30_plus_count_6m", "Count of 30+ DPD months (6m)", "COUNT", "TRAILING_6M",
+                "Count distinct account-months with DPD≥30 in trailing 6 months. Null DPD skipped. Calculator: BureauMetricService.",
+                List.of("bureau.tradeline.dpd_month"),
+                "BureauMetricService", List.of("30 plus dpd", "30+ dpd"));
+        bureauBuiltIn(p, "bureau.dpd_60_plus_count_6m", "Count of 60+ DPD months (6m)", "COUNT", "TRAILING_6M",
+                "Count distinct account-months with DPD≥60 in trailing 6 months. Calculator: BureauMetricService.",
+                List.of("bureau.tradeline.dpd_month"),
+                "BureauMetricService", List.of("60 plus dpd"));
+        bureauBuiltIn(p, "bureau.dpd_90_plus_count_6m", "Count of 90+ DPD months (6m)", "COUNT", "TRAILING_6M",
+                "Count distinct account-months with DPD≥90 in trailing 6 months. Calculator: BureauMetricService.",
+                List.of("bureau.tradeline.dpd_month"),
+                "BureauMetricService", List.of("90 plus dpd"));
+        bureauBuiltIn(p, "bureau.months_since_last_delinquency", "Months since last delinquency", "MONTHS", "PIT",
+                "Months since most recent month with DPD>0. Calculator: BureauMetricService.evaluateMonthsSinceLastDelinquency.",
+                List.of("bureau.tradeline.dpd_month"),
+                "BureauMetricService.evaluateMonthsSinceLastDelinquency",
+                List.of("months since delinquency"));
+        bureauBuiltIn(p, "bureau.oldest_tradeline_vintage_months", "Oldest tradeline vintage (months)", "MONTHS", "PIT",
+                "Months since earliest account open date. Calculator: BureauMetricService.",
+                List.of("bureau.tradeline.account_open_date"),
+                "BureauMetricService", List.of("oldest account", "vintage"));
+        bureauBuiltIn(p, "bureau.average_account_age_months", "Average account age (months)", "MONTHS", "PIT",
+                "Mean age of tradelines from open date. Calculator: BureauMetricService.",
+                List.of("bureau.tradeline.account_open_date"),
+                "BureauMetricService", List.of("average account age"));
+        bureauBuiltIn(p, "bureau.cc_utilisation", "Credit-card utilisation", "RATIO", "PIT",
+                "SUM(current balance) / SUM(credit limit) on open LIVE credit cards. DATA_INSUFFICIENT if any eligible CC is missing limit or SUM(limit)=0.",
+                List.of("bureau.tradeline.current_balance", "bureau.tradeline.credit_limit", "bureau.tradeline.account_status"),
+                "BureauMetricService.evaluateCcUtilisation",
+                List.of("card utilisation", "cc utilization"));
+
+        derived(p, "bureau.thin_file_indicator", "Thin-file / NTC indicator", BR, "BOOLEAN", "PIT",
+                "NTC / thin-file indicator — BUSINESS_DEFINITION_REQUIRED (distinct from bureau.status_ntc). [DEFINED_NOT_IMPLEMENTED]",
+                List.of("bureau.score"),
+                "DEFINED_NOT_IMPLEMENTED",
+                List.of("ntc", "thin file"),
+                null, null,
                 Capability.of("BUREAU_RETAIL", true, true, true, false, false, "SCALAR", null,
-                        "NEEDS_CONFIGURATION until CM vocabulary resolved; CALCULATION_NOT_IMPLEMENTED",
-                        "Customer-defined clean-history vocabulary", null, null),
+                        "BUSINESS_DEFINITION_REQUIRED — do not treat as live; use bureau.status_ntc for implemented NTC",
+                        null, null, null),
                 true, true, true, false, false);
 
-        // Defined from docs / common UW use — not pretending live
-        derivedDefined(p, "bureau.dpd_30_plus_count_6m", "Count of 30+ DPD months (6m)", BR,
-                "Count months with DPD≥30 in trailing 6m from payment history",
-                List.of("bureau.tradeline.dpd_month"), List.of("30 plus dpd", "30+ dpd"));
-        derivedDefined(p, "bureau.dpd_60_plus_count_6m", "Count of 60+ DPD months (6m)", BR,
-                "Count months with DPD≥60 in trailing 6m",
-                List.of("bureau.tradeline.dpd_month"), List.of("60 plus dpd"));
-        derivedDefined(p, "bureau.dpd_90_plus_count_6m", "Count of 90+ DPD months (6m)", BR,
-                "Count months with DPD≥90 in trailing 6m",
-                List.of("bureau.tradeline.dpd_month"), List.of("90 plus dpd"));
-        derivedDefined(p, "bureau.months_since_last_delinquency", "Months since last delinquency", BR,
-                "Months since most recent month with DPD>0",
-                List.of("bureau.tradeline.dpd_month"), List.of("months since delinquency"));
-        derivedDefined(p, "bureau.oldest_tradeline_vintage_months", "Oldest tradeline vintage (months)", BR,
-                "Months since earliest account open date",
-                List.of("bureau.tradeline.account_open_date"), List.of("oldest account", "vintage"));
-        derivedDefined(p, "bureau.average_account_age_months", "Average account age (months)", BR,
-                "Mean age of tradelines from open date",
-                List.of("bureau.tradeline.account_open_date"), List.of("average account age"));
-        derivedDefined(p, "bureau.cc_utilisation", "Credit-card utilisation", BR,
-                "CC balance ÷ credit limit when limit present",
-                List.of("bureau.tradeline.current_balance", "bureau.tradeline.credit_limit"),
-                List.of("card utilisation", "cc utilization"));
-        derivedDefined(p, "bureau.thin_file_indicator", "Thin-file / NTC indicator", BR,
-                "NTC / thin-file from score status or explicit NTC flag",
-                List.of("bureau.score"), List.of("ntc", "thin file"));
-        // Gate-3: authored Fact id used by PolicyDsl compounds — Policy-Test ready; Live scorecard uses NTC_FLAG.
         derived(p, "bureau.status_ntc", "Bureau NTC / thin-file status", BR, "BOOLEAN", "PIT",
                 "True when bureau report is NTC / thin-file (BureauMetricService.computeStatusNtc / evaluateStatusNtc); "
                         + "Live scorecard maps NTC_FLAG (do not invent false when missing; do not infer NTC from -1 alone)",
@@ -528,6 +512,39 @@ public final class GacatCatalogueSeed {
                 List.of("ntc", "status ntc", "thin file", "new to credit"),
                 null, "NTC_FLAG",
                 studioImpl(), true, true, true, true, false);
+
+        bureauBuiltIn(p, "bureau.non_cc_overdue_exception_violation_count",
+                "Non-CC overdue exception violation count", "COUNT", "PIT",
+                "Count of non-CC overdue accounts that fail the 1∧2∧3∧4 exception (age>12m, later loan, 6 clean months, overdue<1500). Calculator: BureauMetricService.",
+                List.of("bureau.tradeline.overdue_amount", "bureau.tradeline.account_open_date", "bureau.tradeline.dpd_month"),
+                "BureauMetricService",
+                List.of("non cc overdue exception", "overdue exception violation"));
+        bureauBuiltIn(p, "bureau.suit_filed_account_count", "Suit-filed account count", "COUNT", "PIT",
+                "Count of non-duplicate tradelines with suit-filed flag or affirmative suit status in monthly history. Star/blank is not affirmative.",
+                List.of("bureau.tradeline.suit_filed"),
+                "BureauMetricService",
+                List.of("suit filed count", "suit filed accounts"));
+        bureauBuiltIn(p, "bureau.pan_distinct_count", "Distinct PAN count", "COUNT", "PIT",
+                "Distinct normalised PAN count from report extraction. Missing extraction → DATA_INSUFFICIENT. Empty list → 0. PAN strings are never persisted.",
+                List.of(),
+                "BureauMetricService.evaluatePanDistinctCount",
+                List.of("pan count", "distinct pan"));
+
+        bureauSourceNotProven(p, "bureau.restructured_account_count", "Restructured account count",
+                "Count of tradelines with restructured status — SOURCE_NOT_PROVEN on Equifax sample vocabulary (Standard/STD/SPM only).",
+                List.of("restructured accounts"));
+        bureauSourceNotProven(p, "bureau.account_sold_count", "Account-sold count",
+                "Count of tradelines with account-sold status — SOURCE_NOT_PROVEN on Equifax sample vocabulary.",
+                List.of("account sold", "sold accounts"));
+        bureauSourceNotProven(p, "bureau.dbt_account_count", "DBT account count",
+                "Count of tradelines with DBT status — SOURCE_NOT_PROVEN on Equifax sample vocabulary.",
+                List.of("dbt accounts"));
+        bureauSourceNotProven(p, "bureau.pwos_account_count", "PWOS account count",
+                "Count of tradelines with PWOS status — SOURCE_NOT_PROVEN on Equifax sample vocabulary.",
+                List.of("pwos accounts"));
+        bureauSourceNotProven(p, "bureau.lss_account_count", "LSS account count",
+                "Count of tradelines with LSS status — SOURCE_NOT_PROVEN on Equifax sample vocabulary.",
+                List.of("lss accounts"));
     }
 
     private static void bureauCommercialRaw(List<CanonicalParameterDefinition> p) {
@@ -960,6 +977,26 @@ public final class GacatCatalogueSeed {
                 productionReady ? "AVAILABLE_AUTOMATICALLY"
                         : (implemented ? "AVAILABLE_AUTOMATICALLY" : "DERIVABLE_FROM_AVAILABLE_DATA"),
                 calc, primitives, binding, aliases, liveRule, liveScorecard, c));
+    }
+
+    private static void bureauBuiltIn(
+            List<CanonicalParameterDefinition> p, String id, String name, String unit, String period,
+            String calc, List<String> primitives, String binding, List<String> aliases
+    ) {
+        derived(p, id, name, BR, unit, period, calc, primitives, binding, aliases, null, null,
+                studioImpl(), true, true, true, true, false);
+    }
+
+    private static void bureauSourceNotProven(
+            List<CanonicalParameterDefinition> p, String id, String name, String calc, List<String> aliases
+    ) {
+        derived(p, id, name, BR, "COUNT", "PIT", calc,
+                List.of("bureau.tradeline.account_status"),
+                "SOURCE_NOT_PROVEN", aliases, null, null,
+                Capability.of("BUREAU_RETAIL", true, true, true, false, false, "SCALAR", null,
+                        "SOURCE_NOT_PROVEN — Equifax sample vocabulary (Standard/STD/SPM) does not prove this status token",
+                        null, null, null),
+                true, true, true, false, false);
     }
 
     private static void derivedDefined(

@@ -33,7 +33,24 @@ public final class BuiltInBureauMetricProducer implements ParameterProducer {
             BureauMetricService.WRITTEN_OFF_ACCOUNT_COUNT,
             BureauMetricService.WRITEOFF_NON_CC,
             BureauMetricService.WRITEOFF_CC,
-            BureauMetricService.STATUS_NTC
+            BureauMetricService.STATUS_NTC,
+            BureauMetricService.INQUIRIES_CURRENT_MONTH,
+            BureauMetricService.INQUIRIES_LAST_3M,
+            BureauMetricService.DPD_30_PLUS_COUNT_6M,
+            BureauMetricService.DPD_60_PLUS_COUNT_6M,
+            BureauMetricService.DPD_90_PLUS_COUNT_6M,
+            BureauMetricService.MONTHS_SINCE_LAST_DELINQUENCY,
+            BureauMetricService.OLDEST_TRADELINE_VINTAGE_MONTHS,
+            BureauMetricService.AVERAGE_ACCOUNT_AGE_MONTHS,
+            BureauMetricService.CC_OVERDUE_AMOUNT,
+            BureauMetricService.CC_UTILISATION,
+            BureauMetricService.OVERDUE_AMOUNT,
+            BureauMetricService.OVERDUE_AGE_MONTHS,
+            BureauMetricService.CREDIT_AFTER_OVERDUE_EXISTS,
+            BureauMetricService.CREDIT_AFTER_OVERDUE_CLEAN_HISTORY_MONTHS,
+            BureauMetricService.NON_CC_OVERDUE_EXCEPTION_VIOLATION_COUNT,
+            BureauMetricService.SUIT_FILED_ACCOUNT_COUNT,
+            BureauMetricService.PAN_DISTINCT_COUNT
     );
 
     @Override

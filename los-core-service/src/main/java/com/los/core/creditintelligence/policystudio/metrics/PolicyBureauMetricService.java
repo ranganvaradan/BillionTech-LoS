@@ -81,17 +81,15 @@ public class PolicyBureauMetricService {
         EvaluationClock c = clock != null ? clock
                 : new FixedEvaluationClock(Instant.parse("2024-06-15T00:00:00Z"), ZoneId.of("Asia/Kolkata"));
         LocalDate today = c.today();
-        YearMonth current = YearMonth.from(today);
         if (inquiries == null) {
             return di("Inquiries missing");
         }
-        int count = 0;
+        List<LocalDate> dates = new ArrayList<>();
         for (InquiryInput i : inquiries) {
-            if (i.date() != null && YearMonth.from(i.date()).equals(current)) {
-                count++;
-            }
+            dates.add(i == null ? null : i.date());
         }
-        Map<String, Object> r = pass(count);
+        BureauMetricService shared = new BureauMetricService(null, null);
+        Map<String, Object> r = shared.evaluateInquiriesCurrentMonth(dates, today).toStudioMap();
         r.put("asOf", today.toString());
         r.put("clockZone", c.zone().getId());
         return r;
@@ -102,19 +100,16 @@ public class PolicyBureauMetricService {
         EvaluationClock c = clock != null ? clock
                 : new FixedEvaluationClock(Instant.parse("2024-06-15T00:00:00Z"), ZoneId.of("Asia/Kolkata"));
         LocalDate today = c.today();
-        LocalDate start = today.minusMonths(3).withDayOfMonth(1);
         if (inquiries == null) {
             return di("Inquiries missing");
         }
-        int count = 0;
+        List<LocalDate> dates = new ArrayList<>();
         for (InquiryInput i : inquiries) {
-            if (i.date() != null && !i.date().isBefore(start) && !i.date().isAfter(today)) {
-                count++;
-            }
+            dates.add(i == null ? null : i.date());
         }
-        Map<String, Object> r = pass(count);
+        BureauMetricService shared = new BureauMetricService(null, null);
+        Map<String, Object> r = shared.evaluateInquiriesLast3Months(dates, today).toStudioMap();
         r.put("asOf", today.toString());
-        r.put("windowStart", start.toString());
         r.put("clockZone", c.zone().getId());
         return r;
     }
@@ -186,22 +181,21 @@ public class PolicyBureauMetricService {
                     "bureau.accounts.credit_card_overdue_max", di("No tradelines"));
         }
         int overdueNonCc = 0;
-        BigDecimal ccMax = BigDecimal.ZERO;
-        boolean anyCc = false;
         for (TradelineInput t : tradelines) {
             BigDecimal od = t.overdueAmount() == null ? BigDecimal.ZERO : t.overdueAmount();
-            if (t.creditCard()) {
-                anyCc = true;
-                if (od.compareTo(ccMax) > 0) {
-                    ccMax = od;
-                }
-            } else if (od.compareTo(BigDecimal.ZERO) > 0) {
+            if (!t.creditCard() && od.compareTo(BigDecimal.ZERO) > 0) {
                 overdueNonCc++;
             }
         }
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("bureau.accounts.overdue_non_cc", pass(overdueNonCc));
-        out.put("bureau.accounts.credit_card_overdue_max", anyCc || !tradelines.isEmpty() ? pass(ccMax) : di("No CC tradelines"));
+        BureauMetricService shared = new BureauMetricService(null, null);
+        List<BureauMetricService.CcOverdueInput> ccInputs = new ArrayList<>();
+        for (TradelineInput t : tradelines) {
+            ccInputs.add(new BureauMetricService.CcOverdueInput(t.creditCard(), t.overdueAmount()));
+        }
+        out.put("bureau.accounts.credit_card_overdue_max",
+                shared.evaluateCcOverdueAmount(ccInputs).toStudioMap());
         return out;
     }
 

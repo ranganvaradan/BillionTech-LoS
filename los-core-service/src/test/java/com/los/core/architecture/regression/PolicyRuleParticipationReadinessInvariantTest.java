@@ -25,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class PolicyRuleParticipationReadinessInvariantTest {
 
-    private static final String NOT_READY_PARAM = "bureau.cc_overdue_amount";
+    private static final String NOT_READY_PARAM = "bureau.thin_file_indicator";
     private static final String READY_PARAM = "bureau.score";
 
     @BeforeEach

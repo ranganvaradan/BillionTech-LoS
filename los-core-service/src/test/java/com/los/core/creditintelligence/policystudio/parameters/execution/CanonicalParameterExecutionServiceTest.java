@@ -76,15 +76,16 @@ class CanonicalParameterExecutionServiceTest {
     @Test
     void missingProducerNotExecutableEvenIfCatalogueWouldClaimImplemented() {
         EvaluationContext ctx = EvaluationContext.builder().mode(EvaluationMode.POLICY_TEST).build();
-        ExecutionResult overdue = spine.resolveAndExecute("bureau.overdue.amount", ctx);
+        ExecutionResult overdue = spine.resolveAndExecute("bureau.thin_file_indicator", ctx);
         assertThat(overdue.status()).isEqualTo(ExecutionStatus.NOT_EXECUTABLE);
         assertThat(overdue.capability()).isFalse();
 
         ExecutionResult cc = spine.resolveAndExecute("bureau.cc_overdue_amount", ctx);
-        assertThat(cc.status()).isEqualTo(ExecutionStatus.NOT_EXECUTABLE);
+        assertThat(cc.status()).isEqualTo(ExecutionStatus.DATA_NOT_AVAILABLE);
+        assertThat(cc.capability()).isTrue();
 
         ExecutionResult age = spine.resolveAndExecute("bureau.overdue.age_months", ctx);
-        assertThat(age.status()).isEqualTo(ExecutionStatus.NOT_EXECUTABLE);
+        assertThat(age.status()).isEqualTo(ExecutionStatus.DATA_NOT_AVAILABLE);
     }
 
     @Test
@@ -120,11 +121,20 @@ class CanonicalParameterExecutionServiceTest {
 
         ExecutionResult r = spine.resolveAndExecute(
                 "bureau.credit_after_overdue.clean_history_months", ctx);
-        assertThat(r.status()).isEqualTo(ExecutionStatus.VALUE_AVAILABLE);
-        assertThat(r.producerType()).isEqualTo(ProducerType.AUTHORED_DERIVED);
+        assertThat(r.status()).isEqualTo(ExecutionStatus.DATA_NOT_AVAILABLE);
+        assertThat(r.producerType()).isEqualTo(ProducerType.BUILT_IN);
         assertThat(r.capability()).isTrue();
-        assertThat(r.value()).isNotNull();
-        assertThat(r.exactProducerPath()).contains("SafeDerivedExpressionEvaluator");
+
+        EvaluationContext withExact = EvaluationContext.builder()
+                .mode(EvaluationMode.POLICY_TEST)
+                .evaluationAsOf(LocalDate.of(2026, 8, 1))
+                .fact("bureau.credit_after_overdue.clean_history_months", 6)
+                .build();
+        ExecutionResult exact = spine.resolveAndExecute(
+                "bureau.credit_after_overdue.clean_history_months", withExact);
+        assertThat(exact.status()).isEqualTo(ExecutionStatus.VALUE_AVAILABLE);
+        assertThat(exact.value()).isEqualTo(6);
+        assertThat(exact.producerType()).isEqualTo(ProducerType.BUILT_IN);
     }
 
     @Test
@@ -154,11 +164,11 @@ class CanonicalParameterExecutionServiceTest {
                 .fact("bureau.tradeline.payment_history", List.of(Map.of("month", "2026-01-01", "dpd", 30)))
                 .build();
 
-        assertThat(spine.hasExecutionCapability("bureau.dpd_30_plus_count_6m", ctx)).isFalse();
+        assertThat(spine.hasExecutionCapability("bureau.dpd_30_plus_count_6m", ctx)).isTrue();
         ExecutionResult r = spine.resolveAndExecute("bureau.dpd_30_plus_count_6m", ctx);
-        assertThat(r.status()).isIn(
-                ExecutionStatus.NOT_EXECUTABLE, ExecutionStatus.CALCULATION_NOT_DEFINED);
-        assertThat(r.capability()).isFalse();
+        assertThat(r.status()).isEqualTo(ExecutionStatus.DATA_NOT_AVAILABLE);
+        assertThat(r.capability()).isTrue();
+        assertThat(r.producerType()).isEqualTo(ProducerType.BUILT_IN);
     }
 
     @Test
@@ -169,7 +179,9 @@ class CanonicalParameterExecutionServiceTest {
                 .build();
         // max_dpd must not satisfy overdue amount
         ExecutionResult r = spine.resolveAndExecute("bureau.overdue.amount", ctx);
-        assertThat(r.status()).isEqualTo(ExecutionStatus.NOT_EXECUTABLE);
+        assertThat(r.status()).isEqualTo(ExecutionStatus.DATA_NOT_AVAILABLE);
+        assertThat(r.capability()).isTrue();
+        assertThat(r.valueAvailable()).isFalse();
         assertThat(spine.resolveAndExecute("bureau.max_dpd_6m", ctx).valueAvailable()).isTrue();
     }
 }

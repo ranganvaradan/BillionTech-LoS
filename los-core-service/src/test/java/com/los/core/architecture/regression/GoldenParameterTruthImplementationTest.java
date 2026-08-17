@@ -1,5 +1,6 @@
 package com.los.core.architecture.regression;
 
+import com.los.core.creditintelligence.policystudio.parameters.derived.AuthoredDerivedCalculationSupport;
 import com.los.core.creditintelligence.policystudio.parameters.derived.BusinessCalculationAssistant;
 import com.los.core.creditintelligence.policystudio.parameters.derived.CiGacatDerivedCalculationDefinition;
 import com.los.core.creditintelligence.policystudio.parameters.derived.DerivedCalculationDefinitionService;
@@ -55,6 +56,7 @@ class GoldenParameterTruthImplementationTest {
             "asOf", Map.of("op", "EVAL_AS_OF"));
 
     private final Map<String, CiGacatDerivedCalculationDefinition> store = new ConcurrentHashMap<>();
+    private AuthoredDerivedCalculationSupport overlaySupport;
 
     @BeforeEach
     void setUp() {
@@ -64,6 +66,8 @@ class GoldenParameterTruthImplementationTest {
                 Optional.ofNullable(store.get(inv.getArgument(0))));
         ExecutionCapabilityAuthority.install(ExecutionSpineProducerBootstrap.standalone(definitions));
         CanonicalSourceIntegrationAuthority.clearLenderProbe();
+        overlaySupport = new AuthoredDerivedCalculationSupport(definitions);
+        overlaySupport.register();
 
         store.put(DPD30, CiGacatDerivedCalculationDefinition.builder()
                 .id(UUID.randomUUID())
@@ -86,10 +90,34 @@ class GoldenParameterTruthImplementationTest {
                 .description("Clean history test fixture")
                 .versionNo(1)
                 .build());
+        putBuiltIn(CC_OVERDUE, "MAX of credit-card overdue amounts", List.of("bureau.tradeline.overdue_amount"));
+        putBuiltIn("bureau.overdue.amount", "SUM of non-CC overdue", List.of("bureau.tradeline.overdue_amount"));
+        putBuiltIn("bureau.overdue.age_months", "MAX overdue age months",
+                List.of("bureau.tradeline.overdue_amount", "bureau.tradeline.dpd_month"));
+    }
+
+    private void putBuiltIn(String id, String how, List<String> deps) {
+        Map<String, Object> expr = new LinkedHashMap<>();
+        expr.put("type", "BUILT_IN_CODE");
+        expr.put("executor", "BureauMetricService");
+        expr.put("calculationType", "BUILT_IN_CODE");
+        expr.put("metricCode", id);
+        store.put(id, CiGacatDerivedCalculationDefinition.builder()
+                .id(UUID.randomUUID())
+                .canonicalParameterId(id)
+                .scope("PLATFORM")
+                .status(DerivedCalculationDefinitionService.STATUS_TESTED)
+                .calculationType(DerivedCalculationDefinitionService.CALCULATION_TYPE_BUILT_IN_CODE)
+                .expressionJson(expr)
+                .dependencyIds(deps)
+                .description(how)
+                .versionNo(1)
+                .build());
     }
 
     @AfterEach
     void tearDown() {
+        overlaySupport.unregister();
         ExecutionCapabilityAuthority.clear();
         CanonicalSourceIntegrationAuthority.clearLenderProbe();
     }
@@ -180,8 +208,8 @@ class GoldenParameterTruthImplementationTest {
     }
 
     @Test
-    void testD4_ccOverdueNotReadyCalculationNotDefined() {
-        Map<String, Object> st = CanonicalParameterStateService.state(CC_OVERDUE);
+    void testD4_thinFileNotReadyCalculationNotDefined() {
+        Map<String, Object> st = CanonicalParameterStateService.state("bureau.thin_file_indicator");
         assertThat(st.get("businessReadiness")).isEqualTo(BusinessReadiness.NOT_READY.name());
         assertThat(st.get("businessReadinessReason"))
                 .isEqualTo(BusinessReadinessReason.CALCULATION_NOT_DEFINED.name());
@@ -189,18 +217,16 @@ class GoldenParameterTruthImplementationTest {
     }
 
     @Test
-    void testD5_d6_overdueFamilyNotReady() {
-        for (String id : new String[]{"bureau.overdue.amount", "bureau.overdue.age_months"}) {
+    void testD5_d6_overdueFamilyReadyViaBureauMetricService() {
+        for (String id : new String[]{"bureau.overdue.amount", "bureau.overdue.age_months", CC_OVERDUE}) {
             Map<String, Object> st = CanonicalParameterStateService.state(id);
-            assertThat(st.get("businessReadiness")).as(id).isEqualTo(BusinessReadiness.NOT_READY.name());
-            assertThat(st.get("businessReadinessReason")).as(id)
-                    .isEqualTo(BusinessReadinessReason.CALCULATION_NOT_DEFINED.name());
+            assertThat(st.get("businessReadiness")).as(id).isEqualTo(BusinessReadiness.READY.name());
         }
     }
 
     @Test
     void testD7_catalogueImplementedDoesNotForceReady() {
-        Map<String, Object> st = CanonicalParameterStateService.state(CC_OVERDUE);
+        Map<String, Object> st = CanonicalParameterStateService.state("bureau.thin_file_indicator");
         assertThat(st.get("catalogueImplementedIsNotReadiness")).isEqualTo(true);
         assertThat(st.get("businessReadiness")).isEqualTo(BusinessReadiness.NOT_READY.name());
     }

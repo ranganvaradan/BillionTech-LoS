@@ -116,6 +116,16 @@ public final class BusinessReadinessProjector {
                         "Calculation not executable", "Fix calculation");
             }
 
+            boolean derivedOrBuiltIn = CanonicalParameterDefinition.DERIVED.equalsIgnoreCase(def.type())
+                    || "BUILT_IN".equalsIgnoreCase(mode)
+                    || "AUTHORED".equalsIgnoreCase(mode);
+            if (derivedOrBuiltIn
+                    && !Boolean.TRUE.equals(calculation.get("definitionPresent"))) {
+                return readyMap(out, BusinessReadiness.NOT_READY,
+                        BusinessReadinessReason.CALCULATION_NOT_DEFINED,
+                        "Calculation not defined", "Set up calculation");
+            }
+
             // GOLDEN-PARAMETER-DEPENDENCY-INTEGRITY:
             // CPES capability alone is insufficient. Every mandatory structural dependency
             // (catalogue requiredPrimitives ∪ execution/authored deps) must itself be READY.

@@ -3,6 +3,7 @@ package com.los.core.creditintelligence.policystudio.parameters.derived;
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterDefinition;
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterRegistry;
 import com.los.core.creditintelligence.policystudio.parameters.PolicyStudioConvergencePresenter;
+import com.los.core.creditintelligence.policystudio.parameters.execution.AuthoredDerivedProducer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -13,6 +14,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -33,6 +35,8 @@ public class DerivedCalculationDefinitionService {
     public static final String STATUS_TESTED = "TESTED";
     public static final String STATUS_PRODUCTION_READY = "PRODUCTION_READY";
     public static final String STATUS_RETIRED = "RETIRED";
+    public static final String CALCULATION_TYPE_AUTHORED_EXPRESSION = "AUTHORED_EXPRESSION";
+    public static final String CALCULATION_TYPE_BUILT_IN_CODE = "BUILT_IN_CODE";
 
     private final CiGacatDerivedCalculationDefinitionRepository repository;
 
@@ -101,26 +105,68 @@ public class DerivedCalculationDefinitionService {
         @SuppressWarnings("unchecked")
         Map<String, Object> expression = body.get("expression") instanceof Map<?, ?> m
                 ? new LinkedHashMap<>((Map<String, Object>) m)
-                : Map.of();
-        Set<String> allowed = allKnownCanonicalIds();
-        // Lender may depend on platform GACAT inputs
-        List<String> errors = SafeDerivedExpressionEvaluator.validate(expression, allowed);
-        if (!errors.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, String.join("; ", errors));
+                : new LinkedHashMap<>();
+        String calcType = str(body.get("calculationType"));
+        if (calcType.isBlank() && AuthoredDerivedProducer.isBuiltInCodeExpression(expression)) {
+            calcType = CALCULATION_TYPE_BUILT_IN_CODE;
         }
-        if (SCOPE_PLATFORM.equals(scope)) {
-            CanonicalParameterDefinition target = registry().findById(canonicalId).orElse(null);
-            if (target != null) {
-                DerivedCalculationSemanticCompatibility.Result compat =
-                        DerivedCalculationSemanticCompatibility.assessExpression(
-                                target, expression, id -> registry().findById(id).orElse(null));
-                if (!compat.compatible()) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                            "Semantic/dimensional incompatibility: " + String.join("; ", compat.failures()));
-                }
+        if (calcType.isBlank()) {
+            calcType = CALCULATION_TYPE_AUTHORED_EXPRESSION;
+        }
+        boolean builtInCode = CALCULATION_TYPE_BUILT_IN_CODE.equalsIgnoreCase(calcType)
+                || AuthoredDerivedProducer.isBuiltInCodeExpression(expression);
+        if (builtInCode) {
+            calcType = CALCULATION_TYPE_BUILT_IN_CODE;
+            if (!SCOPE_PLATFORM.equals(scope)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "BUILT_IN_CODE definitions are platform seed only");
+            }
+            if (expression.isEmpty()) {
+                expression.put("type", CALCULATION_TYPE_BUILT_IN_CODE);
+                expression.put("executor", "BureauMetricService");
+                expression.put("calculationType", CALCULATION_TYPE_BUILT_IN_CODE);
+                expression.put("metricCode", canonicalId);
             }
         }
-        Set<String> deps = SafeDerivedExpressionEvaluator.collectDependencies(expression);
+
+        Set<String> deps;
+        if (builtInCode) {
+            deps = new LinkedHashSet<>();
+            Object rawDeps = body.get("dependencies");
+            if (rawDeps instanceof List<?> list) {
+                for (Object o : list) {
+                    if (o != null && !String.valueOf(o).isBlank()) {
+                        deps.add(String.valueOf(o).trim());
+                    }
+                }
+            }
+            if (deps.isEmpty() && body.get("dependencyIds") instanceof List<?> list) {
+                for (Object o : list) {
+                    if (o != null && !String.valueOf(o).isBlank()) {
+                        deps.add(String.valueOf(o).trim());
+                    }
+                }
+            }
+        } else {
+            Set<String> allowed = allKnownCanonicalIds();
+            List<String> errors = SafeDerivedExpressionEvaluator.validate(expression, allowed);
+            if (!errors.isEmpty()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, String.join("; ", errors));
+            }
+            if (SCOPE_PLATFORM.equals(scope)) {
+                CanonicalParameterDefinition target = registry().findById(canonicalId).orElse(null);
+                if (target != null) {
+                    DerivedCalculationSemanticCompatibility.Result compat =
+                            DerivedCalculationSemanticCompatibility.assessExpression(
+                                    target, expression, id -> registry().findById(id).orElse(null));
+                    if (!compat.compatible()) {
+                        throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                                "Semantic/dimensional incompatibility: " + String.join("; ", compat.failures()));
+                    }
+                }
+            }
+            deps = SafeDerivedExpressionEvaluator.collectDependencies(expression);
+        }
         detectCycle(canonicalId, deps, tenantId, scope);
 
         int nextVer = repository.findByCanonicalParameterIdOrderByVersionNoDesc(canonicalId).stream()
@@ -129,11 +175,19 @@ public class DerivedCalculationDefinitionService {
                 .findFirst()
                 .orElse(0) + 1;
 
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("arbitraryCodeAllowed", false);
+        if (builtInCode) {
+            metadata.put("executionAuthority", "BureauMetricService");
+            metadata.put("producer", "BuiltInBureauMetricProducer");
+        }
+
         CiGacatDerivedCalculationDefinition row = CiGacatDerivedCalculationDefinition.builder()
                 .tenantId(SCOPE_LENDER.equals(scope) ? tenantId : null)
                 .canonicalParameterId(canonicalId)
                 .scope(scope)
                 .status(STATUS_DEFINED)
+                .calculationType(calcType)
                 .resultType(str(body.getOrDefault("resultType", "NUMBER")))
                 .unit(blankToNull(str(body.get("unit"))))
                 .description(blankToNull(str(body.get("description"))))
@@ -143,7 +197,7 @@ public class DerivedCalculationDefinitionService {
                 .createdBy(actor)
                 .createdAt(Instant.now())
                 .updatedAt(Instant.now())
-                .metadata(Map.of("arbitraryCodeAllowed", false))
+                .metadata(metadata)
                 .build();
         row = repository.save(row);
         return toView(row);
@@ -153,6 +207,13 @@ public class DerivedCalculationDefinitionService {
     public Map<String, Object> testWithSample(UUID id, Map<String, Object> sampleInputs) {
         CiGacatDerivedCalculationDefinition row = repository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "definition not found"));
+        if (isBuiltInCodeRow(row)) {
+            Map<String, Object> out = toView(row);
+            out.put("evaluation", Map.of(
+                    "status", "NOT_APPLICABLE",
+                    "reason", "BUILT_IN_CODE is executed by BureauMetricService, not as a spine formula"));
+            return out;
+        }
         SafeDerivedExpressionEvaluator.EvalResult result =
                 SafeDerivedExpressionEvaluator.evaluate(row.getExpressionJson(), sampleInputs);
         if (SafeDerivedExpressionEvaluator.STATUS_OK.equals(result.status())
@@ -205,7 +266,15 @@ public class DerivedCalculationDefinitionService {
             String canonicalParameterId, UUID tenantId, Map<String, Object> inputs) {
         return latestFor(canonicalParameterId, tenantId)
                 .filter(d -> STATUS_TESTED.equals(d.getStatus()) || STATUS_PRODUCTION_READY.equals(d.getStatus()))
-                .map(d -> SafeDerivedExpressionEvaluator.evaluate(d.getExpressionJson(), inputs))
+                .map(d -> {
+                    if (isBuiltInCodeRow(d)) {
+                        return new SafeDerivedExpressionEvaluator.EvalResult(
+                                SafeDerivedExpressionEvaluator.STATUS_DATA_INSUFFICIENT,
+                                null,
+                                "BUILT_IN_CODE is executed by BureauMetricService, not as a spine formula");
+                    }
+                    return SafeDerivedExpressionEvaluator.evaluate(d.getExpressionJson(), inputs);
+                })
                 .orElseGet(() -> new SafeDerivedExpressionEvaluator.EvalResult(
                         SafeDerivedExpressionEvaluator.STATUS_DATA_INSUFFICIENT,
                         null,
@@ -263,9 +332,20 @@ public class DerivedCalculationDefinitionService {
         m.put("expression", row.getExpressionJson());
         m.put("dependencies", row.getDependencyIds());
         m.put("versionNo", row.getVersionNo());
+        m.put("calculationType", row.getCalculationType() == null
+                ? CALCULATION_TYPE_AUTHORED_EXPRESSION : row.getCalculationType());
         m.put("arbitraryCodeAllowed", false);
         m.put("productionReadyImpliesTested", true);
         return m;
+    }
+
+    private static boolean isBuiltInCodeRow(CiGacatDerivedCalculationDefinition d) {
+        if (d == null) return false;
+        if (CALCULATION_TYPE_BUILT_IN_CODE.equalsIgnoreCase(
+                d.getCalculationType() == null ? "" : d.getCalculationType())) {
+            return true;
+        }
+        return AuthoredDerivedProducer.isBuiltInCodeExpression(d.getExpressionJson());
     }
 
     private static String str(Object o) {

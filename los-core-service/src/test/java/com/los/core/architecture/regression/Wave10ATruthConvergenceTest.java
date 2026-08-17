@@ -2,6 +2,7 @@ package com.los.core.architecture.regression;
 
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterDefinition;
 import com.los.core.creditintelligence.policystudio.parameters.PolicyStudioConvergencePresenter;
+import com.los.core.creditintelligence.policystudio.parameters.derived.AuthoredDerivedCalculationSupport;
 import com.los.core.creditintelligence.policystudio.parameters.derived.CiGacatDerivedCalculationDefinition;
 import com.los.core.creditintelligence.policystudio.parameters.derived.DerivedCalculationDefinitionService;
 import com.los.core.creditintelligence.policystudio.parameters.execution.EvaluationMode;
@@ -37,7 +38,7 @@ import static org.mockito.Mockito.when;
 class Wave10ATruthConvergenceTest {
 
     private static final String DPD30 = "bureau.dpd_30_plus_count_6m";
-    private static final String CC_OVERDUE = "bureau.cc_overdue_amount";
+    private static final String NOT_READY_PARAM = "bureau.thin_file_indicator";
 
     private static final Map<String, Object> DPD30_COUNT_EXPR = Map.of(
             "op", "COUNT_PERIODS_MATCHING",
@@ -52,6 +53,7 @@ class Wave10ATruthConvergenceTest {
 
     private final Map<String, CiGacatDerivedCalculationDefinition> store = new ConcurrentHashMap<>();
     private DataParametersAdminService dataParameters;
+    private AuthoredDerivedCalculationSupport overlaySupport;
 
     @BeforeEach
     void setUp() {
@@ -63,11 +65,14 @@ class Wave10ATruthConvergenceTest {
         });
         var spine = ExecutionSpineProducerBootstrap.standalone(definitions);
         ExecutionCapabilityAuthority.install(spine);
+        overlaySupport = new AuthoredDerivedCalculationSupport(definitions);
+        overlaySupport.register();
         dataParameters = new DataParametersAdminService();
     }
 
     @AfterEach
     void tearDown() {
+        overlaySupport.unregister();
         ExecutionCapabilityAuthority.clear();
     }
 
@@ -145,12 +150,12 @@ class Wave10ATruthConvergenceTest {
     @Test
     void ccOverdue_negativeGolden_setupWithoutLegacyContradiction() {
         boolean capable = ExecutionCapabilityAuthority.hasExecutionCapability(
-                CC_OVERDUE, EvaluationMode.POLICY_TEST);
-        Map<String, Object> truth = CanonicalParameterTruthProjection.project(CC_OVERDUE);
+                NOT_READY_PARAM, EvaluationMode.POLICY_TEST);
+        Map<String, Object> truth = CanonicalParameterTruthProjection.project(NOT_READY_PARAM);
         assertThat(capable).isFalse();
         assertThat(String.valueOf(truth.get("primaryStatusLabel"))).isIn("Calculation not defined", "Not ready");
 
-        Map<String, Object> parameter = parameterOf(CC_OVERDUE);
+        Map<String, Object> parameter = parameterOf(NOT_READY_PARAM);
         assertThat(parameter).isNotNull();
         String primary = String.valueOf(parameter.get("primaryStatusLabel"));
         assertThat(primary).isIn("Calculation not defined", "Not ready");
@@ -190,7 +195,7 @@ class Wave10ATruthConvergenceTest {
         Map<String, Object> calculation = Map.of("required", true, "explanation", "Calculation is not set up yet.");
         Map<String, Object> certification = Map.of("status", "UNCERTIFIED");
         Map<String, Object> primary = LenderTruthDisplayMapper.primary(
-                PolicyStudioConvergencePresenter.registry().findById(CC_OVERDUE).orElseThrow(),
+                PolicyStudioConvergencePresenter.registry().findById(NOT_READY_PARAM).orElseThrow(),
                 semantic, execution, calculation, certification);
         assertThat(primary.get("primaryStatusLabel")).isIn("Calculation not defined", "Not ready");
         assertThat(primary.get("nextAction")).isEqualTo("Set up calculation");
@@ -224,7 +229,7 @@ class Wave10ATruthConvergenceTest {
 
     @Test
     void legacySupportMetadata_cannotOverridePrimaryStatus() {
-        Map<String, Object> parameter = parameterOf(CC_OVERDUE);
+        Map<String, Object> parameter = parameterOf(NOT_READY_PARAM);
         assertThat(parameter).isNotNull();
         assertThat(parameter.get("primaryStatusLabel")).isIn("Calculation not defined", "Not ready");
         assertThat(parameter.get("primaryStatus")).isEqualTo("NOT_READY");

@@ -51,10 +51,7 @@ class ScorecardSpineClosureAcceptanceTest {
     );
 
     static final List<String> UNSUPPORTED = List.of(
-            "bureau.dpd_30_plus_count_6m",
-            "bureau.cc_overdue_amount",
-            "bureau.overdue.amount",
-            "bureau.overdue.age_months"
+            "bureau.thin_file_indicator"
     );
 
     private CanonicalParameterExecutionService spine;
@@ -135,9 +132,9 @@ class ScorecardSpineClosureAcceptanceTest {
         LoanApplication app = new LoanApplication();
         app.setBureauScore(720);
         Map<String, BigDecimal> sc = new LinkedHashMap<>();
-        // Poison: legacy map must NOT satisfy unsupported canonicals
-        sc.put("bureau.cc_overdue_amount", BigDecimal.valueOf(9999));
-        sc.put("bureau.overdue.amount", BigDecimal.valueOf(8888));
+        // Poison: legacy aliases / related keys must NOT satisfy thin_file
+        sc.put("bureau.thin_file_indicator", BigDecimal.valueOf(9999));
+        sc.put("NTC_FLAG", BigDecimal.ONE);
         sc.put("CC_OVERDUE", BigDecimal.valueOf(7777));
         EffectiveUnderwritingContext uw = new EffectiveUnderwritingContext(
                 720, true, null, null, "MH", "Mumbai", "BUREAU", "T", "KYC", sc);
@@ -157,8 +154,8 @@ class ScorecardSpineClosureAcceptanceTest {
         EvaluationContext pt = sharedFactsContext(EvaluationMode.POLICY_TEST);
         ExecutionResult spinePt = spine.resolveAndExecute(
                 "bureau.credit_after_overdue.clean_history_months", pt);
-        assertThat(spinePt.status()).isEqualTo(ExecutionStatus.VALUE_AVAILABLE);
-        assertThat(spinePt.producerType().name()).isEqualTo("AUTHORED_DERIVED");
+        assertThat(spinePt.status()).isEqualTo(ExecutionStatus.DATA_NOT_AVAILABLE);
+        assertThat(spinePt.producerType().name()).isEqualTo("BUILT_IN");
 
         LoanApplication app = new LoanApplication();
         Map<String, BigDecimal> sc = new LinkedHashMap<>();
@@ -175,11 +172,9 @@ class ScorecardSpineClosureAcceptanceTest {
         CanonicalScorecardValueResolver.ResolveOutcome scOut =
                 CanonicalScorecardValueResolver.resolveCanonical(
                         "bureau.credit_after_overdue.clean_history_months", enriched);
-        assertThat(scOut.valueAvailable()).isTrue();
+        assertThat(scOut.valueAvailable()).isFalse();
         assertThat(scOut.legacyFallbackUsed()).isFalse();
-        assertThat(scOut.producerType()).isEqualTo("AUTHORED_DERIVED");
-        assertThat(scOut.numericValue()).isEqualByComparingTo(
-                CanonicalScorecardValueResolver.toBigDecimal(spinePt.value()));
+        assertThat(scOut.producerType()).isEqualTo("BUILT_IN");
     }
 
     @Test

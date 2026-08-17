@@ -104,7 +104,7 @@ class Wave5CanonicalPolicyRuntimeTest {
                 "cc-overdue",
                 PolicyDsl.lte(PolicyDsl.metric("bureau.cc_overdue_amount"), Map.of("const", 0))), ctx, ASOF);
         assertThat(rr.result()).isEqualTo(CanonicalRuleResult.RuleOutcome.DATA_INSUFFICIENT);
-        assertThat(rr.actualExecution().status()).isEqualTo(ExecutionStatus.NOT_EXECUTABLE);
+        assertThat(rr.actualExecution().status()).isEqualTo(ExecutionStatus.DATA_NOT_AVAILABLE);
     }
 
     @Test

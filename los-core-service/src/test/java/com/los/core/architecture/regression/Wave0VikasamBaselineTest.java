@@ -48,13 +48,13 @@ class Wave0VikasamBaselineTest {
         assertThat(byId.get("bureau.score").get("status")).isEqualTo(ExecutionStatus.VALUE_AVAILABLE.name());
         assertThat(byId.get("bureau.max_dpd_6m").get("status")).isEqualTo(ExecutionStatus.VALUE_AVAILABLE.name());
         assertThat(byId.get("bureau.credit_after_overdue.clean_history_months").get("status"))
-                .isEqualTo(ExecutionStatus.VALUE_AVAILABLE.name());
-        assertThat(byId.get("bureau.dpd_30_plus_count_6m").get("capability")).isEqualTo(false);
+                .isEqualTo(ExecutionStatus.DATA_NOT_AVAILABLE.name());
+        assertThat(byId.get("bureau.dpd_30_plus_count_6m").get("capability")).isEqualTo(true);
         assertThat(byId.get("bureau.cc_overdue_amount").get("status"))
-                .isEqualTo(ExecutionStatus.NOT_EXECUTABLE.name());
+                .isEqualTo(ExecutionStatus.DATA_NOT_AVAILABLE.name());
         assertThat(byId.get("bureau.overdue.amount").get("status"))
-                .isEqualTo(ExecutionStatus.NOT_EXECUTABLE.name());
+                .isEqualTo(ExecutionStatus.DATA_NOT_AVAILABLE.name());
         assertThat(byId.get("bureau.overdue.age_months").get("status"))
-                .isEqualTo(ExecutionStatus.NOT_EXECUTABLE.name());
+                .isEqualTo(ExecutionStatus.DATA_NOT_AVAILABLE.name());
     }
 }

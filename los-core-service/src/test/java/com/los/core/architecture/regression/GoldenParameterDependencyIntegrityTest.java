@@ -2,6 +2,8 @@ package com.los.core.architecture.regression;
 
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterDefinition;
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterRegistry;
+import com.los.core.creditintelligence.policystudio.parameters.derived.AuthoredDerivedCalculationSupport;
+import com.los.core.creditintelligence.policystudio.parameters.derived.CiGacatDerivedCalculationDefinition;
 import com.los.core.creditintelligence.policystudio.parameters.derived.DerivedCalculationDefinitionService;
 import com.los.core.creditintelligence.policystudio.parameters.execution.CanonicalParameterExecutionService;
 import com.los.core.creditintelligence.policystudio.parameters.execution.ExecutionCapabilityAuthority;
@@ -26,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -45,6 +48,7 @@ class GoldenParameterDependencyIntegrityTest {
     private static final String SCORE = "bureau.score";
 
     private CanonicalParameterRegistry registry;
+    private AuthoredDerivedCalculationSupport overlaySupport;
 
     @BeforeEach
     void setUp() {
@@ -55,6 +59,10 @@ class GoldenParameterDependencyIntegrityTest {
 
     @AfterEach
     void tearDown() {
+        if (overlaySupport != null) {
+            overlaySupport.unregister();
+            overlaySupport = null;
+        }
         ExecutionCapabilityAuthority.clear();
         CanonicalSourceIntegrationAuthority.clearLenderProbe();
     }
@@ -65,9 +73,28 @@ class GoldenParameterDependencyIntegrityTest {
         ExecutionCapabilityAuthority.install(ExecutionSpineProducerBootstrap.standalone(definitions));
     }
 
-    /** Expand RAW_FACT_IDS so inquiry event+date are structurally mapped (capability=true). */
-    private static void installSpineWithInquiryRawMapped() {
-        installDefaultSpine();
+    private void installCurrentMonthDefinition() {
+        DerivedCalculationDefinitionService definitions = mock(DerivedCalculationDefinitionService.class);
+        CiGacatDerivedCalculationDefinition row = CiGacatDerivedCalculationDefinition.builder()
+                .id(UUID.randomUUID())
+                .canonicalParameterId(CURRENT_MONTH)
+                .scope("PLATFORM")
+                .status(DerivedCalculationDefinitionService.STATUS_TESTED)
+                .calculationType(DerivedCalculationDefinitionService.CALCULATION_TYPE_BUILT_IN_CODE)
+                .expressionJson(Map.of(
+                        "type", "BUILT_IN_CODE",
+                        "executor", "BureauMetricService",
+                        "calculationType", "BUILT_IN_CODE",
+                        "metricCode", CURRENT_MONTH))
+                .dependencyIds(List.of(INQUIRY_DATE))
+                .description("Count of bureau enquiries in the current evaluation month")
+                .versionNo(1)
+                .build();
+        when(definitions.latestFor(any(), any())).thenAnswer(inv ->
+                CURRENT_MONTH.equals(inv.getArgument(0)) ? Optional.of(row) : Optional.empty());
+        ExecutionCapabilityAuthority.install(ExecutionSpineProducerBootstrap.standalone(definitions));
+        overlaySupport = new AuthoredDerivedCalculationSupport(definitions);
+        overlaySupport.register();
     }
 
     @Test
@@ -155,18 +182,32 @@ class GoldenParameterDependencyIntegrityTest {
 
     @Test
     void sentinel_notReadyRawDepsBlockDerived() {
-        // Without Equifax normalized RAW registration this would be the failure mode;
-        // with PlatformNormalizedRawFieldCatalog, inquiry fields are structurally READY.
-        // Prove composition still blocks when a dep is forced NOT_READY via missing capability:
         ExecutionCapabilityAuthority.clear();
         DerivedCalculationDefinitionService definitions = mock(DerivedCalculationDefinitionService.class);
-        when(definitions.latestFor(any(), any())).thenReturn(Optional.empty());
-        // Spine WITHOUT normalized inquiry fields
+        CiGacatDerivedCalculationDefinition row = CiGacatDerivedCalculationDefinition.builder()
+                .id(UUID.randomUUID())
+                .canonicalParameterId(CURRENT_MONTH)
+                .scope("PLATFORM")
+                .status(DerivedCalculationDefinitionService.STATUS_TESTED)
+                .calculationType(DerivedCalculationDefinitionService.CALCULATION_TYPE_BUILT_IN_CODE)
+                .expressionJson(Map.of(
+                        "type", "BUILT_IN_CODE",
+                        "calculationType", "BUILT_IN_CODE",
+                        "executor", "BureauMetricService",
+                        "metricCode", CURRENT_MONTH))
+                .dependencyIds(List.of(INQUIRY_DATE))
+                .description("fixture")
+                .versionNo(1)
+                .build();
+        when(definitions.latestFor(any(), any())).thenAnswer(inv ->
+                CURRENT_MONTH.equals(inv.getArgument(0)) ? Optional.of(row) : Optional.empty());
         ProducerRegistry registry = new ProducerRegistry();
         RawFactProducer raw = new RawFactProducer(Set.of("bureau.score", CURRENT_MONTH));
         registry.registerExact("bureau.score", raw);
         registry.registerExact(CURRENT_MONTH, raw);
         ExecutionCapabilityAuthority.install(new CanonicalParameterExecutionService(registry));
+        overlaySupport = new AuthoredDerivedCalculationSupport(definitions);
+        overlaySupport.register();
 
         Map<String, Object> a = CanonicalParameterStateService.state(INQUIRY);
         Map<String, Object> b = CanonicalParameterStateService.state(INQUIRY_DATE);
@@ -180,7 +221,7 @@ class GoldenParameterDependencyIntegrityTest {
 
     @Test
     void sentinel_whenRawDepsMappedDerivedReadyEvenIfValueUnavailable() {
-        installDefaultSpine(); // includes PlatformNormalizedRawFieldCatalog
+        installCurrentMonthDefinition();
         Map<String, Object> a = CanonicalParameterStateService.state(INQUIRY);
         Map<String, Object> b = CanonicalParameterStateService.state(INQUIRY_DATE);
         Map<String, Object> c = CanonicalParameterStateService.state(CURRENT_MONTH);
@@ -209,7 +250,7 @@ class GoldenParameterDependencyIntegrityTest {
         CanonicalParameterDefinition def = registry.findById(CURRENT_MONTH).orElseThrow();
         List<String> ids = com.los.core.creditintelligence.policystudio.truth.BusinessReadinessProjector
                 .structuralDependencyIds(def, Map.of());
-        assertThat(ids).containsExactly("bureau.inquiry", "bureau.inquiry.date");
+        assertThat(ids).containsExactly("bureau.inquiry.date");
         Map<String, Object> st = CanonicalParameterStateService.state(CURRENT_MONTH);
         assertThat(((Map<?, ?>) st.get("calculation")).get("dependencyCanonicalIds"))
                 .isEqualTo(ids);

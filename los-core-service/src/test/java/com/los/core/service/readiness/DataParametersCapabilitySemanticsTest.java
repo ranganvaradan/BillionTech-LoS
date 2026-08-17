@@ -76,7 +76,8 @@ class DataParametersCapabilitySemanticsTest {
                 .isEqualTo(DataParametersCapabilitySemantics.SOURCE_PLATFORM_PRODUCTION_READY);
         assertThat(support.get("status"))
                 .isEqualTo(DataParametersCapabilitySemantics.SUPPORT_SUPPORTED_DERIVED);
-        assertThat(String.valueOf(support.get("businessHow"))).containsIgnoringCase("Calculated by BillionTech");
+        assertThat(String.valueOf(support.get("businessHow")))
+                .containsIgnoringCase("BureauMetricService");
         assertThat(org.get("status")).isEqualTo(DataParametersCapabilitySemantics.LENDER_NOT_YET_SUBSCRIBED);
         assertThat(design.get("available")).isEqualTo(true);
         assertThat(String.valueOf(design.get("label"))).containsIgnoringCase("policy design");

@@ -89,22 +89,20 @@ class Wave0ArchitectureRegressionTest {
         assertThat(byId.get("bureau.max_dpd_6m").get("status")).isEqualTo(ExecutionStatus.VALUE_AVAILABLE.name());
         assertThat(byId.get("bureau.max_dpd_6m").get("capability")).isEqualTo(true);
 
-        // MUST_PRESERVE (with PH in context): authored clean_history
+        // Built-in Equifax derived authority (BMS) — value only when exact-ID facts exist
         assertThat(byId.get("bureau.credit_after_overdue.clean_history_months").get("status"))
-                .isEqualTo(ExecutionStatus.VALUE_AVAILABLE.name());
+                .isEqualTo(ExecutionStatus.DATA_NOT_AVAILABLE.name());
         assertThat(byId.get("bureau.credit_after_overdue.clean_history_months").get("producerType"))
-                .isEqualTo("AUTHORED_DERIVED");
+                .isEqualTo("BUILT_IN");
 
-        // KNOWN_GAP: unsupported overdue family
         assertThat(byId.get("bureau.cc_overdue_amount").get("status"))
-                .isEqualTo(ExecutionStatus.NOT_EXECUTABLE.name());
+                .isEqualTo(ExecutionStatus.DATA_NOT_AVAILABLE.name());
         assertThat(byId.get("bureau.overdue.amount").get("status"))
-                .isEqualTo(ExecutionStatus.NOT_EXECUTABLE.name());
+                .isEqualTo(ExecutionStatus.DATA_NOT_AVAILABLE.name());
         assertThat(byId.get("bureau.overdue.age_months").get("status"))
-                .isEqualTo(ExecutionStatus.NOT_EXECUTABLE.name());
+                .isEqualTo(ExecutionStatus.DATA_NOT_AVAILABLE.name());
 
-        // KNOWN_GAP: unit baseline invalid dpd_30 def → not capable
-        assertThat(byId.get("bureau.dpd_30_plus_count_6m").get("capability")).isEqualTo(false);
+        assertThat(byId.get("bureau.dpd_30_plus_count_6m").get("capability")).isEqualTo(true);
     }
 
     @Test

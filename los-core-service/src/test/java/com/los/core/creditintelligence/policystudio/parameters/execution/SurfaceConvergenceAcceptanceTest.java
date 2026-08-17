@@ -80,10 +80,10 @@ class SurfaceConvergenceAcceptanceTest {
 
     @Test
     void implementedWithoutProducer_notExecutableOnSurfaces() {
-        // Catalogue often marks overdue.amount implemented; spine has no producer
-        String id = "bureau.overdue.amount";
+        // Remaining Equifax ID without a BuiltIn producer
+        String id = "bureau.thin_file_indicator";
         var def = PolicyStudioConvergencePresenter.registry().findById(id).orElseThrow();
-        assertThat(def.capability().implemented()).isTrue();
+        assertThat(def.capability().implemented()).isFalse();
         assertThat(ParameterExecutabilitySupport.evaluate(def).get("policyTestReady")).isEqualTo(false);
         assertThat(DataParametersCapabilitySemantics.project(def).get("policyTestReady")).isEqualTo(false);
         assertThat(CanonicalParameterCapabilityProjection.project(def).get("productionReady")).isEqualTo(false);
@@ -119,7 +119,7 @@ class SurfaceConvergenceAcceptanceTest {
         card.put("authoringComplete", true);
         card.put("operands", List.of(
                 Map.of("canonicalParameterId", "bureau.score", "unresolved", false),
-                Map.of("canonicalParameterId", "bureau.overdue.amount", "unresolved", false)
+                Map.of("canonicalParameterId", "bureau.thin_file_indicator", "unresolved", false)
         ));
         Map<String, Object> meta = Map.of("disposition", "ACCEPTED");
         var facts = PolicyRuleLifecycleProjection.factsFromCard(card, meta);

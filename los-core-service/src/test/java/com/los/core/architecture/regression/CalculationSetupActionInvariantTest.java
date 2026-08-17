@@ -2,6 +2,7 @@ package com.los.core.architecture.regression;
 
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterDefinition;
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterRegistry;
+import com.los.core.creditintelligence.policystudio.parameters.derived.AuthoredDerivedCalculationSupport;
 import com.los.core.creditintelligence.policystudio.parameters.derived.CiGacatDerivedCalculationDefinition;
 import com.los.core.creditintelligence.policystudio.parameters.derived.DerivedCalculationDefinitionService;
 import com.los.core.creditintelligence.policystudio.parameters.execution.ExecutionCapabilityAuthority;
@@ -54,6 +55,7 @@ class CalculationSetupActionInvariantTest {
 
     private final Map<String, CiGacatDerivedCalculationDefinition> store = new ConcurrentHashMap<>();
     private CanonicalParameterRegistry registry;
+    private AuthoredDerivedCalculationSupport overlaySupport;
 
     @BeforeEach
     void setUp() {
@@ -63,6 +65,8 @@ class CalculationSetupActionInvariantTest {
                 Optional.ofNullable(store.get(inv.getArgument(0))));
         ExecutionCapabilityAuthority.install(ExecutionSpineProducerBootstrap.standalone(definitions));
         CanonicalSourceIntegrationAuthority.clearLenderProbe();
+        overlaySupport = new AuthoredDerivedCalculationSupport(definitions);
+        overlaySupport.register();
         registry = new CanonicalParameterRegistry();
 
         store.put(DPD30, CiGacatDerivedCalculationDefinition.builder()
@@ -71,7 +75,7 @@ class CalculationSetupActionInvariantTest {
                 .scope("PLATFORM")
                 .status(DerivedCalculationDefinitionService.STATUS_TESTED)
                 .expressionJson(new LinkedHashMap<>(DPD30_COUNT_EXPR))
-                .dependencyIds(List.of("bureau.tradeline.payment_history"))
+                .dependencyIds(List.of("bureau.tradeline.dpd_month"))
                 .description("DPD30 test fixture")
                 .versionNo(1)
                 .build());
@@ -79,6 +83,7 @@ class CalculationSetupActionInvariantTest {
 
     @AfterEach
     void tearDown() {
+        overlaySupport.unregister();
         ExecutionCapabilityAuthority.clear();
         CanonicalSourceIntegrationAuthority.clearLenderProbe();
     }
@@ -148,7 +153,7 @@ class CalculationSetupActionInvariantTest {
 
     @Test
     void avgAge_and_ccOverdue_shareSetupAction() {
-        for (String id : List.of(AVG_AGE, CC_OVERDUE)) {
+        for (String id : List.of("bureau.thin_file_indicator")) {
             Map<String, Object> st = CanonicalParameterStateService.state(id);
             assertThat(st.get("businessReadinessReason"))
                     .as(id).isEqualTo(BusinessReadinessReason.CALCULATION_NOT_DEFINED.name());

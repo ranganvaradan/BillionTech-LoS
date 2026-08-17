@@ -104,9 +104,9 @@ class Wave6CanonicalConvergenceTest {
         EvaluationContext ctx = EvaluationContext.builder()
                 .mode(EvaluationMode.POLICY_TEST)
                 .evaluationAsOf(ASOF)
-                .input("bureau.cc_overdue_amount", 7000)
+                .input("bureau.thin_file_indicator", 7000)
                 .build();
-        ExecutionResult er = spine.resolveAndExecute("bureau.cc_overdue_amount", ctx);
+        ExecutionResult er = spine.resolveAndExecute("bureau.thin_file_indicator", ctx);
         assertThat(er.valueAvailable()).isTrue();
         assertThat(er.value()).isEqualTo(7000);
         assertThat(er.capability()).isFalse();
@@ -114,7 +114,7 @@ class Wave6CanonicalConvergenceTest {
         Map<String, Object> honesty = SharedCanonicalEvaluationSupport.honestyProjection(er);
         assertThat(honesty.get("simulationChangesRealCapability")).isEqualTo(false);
         assertThat(honesty.get("notExecutableInRealContext")).isEqualTo(true);
-        assertThat(SimulationOverride.of("bureau.cc_overdue_amount", 7000).overrideKind())
+        assertThat(SimulationOverride.of("bureau.thin_file_indicator", 7000).overrideKind())
                 .isEqualTo(SimulationOverride.KIND_SIMULATED_VALUE);
     }
 
