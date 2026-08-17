@@ -195,4 +195,24 @@ class CustomerCategoryPolicyScopeCompatibilityTest {
         // No metadata Role → unconstrained
         assertTrue(CustomerCategoryPolicyScopeCompatibility.evaluate(starterCat(), basePolicy("NoRole")).compatible());
     }
+
+    @Test
+    void borrowerIntakeRelationship_isNotAdditionalCommercialSegment() {
+        CiPolicyApplicability p = basePolicy("Vikasam Bureau");
+        p.setCustomerSegment("BORROWER");
+        var r = CustomerCategoryPolicyScopeCompatibility.evaluate(starterCat(), p);
+        assertTrue(r.compatible());
+        assertEquals(CustomerCategoryPolicyScopeCompatibility.STATUS_COMPATIBLE, r.status());
+        assertFalse(r.reasons().contains(
+                CustomerCategoryPolicyScopeCompatibility.ADDITIONAL_SCOPE_CONTEXT_REQUIRED));
+    }
+
+    @Test
+    void emptyCategoryContext_doesNotThrow_andNeedsContext() {
+        var empty = new CustomerCategoryPolicyScopeCompatibility.CategoryScope(
+                null, null, null, null, null, null, null);
+        var r = CustomerCategoryPolicyScopeCompatibility.evaluate(empty, basePolicy("Unfiltered"));
+        assertEquals(CustomerCategoryPolicyScopeCompatibility.STATUS_NEEDS_CONTEXT, r.status());
+        assertFalse(r.compatible());
+    }
 }

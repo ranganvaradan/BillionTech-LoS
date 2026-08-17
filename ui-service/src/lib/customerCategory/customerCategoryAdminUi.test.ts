@@ -183,6 +183,7 @@ describe('customer category admin UI wiring', () => {
     expect(cat).toContain('WORKFLOW LINKAGE REQUIRED')
     expect(cat).toContain('listEligiblePolicies')
     expect(cat).toContain('eligibleForCategoryLinkage')
+    expect(cat).toContain("compatibilityStatus !== 'INCOMPATIBLE'")
     expect(cat).toContain('NOT ELIGIBLE')
     expect(cat).toContain('listEligibleWorkflows')
     expect(cat).toContain('COMPATIBLE')

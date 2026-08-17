@@ -227,6 +227,28 @@ class CategoryPolicyVersionBindTest {
     }
 
     @Test
+    void policyPicker_intakeRelationshipBorrower_selectable() {
+        Map<String, Object> row = new LinkedHashMap<>(Map.of(
+                "applicabilityId", appId.toString(),
+                "documentId", docId.toString(),
+                "policyName", "Vikasam Bureau",
+                "policyVersion", "v1",
+                "status", "APPROVED",
+                "products", List.of("BUSINESS_TERM_LOAN"),
+                "borrowerTypes", List.of("INDIVIDUAL"),
+                "customerSegment", "BORROWER"
+        ));
+        when(policyCatalogueService.listCatalogue(tenant)).thenReturn(List.of(row));
+        var views = policyBindService.listEligiblePolicies(
+                "INDIVIDUAL", "BUSINESS_TERM_LOAN", "BORROWER",
+                new BigDecimal("10000"), new BigDecimal("1000000"));
+        assertEquals(1, views.size());
+        assertTrue(views.get(0).eligibleForCategoryLinkage());
+        assertTrue(views.get(0).compatibleWithCategory());
+        assertEquals("COMPATIBLE", views.get(0).compatibilityStatus());
+    }
+
+    @Test
     void draftPolicy_notEligibleForCategoryLinkage() {
         when(policyCatalogueService.listCatalogue(tenant)).thenReturn(List.of(Map.of(
                 "applicabilityId", appId.toString(),

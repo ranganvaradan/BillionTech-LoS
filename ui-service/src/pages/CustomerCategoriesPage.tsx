@@ -532,7 +532,9 @@ export function CustomerCategoriesPage() {
         (p) =>
           p.compatibleWithCategory ||
           p.policyApplicabilityId === policyApplicabilityId ||
-          p.compatibilityStatus === 'COMPATIBLE',
+          p.compatibilityStatus === 'COMPATIBLE' ||
+          (p.eligibleForCategoryLinkage === true &&
+            p.compatibilityStatus !== 'INCOMPATIBLE'),
       )
   const pickerWorkflows = showIncompatibleWorkflows
     ? eligibleWorkflows

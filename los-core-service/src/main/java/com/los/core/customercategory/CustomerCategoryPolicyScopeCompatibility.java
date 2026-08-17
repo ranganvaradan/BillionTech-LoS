@@ -81,9 +81,26 @@ public final class CustomerCategoryPolicyScopeCompatibility {
         evidence.put("policyName", policy.getPolicyName());
         evidence.put("policyVersionLabel", policy.getPolicyVersionLabel());
 
+        if (categoryContextAbsent(category)) {
+            return new Result(
+                    false,
+                    STATUS_NEEDS_CONTEXT,
+                    List.of(new ScopeCheck("categoryContext", "Category scope provided", false,
+                            "Picker opened without Category dimensions")),
+                    List.of(ADDITIONAL_SCOPE_CONTEXT_REQUIRED),
+                    Map.copyOf(evidence),
+                    scopeSummary(policy,
+                            BorrowerTypeScope.normalize(policy.getBorrowerTypes(), policy.getBorrowerType()),
+                            policy.getProducts() == null ? List.of() : policy.getProducts()));
+        }
+
         // --- Customer Role ---
         List<String> policyRoles = extractOptionalStringList(policy, "customerRoles", "customerRole",
                 "intakeSegments", "intakeSegment");
+        // Policy Studio stores Borrower/Anchor on customerSegment (intake relationship), not MSME segment.
+        if (policyRoles.isEmpty() && isIntakeRelationship(policy.getCustomerSegment())) {
+            policyRoles = List.of(policy.getCustomerSegment().trim().toUpperCase(Locale.ROOT));
+        }
         evidence.put("policyCustomerRoles", policyRoles);
         evidence.put("categoryCustomerRole", category.customerRole());
         boolean roleOk;
@@ -247,7 +264,7 @@ public final class CustomerCategoryPolicyScopeCompatibility {
 
         // --- Additional Policy-only dimensions ---
         List<String> extra = new ArrayList<>();
-        if (nonBlank(policy.getCustomerSegment())) {
+        if (nonBlank(policy.getCustomerSegment()) && !isIntakeRelationship(policy.getCustomerSegment())) {
             extra.add("customerSegment=" + policy.getCustomerSegment());
         }
         if (nonBlank(policy.getSecuredUnsecured())) {
@@ -456,6 +473,30 @@ public final class CustomerCategoryPolicyScopeCompatibility {
 
     private static boolean nonBlank(String s) {
         return s != null && !s.isBlank();
+    }
+
+    /** Borrower / Anchor is Policy Studio intake relationship, not a commercial customer segment. */
+    static boolean isIntakeRelationship(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return false;
+        }
+        String n = raw.trim().toUpperCase(Locale.ROOT);
+        return "BORROWER".equals(n) || "ANCHOR".equals(n);
+    }
+
+    private static boolean categoryContextAbsent(CategoryScope category) {
+        return category == null
+                || (blank(category.customerRole())
+                && blank(category.entityType())
+                && blank(category.loanProduct())
+                && category.minAmount() == null
+                && category.maxAmount() == null
+                && category.effectiveFrom() == null
+                && category.effectiveUntil() == null);
+    }
+
+    private static boolean blank(String s) {
+        return s == null || s.isBlank();
     }
 
     private static String formatAmount(BigDecimal v) {

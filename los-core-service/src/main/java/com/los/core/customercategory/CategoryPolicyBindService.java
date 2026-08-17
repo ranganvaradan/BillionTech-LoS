@@ -272,7 +272,9 @@ public class CategoryPolicyBindService {
                 false,
                 CustomerCategoryPolicyScopeCompatibility.STATUS_NEEDS_CONTEXT,
                 List.of("PICKER_ROW_UNREADABLE"),
-                List.of("Policy row could not be fully evaluated: " + error.getClass().getSimpleName()),
+                List.of("Policy row could not be fully evaluated: "
+                        + error.getClass().getSimpleName()
+                        + (error.getMessage() == null ? "" : (": " + error.getMessage()))),
                 null,
                 projection.eligibleForCustomerCategoryLinkage(),
                 projection.ownerType(),
