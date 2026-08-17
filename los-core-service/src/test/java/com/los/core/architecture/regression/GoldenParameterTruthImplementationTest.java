@@ -144,6 +144,20 @@ class GoldenParameterTruthImplementationTest {
         Map<String, Object> st = CanonicalParameterStateService.state(DPD30);
         assertThat(st.get("businessReadiness")).isEqualTo(BusinessReadiness.READY.name());
         assertThat(st.get("primaryStatus")).isEqualTo(BusinessReadiness.READY.name());
+        // Derived semantic must not force INTERNAL source — bureau.* stays Equifax-integrated
+        Map<?, ?> source = (Map<?, ?>) st.get("source");
+        assertThat(source.get("platformIntegrated")).isEqualTo(true);
+        assertThat(source.get("sourceKey"))
+                .isEqualTo(PlatformSourceConnectorCatalog.SourceKey.BUREAU_RETAIL.name());
+    }
+
+    @Test
+    void testS_derivedTypeDoesNotForceInternalSource() {
+        Map<String, Object> st = CanonicalSourceIntegrationAuthority.forParameter(
+                "Bureau Retail", DPD30, "DERIVED");
+        assertThat(st.get("platformIntegrated")).isEqualTo(true);
+        assertThat(st.get("sourceKey"))
+                .isEqualTo(PlatformSourceConnectorCatalog.SourceKey.BUREAU_RETAIL.name());
     }
 
     @Test

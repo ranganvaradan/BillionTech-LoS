@@ -88,8 +88,12 @@ public final class PlatformSourceConnectorCatalog {
                 || f.contains("manual")) {
             return SourceKey.APPLICATION;
         }
+        // INTERNAL is a *source family*, not a parameter semantic. Do NOT map type=DERIVED
+        // to INTERNAL — bureau.dpd_* remains Equifax/Bureau Retail even when authored/derived.
         if (f.contains("computed") || f.contains("obligation") || f.contains("collateral")
-                || f.contains("derived") || st.contains("DERIVED") || st.contains("INTERNAL")) {
+                || f.equals("derived") || f.equals("internal")
+                || f.startsWith("derived.") || f.startsWith("internal.")
+                || f.contains("computed/") || f.contains("/computed")) {
             return SourceKey.INTERNAL;
         }
         if (f.contains("bureau commercial") || (f.contains("commercial") && f.contains("bureau"))) {
