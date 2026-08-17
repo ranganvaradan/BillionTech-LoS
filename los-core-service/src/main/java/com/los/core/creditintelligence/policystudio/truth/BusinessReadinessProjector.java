@@ -61,16 +61,15 @@ public final class BusinessReadinessProjector {
                         "Needs manual input", "Provide manual input");
             }
 
-            String sourceBlock = CanonicalSourceIntegrationAuthority.structuralBlockReason(source);
             boolean sourceNa = source != null && Boolean.TRUE.equals(source.get("notApplicable"));
+            boolean platformIntegrated = source != null && Boolean.TRUE.equals(source.get("platformIntegrated"));
 
             if ("INGREDIENT".equals(paramClass)) {
-                if (sourceBlock != null) {
-                    BusinessReadinessReason r = "SOURCE_NOT_CONFIGURED".equals(sourceBlock)
-                            ? BusinessReadinessReason.SOURCE_NOT_CONFIGURED
-                            : BusinessReadinessReason.SOURCE_NOT_INTEGRATED;
-                    return readyMap(out, BusinessReadiness.NOT_READY, r,
-                            reasonLabel(r), nextFor(r));
+                if (!sourceNa && !platformIntegrated) {
+                    return readyMap(out, BusinessReadiness.NOT_READY,
+                            BusinessReadinessReason.SOURCE_NOT_INTEGRATED,
+                            reasonLabel(BusinessReadinessReason.SOURCE_NOT_INTEGRATED),
+                            nextFor(BusinessReadinessReason.SOURCE_NOT_INTEGRATED));
                 }
                 if (!capability) {
                     return readyMap(out, BusinessReadiness.NOT_READY,
@@ -84,12 +83,13 @@ public final class BusinessReadinessProjector {
             boolean raw = "RAW".equalsIgnoreCase(mode);
 
             if (raw) {
-                if (!sourceNa && sourceBlock != null) {
-                    BusinessReadinessReason r = "SOURCE_NOT_CONFIGURED".equals(sourceBlock)
-                            ? BusinessReadinessReason.SOURCE_NOT_CONFIGURED
-                            : BusinessReadinessReason.SOURCE_NOT_INTEGRATED;
-                    return readyMap(out, BusinessReadiness.NOT_READY, r, reasonLabel(r), nextFor(r));
+                if (!sourceNa && !platformIntegrated) {
+                    return readyMap(out, BusinessReadiness.NOT_READY,
+                            BusinessReadinessReason.SOURCE_NOT_INTEGRATED,
+                            reasonLabel(BusinessReadinessReason.SOURCE_NOT_INTEGRATED),
+                            nextFor(BusinessReadinessReason.SOURCE_NOT_INTEGRATED));
                 }
+                // lenderConfigured is a separate displayed axis — does not collapse CPES-capable RAW to NOT_READY
                 if (!capability) {
                     return readyMap(out, BusinessReadiness.NOT_READY,
                             BusinessReadinessReason.RAW_FIELD_NOT_AVAILABLE,
