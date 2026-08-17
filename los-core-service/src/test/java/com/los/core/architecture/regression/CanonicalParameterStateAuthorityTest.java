@@ -72,7 +72,9 @@ class CanonicalParameterStateAuthorityTest {
         CanonicalParameterStateService.stamp(row, CC_OVERDUE);
         Map<String, Object> state = CanonicalParameterStateService.state(CC_OVERDUE);
         assertThat(row.get("primaryStatus")).isEqualTo(state.get("primaryStatus"));
-        assertThat(String.valueOf(state.get("primaryStatus"))).isEqualTo("CALCULATION_NEEDS_SETUP");
+        assertThat(String.valueOf(state.get("primaryStatus"))).isEqualTo("NOT_READY");
+        assertThat(String.valueOf(state.get("businessReadiness"))).isEqualTo("NOT_READY");
+        assertThat(String.valueOf(state.get("businessReadinessReason"))).isEqualTo("CALCULATION_NOT_DEFINED");
         // Surface facade + stamp must agree
         Map<String, Object> dpView = SurfaceCanonicalTruthFacade.forSurface(
                 SurfaceCanonicalTruthFacade.DATA_PARAMETERS, CC_OVERDUE);

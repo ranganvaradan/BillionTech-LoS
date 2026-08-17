@@ -513,45 +513,58 @@ public class PolicyStudioTestExperienceService {
         p.put("primaryStatusLabel", state.get("primaryStatusLabel"));
         String primary = String.valueOf(state.getOrDefault("primaryStatus", ""));
         switch (primary) {
-            case "CALCULATION_NEEDS_SETUP" -> {
-                p.put("status", "CALCULATION_REQUIRED");
-                p.put("sourceLabel", "Calculation needs setup — simulate only, or set up calculation");
+            case "CALCULATION_NEEDS_SETUP", "NOT_READY" -> {
+                String reason = String.valueOf(state.getOrDefault("businessReadinessReason", ""));
+                if ("MANUAL_INPUT".equals(reason)) {
+                    p.put("status", "MANUAL_INPUT");
+                    p.put("sourceLabel", "Needs manual input");
+                } else if ("SOURCE_NOT_INTEGRATED".equals(reason) || "SOURCE_NOT_CONFIGURED".equals(reason)
+                        || "RAW_FIELD_NOT_AVAILABLE".equals(reason)) {
+                    p.put("status", "DATA_REQUIRED");
+                    p.put("sourceLabel", String.valueOf(state.getOrDefault("primaryStatusLabel", "Not ready")));
+                } else {
+                    p.put("status", "CALCULATION_REQUIRED");
+                    p.put("sourceLabel", String.valueOf(state.getOrDefault("primaryStatusLabel",
+                            "Calculation not defined — simulate only, or set up calculation")));
+                }
             }
             case "NEEDS_MANUAL_INPUT" -> {
                 p.put("status", "MANUAL_INPUT");
                 p.put("sourceLabel", "Needs manual input");
             }
-            case "NOT_YET_SUPPORTED" -> {
+            case "NOT_YET_SUPPORTED", "NOT_APPLICABLE" -> {
                 p.put("status", "UNAVAILABLE");
-                p.put("sourceLabel", "Not yet supported");
+                p.put("sourceLabel", String.valueOf(state.getOrDefault("primaryStatusLabel", "Not yet supported")));
             }
             case "DATA_SOURCE_REQUIRED" -> {
                 p.put("status", "DATA_REQUIRED");
                 p.put("sourceLabel", "Data source required");
             }
-            case "CAN_CALCULATE_WHEN_DATA_AVAILABLE" -> {
-                p.put("status", "AUTOMATIC_DERIVED");
-                p.put("sourceLabel", "Can calculate when data is available — enter temporary test value if needed");
-                p.put("defaultHint", defaultHint(String.valueOf(p.get("parameterKey")), canonicalId));
-            }
-            case "READY_TO_TEST", "APPROVED_FOR_LIVE_USE" -> {
-                p.put("status", "AUTOMATIC_DERIVED");
-                p.put("sourceLabel", String.valueOf(state.getOrDefault("primaryStatusLabel", "Ready to test")));
-                attachLineage(p, canonicalId);
-                p.put("defaultHint", defaultHint(String.valueOf(p.get("parameterKey")), canonicalId));
+            case "CAN_CALCULATE_WHEN_DATA_AVAILABLE", "READY", "READY_TO_TEST", "APPROVED_FOR_LIVE_USE" -> {
+                String reason = String.valueOf(state.getOrDefault("businessReadinessReason", ""));
+                if ("MANUAL_INPUT".equals(reason)) {
+                    p.put("status", "MANUAL_INPUT");
+                    p.put("sourceLabel", "Needs manual input");
+                } else {
+                    p.put("status", "AUTOMATIC_DERIVED");
+                    p.put("sourceLabel", String.valueOf(state.getOrDefault("primaryStatusLabel", "Ready")));
+                    attachLineage(p, canonicalId);
+                    p.put("defaultHint", defaultHint(String.valueOf(p.get("parameterKey")), canonicalId));
+                }
             }
             default -> {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> exec = state.get("execution") instanceof Map<?, ?>
                         ? (Map<String, Object>) state.get("execution") : Map.of();
-                if (Boolean.TRUE.equals(exec.get("capability"))) {
+                if (Boolean.TRUE.equals(exec.get("capability"))
+                        || "READY".equals(String.valueOf(state.get("businessReadiness")))) {
                     p.put("status", "AUTOMATIC_DERIVED");
                     p.put("sourceLabel", String.valueOf(state.getOrDefault("primaryStatusLabel", "Ready")));
                     p.put("defaultHint", defaultHint(String.valueOf(p.get("parameterKey")), canonicalId));
                 } else {
                     p.put("status", "CALCULATION_REQUIRED");
                     p.put("sourceLabel", String.valueOf(state.getOrDefault("primaryStatusLabel",
-                            "Calculation needs setup")));
+                            "Calculation not defined")));
                 }
             }
         }
@@ -586,10 +599,10 @@ public class PolicyStudioTestExperienceService {
             if (!ParameterResolutionSupport.isResolved(stored)) {
                 String primary = String.valueOf(p.getOrDefault("primaryStatus", ""));
                 if ("READY_TO_TEST".equals(primary) || "CAN_CALCULATE_WHEN_DATA_AVAILABLE".equals(primary)
-                        || "APPROVED_FOR_LIVE_USE".equals(primary)) {
+                        || "APPROVED_FOR_LIVE_USE".equals(primary) || "READY".equals(primary)) {
                     // Capable — allow temporary test value, do not call "unresolved calculation"
-                    if ("CAN_CALCULATE_WHEN_DATA_AVAILABLE".equals(primary)) {
-                        p.put("sourceLabel", "Data required / Can calculate when data is available");
+                    if ("CAN_CALCULATE_WHEN_DATA_AVAILABLE".equals(primary) || "READY".equals(primary)) {
+                        p.put("sourceLabel", "Ready — enter temporary test value if data unavailable");
                     }
                 } else if (path.contains("proposed_edi") && !"MANUAL_INPUT".equals(p.get("status"))) {
                     p.put("status", "MANUAL_INPUT");

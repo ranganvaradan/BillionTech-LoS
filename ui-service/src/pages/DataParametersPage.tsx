@@ -88,9 +88,15 @@ function ParameterBadges({
       </Badge>
       <Badge
         className={
-          primary.label === 'Calculation needs setup' || primary.label === 'Needs manual input'
+          primary.label === 'Calculation not defined' ||
+            primary.label === 'Not ready' ||
+            primary.label === 'Calculation needs setup' ||
+            primary.label === 'Needs manual input' ||
+            primary.label === 'Source not integrated' ||
+            primary.label === 'Raw field not available'
             ? 'border-amber-200 bg-amber-50 text-amber-950'
-            : primary.label.includes('Ready to test') ||
+            : primary.label === 'Ready' ||
+                primary.label.includes('Ready to test') ||
                 primary.label === 'Can calculate when data is available' ||
                 primary.label === 'Approved for live use'
               ? 'border-emerald-200 bg-emerald-50 text-emerald-900'

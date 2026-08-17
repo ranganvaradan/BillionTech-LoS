@@ -84,7 +84,9 @@ export function PolicyParameterInventoryPanel({ documentId }: { documentId: stri
   const unresolved = unresolvedTokens(rows)
   const needsSetup = rows.filter(
     (r) =>
+      r.primaryStatus === 'NOT_READY' ||
       r.primaryStatus === 'CALCULATION_NEEDS_SETUP' ||
+      r.businessReadiness === 'NOT_READY' ||
       (r.calculationRequired === true && !r.primaryStatusLabel),
   ).length
 
@@ -155,8 +157,11 @@ export function PolicyParameterInventoryPanel({ documentId }: { documentId: stri
                   unresolved: !r.canonicalParameterId,
                 })
                 const setupAction =
+                  r.primaryStatus === 'NOT_READY' ||
                   r.primaryStatus === 'CALCULATION_NEEDS_SETUP' ||
+                  r.businessReadiness === 'NOT_READY' ||
                   (r.calculationRequired === true &&
+                    r.primaryStatus !== 'READY' &&
                     r.primaryStatus !== 'READY_TO_TEST' &&
                     r.primaryStatus !== 'CAN_CALCULATE_WHEN_DATA_AVAILABLE' &&
                     r.primaryStatus !== 'APPROVED_FOR_LIVE_USE')
@@ -175,6 +180,7 @@ export function PolicyParameterInventoryPanel({ documentId }: { documentId: stri
                         className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${
                           primary.state === 'NEEDS_YOUR_INPUT' ||
                           primary.state === 'CALCULATION_NEEDS_SETUP' ||
+                          primary.state === 'NOT_READY' ||
                           primary.state === 'DATA_NOT_AVAILABLE'
                             ? 'bg-amber-50 text-amber-900'
                             : primary.state === 'READY_TO_TEST' ||

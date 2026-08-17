@@ -7,8 +7,12 @@ import com.los.core.creditintelligence.policystudio.parameters.CanonicalParamete
 import com.los.core.creditintelligence.policystudio.parameters.GacatCatalogueAuthority;
 import com.los.core.creditintelligence.policystudio.parameters.GacatCatalogueRepository;
 import com.los.core.creditintelligence.policystudio.parameters.PolicyStudioConvergencePresenter;
+import com.los.core.creditintelligence.policystudio.sourceintegration.CanonicalSourceIntegrationAuthority;
+import com.los.core.creditintelligence.policystudio.sourceintegration.PlatformSourceConnectorCatalog;
 import com.los.core.creditintelligence.policystudio.truth.CanonicalParameterStateService;
 import com.los.core.creditintelligence.policystudio.truth.SurfaceCanonicalTruthFacade;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -45,6 +49,34 @@ public class DataParametersAdminService {
             @Autowired(required = false) IntegrationProperties integrationProperties) {
         this.catalogueRepository = catalogueRepository;
         this.integrationProperties = integrationProperties;
+    }
+
+    @PostConstruct
+    void installSourceIntegrationLenderProbe() {
+        CanonicalSourceIntegrationAuthority.installLenderProbe((key, familyLabel) -> {
+            if (key == PlatformSourceConnectorCatalog.SourceKey.APPLICATION
+                    || key == PlatformSourceConnectorCatalog.SourceKey.INTERNAL) {
+                return true;
+            }
+            if (key == PlatformSourceConnectorCatalog.SourceKey.BUREAU_RETAIL) {
+                if (integrationProperties == null) return false;
+                var eq = integrationProperties.getEquifax();
+                return eq != null && (eq.isConfigured() || eq.isSimulation());
+            }
+            if (key == PlatformSourceConnectorCatalog.SourceKey.BUREAU_COMMERCIAL
+                    || key == PlatformSourceConnectorCatalog.SourceKey.FINANCIAL_ITR
+                    || key == PlatformSourceConnectorCatalog.SourceKey.UNKNOWN) {
+                return false;
+            }
+            // Bank / AA / GST / KYC: platform connector present; no separate commercial subscription table.
+            // Lender configuration follows platform integration until a durable subscription store exists.
+            return PlatformSourceConnectorCatalog.entry(key).platformIntegrated();
+        });
+    }
+
+    @PreDestroy
+    void clearSourceIntegrationLenderProbe() {
+        CanonicalSourceIntegrationAuthority.clearLenderProbe();
     }
 
     private DataParametersCapabilitySemantics.LenderSourceSubscriptionProbe subscriptionProbe() {

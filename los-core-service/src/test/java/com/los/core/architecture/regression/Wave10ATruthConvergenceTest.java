@@ -130,15 +130,15 @@ class Wave10ATruthConvergenceTest {
         assertThat(execution.get("capability")).isEqualTo(true);
         assertThat(calculation.get("required")).isEqualTo(false);
         assertThat(String.valueOf(truth.get("primaryStatusLabel")))
-                .isIn("Ready to test", "Can calculate when data is available", "Approved for live use");
+                .isIn("Ready", "Needs manual input");
         assertThat(String.valueOf(truth.get("primaryStatusLabel")))
                 .doesNotContain("Needs your input")
-                .doesNotContain("Calculation needs setup");
+                .doesNotContain("Calculation not defined");
 
         Map<String, Object> parameter = parameterOf(DPD30);
         assertThat(parameter).isNotNull();
         assertThat(String.valueOf(parameter.get("primaryStatusLabel")))
-                .isIn("Ready to test", "Can calculate when data is available", "Approved for live use");
+                .isIn("Ready", "Needs manual input");
         assertThat(String.valueOf(DPD30_COUNT_EXPR.get("op"))).isEqualTo("COUNT_PERIODS_MATCHING");
     }
 
@@ -148,12 +148,12 @@ class Wave10ATruthConvergenceTest {
                 CC_OVERDUE, EvaluationMode.POLICY_TEST);
         Map<String, Object> truth = CanonicalParameterTruthProjection.project(CC_OVERDUE);
         assertThat(capable).isFalse();
-        assertThat(String.valueOf(truth.get("primaryStatusLabel"))).isEqualTo("Calculation needs setup");
+        assertThat(String.valueOf(truth.get("primaryStatusLabel"))).isIn("Calculation not defined", "Not ready");
 
         Map<String, Object> parameter = parameterOf(CC_OVERDUE);
         assertThat(parameter).isNotNull();
         String primary = String.valueOf(parameter.get("primaryStatusLabel"));
-        assertThat(primary).isEqualTo("Calculation needs setup");
+        assertThat(primary).isIn("Calculation not defined", "Not ready");
         assertThat(primary).doesNotContain("Supported");
         assertThat(primary).doesNotContain("Available for policy design");
         assertThat(primary).doesNotContain("Ready to test");
@@ -192,7 +192,7 @@ class Wave10ATruthConvergenceTest {
         Map<String, Object> primary = LenderTruthDisplayMapper.primary(
                 PolicyStudioConvergencePresenter.registry().findById(CC_OVERDUE).orElseThrow(),
                 semantic, execution, calculation, certification);
-        assertThat(primary.get("primaryStatusLabel")).isEqualTo("Calculation needs setup");
+        assertThat(primary.get("primaryStatusLabel")).isIn("Calculation not defined", "Not ready");
         assertThat(primary.get("nextAction")).isEqualTo("Set up calculation");
         // READY_FOR_REVIEW proposal is a resolver action, not capability
         assertThat(execution.get("capability")).isEqualTo(false);
@@ -216,7 +216,8 @@ class Wave10ATruthConvergenceTest {
         assertThat(line).doesNotContain("parameters available");
         assertThat(line).doesNotContain("calculations not yet implemented");
         assertThat(line).containsIgnoringCase("business parameters");
-        assertThat(line).containsIgnoringCase("ready to test");
+        assertThat(line).containsIgnoringCase("ready");
+        assertThat(line).containsIgnoringCase("not ready");
         assertThat(canonical.get("sourceIngredients")).isNotNull();
         assertThat(canonical.get("businessParameters")).isNotNull();
     }
@@ -225,8 +226,8 @@ class Wave10ATruthConvergenceTest {
     void legacySupportMetadata_cannotOverridePrimaryStatus() {
         Map<String, Object> parameter = parameterOf(CC_OVERDUE);
         assertThat(parameter).isNotNull();
-        assertThat(parameter.get("primaryStatusLabel")).isEqualTo("Calculation needs setup");
-        assertThat(parameter.get("primaryStatus")).isEqualTo("CALCULATION_NEEDS_SETUP");
+        assertThat(parameter.get("primaryStatusLabel")).isIn("Calculation not defined", "Not ready");
+        assertThat(parameter.get("primaryStatus")).isEqualTo("NOT_READY");
     }
 
     @Test

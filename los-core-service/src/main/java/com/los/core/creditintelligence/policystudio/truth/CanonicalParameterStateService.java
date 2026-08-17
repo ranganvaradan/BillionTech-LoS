@@ -83,6 +83,9 @@ public final class CanonicalParameterStateService {
         row.put("parameterStateAuthority", AUTHORITY);
         row.put("primaryStatus", st.get("primaryStatus"));
         row.put("primaryStatusLabel", st.get("primaryStatusLabel"));
+        row.put("businessReadiness", st.get("businessReadiness"));
+        row.put("businessReadinessReason", st.get("businessReadinessReason"));
+        row.put("businessReadinessLabel", st.get("businessReadinessLabel"));
         row.put("nextAction", st.get("nextAction"));
         row.put("calculationExplanation", st.get("calculationExplanation"));
         row.put("parameterClassLabel", st.get("parameterClassLabel"));
@@ -159,10 +162,20 @@ public final class CanonicalParameterStateService {
         Map<String, Object> presentation = new LinkedHashMap<>();
         presentation.put("primaryStatus", projected.get("primaryStatus"));
         presentation.put("primaryStatusLabel", projected.get("primaryStatusLabel"));
+        presentation.put("businessReadiness", projected.get("businessReadiness"));
+        presentation.put("businessReadinessReason", projected.get("businessReadinessReason"));
+        presentation.put("businessReadinessLabel", projected.get("businessReadinessLabel"));
         presentation.put("businessExplanation", projected.get("calculationExplanation"));
         presentation.put("allowedActions", actions);
         presentation.put("parameterClassLabel", projected.get("parameterClassLabel"));
         out.put("presentation", presentation);
+
+        out.put("businessReadiness", projected.get("businessReadiness"));
+        out.put("businessReadinessReason", projected.get("businessReadinessReason"));
+        out.put("businessReadinessLabel", projected.get("businessReadinessLabel"));
+        if (projected.get("source") != null) {
+            out.put("source", projected.get("source"));
+        }
 
         out.put("businessName", semantic.get("businessName"));
         if (manual) {

@@ -14,6 +14,8 @@ export type InvRow = {
   businessName?: string
   primaryStatus?: string | null
   primaryStatusLabel?: string | null
+  businessReadiness?: string | null
+  businessReadinessReason?: string | null
   calculationExplanation?: string | null
   nextAction?: string | null
   parameterStateAuthority?: string | null

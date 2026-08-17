@@ -3,6 +3,9 @@ package com.los.core.service.readiness;
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterDefinition;
 import com.los.core.creditintelligence.policystudio.parameters.derived.AuthoredDerivedCalculationSupport;
 import com.los.core.creditintelligence.policystudio.parameters.execution.CanonicalParameterCapabilityProjection;
+import com.los.core.creditintelligence.policystudio.sourceintegration.CanonicalSourceIntegrationAuthority;
+import com.los.core.creditintelligence.policystudio.truth.BusinessReadiness;
+import com.los.core.creditintelligence.policystudio.truth.BusinessReadinessReason;
 import com.los.core.creditintelligence.policystudio.truth.CanonicalParameterStateService;
 
 import java.util.ArrayList;
@@ -179,6 +182,7 @@ public final class DataParametersCapabilitySemantics {
         int raw = 0, derived = 0, noSupport = 0, calcMissing = 0, sourceMissing = 0, na = 0, other = 0;
         int canonicalDirect = 0, canonicalCalculated = 0, canonicalManual = 0, canonicalIngredient = 0;
         int readyToTest = 0, setupRequired = 0, liveApproved = 0, canWhenData = 0;
+        int readyCount = 0, notReadyCount = 0;
         int businessParameters = 0;
         for (CanonicalParameterDefinition def : parameters) {
             Map<String, Object> cap = project(def, subscriptionProbe);
@@ -196,6 +200,8 @@ public final class DataParametersCapabilitySemantics {
             }
             Map<String, Object> truth = CanonicalParameterStateService.state(def.id());
             String primary = String.valueOf(truth.getOrDefault("primaryStatus", ""));
+            String readiness = String.valueOf(truth.getOrDefault("businessReadiness", primary));
+            String reason = String.valueOf(truth.getOrDefault("businessReadinessReason", ""));
             @SuppressWarnings("unchecked")
             Map<String, Object> semantic = truth.get("semantic") instanceof Map<?, ?>
                     ? (Map<String, Object>) truth.get("semantic") : Map.of();
@@ -203,8 +209,17 @@ public final class DataParametersCapabilitySemantics {
             String paramClass = String.valueOf(semantic.getOrDefault("parameterClass", ""));
             if ("INGREDIENT".equals(paramClass)) {
                 canonicalIngredient++;
-                // Never count source ingredients toward calculation-setup required
+                // Ingredients: count READY/NOT_READY but never as calculation-setup
+                if (BusinessReadiness.READY.name().equals(readiness)) {
+                    readyCount++;
+                } else if (BusinessReadiness.NOT_READY.name().equals(readiness)
+                        && !BusinessReadinessReason.NOT_APPLICABLE.name().equals(reason)) {
+                    notReadyCount++;
+                }
                 continue;
+            }
+            if ("CONFIGURATION".equals(paramClass) || "DECISION_OUTPUT".equals(paramClass)) {
+                continue; // excluded from ordinary RAW/DERIVED counts
             }
             businessParameters++;
             if ("MANUAL_INPUT".equals(paramClass) || "MANUAL".equalsIgnoreCase(calcMode)) {
@@ -214,19 +229,21 @@ public final class DataParametersCapabilitySemantics {
             } else {
                 canonicalCalculated++;
             }
-            switch (primary) {
-                case "READY_TO_TEST", "APPROVED_FOR_LIVE_USE" -> readyToTest++;
-                case "CAN_CALCULATE_WHEN_DATA_AVAILABLE" -> {
-                    canWhenData++;
-                    readyToTest++; // still testable / executable path
+            if (BusinessReadiness.READY.name().equals(readiness)) {
+                readyCount++;
+                readyToTest++; // legacy field: structurally ready
+                if (BusinessReadinessReason.MANUAL_INPUT.name().equals(reason)) {
+                    // still READY structurally
                 }
-                case "CALCULATION_NEEDS_SETUP", "NEEDS_MANUAL_INPUT", "NOT_YET_SUPPORTED" -> setupRequired++;
-                default -> {
+            } else if (BusinessReadiness.NOT_READY.name().equals(readiness)) {
+                notReadyCount++;
+                if (BusinessReadinessReason.CALCULATION_NOT_DEFINED.name().equals(reason)
+                        || BusinessReadinessReason.CALCULATION_INVALID.name().equals(reason)
+                        || BusinessReadinessReason.DEPENDENCY_NOT_READY.name().equals(reason)) {
+                    setupRequired++;
                 }
             }
-            if ("APPROVED_FOR_LIVE_USE".equals(primary)) {
-                liveApproved++;
-            }
+            // liveApproved stays certification-driven — never from READY
         }
         Map<String, Object> counts = new LinkedHashMap<>();
         counts.put("supportedRaw", raw);
@@ -252,6 +269,9 @@ public final class DataParametersCapabilitySemantics {
         canonicalCounts.put("canCalculateWhenDataAvailable", canWhenData);
         canonicalCounts.put("setupRequired", setupRequired);
         canonicalCounts.put("liveApproved", liveApproved);
+        canonicalCounts.put("ready", readyCount);
+        canonicalCounts.put("notReady", notReadyCount);
+        canonicalCounts.put("businessReadinessAuthority", CanonicalParameterStateService.AUTHORITY);
         counts.put("canonical", canonicalCounts);
 
         Map<String, Object> lenderFacing = new LinkedHashMap<>();
@@ -267,8 +287,8 @@ public final class DataParametersCapabilitySemantics {
             lenderFacing.put("summaryLine",
                     businessParameters + " business parameters · "
                             + canonicalIngredient + " source ingredients · "
-                            + readyToTest + " ready to test · "
-                            + setupRequired + " setup required");
+                            + readyCount + " ready · "
+                            + notReadyCount + " not ready");
         }
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("businessParameters", businessParameters);
@@ -323,93 +343,31 @@ public final class DataParametersCapabilitySemantics {
     record SourcePlatform(String status, String label, String providerLabel, List<String> evidence) {}
 
     static SourcePlatform resolveSourcePlatform(String family, String sourceType) {
-        String f = family == null ? "" : family.toLowerCase(Locale.ROOT);
-        String st = sourceType == null ? "" : sourceType;
-
-        if (GacatParameterReadinessProjection.SOURCE_APPLICATION_INPUT.equals(st)
-                || GacatParameterReadinessProjection.SOURCE_MANUAL.equals(st)
-                || f.contains("application") || f.contains("program") || f.contains("product")
-                || f.contains("manual")) {
-            return new SourcePlatform(
-                    SOURCE_PLATFORM_NOT_APPLICABLE,
-                    "Not a provider source",
-                    null,
-                    List.of("Application / Manual / Product / Program — not an external provider integration"));
+        // GOLDEN-PARAMETER-TRUTH — delegate to CanonicalSourceIntegrationAuthority (not GACAT heuristics)
+        Map<String, Object> st = CanonicalSourceIntegrationAuthority.forFamily(family, sourceType);
+        String platformStatus = String.valueOf(st.get("platformStatus"));
+        String mapped;
+        if (CanonicalSourceIntegrationAuthority.PLATFORM_NOT_APPLICABLE.equals(platformStatus)) {
+            mapped = SOURCE_PLATFORM_NOT_APPLICABLE;
+        } else if (CanonicalSourceIntegrationAuthority.PLATFORM_INTEGRATED.equals(platformStatus)) {
+            mapped = SOURCE_PLATFORM_PRODUCTION_READY;
+        } else {
+            mapped = SOURCE_PLATFORM_NOT_INTEGRATED;
         }
-
-        if (f.contains("bureau retail") || (f.contains("bureau") && !f.contains("commercial"))) {
-            return new SourcePlatform(
-                    SOURCE_PLATFORM_PRODUCTION_READY,
-                    "Production Ready",
-                    "Equifax Bureau Retail",
-                    List.of(
-                            "EquifaxBureauProvider SOAP/XML retail inquiry",
-                            "EquifaxBureauAccountExtractor + BureauNormalizationService",
-                            "BureauMetricService / PolicyBureauMetricService certified retail metrics",
-                            "Workflow BUREAU_PULL production provides list"));
-        }
-        if (f.contains("bureau commercial") || (f.contains("commercial") && f.contains("bureau"))) {
-            return new SourcePlatform(
-                    SOURCE_PLATFORM_NOT_INTEGRATED,
-                    "Not Integrated",
-                    "Commercial Bureau",
-                    List.of(
-                            "Commercial GACAT rows reference CommercialBureauResponseDetails fixture schema",
-                            "SurePass fixture / commercial path — engineering evidence only",
-                            "No production-certified commercial bureau go-live evidence in GACAT production_ready rollup"));
-        }
-        if (f.contains("bank") || f.contains("banking") || f.contains("account aggregator") || f.equals("aa")) {
-            if (f.contains("account aggregator") || f.startsWith("aa")) {
-                return new SourcePlatform(
-                        SOURCE_PLATFORM_PRODUCTION_READY,
-                        "Production Ready",
-                        "Account Aggregator",
-                        List.of(
-                                "ACCOUNT_AGGREGATOR workflow integration provides core banking metrics",
-                                "AA meta parameters are consent/transport — FIP facts come from bank/GST sources"));
-            }
-            return new SourcePlatform(
-                    SOURCE_PLATFORM_PRODUCTION_READY,
-                    "Production Ready",
-                    "Bank Statement",
-                    List.of(
-                            "BankingMetricService + BankAverageDailyBalanceCalculator production paths",
-                            "BANK_STATEMENT_DOCUMENT / ACCOUNT_AGGREGATOR acquisition",
-                            "Some banking.* metrics remain studio/defined-only (parameter-level)"));
-        }
-        if (f.contains("gst")) {
-            return new SourcePlatform(
-                    SOURCE_PLATFORM_PRODUCTION_READY,
-                    "Production Ready",
-                    "GST",
-                    List.of("GstMetricService production GACAT metrics", "GST registration/return raw bindings"));
-        }
-        if (f.contains("financial") || f.contains("itr")) {
-            return new SourcePlatform(
-                    SOURCE_PLATFORM_NOT_INTEGRATED,
-                    "Not Integrated",
-                    "Financial Statements / ITR",
-                    List.of("Financial/ITR GACAT rows largely catalogue or not production-certified"));
-        }
-        if (f.contains("kyc")) {
-            return new SourcePlatform(
-                    SOURCE_PLATFORM_PRODUCTION_READY,
-                    "Production Ready",
-                    "KYC",
-                    List.of("KYC workflow steps + aggregator_configs provider matrix", "GACAT kyc.* catalogue bindings"));
-        }
-        if (f.contains("computed") || f.contains("obligation") || f.contains("collateral") || f.contains("derived")) {
-            return new SourcePlatform(
-                    SOURCE_PLATFORM_NOT_APPLICABLE,
-                    "Internal / derived",
-                    null,
-                    List.of("Internal derived or obligation/collateral — not a single external provider"));
-        }
+        String label = switch (mapped) {
+            case SOURCE_PLATFORM_NOT_APPLICABLE -> "Not a provider source";
+            case SOURCE_PLATFORM_PRODUCTION_READY -> "Integrated";
+            default -> "Not Integrated";
+        };
+        @SuppressWarnings("unchecked")
+        List<String> evidence = st.get("evidence") instanceof List<?> list
+                ? list.stream().map(String::valueOf).toList()
+                : List.of();
         return new SourcePlatform(
-                SOURCE_PLATFORM_NOT_INTEGRATED,
-                "Not Integrated",
-                null,
-                List.of("No proven production provider integration evidence for source family: " + family));
+                mapped,
+                label,
+                st.get("displayName") == null ? null : String.valueOf(st.get("displayName")),
+                evidence);
     }
 
     // ─── Parameter support ───────────────────────────────────────────

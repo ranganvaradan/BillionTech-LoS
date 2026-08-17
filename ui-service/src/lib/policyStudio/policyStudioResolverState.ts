@@ -78,8 +78,15 @@ export function derivePolicyStudioOperandPresentation(
   })
 
   const primaryStatus = String(truth.primaryStatus ?? primary.state ?? '')
+  const readinessReason = String(
+    (truth as Record<string, unknown>).businessReadinessReason ??
+      asRecord(op.canonicalParameterState).businessReadinessReason ??
+      '',
+  )
   const manual =
     primaryStatus === 'NEEDS_MANUAL_INPUT' ||
+    readinessReason === 'MANUAL_INPUT' ||
+    primary.label === 'Needs manual input' ||
     op.manualInput === true ||
     String(op.availability ?? '').toUpperCase() === 'MANUAL'
 
@@ -88,7 +95,7 @@ export function derivePolicyStudioOperandPresentation(
     return {
       case: 'EXECUTABLE',
       parameterLabel: primary.label || 'Source ingredient',
-      parameterState: primaryStatus || 'DATA_SOURCE_REQUIRED',
+      parameterState: primaryStatus || 'NOT_READY',
       showCalculationResolver: false,
       showManualResolver: false,
       showMapResolver: false,
@@ -112,32 +119,25 @@ export function derivePolicyStudioOperandPresentation(
     }
   }
 
-  if (manual && !capability) {
+  if (manual) {
     return {
       case: 'MANUAL_INPUT',
-      parameterLabel: 'Needs manual input',
-      parameterState: 'NEEDS_MANUAL_INPUT',
+      parameterLabel: primary.label || 'Needs manual input',
+      parameterState: 'READY',
       showCalculationResolver: false,
       showManualResolver: true,
       showMapResolver: false,
       resolverActionLabel: 'Provide manual input',
       explanation: truth.calculationExplanation ? String(truth.calculationExplanation) : null,
-      capability: false,
+      capability: true,
     }
   }
 
-  if (capability) {
-    const label =
-      primaryStatus === 'CAN_CALCULATE_WHEN_DATA_AVAILABLE' ||
-      primary.label === 'Can calculate when data is available'
-        ? 'Can calculate when data is available'
-        : primary.label === 'Approved for live use'
-          ? 'Approved for live use'
-          : 'Ready to test'
+  if (capability || primaryStatus === 'READY') {
     return {
       case: opts?.ruleNeedsReview ? 'RULE_REVIEW_ONLY' : 'EXECUTABLE',
-      parameterLabel: label,
-      parameterState: primaryStatus || 'READY_TO_TEST',
+      parameterLabel: primary.label || 'Ready',
+      parameterState: primaryStatus || 'READY',
       showCalculationResolver: false,
       showManualResolver: false,
       showMapResolver: false,
@@ -151,8 +151,8 @@ export function derivePolicyStudioOperandPresentation(
   if (opts?.proposalReadyForReview) {
     return {
       case: 'REVIEW_PROPOSAL',
-      parameterLabel: 'Calculation needs setup',
-      parameterState: 'CALCULATION_NEEDS_SETUP',
+      parameterLabel: primary.label || 'Calculation not defined',
+      parameterState: 'NOT_READY',
       showCalculationResolver: true,
       showManualResolver: false,
       showMapResolver: false,
@@ -162,18 +162,25 @@ export function derivePolicyStudioOperandPresentation(
     }
   }
 
+  const calcSetup =
+    readinessReason === 'CALCULATION_NOT_DEFINED' ||
+    readinessReason === 'CALCULATION_INVALID' ||
+    readinessReason === 'DEPENDENCY_NOT_READY' ||
+    primaryStatus === 'NOT_READY' ||
+    primaryStatus === 'CALCULATION_NEEDS_SETUP'
+
   return {
-    case: 'SETUP_CALCULATION',
-    parameterLabel: 'Calculation needs setup',
-    parameterState: 'CALCULATION_NEEDS_SETUP',
-    showCalculationResolver: true,
+    case: calcSetup ? 'SETUP_CALCULATION' : 'SETUP_CALCULATION',
+    parameterLabel: primary.label || 'Not ready',
+    parameterState: 'NOT_READY',
+    showCalculationResolver: calcSetup,
     showManualResolver: false,
     showMapResolver: false,
-    resolverActionLabel: 'Set up calculation',
+    resolverActionLabel: calcSetup ? 'Set up calculation' : null,
     explanation:
       truth.calculationExplanation != null
         ? String(truth.calculationExplanation)
-        : 'Calculation has not yet been configured',
+        : 'Parameter is not ready',
     capability: false,
   }
 }

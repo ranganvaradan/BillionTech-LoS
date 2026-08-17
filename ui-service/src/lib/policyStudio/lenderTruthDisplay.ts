@@ -1,18 +1,21 @@
 /**
- * Shared lender-facing display from backend canonical truth (Wave 9).
- * Do not invent capability / certification in TypeScript.
+ * Shared lender-facing display from backend canonical truth.
+ * Do not invent READY/NOT_READY in TypeScript — prefer backend primaryStatusLabel.
  */
 
 export type CanonicalTruthLike = {
   primaryStatus?: string | null
   primaryStatusLabel?: string | null
+  businessReadiness?: string | null
+  businessReadinessReason?: string | null
+  businessReadinessLabel?: string | null
   nextAction?: string | null
   calculationExplanation?: string | null
   certificationLabel?: string | null
   executionLabel?: string | null
   parameterClassLabel?: string | null
   liveUseDisplay?: { label?: string; status?: string; available?: boolean } | null
-  execution?: { capability?: boolean; status?: string | null } | null
+  execution?: { capability?: boolean; status?: string | null; valueAvailable?: boolean } | null
   certification?: { certificationStatus?: string; status?: string } | null
 }
 
@@ -28,9 +31,16 @@ export function lenderPrimaryFromTruth(
 ): { state: string; label: string; detail?: string; nextAction?: string | null } {
   if (truth?.primaryStatusLabel) {
     return {
-      state: String(truth.primaryStatus ?? 'FROM_BACKEND'),
+      state: String(truth.primaryStatus ?? truth.businessReadiness ?? 'FROM_BACKEND'),
       label: String(truth.primaryStatusLabel),
       detail: truth.calculationExplanation ? String(truth.calculationExplanation) : undefined,
+      nextAction: truth.nextAction != null ? String(truth.nextAction) : null,
+    }
+  }
+  if (truth?.businessReadinessLabel) {
+    return {
+      state: String(truth.businessReadiness ?? 'FROM_BACKEND'),
+      label: String(truth.businessReadinessLabel),
       nextAction: truth.nextAction != null ? String(truth.nextAction) : null,
     }
   }
@@ -40,14 +50,14 @@ export function lenderPrimaryFromTruth(
   }
   if (fallbackFlags?.unresolved || fallbackFlags?.calculationRequired) {
     return {
-      state: fallbackFlags.calculationRequired ? 'CALCULATION_NEEDS_SETUP' : 'NEEDS_YOUR_INPUT',
-      label: fallbackFlags.calculationRequired ? 'Calculation needs setup' : 'Needs your input',
+      state: fallbackFlags.calculationRequired ? 'NOT_READY' : 'NEEDS_YOUR_INPUT',
+      label: fallbackFlags.calculationRequired ? 'Calculation not defined' : 'Needs your input',
     }
   }
   if (fallbackFlags?.policyTestReady) {
     return {
-      state: 'READY_TO_TEST',
-      label: 'Ready to test',
+      state: 'READY',
+      label: 'Ready',
       detail: 'Production use still requires certification.',
     }
   }

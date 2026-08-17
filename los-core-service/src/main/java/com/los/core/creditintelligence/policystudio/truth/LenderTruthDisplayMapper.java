@@ -12,6 +12,9 @@ import java.util.Map;
 /**
  * Shared lender-facing display mapping from canonical truth axes.
  * Surfaces may add context wording; they must not invent alternate state.
+ *
+ * <p>GOLDEN-PARAMETER-TRUTH: primaryStatus is businessReadiness READY/NOT_READY
+ * from {@link BusinessReadinessProjector}. Certification/value remain separate axes.
  */
 public final class LenderTruthDisplayMapper {
 
@@ -23,6 +26,19 @@ public final class LenderTruthDisplayMapper {
             Map<String, Object> execution,
             Map<String, Object> calculation,
             Map<String, Object> certification) {
+        return primary(def, semantic, Map.of(), execution, calculation, certification);
+    }
+
+    public static Map<String, Object> primary(
+            CanonicalParameterDefinition def,
+            Map<String, Object> semantic,
+            Map<String, Object> source,
+            Map<String, Object> execution,
+            Map<String, Object> calculation,
+            Map<String, Object> certification) {
+
+        Map<String, Object> readiness = BusinessReadinessProjector.project(
+                def, semantic, source, execution, calculation);
 
         boolean capability = Boolean.TRUE.equals(execution.get("capability"));
         boolean valueAvailable = Boolean.TRUE.equals(execution.get("valueAvailable"));
@@ -31,124 +47,30 @@ public final class LenderTruthDisplayMapper {
         String certStatus = firstCertStatus(certification);
         String paramClass = String.valueOf(semantic.getOrDefault("parameterClass", ""));
 
-        String primary;
-        String label;
-        String next;
-
-        // SOURCE_INGREDIENT / CONFIGURATION / DECISION_OUTPUT — calculation setup never applies
-        if ("INGREDIENT".equals(paramClass)) {
-            if (capability && valueAvailable) {
-                primary = "READY_TO_TEST";
-                label = "Source available";
-                next = null;
-            } else if (capability) {
-                primary = "CAN_CALCULATE_WHEN_DATA_AVAILABLE";
-                label = "Data unavailable";
-                next = "Get data / Complete source step";
-            } else {
-                primary = "DATA_SOURCE_REQUIRED";
-                label = "Source not connected";
-                next = "Connect source / Subscribe";
-            }
-            Map<String, Object> m = baseDisplay(primary, label, next, semantic, certification, capability,
-                    valueAvailable, status, false);
-            m.put("calculationSetup", "NOT_APPLICABLE");
-            m.put("calculationExplanation", "Source ingredient — not a lender calculation setup item.");
-            return m;
-        }
-        if ("CONFIGURATION".equals(paramClass) || "DECISION_OUTPUT".equals(paramClass)) {
-            primary = "NOT_YET_SUPPORTED";
-            label = "CONFIGURATION".equals(paramClass) ? "Configuration" : "Decision output";
-            next = null;
-            Map<String, Object> m = baseDisplay(primary, label, next, semantic, certification, capability,
-                    valueAvailable, status, false);
-            m.put("calculationSetup", "NOT_APPLICABLE");
-            return m;
-        }
-
-        if (isManualClass(semantic) && (!capability || !valueAvailable
-                || ExecutionStatus.INPUT_REQUIRED.name().equals(status)
-                || calcRequired)) {
-            primary = "NEEDS_MANUAL_INPUT";
-            label = "Needs manual input";
-            next = "Provide manual input";
-        } else if (calcRequired || ExecutionStatus.CALCULATION_NOT_DEFINED.name().equals(status)
-                || ExecutionStatus.NOT_EXECUTABLE.name().equals(status) && !capability) {
-            if (!capability) {
-                primary = "CALCULATION_NEEDS_SETUP";
-                label = "Calculation needs setup";
-                next = "Set up calculation";
-            } else {
-                primary = "NOT_YET_SUPPORTED";
-                label = "Not yet supported";
-                next = "Contact BillionTech";
-            }
-        } else if (ExecutionStatus.INPUT_REQUIRED.name().equals(status) || isManualClass(semantic) && !valueAvailable) {
-            primary = "NEEDS_MANUAL_INPUT";
-            label = "Needs manual input";
-            next = "Provide manual input";
-        } else if (capability && CertificationStatus.CERTIFIED.name().equals(certStatus)) {
-            // Live approval is primary when executable + certified (data availability is secondary)
-            primary = "APPROVED_FOR_LIVE_USE";
-            label = "Approved for live use";
-            next = valueAvailable ? null : "Get data / Complete source step";
-        } else if (capability && CertificationStatus.REVOKED.name().equals(certStatus)) {
-            primary = "APPROVAL_REVOKED";
-            label = "Approval revoked";
-            next = "Re-certify via authorized admin";
-        } else if (capability && valueAvailable) {
-            primary = "READY_TO_TEST";
-            label = "Ready to test";
-            next = "Test rule/policy";
-        } else if (capability) {
-            // executable but uncertified — ready to test path, even if data missing
-            if (!valueAvailable) {
-                primary = "CAN_CALCULATE_WHEN_DATA_AVAILABLE";
-                label = "Can calculate when data is available";
-                next = "Get data / Complete source step";
-            } else {
-                primary = "READY_TO_TEST";
-                label = "Ready to test";
-                next = "Test rule/policy";
-            }
-        } else {
-            primary = "NOT_YET_SUPPORTED";
-            label = "Not yet supported";
-            next = "Contact BillionTech";
-        }
-
-        // Certification never implied by catalogue
-        if (!capability && CertificationStatus.CERTIFIED.name().equals(certStatus)) {
-            // still show certified artifact but not executable path
-            label = label + " (certified artifact — check execution)";
-        }
-
-        Map<String, Object> m = baseDisplay(primary, label, next, semantic, certification, capability,
-                valueAvailable, status, calcRequired);
-        m.put("calculationExplanation", calculation.get("explanation"));
-        return m;
-    }
-
-    private static Map<String, Object> baseDisplay(
-            String primary,
-            String label,
-            String next,
-            Map<String, Object> semantic,
-            Map<String, Object> certification,
-            boolean capability,
-            boolean valueAvailable,
-            String status,
-            boolean calcRequired) {
-        String certStatus = firstCertStatus(certification);
         Map<String, Object> m = new LinkedHashMap<>();
-        m.put("primaryStatus", primary);
-        m.put("primaryStatusLabel", label);
-        m.put("nextAction", next);
+        m.putAll(readiness);
+        // Keep certification / execution labels as secondary presentation — never override businessReadiness
         m.put("parameterClassLabel", parameterClassLabel(semantic));
         m.put("liveUseDisplay", liveUseDisplay(certStatus, capability));
         m.put("executionLabel", executionLabel(capability, valueAvailable, status, calcRequired, semantic));
         m.put("certificationLabel", certificationLabel(certStatus));
         m.put("neverUseCatalogueProductionReadyAsLive", true);
+        m.put("calculationExplanation", calculation.get("explanation"));
+        if ("INGREDIENT".equals(paramClass)) {
+            m.put("calculationSetup", "NOT_APPLICABLE");
+            if (m.get("calculationExplanation") == null) {
+                m.put("calculationExplanation", "Source ingredient — not a lender calculation setup item.");
+            }
+        } else if ("CONFIGURATION".equals(paramClass) || "DECISION_OUTPUT".equals(paramClass)) {
+            m.put("calculationSetup", "NOT_APPLICABLE");
+        } else if (BusinessReadinessReason.CALCULATION_NOT_DEFINED.name()
+                .equals(String.valueOf(readiness.get("businessReadinessReason")))
+                || BusinessReadinessReason.CALCULATION_INVALID.name()
+                .equals(String.valueOf(readiness.get("businessReadinessReason")))) {
+            m.put("calculationSetup", "REQUIRED");
+        } else {
+            m.put("calculationSetup", "NOT_REQUIRED");
+        }
         return m;
     }
 
@@ -215,60 +137,44 @@ public final class LenderTruthDisplayMapper {
         if ("INGREDIENT".equals(String.valueOf(semantic.get("parameterClass")))) {
             if (capability && valueAvailable) return "Source available";
             if (capability) return "Data unavailable";
-            return "Source not connected";
+            return "Source field unavailable";
         }
         if (isManualClass(semantic)) {
-            return "Needs manual input";
+            if (valueAvailable) return "Manual value available";
+            return "Manual input required";
         }
-        if (calcRequired || ExecutionStatus.CALCULATION_NOT_DEFINED.name().equals(status)) {
-            return "Calculation needs setup";
+        if (!capability || calcRequired) return "Not executable";
+        if (valueAvailable) return "Value available";
+        if (ExecutionStatus.DEPENDENCY_NOT_AVAILABLE.name().equals(status)) return "Dependency data unavailable";
+        if (ExecutionStatus.DATA_NOT_AVAILABLE.name().equals(status)) return "Data unavailable";
+        return "Executable when data available";
+    }
+
+    private static String liveUseDisplay(String certStatus, boolean capability) {
+        if (CertificationStatus.CERTIFIED.name().equals(certStatus) && capability) {
+            return "Certified for live use";
         }
-        if (ExecutionStatus.NOT_EXECUTABLE.name().equals(status) && !capability) {
-            return "Not yet supported";
+        if (CertificationStatus.REVOKED.name().equals(certStatus)) {
+            return "Certification revoked";
         }
-        if (ExecutionStatus.INPUT_REQUIRED.name().equals(status)) {
-            return "Needs manual input";
-        }
-        if (capability && valueAvailable) {
-            return "Available";
-        }
-        if (capability) {
-            return "Can calculate when data is available";
-        }
-        return "Not yet supported";
+        return "Not certified for live use";
     }
 
     private static String certificationLabel(String certStatus) {
-        if (CertificationStatus.CERTIFIED.name().equals(certStatus)) {
-            return "Approved for live use";
-        }
-        if (CertificationStatus.REVOKED.name().equals(certStatus)) {
-            return "Approval revoked";
-        }
+        if (CertificationStatus.CERTIFIED.name().equals(certStatus)) return "Certified";
+        if (CertificationStatus.REVOKED.name().equals(certStatus)) return "Revoked";
         return "Not approved for live use";
     }
 
-    private static Map<String, Object> liveUseDisplay(String certStatus, boolean capability) {
-        Map<String, Object> m = new LinkedHashMap<>();
-        boolean certified = CertificationStatus.CERTIFIED.name().equals(certStatus);
-        m.put("available", certified && capability);
-        m.put("status", certified ? "CERTIFIED" : "UNCERTIFIED");
-        m.put("label", certificationLabel(certStatus));
-        m.put("reason", certified
-                ? "Exact artifact certified in production certification ledger"
-                : "Certification ledger has no CERTIFIED grant — catalogue production_ready is not proof");
-        return m;
-    }
-
     private static String parameterClassLabel(Map<String, Object> semantic) {
-        Object pc = semantic.get("parameterClass");
-        if (pc == null) return "Parameter";
-        return switch (String.valueOf(pc)) {
-            case "BUSINESS_PARAMETER" -> "Business parameter";
+        String pc = String.valueOf(semantic.getOrDefault("parameterClass", ""));
+        return switch (pc) {
             case "INGREDIENT" -> "Source ingredient";
             case "MANUAL_INPUT" -> "Manual input";
             case "CONFIGURATION" -> "Configuration";
-            default -> String.valueOf(pc);
+            case "DECISION_OUTPUT" -> "Decision output";
+            case "BUSINESS_PARAMETER" -> "Business parameter";
+            default -> pc.isBlank() || "null".equals(pc) ? "Parameter" : pc;
         };
     }
 

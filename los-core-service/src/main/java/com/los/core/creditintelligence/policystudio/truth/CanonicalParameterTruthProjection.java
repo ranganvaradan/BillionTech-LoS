@@ -16,6 +16,7 @@ import com.los.core.creditintelligence.policystudio.parameters.execution.Executi
 import com.los.core.creditintelligence.policystudio.parameters.derived.AuthoredDerivedCalculationSupport;
 import com.los.core.creditintelligence.policystudio.parameters.semantic.GacatSemanticProjection;
 import com.los.core.creditintelligence.policystudio.parameters.semantic.GacatSemanticRegistry;
+import com.los.core.creditintelligence.policystudio.sourceintegration.CanonicalSourceIntegrationAuthority;
 
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
@@ -51,7 +52,9 @@ public final class CanonicalParameterTruthProjection {
                 : PolicyStudioConvergencePresenter.registry().findById(canonicalId.trim());
         if (opt.isEmpty()) {
             out.put("found", false);
-            out.put("primaryStatus", "NOT_IN_CATALOGUE");
+            out.put("businessReadiness", BusinessReadiness.NOT_READY.name());
+            out.put("businessReadinessReason", BusinessReadinessReason.NOT_IN_CATALOGUE.name());
+            out.put("primaryStatus", BusinessReadiness.NOT_READY.name());
             out.put("primaryStatusLabel", "Not in catalogue");
             return out;
         }
@@ -162,11 +165,20 @@ public final class CanonicalParameterTruthProjection {
         }
         out.put("certification", certification);
 
-        // --- acquisition (placeholder — context-specific) ---
+        // --- source integration (canonical authority — not GACAT heuristics) ---
+        String sourceFamily = firstNonBlank(
+                String.valueOf(semantic.getOrDefault("sourceDomain", "")),
+                def.evaluatedFrom());
+        Map<String, Object> source = CanonicalSourceIntegrationAuthority.forParameter(
+                def.evaluatedFrom(), sourceFamily, def.type());
+        out.put("source", source);
+
+        // --- acquisition (placeholder — context-specific; orthogonal to source integration) ---
         Map<String, Object> acquisition = new LinkedHashMap<>();
         acquisition.put("sourceRequired", !manual);
         acquisition.put("sourceStatus", "CONTEXT_DEPENDENT");
-        acquisition.put("note", "W6 acquisition status is orthogonal; set by workflow context");
+        acquisition.put("note", "W6 acquisition status is orthogonal; SOURCE_ACQUIRED != PARAMETER_AVAILABLE");
+        acquisition.put("doesNotChangeSourceIntegration", true);
         out.put("acquisition", acquisition);
 
         // --- policy (generic; rule-specific overlays may add) ---
@@ -183,7 +195,8 @@ public final class CanonicalParameterTruthProjection {
         // spine capability projection for facades (no independent invent)
         out.put("spineCapability", CanonicalParameterCapabilityProjection.project(def));
 
-        Map<String, Object> display = LenderTruthDisplayMapper.primary(def, semantic, execution, calculation, certification);
+        Map<String, Object> display = LenderTruthDisplayMapper.primary(
+                def, semantic, source, execution, calculation, certification);
         out.putAll(display);
         out.put("catalogueImplementedIsNotReadiness", true);
         out.put("catalogueProductionReadyIsNotLiveStatus", true);
@@ -217,5 +230,11 @@ public final class CanonicalParameterTruthProjection {
                 && mode != null && !"RAW".equalsIgnoreCase(String.valueOf(mode))
                 && !"BUILT_IN".equalsIgnoreCase(String.valueOf(mode))
                 && !"MANUAL".equalsIgnoreCase(String.valueOf(mode));
+    }
+
+    private static String firstNonBlank(String a, String b) {
+        if (a != null && !a.isBlank() && !"null".equalsIgnoreCase(a)) return a;
+        if (b != null && !b.isBlank()) return b;
+        return "";
     }
 }

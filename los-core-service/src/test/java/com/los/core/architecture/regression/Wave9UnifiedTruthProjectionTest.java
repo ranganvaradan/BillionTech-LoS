@@ -136,7 +136,7 @@ class Wave9UnifiedTruthProjectionTest {
     void dataParametersTruthProjection() {
         Map<String, Object> row = dataParametersParameter("bureau.cc_overdue_amount");
         assertThat(row).isNotNull();
-        assertThat(row.get("primaryStatus")).isIn("CALCULATION_NEEDS_SETUP", "NOT_YET_SUPPORTED");
+        assertThat(row.get("primaryStatus")).isIn("NOT_READY", "NOT_YET_SUPPORTED");
         assertThat(String.valueOf(row.get("primaryStatusLabel"))).doesNotContainIgnoringCase("Derived automatically");
         assertThat(row.get("catalogueProductionReadyIsNotLiveStatus")).isEqualTo(true);
         @SuppressWarnings("unchecked")
@@ -222,8 +222,10 @@ class Wave9UnifiedTruthProjectionTest {
 
         Map<String, Object> after = CanonicalParameterTruthProjection.project("bureau.score");
         assertThat(SurfaceCanonicalTruthFacade.certStatus(after)).isEqualTo("CERTIFIED");
-        assertThat(String.valueOf(after.get("primaryStatusLabel")))
-                .containsIgnoringCase("approved for live");
+        // GOLDEN: certification is orthogonal — primary stays READY; liveUseDisplay shows approval
+        assertThat(String.valueOf(after.get("businessReadiness"))).isEqualTo("READY");
+        assertThat(String.valueOf(after.get("liveUseDisplay"))).containsIgnoringCase("certified");
+        assertThat(String.valueOf(after.get("certificationLabel"))).containsIgnoringCase("certified");
         // capability unchanged
         assertThat(SurfaceCanonicalTruthFacade.capability(after))
                 .isEqualTo(SurfaceCanonicalTruthFacade.capability(before));
@@ -237,7 +239,7 @@ class Wave9UnifiedTruthProjectionTest {
             assertThat(sem.get("parameterClass")).isEqualTo("BUSINESS_PARAMETER");
             assertThat(sem.get("calculationMode")).isEqualTo("AUTHORED");
             assertThat(SurfaceCanonicalTruthFacade.capability(g)).isFalse();
-            assertThat(g.get("primaryStatus")).isIn("CALCULATION_NEEDS_SETUP", "NOT_YET_SUPPORTED");
+            assertThat(g.get("primaryStatus")).isIn("NOT_READY", "NOT_YET_SUPPORTED");
             assertThat(SurfaceCanonicalTruthFacade.certStatus(g)).isEqualTo("UNCERTIFIED");
             assertThat(String.valueOf(g.get("calculationExplanation")))
                     .containsIgnoringCase("not set up");
@@ -295,8 +297,7 @@ class Wave9UnifiedTruthProjectionTest {
             assertThat(sem.get("parameterClass")).isEqualTo("MANUAL_INPUT");
             assertThat(String.valueOf(g.get("primaryStatusLabel")))
                     .doesNotContainIgnoringCase("unsupported");
-            assertThat(g.get("primaryStatus")).isIn("NEEDS_MANUAL_INPUT", "READY_TO_TEST",
-                    "CAN_CALCULATE_WHEN_DATA_AVAILABLE", "APPROVED_FOR_LIVE_USE");
+            assertThat(g.get("primaryStatus")).isIn("READY", "NOT_READY");
         });
     }
 
