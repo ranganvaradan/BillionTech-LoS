@@ -1452,7 +1452,6 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
                       setForm((f) => {
                         const choice = isInvoiceDiscountingProduct(lp) ? f.invoiceOnboardingChoice : ''
                         const segment = choice === 'ANCHOR' ? 'ANCHOR' : 'BORROWER'
-                        const bt = segment === 'ANCHOR' ? ANCHOR_BORROWER_TYPE : f.borrowerType
                         return {
                           ...f,
                           loanProduct: lp,
@@ -1507,17 +1506,14 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
                   <InvoiceOnboardingTypeCards
                     value={form.invoiceOnboardingChoice}
                     onChange={(choice) =>
-                      setForm((f) => {
-                        const segment = choice === 'ANCHOR' ? 'ANCHOR' : 'BORROWER'
-                        return {
+                      setForm((f) => ({
                           ...f,
                           invoiceOnboardingChoice: choice,
                           workflowId: f.workflowId,
                           ...(choice === 'ANCHOR'
                             ? { purpose: '', borrowerType: ANCHOR_BORROWER_TYPE }
                             : {}),
-                        }
-                      })
+                        }))
                     }
                     disabled={productLocked}
                   />

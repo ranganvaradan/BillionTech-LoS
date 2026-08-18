@@ -121,7 +121,7 @@ export function ApplicationDetailPage() {
         ? await getWorkflow(boundId)
         : null
       setActiveWorkflow(workflow)
-      const hasVkyc = (workflow.steps ?? []).some((s) => {
+      const hasVkyc = (workflow?.steps ?? []).some((s) => {
         const step = String((s as Record<string, unknown>).step ?? '').trim().toUpperCase()
         return step === 'VIDEO_KYC' || step === 'VKYC'
       })
