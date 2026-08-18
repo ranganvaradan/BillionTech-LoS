@@ -40,6 +40,9 @@ class PolicyStudioParameterAuthorityInvariantTest {
         assertThat(mappedShownNotMapped)
                 .as("MAPPED_RULE_SHOWN_NOT_MAPPED_COUNT")
                 .isZero();
+        assertThat(addRuleAuthoringVsChangeParameterMismatchCount())
+                .as("ADD_RULE_CHANGE_PARAMETER_CATALOGUE_MISMATCH_COUNT")
+                .isZero();
     }
 
     @Test
@@ -102,6 +105,34 @@ class PolicyStudioParameterAuthorityInvariantTest {
         return n;
     }
 
+    @SuppressWarnings("unchecked")
+    private int addRuleAuthoringVsChangeParameterMismatchCount() {
+        Map<String, Object> change = PolicyAuthorableParameterProjection.catalogueView(registry);
+        Set<String> changeIds = ids((List<Map<String, Object>>) change.get("parameters"), "id");
+        Map<String, Object> authoring = new CmRuleAuthoringService().sources();
+        Set<String> addIds = new HashSet<>();
+        Object bySource = authoring.get("bySource");
+        if (bySource instanceof Map<?, ?> map) {
+            for (Object rows : map.values()) {
+                if (rows instanceof List<?> list) {
+                    for (Object row : list) {
+                        if (row instanceof Map<?, ?> m && m.get("parameterId") != null) {
+                            addIds.add(String.valueOf(m.get("parameterId")));
+                        }
+                    }
+                }
+            }
+        }
+        int n = 0;
+        if (!changeIds.equals(addIds)) {
+            n++;
+        }
+        if (!Boolean.TRUE.equals(authoring.get("policyAuthorableOnly"))) {
+            n++;
+        }
+        return n;
+    }
+
     private static Set<String> ids(List<Map<String, Object>> rows, String key) {
         Set<String> out = new HashSet<>();
         for (Map<String, Object> row : rows) {
@@ -121,7 +152,8 @@ class PolicyStudioParameterAuthorityInvariantTest {
                 Map.of());
         for (Map<String, Object> face : mapped) {
             if ("Not yet mapped".equals(face.get("availabilityLabel"))
-                    || "Not yet mapped".equals(face.get("message"))) {
+                    || "Not yet mapped".equals(face.get("message"))
+                    || !"CURRENT_MAPPING_RESOLVED".equals(face.get("mappingState"))) {
                 n++;
             }
         }

@@ -206,6 +206,7 @@ public final class RuleOperandPresenter {
             } else if (registryId != null) {
                 attachCanonicalTruth(face, registryId);
             }
+            stampMappingAuthority(face, null);
             return face;
         }
         return registry().findById(registryId)
@@ -227,6 +228,7 @@ public final class RuleOperandPresenter {
             face.put("unresolved", false);
             face.put("unavailable", true);
             face.put("resolveAction", false);
+            stampMappingAuthority(face, null);
             return face;
         }
         Map<String, Object> face = unresolvedFace(key, label);
@@ -265,6 +267,7 @@ public final class RuleOperandPresenter {
             registry().findById("bureau.credit_after_overdue.clean_history_months")
                     .ifPresent(def -> applyGacatHonestyFlags(face, def));
         }
+        stampMappingAuthority(face, CanonicalParameterDefinition.DERIVED);
         return face;
     }
 
@@ -305,6 +308,7 @@ public final class RuleOperandPresenter {
         com.los.core.creditintelligence.policystudio.parameters.derived
                 .AuthoredDerivedCalculationSupport.overlayOperand(face);
         attachCanonicalTruth(face, def.id());
+        stampMappingAuthority(face, def.type());
         return face;
     }
 
@@ -393,6 +397,7 @@ public final class RuleOperandPresenter {
             com.los.core.creditintelligence.policystudio.parameters.derived
                     .AuthoredDerivedCalculationSupport.overlayOperand(face);
         }
+        stampMappingAuthority(face, null);
         return face;
     }
 
@@ -411,6 +416,7 @@ public final class RuleOperandPresenter {
         face.put("resolveAction", true);
         face.put("message", "Not yet mapped");
         face.put("distinctFromUnavailable", true);
+        stampMappingAuthority(face, null);
         return face;
     }
 
@@ -435,7 +441,64 @@ public final class RuleOperandPresenter {
         face.put("resolveAction", true);
         face.put("message", "EXISTING_MAPPING_UNRESOLVED");
         face.put("distinctFromUnavailable", true);
+        stampMappingAuthority(face, null);
         return face;
+    }
+
+    /**
+     * One mapping-authority stamp for every operand face. Persisted canonical id wins
+     * over an unresolved flag. "Not yet mapped" only when no persisted id exists.
+     */
+    static void stampMappingAuthority(Map<String, Object> face, String classificationHint) {
+        if (face == null) {
+            return;
+        }
+        String id = firstPersistedId(face);
+        if (Boolean.TRUE.equals(face.get("existingMappingUnresolved")) && id != null) {
+            face.put("mappingState", ParameterResolutionSupport.MAPPING_EXISTING_UNRESOLVED);
+            face.put("canonicalParameterId", id);
+            face.put("parameterId", id);
+            face.put("unresolved", false);
+            if (classificationHint != null) {
+                face.put("parameterClassification", classificationHint);
+            }
+            return;
+        }
+        if (id != null) {
+            face.put("mappingState", ParameterResolutionSupport.MAPPING_CURRENT_RESOLVED);
+            face.put("canonicalParameterId", id);
+            face.put("parameterId", id);
+            face.put("unresolved", false);
+            String cls = classificationHint;
+            if (cls == null) {
+                Object type = face.get("resolutionState");
+                if (CanonicalParameterDefinition.RAW.equals(type)
+                        || CanonicalParameterDefinition.DERIVED.equals(type)
+                        || CanonicalParameterDefinition.MANUAL.equals(type)) {
+                    cls = String.valueOf(type);
+                }
+            }
+            if (cls != null) {
+                face.put("parameterClassification", cls);
+            }
+            return;
+        }
+        face.put("mappingState", ParameterResolutionSupport.MAPPING_NOT_YET_MAPPED);
+        face.put("unresolved", true);
+    }
+
+    private static String firstPersistedId(Map<String, Object> face) {
+        for (String key : List.of("parameterId", "canonicalParameterId", "persistedParameterId")) {
+            Object v = face.get(key);
+            if (v == null) {
+                continue;
+            }
+            String s = String.valueOf(v).trim();
+            if (!s.isEmpty() && !"null".equalsIgnoreCase(s)) {
+                return s;
+            }
+        }
+        return null;
     }
 
     private static String availabilityCmLabel(String availability) {

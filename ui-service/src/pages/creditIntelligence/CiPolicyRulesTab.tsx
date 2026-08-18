@@ -11,6 +11,7 @@ import { SuggestCalculationWorkflow } from '@/components/dataParameters/SuggestC
 import { CiParameterResolverPanel } from '@/pages/creditIntelligence/CiParameterResolverPanel'
 import {
   derivePolicyStudioOperandPresentation,
+  persistedMappingFromOperand,
   ruleLifecycleNeedsReview,
 } from '@/lib/policyStudio/policyStudioResolverState'
 import {
@@ -761,9 +762,10 @@ export function CiPolicyRulesTab({
                         <div className="mt-3 space-y-2" data-testid="rule-operands">
                           {asList(r.operands).map((opRaw, oi) => {
                             const op = asRecord(opRaw)
-                            const unresolved = Boolean(op.unresolved)
+                            const mapping = persistedMappingFromOperand(op)
+                            const unresolved = mapping.state === 'NOT_YET_MAPPED'
                             const unavailable = Boolean(op.unavailable)
-                            const mappingUnresolved = Boolean(op.existingMappingUnresolved)
+                            const mappingUnresolved = mapping.state === 'EXISTING_MAPPING_UNRESOLVED'
                             const presentation = derivePolicyStudioOperandPresentation(op, {
                               ruleNeedsReview,
                               proposalReadyForReview:
@@ -781,6 +783,8 @@ export function CiPolicyRulesTab({
                                       : 'border-slate-200 bg-white'
                                 }`}
                                 data-testid="rule-operand-row"
+                                data-mapping-state={mapping.state}
+                                data-canonical-parameter-id={mapping.canonicalParameterId ?? ''}
                               >
                                 <div className="font-medium text-slate-900">
                                   {String(op.businessName ?? op.label ?? 'Parameter')}
@@ -883,7 +887,7 @@ export function CiPolicyRulesTab({
                                           onClick={() =>
                                             setResolver({
                                               ruleId: id,
-                                              operand: { ...op, unresolved: true },
+                                              operand: op,
                                             })
                                           }
                                         >
@@ -911,7 +915,6 @@ export function CiPolicyRulesTab({
                                             ruleId: id,
                                             operand: {
                                               ...op,
-                                              unresolved: true,
                                               suggestedSource: op.evaluatedFrom ?? op.suggestedSource,
                                             },
                                           })

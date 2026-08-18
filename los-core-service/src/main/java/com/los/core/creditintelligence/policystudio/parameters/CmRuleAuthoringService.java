@@ -46,7 +46,8 @@ public class CmRuleAuthoringService {
 
     public Map<String, Object> sources() {
         Map<String, List<Map<String, Object>>> bySource = new LinkedHashMap<>();
-        for (CanonicalParameterDefinition d : CanonicalParameterRegistry.shared().all()) {
+        CanonicalParameterRegistry registry = CanonicalParameterRegistry.shared();
+        for (CanonicalParameterDefinition d : PolicyAuthorableParameterProjection.authorableOf(registry)) {
             String src = d.evaluatedFrom() == null ? "Other" : d.evaluatedFrom();
             bySource.computeIfAbsent(src, k -> new ArrayList<>()).add(paramRow(d));
         }
@@ -81,55 +82,70 @@ public class CmRuleAuthoringService {
         out.put("treatments", List.of("Reject", "Manual Review", "Refer", "Info"));
         out.put("treatmentLabel", "If rule fails");
         out.put("allowCanonicalAuthority", false);
+        out.put("authorableProjectionAuthority", PolicyAuthorableParameterProjection.AUTHORITY);
+        out.put("policyAuthorableOnly", true);
         // Authoring-only special values / catalogue metric overlays (do not mutate GACAT)
         out.put("specialValuesByParameter", Map.of(
                 CompoundExpressionAuthoringSupport.BUREAU_SCORE, List.of(
                         Map.of("value", -1, "label", "Score sentinel -1")),
                 CompoundExpressionAuthoringSupport.NTC_FACT, List.of(
                         Map.of("value", true, "label", "NTC"))));
-        List<Map<String, Object>> bureauExtras = new ArrayList<>();
-        bureauExtras.add(Map.of(
-                "parameterId", CompoundExpressionAuthoringSupport.NTC_FACT,
-                "businessName", "Bureau status (NTC)",
-                "source", "Bureau",
-                "valueControl", AuthoringValueTypes.CONTROL_BOOLEAN,
-                "leftKind", "FACT",
-                "allowedValues", List.of(Map.of("value", "true", "label", "NTC")),
-                "kind", "FACT",
-                "operators", CompoundExpressionAuthoringSupport.operatorsForParameter(
-                        CompoundExpressionAuthoringSupport.NTC_FACT)));
         @SuppressWarnings("unchecked")
         Map<String, List<Map<String, Object>>> bySourceMut =
                 (Map<String, List<Map<String, Object>>>) out.get("bySource");
-        bySourceMut.computeIfAbsent("Bureau", k -> new ArrayList<>()).addAll(bureauExtras);
-        // collateral.ltv is used by catalogue capabilities — authoring overlay, not a GACAT mutation
-        bySourceMut.computeIfAbsent("Collateral", k -> new ArrayList<>()).add(Map.of(
-                "parameterId", CompoundExpressionAuthoringSupport.LTV,
-                "businessName", "LTV",
-                "source", "Collateral",
-                "valueControl", AuthoringValueTypes.CONTROL_PERCENTAGE,
-                "leftKind", "METRIC",
-                "kind", "DERIVED",
-                "operators", CompoundExpressionAuthoringSupport.operatorsForParameter(
-                        CompoundExpressionAuthoringSupport.LTV)));
-        // GATE2 — studio write-off overlays (PolicyBureauMetricService; do not mutate GACAT)
-        bySourceMut.computeIfAbsent("Bureau", k -> new ArrayList<>()).add(Map.of(
-                "parameterId", BusinessConceptResolver.WRITEOFF_NON_CC,
-                "businessName", "Non-credit-card write-off count",
-                "source", "Bureau",
-                "valueControl", AuthoringValueTypes.CONTROL_INTEGER,
-                "leftKind", "METRIC",
-                "kind", "DERIVED",
-                "howCalculated", "BureauMetricService.computeWriteoffCounts",
-                "operators", List.of("=", "!=", ">", ">=", "<", "<=")));
-        bySourceMut.computeIfAbsent("Bureau", k -> new ArrayList<>()).add(Map.of(
-                "parameterId", BusinessConceptResolver.WRITEOFF_CC,
-                "businessName", "Credit-card write-off count",
-                "source", "Bureau",
-                "valueControl", AuthoringValueTypes.CONTROL_INTEGER,
-                "leftKind", "METRIC",
-                "kind", "DERIVED",
-                "operators", List.of("=", "!=", ">", ">=", "<", "<=")));
+        java.util.Set<String> presentIds = new java.util.LinkedHashSet<>();
+        for (List<Map<String, Object>> rows : bySourceMut.values()) {
+            for (Map<String, Object> row : rows) {
+                if (row.get("parameterId") != null) {
+                    presentIds.add(String.valueOf(row.get("parameterId")));
+                }
+            }
+        }
+        addAuthorableOverlayIfMissing(bySourceMut, presentIds,
+                CompoundExpressionAuthoringSupport.NTC_FACT,
+                Map.of(
+                        "parameterId", CompoundExpressionAuthoringSupport.NTC_FACT,
+                        "businessName", "Bureau status (NTC)",
+                        "source", "Bureau Retail",
+                        "valueControl", AuthoringValueTypes.CONTROL_BOOLEAN,
+                        "leftKind", "FACT",
+                        "allowedValues", List.of(Map.of("value", "true", "label", "NTC")),
+                        "kind", "FACT",
+                        "operators", CompoundExpressionAuthoringSupport.operatorsForParameter(
+                                CompoundExpressionAuthoringSupport.NTC_FACT)));
+        addAuthorableOverlayIfMissing(bySourceMut, presentIds,
+                CompoundExpressionAuthoringSupport.LTV,
+                Map.of(
+                        "parameterId", CompoundExpressionAuthoringSupport.LTV,
+                        "businessName", "LTV",
+                        "source", "Collateral",
+                        "valueControl", AuthoringValueTypes.CONTROL_PERCENTAGE,
+                        "leftKind", "METRIC",
+                        "kind", "DERIVED",
+                        "operators", CompoundExpressionAuthoringSupport.operatorsForParameter(
+                                CompoundExpressionAuthoringSupport.LTV)));
+        addAuthorableOverlayIfMissing(bySourceMut, presentIds,
+                BusinessConceptResolver.WRITEOFF_NON_CC,
+                Map.of(
+                        "parameterId", BusinessConceptResolver.WRITEOFF_NON_CC,
+                        "businessName", "Non-credit-card write-off count",
+                        "source", "Bureau Retail",
+                        "valueControl", AuthoringValueTypes.CONTROL_INTEGER,
+                        "leftKind", "METRIC",
+                        "kind", "DERIVED",
+                        "howCalculated", "BureauMetricService.computeWriteoffCounts",
+                        "operators", List.of("=", "!=", ">", ">=", "<", "<=")));
+        addAuthorableOverlayIfMissing(bySourceMut, presentIds,
+                BusinessConceptResolver.WRITEOFF_CC,
+                Map.of(
+                        "parameterId", BusinessConceptResolver.WRITEOFF_CC,
+                        "businessName", "Credit-card write-off count",
+                        "source", "Bureau Retail",
+                        "valueControl", AuthoringValueTypes.CONTROL_INTEGER,
+                        "leftKind", "METRIC",
+                        "kind", "DERIVED",
+                        "operators", List.of("=", "!=", ">", ">=", "<", "<=")));
+        out.put("sources", bySourceMut.keySet().stream().sorted().toList());
         out.put("authoringGrammar", Map.of(
                 "comparisons", List.of("EQ", "NE", "GT", "GTE", "LT", "LTE"),
                 "membership", List.of("IN", "NOT_IN"),
@@ -1531,6 +1547,22 @@ public class CmRuleAuthoringService {
             out.put("semanticLoss", true);
         }
         return out;
+    }
+
+    private static void addAuthorableOverlayIfMissing(
+            Map<String, List<Map<String, Object>>> bySource,
+            java.util.Set<String> presentIds,
+            String parameterId,
+            Map<String, Object> row) {
+        if (parameterId == null || presentIds.contains(parameterId)) {
+            return;
+        }
+        if (!PolicyAuthorableParameterProjection.isAuthorable(parameterId)) {
+            return;
+        }
+        String src = row.get("source") == null ? "Other" : String.valueOf(row.get("source"));
+        bySource.computeIfAbsent(src, k -> new ArrayList<>()).add(row);
+        presentIds.add(parameterId);
     }
 
     private Map<String, Object> paramRow(CanonicalParameterDefinition d) {

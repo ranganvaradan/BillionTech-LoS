@@ -8,6 +8,7 @@ import {
 } from '@/api/creditIntelligence'
 import { SuggestCalculationWorkflow } from '@/components/dataParameters/SuggestCalculationWorkflow'
 import { requiresCalculationSetupAction } from '@/lib/policyStudio/lenderTruthDisplay'
+import { persistedMappingFromOperand } from '@/lib/policyStudio/policyStudioResolverState'
 
 function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {}
@@ -58,10 +59,13 @@ export function CiParameterResolverPanel({
 
   const operandKey = String(operand.operandKey ?? 'parameter')
   const term = String(operand.businessName ?? operand.label ?? operandKey)
+  const mapping = persistedMappingFromOperand(operand)
+  const mapped = mapping.state === 'CURRENT_MAPPING_RESOLVED'
+  const existingUnresolved = mapping.state === 'EXISTING_MAPPING_UNRESOLVED'
 
   useEffect(() => {
     if (!open) return
-    setMode('source')
+    setMode(operand.manualInput === true ? 'manual' : 'source')
     setPreview(null)
     setProposal(null)
     setError(null)
@@ -72,7 +76,7 @@ export function CiParameterResolverPanel({
         const srcs = asList(cat.sources).map(String)
         setSources(srcs.length ? srcs : ['Bank Statement', 'Bureau', 'Application', 'Manual Input'])
         const preferred =
-          String(operand.suggestedSource ?? '') ||
+          String(mapping.source ?? operand.suggestedSource ?? '') ||
           (operandKey.includes('writeoff') || operandKey.includes('write_off') || /write.?off/i.test(term)
             ? 'Bureau'
             : operandKey.includes('edi') && !/credit/i.test(term)
@@ -80,13 +84,18 @@ export function CiParameterResolverPanel({
               : operandKey.includes('clean')
                 ? 'Bureau'
                 : 'Bank Statement')
-        setSource(srcs.includes(preferred) ? preferred : srcs[0] || 'Bank Statement')
+        const match =
+          srcs.find((s) => s === preferred) ||
+          srcs.find((s) => preferred && s.toLowerCase().includes(preferred.toLowerCase())) ||
+          srcs[0] ||
+          'Bank Statement'
+        setSource(match)
       })
       .catch(() => setSources(['Bank Statement', 'Bureau', 'Application', 'Manual Input']))
     void resolveBusinessConcept({ concept: term })
       .then((r) => setSuggestion(r))
       .catch(() => setSuggestion(null))
-  }, [open, operandKey, term])
+  }, [open, operandKey, term, mapping.source, operand.manualInput, operand.suggestedSource])
 
   useEffect(() => {
     if (!open || mode !== 'source') return
@@ -187,18 +196,24 @@ export function CiParameterResolverPanel({
       <div className="flex h-full w-full max-w-lg flex-col border-l border-slate-200 bg-white shadow-xl">
         <div className="flex items-start justify-between gap-2 border-b border-slate-200 px-4 py-3">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">Resolve parameter</h2>
-            <p className="text-sm text-slate-600">
-              {term}
-              <span className="ml-2 text-amber-800">
-                ·{' '}
-                {operand.existingMappingUnresolved === true
-                  ? 'EXISTING_MAPPING_UNRESOLVED'
-                  : operand.unresolved === true || !operand.parameterId
-                    ? 'Not yet mapped'
-                    : String(operand.parameterId)}
-              </span>
+            <h2 className="text-lg font-semibold text-slate-900">
+              {mapped || existingUnresolved ? 'Change parameter / source' : 'Resolve parameter'}
+            </h2>
+            <p className="text-sm text-slate-600">{term}</p>
+            <p
+              className={`text-sm ${mapping.state === 'NOT_YET_MAPPED' ? 'text-amber-800' : 'text-slate-800'}`}
+              data-testid="resolver-mapping-state"
+              data-mapping-state={mapping.state}
+              data-canonical-parameter-id={mapping.canonicalParameterId ?? ''}
+            >
+              {mapping.headerLabel}
             </p>
+            {mapping.state !== 'NOT_YET_MAPPED' ? (
+              <p className="mt-1 text-xs text-slate-600" data-testid="resolver-current-mapping">
+                {mapping.source ? `${mapping.source}` : 'Source unknown'}
+                {mapping.classification ? ` · ${mapping.classification}` : ''}
+              </p>
+            ) : null}
             <p className="mt-1 text-xs text-slate-500">Use in this policy · draft scoped · not production authority</p>
           </div>
           <button type="button" className="bt-btn bt-btn-secondary bt-btn-sm" onClick={onClose}>
@@ -237,12 +252,29 @@ export function CiParameterResolverPanel({
             <p className="rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">{error}</p>
           ) : null}
 
+          {mapped ? (
+            <div
+              className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-900"
+              data-testid="current-mapping"
+            >
+              <p className="font-semibold">Current mapping</p>
+              <p className="text-xs mt-0.5 font-mono">{mapping.canonicalParameterId}</p>
+              <p className="text-xs">
+                {mapping.source ?? '—'}
+                {mapping.classification ? ` · ${mapping.classification}` : ''}
+              </p>
+              <p className="text-xs text-slate-500 mt-1">
+                Opening this drawer does not change the mapping. Confirm a new parameter to remap.
+              </p>
+            </div>
+          ) : null}
+
           {suggestion ? (
             <div
               className="rounded border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-950"
               data-testid="concept-suggestion"
             >
-              <p className="font-semibold">Suggested mapping</p>
+              <p className="font-semibold">{mapped ? 'Suggested alternative' : 'Suggested mapping'}</p>
               <p className="text-xs mt-0.5">
                 We understood: {String(suggestion.businessConcept ?? term)}
               </p>

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { derivePolicyStudioOperandPresentation } from './policyStudioResolverState'
+import {
+  derivePolicyStudioOperandPresentation,
+  persistedMappingFromOperand,
+} from './policyStudioResolverState'
 
 describe('policyStudioResolverState golden readiness', () => {
   it('persisted unresolved mapping is EXISTING_MAPPING_UNRESOLVED not Not yet mapped', () => {
@@ -10,6 +13,53 @@ describe('policyStudioResolverState golden readiness', () => {
     })
     expect(p.parameterLabel).toBe('EXISTING_MAPPING_UNRESOLVED')
     expect(p.showMapResolver).toBe(false)
+  })
+
+  it('mapped READY_DERIVED stays CURRENT_MAPPING_RESOLVED even if unresolved was forced', () => {
+    const op = {
+      parameterId: 'bureau.inquiries.current_month',
+      unresolved: true,
+      evaluatedFrom: 'Bureau Retail',
+      resolutionState: 'DERIVED',
+      availabilityLabel: 'Derived automatically',
+      canonicalParameterState: {
+        primaryStatus: 'READY',
+        primaryStatusLabel: 'Ready',
+        businessReadiness: 'READY',
+        execution: { capability: true },
+        semantic: { parameterClass: 'BUSINESS_PARAMETER', calculationMode: 'BUILT_IN' },
+      },
+      policyTestReady: true,
+    }
+    const mapping = persistedMappingFromOperand(op)
+    expect(mapping.state).toBe('CURRENT_MAPPING_RESOLVED')
+    expect(mapping.canonicalParameterId).toBe('bureau.inquiries.current_month')
+    expect(mapping.source).toBe('Bureau Retail')
+    expect(mapping.classification).toBe('DERIVED')
+    expect(mapping.headerLabel).not.toBe('Not yet mapped')
+    const p = derivePolicyStudioOperandPresentation(op)
+    expect(p.case).toBe('EXECUTABLE')
+    expect(p.parameterLabel).toBe('Ready')
+    expect(p.showMapResolver).toBe(false)
+  })
+
+  it('READY_RAW mapped operand is CURRENT_MAPPING_RESOLVED', () => {
+    const mapping = persistedMappingFromOperand({
+      canonicalParameterId: 'bureau.score',
+      evaluatedFrom: 'Bureau Retail',
+      resolutionState: 'RAW',
+    })
+    expect(mapping.state).toBe('CURRENT_MAPPING_RESOLVED')
+    expect(mapping.classification).toBe('RAW')
+  })
+
+  it('genuinely unmapped operand is Not yet mapped', () => {
+    const mapping = persistedMappingFromOperand({
+      unresolved: true,
+      businessName: 'Unknown term',
+    })
+    expect(mapping.state).toBe('NOT_YET_MAPPED')
+    expect(mapping.headerLabel).toBe('Not yet mapped')
   })
 
   it('DPD30-like executable operand is Ready without calc resolver', () => {

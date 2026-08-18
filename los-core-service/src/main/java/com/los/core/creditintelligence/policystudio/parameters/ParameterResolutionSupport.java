@@ -34,6 +34,11 @@ public final class ParameterResolutionSupport {
     public static final String AVAIL_EXISTING_MAPPING_UNRESOLVED = "EXISTING_MAPPING_UNRESOLVED";
     public static final String STATUS_EXISTING_MAPPING_UNRESOLVED = "EXISTING_MAPPING_UNRESOLVED";
 
+    /** Single Policy Studio mapping-authority states. Not execution readiness. */
+    public static final String MAPPING_CURRENT_RESOLVED = "CURRENT_MAPPING_RESOLVED";
+    public static final String MAPPING_EXISTING_UNRESOLVED = "EXISTING_MAPPING_UNRESOLVED";
+    public static final String MAPPING_NOT_YET_MAPPED = "NOT_YET_MAPPED";
+
     private ParameterResolutionSupport() {}
 
     @SuppressWarnings("unchecked")

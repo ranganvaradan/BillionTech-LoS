@@ -22,6 +22,7 @@ describe('POLICY-PARAMETER-RESOLVER-1', () => {
     expect(rules).toContain('Resolve parameter')
     expect(rules).toContain('rule-operands')
     expect(rules).toContain('Data & calculations')
+    expect(rules).not.toMatch(/unresolved:\s*true,\s*suggestedSource/)
   })
 
   it('resolver panel exposes source browse, search, describe, manual', () => {
@@ -43,6 +44,9 @@ describe('POLICY-PARAMETER-RESOLVER-1', () => {
     expect(panel).toContain('RESOLVE_PARAMETER_MAP')
     expect(panel).toContain('RESOLVE_PARAMETER_MANUAL')
     expect(panel).toContain('RESOLVE_PARAMETER_USE_PROPOSAL')
+    expect(panel).toContain('CURRENT_MAPPING_RESOLVED')
+    expect(panel).toContain('persistedMappingFromOperand')
+    expect(panel).not.toMatch(/unresolved === true \|\| !operand\.parameterId/)
   })
 
   it('API client exposes parameter resolver endpoints', () => {

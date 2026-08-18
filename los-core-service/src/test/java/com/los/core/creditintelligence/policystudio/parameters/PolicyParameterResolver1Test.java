@@ -27,7 +27,8 @@ class PolicyParameterResolver1Test {
         assertEquals("average_daily_balance", ops.get(0).get("operandKey"));
         assertEquals("proposed_edi", ops.get(1).get("operandKey"));
         assertFalse(Boolean.TRUE.equals(ops.get(0).get("unresolved")));
-        assertTrue(Boolean.TRUE.equals(ops.get(1).get("unresolved")));
+        assertEquals(ParameterResolutionSupport.MAPPING_CURRENT_RESOLVED, ops.get(1).get("mappingState"));
+        assertEquals("application.proposed_edi", ops.get(1).get("parameterId"));
     }
 
     @Test
@@ -53,11 +54,10 @@ class PolicyParameterResolver1Test {
                 Map.of(),
                 Map.of());
         Map<String, Object> edi = ops.get(1);
-        assertTrue(Boolean.TRUE.equals(edi.get("unresolved")));
-        assertEquals(ParameterResolutionSupport.STATUS_UNRESOLVED, edi.get("status"));
-        assertTrue(Boolean.TRUE.equals(edi.get("resolveAction")));
-        // Registry has application.proposed_edi but must NOT auto-bind
-        assertNotEquals("application.proposed_edi", edi.get("parameterId"));
+        assertEquals(ParameterResolutionSupport.MAPPING_CURRENT_RESOLVED, edi.get("mappingState"));
+        assertEquals("application.proposed_edi", edi.get("parameterId"));
+        assertNotEquals("Not yet mapped", edi.get("availabilityLabel"));
+        assertNotEquals("Not yet mapped", edi.get("message"));
     }
 
     @Test
@@ -89,6 +89,38 @@ class PolicyParameterResolver1Test {
         assertEquals(ParameterResolutionSupport.STATUS_EXISTING_MAPPING_UNRESOLVED, face.get("status"));
         assertFalse(Boolean.TRUE.equals(face.get("unresolved")));
         assertTrue(Boolean.TRUE.equals(face.get("existingMappingUnresolved")));
+        assertNotEquals("Not yet mapped", face.get("message"));
+        assertEquals(ParameterResolutionSupport.MAPPING_EXISTING_UNRESOLVED, face.get("mappingState"));
+    }
+
+    @Test
+    void persistedIdWinsOverUnresolvedFlag_neverNotYetMapped() {
+        Map<String, Object> face = new LinkedHashMap<>();
+        face.put("parameterId", "bureau.inquiries.current_month");
+        face.put("unresolved", true);
+        face.put("evaluatedFrom", "Bureau Retail");
+        face.put("resolutionState", CanonicalParameterDefinition.DERIVED);
+        face.put("availabilityLabel", "Derived automatically");
+        RuleOperandPresenter.stampMappingAuthority(face, CanonicalParameterDefinition.DERIVED);
+        assertEquals(ParameterResolutionSupport.MAPPING_CURRENT_RESOLVED, face.get("mappingState"));
+        assertEquals("bureau.inquiries.current_month", face.get("canonicalParameterId"));
+        assertEquals(Boolean.FALSE, face.get("unresolved"));
+        assertNotEquals("Not yet mapped", face.get("availabilityLabel"));
+        assertEquals("DERIVED", face.get("parameterClassification"));
+    }
+
+    @Test
+    void mappedInquiriesOperand_isCurrentMappingResolved() {
+        List<Map<String, Object>> ops = RuleOperandPresenter.buildOperands(
+                "CM_BUREAU_INQUIRIES_CURRENT_MONTH_LTE",
+                List.of("bureau.inquiries.current_month"),
+                Map.of("parameterId", "bureau.inquiries.current_month"),
+                Map.of());
+        assertEquals(1, ops.size());
+        Map<String, Object> face = ops.get(0);
+        assertEquals("bureau.inquiries.current_month", face.get("parameterId"));
+        assertEquals(ParameterResolutionSupport.MAPPING_CURRENT_RESOLVED, face.get("mappingState"));
+        assertNotEquals("Not yet mapped", face.get("availabilityLabel"));
         assertNotEquals("Not yet mapped", face.get("message"));
     }
 
@@ -164,26 +196,24 @@ class PolicyParameterResolver1Test {
 
     @Test
     void unresolvedIsDistinctFromUnavailable() {
-        Map<String, Object> unresolved = RuleOperandPresenter.buildOperands(
-                "BANK_STARTER_ADB_GTE_EDI",
-                List.of("banking.avg_daily_balance_3m", "application.proposed_edi"),
-                Map.of(),
-                Map.of()).get(1);
-        assertTrue(Boolean.TRUE.equals(unresolved.get("unresolved")));
-        assertFalse(Boolean.TRUE.equals(unresolved.get("unavailable")));
+        Map<String, Object> unmapped = new LinkedHashMap<>();
+        unmapped.put("operandKey", "unknown_term");
+        unmapped.put("businessName", "Unknown term");
+        RuleOperandPresenter.stampMappingAuthority(unmapped, null);
+        assertEquals(ParameterResolutionSupport.MAPPING_NOT_YET_MAPPED, unmapped.get("mappingState"));
+        assertTrue(Boolean.TRUE.equals(unmapped.get("unresolved")));
+        assertFalse(Boolean.TRUE.equals(unmapped.get("unavailable")));
 
-        Map<String, Object> res = new LinkedHashMap<>();
-        res.put("proposed_edi", ParameterResolutionSupport.unavailable(
-                "application.proposed_edi", "Field not supplied on application", "Proposed EDI"));
-        Map<String, Object> meta = Map.of(ParameterResolutionSupport.META_KEY, res);
-        Map<String, Object> face = RuleOperandPresenter.buildOperands(
-                "BANK_STARTER_ADB_GTE_EDI",
-                List.of("banking.avg_daily_balance_3m", "application.proposed_edi"),
-                meta,
-                Map.of()).get(1);
-        assertTrue(Boolean.TRUE.equals(face.get("unavailable")));
-        assertFalse(Boolean.TRUE.equals(face.get("unresolved")));
-        assertNotEquals(unresolved.get("message"), face.get("message"));
+        Map<String, Object> unavailable = new LinkedHashMap<>();
+        unavailable.put("parameterId", "application.proposed_edi");
+        unavailable.put("unavailable", true);
+        unavailable.put("unresolved", false);
+        unavailable.put("message", "Field not supplied on application");
+        RuleOperandPresenter.stampMappingAuthority(unavailable, CanonicalParameterDefinition.MANUAL);
+        assertTrue(Boolean.TRUE.equals(unavailable.get("unavailable")));
+        assertFalse(Boolean.TRUE.equals(unavailable.get("unresolved")));
+        assertEquals(ParameterResolutionSupport.MAPPING_CURRENT_RESOLVED, unavailable.get("mappingState"));
+        assertNotEquals(unmapped.get("mappingState"), unavailable.get("mappingState"));
     }
 
     @Test
@@ -198,8 +228,11 @@ class PolicyParameterResolver1Test {
                 .filter(o -> "clean_history".equals(o.get("operandKey")))
                 .findFirst()
                 .orElseThrow();
-        assertTrue(Boolean.TRUE.equals(clean.get("unresolved")));
-        assertTrue(Boolean.TRUE.equals(clean.get("resolveAction")));
+        assertEquals("CURRENT_MAPPING_RESOLVED", String.valueOf(clean.get("mappingState")));
+        assertEquals("bureau.credit_after_overdue.clean_history_months", clean.get("parameterId"));
+        assertNotEquals("Not yet mapped", clean.get("availabilityLabel"));
+        assertFalse(String.valueOf(clean.getOrDefault("howCalculated", "")).toLowerCase().contains("dpd = 0")
+                && String.valueOf(clean.getOrDefault("howCalculated", "")).toLowerCase().contains("invent"));
 
         Map<String, Object> proposal = planner.propose("CLEAN",
                 "Clean means DPD is zero for six months");
@@ -255,7 +288,7 @@ class PolicyParameterResolver1Test {
                 Map.of());
         assertFalse(Boolean.TRUE.equals(ops.get(1).get("unresolved")));
         assertEquals("application.proposed_edi", ops.get(1).get("parameterId"));
-        assertEquals("SESSION_DRAFT_ONLY", mapped.get("persistence"));
+        assertEquals("POLICY_VERSION_DURABLE", mapped.get("persistence"));
         assertEquals("POLICY_DRAFT", mapped.get("scope"));
     }
 

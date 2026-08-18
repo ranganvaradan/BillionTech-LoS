@@ -12,6 +12,88 @@ function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {}
 }
 
+export type PolicyStudioMappingState =
+  | 'CURRENT_MAPPING_RESOLVED'
+  | 'EXISTING_MAPPING_UNRESOLVED'
+  | 'NOT_YET_MAPPED'
+
+export type PolicyStudioPersistedMapping = {
+  state: PolicyStudioMappingState
+  canonicalParameterId: string | null
+  source: string | null
+  classification: 'RAW' | 'DERIVED' | 'MANUAL' | null
+  headerLabel: string
+}
+
+function blankToNull(v: unknown): string | null {
+  if (v == null) return null
+  const s = String(v).trim()
+  if (!s || s === 'null' || s === 'undefined') return null
+  return s
+}
+
+/** Persisted canonical parameter id. Unresolved flags must not hide this. */
+export function persistedCanonicalParameterId(op: Record<string, unknown>): string | null {
+  const nested = asRecord(op.canonicalParameterState)
+  const nestedTruth = asRecord(op.canonicalTruth)
+  return (
+    blankToNull(op.parameterId) ||
+    blankToNull(op.canonicalParameterId) ||
+    blankToNull(op.persistedParameterId) ||
+    blankToNull(nested.canonicalParameterId) ||
+    blankToNull(nestedTruth.canonicalParameterId)
+  )
+}
+
+function classificationOf(op: Record<string, unknown>): 'RAW' | 'DERIVED' | 'MANUAL' | null {
+  const raw = String(
+    op.parameterClassification ?? op.resolutionState ?? op.type ?? op.kind ?? '',
+  ).toUpperCase()
+  if (raw === 'RAW') return 'RAW'
+  if (raw === 'MANUAL') return 'MANUAL'
+  if (raw === 'DERIVED' || raw.includes('DERIV')) return 'DERIVED'
+  const avail = String(op.availabilityLabel ?? op.availability ?? '').toLowerCase()
+  if (avail.includes('manual')) return 'MANUAL'
+  if (avail.includes('derived') || avail.includes('automatic')) return 'DERIVED'
+  if (avail.includes('raw')) return 'RAW'
+  return null
+}
+
+/**
+ * ONE mapping authority for rule card, Change parameter drawer, Policy Test faces.
+ * A persisted id is never "Not yet mapped", even if a caller forced unresolved=true.
+ */
+export function persistedMappingFromOperand(op: Record<string, unknown>): PolicyStudioPersistedMapping {
+  const id = persistedCanonicalParameterId(op)
+  const source = blankToNull(op.evaluatedFrom) || blankToNull(op.suggestedSource)
+  const classification = classificationOf(op)
+  if (op.existingMappingUnresolved === true && id) {
+    return {
+      state: 'EXISTING_MAPPING_UNRESOLVED',
+      canonicalParameterId: id,
+      source,
+      classification,
+      headerLabel: `EXISTING_MAPPING_UNRESOLVED · ${id}`,
+    }
+  }
+  if (id) {
+    return {
+      state: 'CURRENT_MAPPING_RESOLVED',
+      canonicalParameterId: id,
+      source,
+      classification,
+      headerLabel: `CURRENT_MAPPING_RESOLVED · ${id}`,
+    }
+  }
+  return {
+    state: 'NOT_YET_MAPPED',
+    canonicalParameterId: null,
+    source,
+    classification,
+    headerLabel: 'Not yet mapped',
+  }
+}
+
 export type PolicyStudioResolverCase =
   | 'EXECUTABLE'
   | 'REVIEW_PROPOSAL'
@@ -72,11 +154,12 @@ export function derivePolicyStudioOperandPresentation(
     Boolean(asRecord(asRecord(op.canonicalTruth).execution).capability) ||
     (op.policyTestReady === true && op.calculationRequired !== true)
 
+  const mapping = persistedMappingFromOperand(op)
   const primary = lenderPrimaryFromTruth(truth, {
     calculationRequired: capability ? false : op.calculationRequired === true,
     policyTestReady: capability || op.policyTestReady === true,
     unavailable: op.unavailable === true,
-    unresolved: op.unresolved === true,
+    unresolved: mapping.state === 'NOT_YET_MAPPED',
   })
   const parameterLabel =
     primary.label === 'Needs review' ? 'Needs your input' : primary.label
@@ -110,7 +193,7 @@ export function derivePolicyStudioOperandPresentation(
     }
   }
 
-  if (op.existingMappingUnresolved === true) {
+  if (mapping.state === 'EXISTING_MAPPING_UNRESOLVED') {
     return {
       case: 'CHANGE_PARAMETER',
       parameterLabel: 'EXISTING_MAPPING_UNRESOLVED',
@@ -125,7 +208,7 @@ export function derivePolicyStudioOperandPresentation(
     }
   }
 
-  if (op.unresolved === true) {
+  if (mapping.state === 'NOT_YET_MAPPED') {
     return {
       case: 'UNRESOLVED_MAP',
       parameterLabel: parameterLabel || 'Needs your input',
