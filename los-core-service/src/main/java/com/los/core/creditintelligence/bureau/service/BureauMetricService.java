@@ -127,6 +127,21 @@ public class BureauMetricService {
         }
     }
 
+    private static Map<String, Object> phRow(String ref, YearMonth period, Integer dpd, String reason) {
+        Map<String, Object> m = new LinkedHashMap<>();
+        m.put("ref", ref != null ? ref : "");
+        if (period != null) {
+            m.put("period", period.toString());
+        }
+        if (dpd != null) {
+            m.put("dpd", dpd);
+        }
+        if (reason != null) {
+            m.put("reason", reason);
+        }
+        return m;
+    }
+
     public record CcOverdueInput(boolean creditCard, BigDecimal overdueAmount, boolean duplicate) {
         public CcOverdueInput(boolean creditCard, BigDecimal overdueAmount) {
             this(creditCard, overdueAmount, false);
@@ -267,30 +282,21 @@ public class BureauMetricService {
             anyValidPeriod = true;
             YearMonth period = row.period();
             if (period.isBefore(earliest)) {
-                excluded.add(Map.of(
-                        "ref", ref, "period", period.toString(), "dpd", row.dpd(),
-                        "reason", "BEFORE_WINDOW"));
+                excluded.add(phRow(ref, period, row.dpd(), "BEFORE_WINDOW"));
                 continue;
             }
             if (period.isAfter(asOfYm)) {
-                excluded.add(Map.of(
-                        "ref", ref, "period", period.toString(), "dpd", row.dpd(),
-                        "reason", "AFTER_ASOF_MONTH"));
+                excluded.add(phRow(ref, period, row.dpd(), "AFTER_ASOF_MONTH"));
                 continue;
             }
             if (row.dpd() == null) {
-                excluded.add(Map.of(
-                        "ref", ref, "period", period.toString(),
-                        "reason", "DPD_MISSING"));
+                excluded.add(phRow(ref, period, null, "DPD_MISSING"));
                 continue;
             }
             if (max == null || row.dpd() > max) {
                 max = row.dpd();
             }
-            included.add(Map.of(
-                    "ref", ref,
-                    "period", period.toString(),
-                    "dpd", row.dpd()));
+            included.add(phRow(ref, period, row.dpd(), null));
         }
 
         if (!anyValidPeriod) {
