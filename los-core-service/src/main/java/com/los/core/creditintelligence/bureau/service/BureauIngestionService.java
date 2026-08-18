@@ -7,6 +7,8 @@ import com.los.core.model.entity.LoanApplication;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
@@ -55,16 +57,19 @@ public class BureauIngestionService {
 
     /**
      * Ingest after bureau pull. Never throws to caller — logs and swallows.
+     * Runs in {@code REQUIRES_NEW} so a normalizer failure cannot mark the bureau-pull
+     * transaction rollback-only (that previously discarded the successful provider parse).
      */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void ingestFromPull(
             LoanApplication app,
             Map<String, Object> reportData,
             String transactionId,
             UUID kycStepResultId) {
+        if (app == null || !isEnabledFor(app)) {
+            return;
+        }
         try {
-            if (app == null || !isEnabledFor(app)) {
-                return;
-            }
             normalizationService.normalize(
                     app.getId(),
                     properties.getDefaultTenantId(),
@@ -76,7 +81,8 @@ public class BureauIngestionService {
                     app.getId(), transactionId);
         } catch (Exception e) {
             log.warn("Bureau canonicalization failed (non-fatal) for application {}: {}",
-                    app != null ? app.getId() : null, e.getMessage());
+                    app.getId(), e.toString(), e);
+            throw e instanceof RuntimeException re ? re : new IllegalStateException(e);
         }
     }
 

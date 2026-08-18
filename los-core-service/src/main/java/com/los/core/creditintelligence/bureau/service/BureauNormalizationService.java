@@ -69,7 +69,8 @@ public class BureauNormalizationService {
         UUID tid = tenantId != null ? tenantId : properties.getDefaultTenantId();
         String providerCode = provider != null ? provider.toUpperCase(Locale.ROOT) : "EQUIFAX";
         Map<String, Object> data = reportData != null ? reportData : Map.of();
-
+        String stage = "start";
+        try {
         String idempotencyKey = buildIdempotencyKey(tid, applicationId, providerCode, transactionId, data);
         Optional<CiBureauReport> existing = reportRepository
                 .findByTenantIdAndApplicationIdAndIdempotencyKey(tid, applicationId, idempotencyKey);
@@ -81,6 +82,7 @@ public class BureauNormalizationService {
         }
 
         String checksum = contentHasher.hashMap(checksumPayload(data, transactionId));
+        stage = "source";
         var source = sourceRegistryService.createOrGet(
                 tid, applicationId, SourceType.CONSUMER_BUREAU.name(), providerCode,
                 "UNDERWRITING",
@@ -95,13 +97,16 @@ public class BureauNormalizationService {
                 ? "kyc_step_result:" + kycStepResultId
                 : "api_audit:" + (transactionId != null ? transactionId : "unknown");
         sourceRegistryService.createArtifact(source.getId(), contentRef, "application/json", checksum);
+        if (source.getId() == null) {
+            throw new IllegalStateException("ci_source_record id missing after save");
+        }
 
         String extractionStatus = str(data.get("tradelineExtractionStatus"));
         if (extractionStatus == null || extractionStatus.isBlank()) {
-            if (Boolean.TRUE.equals(data.get("simulated"))) {
-                extractionStatus = "MISSING";
-            } else if (data.get("accounts") instanceof List<?> list) {
+            if (data.get("accounts") instanceof List<?> list) {
                 extractionStatus = list.isEmpty() ? "EMPTY" : "OK";
+            } else if (Boolean.TRUE.equals(data.get("simulated"))) {
+                extractionStatus = "MISSING";
             } else {
                 extractionStatus = "ABSENT";
             }
@@ -145,6 +150,7 @@ public class BureauNormalizationService {
         }
         reportMeta.put("checksum", checksum);
 
+        stage = "report";
         CiBureauReport report = reportRepository.save(CiBureauReport.builder()
                 .tenantId(tid)
                 .applicationId(applicationId)
@@ -167,6 +173,7 @@ public class BureauNormalizationService {
         List<CiBureauTradeline> tradelines = new ArrayList<>();
         boolean persistTradelines = properties.getCanonicalization().getBureau().isPersistTradelines();
 
+        stage = "tradelines";
         if (tradelinesPresent && data.get("accounts") instanceof List<?> accounts) {
             int freshnessDays = properties.getCanonicalization().getBureau().getFreshnessDays();
             List<PendingTradeline> pending = new ArrayList<>();
@@ -205,8 +212,14 @@ public class BureauNormalizationService {
             persistProviderSummary(report, data);
         }
 
+        stage = "metrics";
         List<CiMetricResult> metrics = metricService.computeAndPersist(report, tradelines, data);
         return new NormalizationResult(report, tradelines, metrics, false);
+        } catch (RuntimeException e) {
+            log.warn("bureau-normalize failed stage={} app={} txn={}: {}",
+                    stage, applicationId, transactionId, e.toString(), e);
+            throw e;
+        }
     }
 
     private void persistInquiries(UUID reportId, Map<String, Object> data) {

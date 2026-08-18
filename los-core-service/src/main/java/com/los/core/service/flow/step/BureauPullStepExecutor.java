@@ -72,7 +72,9 @@ public class BureauPullStepExecutor implements IStepExecutor {
         KycStepResult latestBureauAttempt = kycStepResultRepository
                 .findTopByApplicationIdAndStepTypeOrderByCreatedAtDesc(applicationId, KycStepType.BUREAU_PULL)
                 .orElse(null);
-        if (latestBureauAttempt != null && latestBureauAttempt.getOutcome() == StepOutcome.SUCCESS) {
+        boolean forceFixtureIngest = context != null
+                && context.get(com.los.core.service.integration.providers.impl.EquifaxBureauProvider.FIXTURE_SOURCE_KEY) != null;
+        if (!forceFixtureIngest && latestBureauAttempt != null && latestBureauAttempt.getOutcome() == StepOutcome.SUCCESS) {
             Map<String, Object> reportData = latestBureauAttempt.getParsedData() != null
                     ? latestBureauAttempt.getParsedData()
                     : Map.of();

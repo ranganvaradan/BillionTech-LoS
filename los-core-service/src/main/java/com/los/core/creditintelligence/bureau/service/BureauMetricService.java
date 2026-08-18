@@ -1379,6 +1379,9 @@ public class BureauMetricService {
     }
 
     private static CiMetricResult toMetric(CiBureauReport report, String code, ScalarEvaluation eval) {
+        if (eval == null) {
+            return insufficient(report, code, "EVALUATION_NULL");
+        }
         Map<String, Object> evidence = baseEvidence(report);
         if (eval.evidence() != null) {
             evidence.putAll(eval.evidence());
@@ -1442,7 +1445,9 @@ public class BureauMetricService {
                 .includedReferences(included)
                 .excludedReferences(excluded)
                 .unknownCount(unknownCount)
-                .sourceRecordIds(List.of(report.getSourceRecordId().toString()))
+                .sourceRecordIds(report.getSourceRecordId() != null
+                        ? List.of(report.getSourceRecordId().toString())
+                        : List.of())
                 .evidence(evidence)
                 .metadata(Map.of(
                         "liveDefinition", LiveAccountDefinition.BUREAU_LIVE_ACCOUNT_DEFINITION_V1,
