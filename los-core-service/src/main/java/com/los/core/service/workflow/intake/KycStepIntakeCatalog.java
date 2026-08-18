@@ -83,34 +83,11 @@ public final class KycStepIntakeCatalog {
         }
         String step = stepName.trim().toUpperCase();
         return switch (step) {
-            case "PAN_VERIFY" -> hasAny(payload, "panNumber", "pan");
-            case "AADHAAR_OTP" -> hasAny(payload, "aadhaarNumber", "aadhaarLast4", "aadhaar");
-            case "VOTER_ID_VERIFY" -> hasAny(payload, "epicNo", "voterId");
-            case "DL_VERIFY" -> hasAny(payload, "dlNo", "drivingLicenseNumber", "dlNumber");
-            case "GSTIN_VERIFY" -> hasAny(payload, "gstin");
-            case "UDYAM_VERIFY" -> hasAny(payload, "udyamRegistrationNo", "udyam", "udyamNumber");
-            case "BANK_PENNY_DROP" -> hasAny(payload, "accountNumber", "bankAccountNumber")
-                    && hasAny(payload, "ifsc");
-            case "CIN_MCA21" -> hasAny(payload, "cin");
-            case "MNRL" -> hasAny(payload, "mobile", "phone");
             // Borrower portal credentials only — staff Run KYC reuses SUCCESS result (no password in payload).
             case "ITR_RETURN_FORMS" -> true;
             // Borrower multi-PDF + GSTIN + consent; staff reuses latest phase result.
             case "GST_ANALYSIS" -> true;
-            default -> true;
+            default -> com.los.core.service.loan.ApplicantIdentityResolver.hasCanonicalExecutionValue(step, payload);
         };
-    }
-
-    private static boolean hasAny(Map<String, Object> payload, String... keys) {
-        if (payload == null) {
-            return false;
-        }
-        for (String key : keys) {
-            Object value = payload.get(key);
-            if (value != null && !String.valueOf(value).trim().isEmpty()) {
-                return true;
-            }
-        }
-        return false;
     }
 }

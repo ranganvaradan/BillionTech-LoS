@@ -288,6 +288,60 @@ class EquifaxProviderAvailabilityP03Test {
         assertThat(r.errorMessage()).contains("PROVIDER_UNAVAILABLE");
     }
 
+    @Test
+    void fixtureKeyIgnoredWhenInternalIngestDisabled() {
+        clearCredentials();
+        integrationProperties.getEquifax().setSimulation(false);
+        integrationProperties.getEquifax().setInternalFixtureIngestEnabled(false);
+
+        IBureauProvider.BureauPullResult r = provider.pullReport(Map.of(
+                "name", "Test",
+                "panNumber", "ABCDE1234F",
+                EquifaxBureauProvider.FIXTURE_SOURCE_KEY, EquifaxBureauProvider.FIXTURE_CLASSPATH_SAMPLE));
+
+        assertThat(r.success()).isFalse();
+        assertThat(r.errorMessage()).contains("PROVIDER_UNAVAILABLE");
+        assertThat(r.reportData().get("simulated")).isEqualTo(false);
+    }
+
+    @Test
+    void internalFixtureIngestUsesClasspathXmlAtProviderBoundary() {
+        clearCredentials();
+        integrationProperties.getEquifax().setSimulation(false);
+        integrationProperties.getEquifax().setInternalFixtureIngestEnabled(true);
+
+        IBureauProvider.BureauPullResult r = provider.pullReport(Map.of(
+                "name", "Test",
+                "panNumber", "ABCDE1234F",
+                EquifaxBureauProvider.FIXTURE_SOURCE_KEY, EquifaxBureauProvider.FIXTURE_CLASSPATH_SAMPLE));
+
+        assertThat(r.success()).isTrue();
+        assertThat(r.creditScore()).isPositive();
+        assertThat(r.reportData().get("simulated")).isEqualTo(true);
+        assertThat(r.reportData().get("dataProvenance"))
+                .isEqualTo(EquifaxBureauProvider.PROVENANCE_SIMULATED);
+        assertThat(r.reportData().get("simulatedSource"))
+                .isEqualTo("simulated/equifax-sample-inquiry-response.xml");
+    }
+
+    @Test
+    void liveCredentialsWinOverInternalFixtureRequest() throws Exception {
+        configureCredentials();
+        integrationProperties.getEquifax().setInternalFixtureIngestEnabled(true);
+        String xml = loadSampleXml();
+        provider.setHttpTransportForTests((req, cfg) -> mockHttp(200, xml));
+
+        IBureauProvider.BureauPullResult r = provider.pullReport(Map.of(
+                "name", "Test",
+                "panNumber", "ABCDE1234F",
+                EquifaxBureauProvider.FIXTURE_SOURCE_KEY, EquifaxBureauProvider.FIXTURE_CLASSPATH_SAMPLE));
+
+        assertThat(r.success()).isTrue();
+        assertThat(r.reportData().get("dataProvenance"))
+                .isEqualTo(EquifaxBureauProvider.PROVENANCE_PROVIDER);
+        assertThat(r.reportData().get("simulated")).isEqualTo(false);
+    }
+
     private void clearCredentials() {
         IntegrationProperties.EquifaxProperties eq = integrationProperties.getEquifax();
         eq.setCustomerId("");

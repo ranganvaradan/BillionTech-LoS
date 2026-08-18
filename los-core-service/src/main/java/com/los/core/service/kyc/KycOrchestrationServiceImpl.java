@@ -137,6 +137,20 @@ public class KycOrchestrationServiceImpl implements IKycOrchestrationService {
         } else {
             stepResult.setOutcome(StepOutcome.FAILURE);
             stepResult.setErrorMessage(routeResult.errorMessage());
+            if (routeResult.providerName() != null) {
+                try {
+                    stepResult.setProvider(ProviderType.valueOf(routeResult.providerName()));
+                } catch (IllegalArgumentException ignored) {
+                    // keep default
+                }
+            }
+            Map<String, Object> failData = routeResult.resultData();
+            if (failData != null) {
+                Object txn = failData.get("transactionId");
+                if (txn != null && !String.valueOf(txn).isBlank()) {
+                    stepResult.setTransactionId(String.valueOf(txn));
+                }
+            }
         }
 
         stepResult.setCompletedAt(Instant.now());

@@ -58,6 +58,8 @@ public class EquifaxBureauProvider implements IBureauProvider {
     public static final String PROVENANCE_SIMULATED = "SIMULATED";
     public static final String ERR_PROVIDER_UNAVAILABLE =
             "PROVIDER_UNAVAILABLE: Equifax credentials not configured";
+    public static final String FIXTURE_SOURCE_KEY = "equifaxFixtureSource";
+    public static final String FIXTURE_CLASSPATH_SAMPLE = "CLASSPATH_SAMPLE";
 
     private final IntegrationProperties integrationProperties;
     private final ApiAuditLogRepository apiAuditLogRepository;
@@ -99,8 +101,13 @@ public class EquifaxBureauProvider implements IBureauProvider {
         String transactionId = "EQX-" + UUID.randomUUID().toString().substring(0, 8);
 
         // BUREAU-P0-3 availability contract — never infer simulation from missing credentials.
+        // Live credentials always win over any fixture request (production cannot be diverted).
         if (config.isConfigured()) {
             return pullLive(borrowerInfo, config, transactionId);
+        }
+        if (internalClasspathFixtureRequested(borrowerInfo, config)) {
+            log.info("[Equifax] INTERNAL fixture ingest — classpath sample XML at provider-response boundary");
+            return simulatedFallback(borrowerInfo, transactionId);
         }
         if (config.isSimulation()) {
             log.info("[Equifax] Explicit simulation enabled — returning SIMULATED fixture (not PROVIDER)");
@@ -108,6 +115,19 @@ public class EquifaxBureauProvider implements IBureauProvider {
         }
         log.warn("[Equifax] Credentials not configured and simulation disabled — PROVIDER_UNAVAILABLE");
         return providerUnavailable(transactionId);
+    }
+
+    private static boolean internalClasspathFixtureRequested(
+            Map<String, Object> borrowerInfo,
+            IntegrationProperties.EquifaxProperties config) {
+        if (config == null || !config.isInternalFixtureIngestEnabled()) {
+            return false;
+        }
+        if (borrowerInfo == null) {
+            return false;
+        }
+        Object source = borrowerInfo.get(FIXTURE_SOURCE_KEY);
+        return source != null && FIXTURE_CLASSPATH_SAMPLE.equalsIgnoreCase(String.valueOf(source).trim());
     }
 
     private static BureauPullResult providerUnavailable(String transactionId) {

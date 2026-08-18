@@ -176,10 +176,14 @@ log.info("[Karza][RESPONSE] Time Taken: {} ms", durationMs);
             }
             case BANK_PENNY_DROP -> {
                 String accountNumber = requiredString(payload, "accountNumber", "bankAccountNumber");
-                String ifsc = requiredString(payload, "ifsc");
+                String ifsc = requiredString(payload, "ifsc", "ifscCode");
                 Map<String, Object> bankRequest = mapWithConsent("accountNumber", accountNumber);
                 bankRequest.put("ifsc", ifsc.toUpperCase(Locale.ROOT));
                 yield bankRequest;
+            }
+            case AADHAAR_OTP -> {
+                String aadhaar = requiredString(payload, "aadhaarNumber", "aadhaar");
+                yield mapWithConsent("aadhaarNumber", aadhaar);
             }
             case MNRL -> {
                 String mobile = requiredString(payload, "mobile", "phone");

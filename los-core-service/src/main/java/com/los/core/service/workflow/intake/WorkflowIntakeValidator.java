@@ -464,22 +464,7 @@ public class WorkflowIntakeValidator {
             Map<String, Object> personal,
             Map<String, Object> business,
             LoanApplication app) {
-        return switch (fieldKey) {
-            case "panNumber" -> app != null
-                    ? ApplicantIdentityResolver.resolvePanNumber(app)
-                    : firstNonBlank(personal.get("panNumber"), personal.get("pan"), personal.get("panNo"));
-            case "aadhaar" -> firstNonBlank(
-                    personal.get("aadhaarNumber"),
-                    personal.get("aadhaarLast4"),
-                    personal.get("aadhaar"));
-            case "voterId" -> firstNonBlank(personal.get("voterId"), personal.get("epicNo"));
-            case "dlNumber" -> firstNonBlank(personal.get("dlNumber"), personal.get("dlNo"));
-            case "gstin" -> firstNonBlank(business.get("gstin"), personal.get("gstin"));
-            case "cin" -> firstNonBlank(business.get("cin"), personal.get("cin"));
-            case "udyam" -> firstNonBlank(business.get("udyam"), personal.get("udyam"));
-            case "bankAccountNumber" -> firstNonBlank(personal.get("bankAccountNumber"), business.get("bankAccountNumber"));
-            default -> stringValue(personal.get(fieldKey));
-        };
+        return ApplicantIdentityResolver.resolveIntakeField(fieldKey, personal, business, app);
     }
 
     private static Set<String> groupedStepNames(Map<String, Object> intakeConfig) {
@@ -513,16 +498,6 @@ public class WorkflowIntakeValidator {
 
     private static String stringValue(Object o) {
         return o == null ? "" : String.valueOf(o).trim();
-    }
-
-    private static String firstNonBlank(Object... values) {
-        for (Object v : values) {
-            String s = stringValue(v);
-            if (!s.isBlank()) {
-                return s;
-            }
-        }
-        return "";
     }
 
     private static boolean boolValue(Object o) {

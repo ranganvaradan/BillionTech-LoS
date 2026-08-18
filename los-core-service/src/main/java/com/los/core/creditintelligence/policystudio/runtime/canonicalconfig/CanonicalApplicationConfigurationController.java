@@ -14,6 +14,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -78,6 +79,28 @@ public class CanonicalApplicationConfigurationController {
                 : workflowConfigRepository.findById(app.getWorkflowId()).orElse(null);
         out.put("existingApplicationClass", CanonicalApplicationPinClassifier.classify(
                 app, category, applicability, workflow).name());
+        return out;
+    }
+
+    /**
+     * Persist the existing resolver freeze without underwriting, policy, or scorecard execution.
+     */
+    @PostMapping("/applications/{applicationId}/canonical-configuration/freeze")
+    public Map<String, Object> freeze(
+            @PathVariable UUID applicationId,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        assertInternalToken(token);
+        LoanApplication app = applicationRepository.findById(applicationId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "application not found"));
+        CanonicalApplicationConfigurationResolution resolution = freezeService.freezeObservably(app);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("applicationId", applicationId.toString());
+        out.put("freezeInvoked", true);
+        out.put("liveDecisionUnchanged", true);
+        out.put("canonicalRuntimeUsedForLiveDecision", false);
+        out.put("policyExecuted", false);
+        out.put("scorecardExecuted", false);
+        out.putAll(resolution.toMap());
         return out;
     }
 

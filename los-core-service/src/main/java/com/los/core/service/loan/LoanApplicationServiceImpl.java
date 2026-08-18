@@ -160,7 +160,7 @@ public class LoanApplicationServiceImpl implements ILoanApplicationService {
                 .lmsProductCode(resolveApplicationLmsProductCode(request.getLoanProduct(), request.getLmsProductCode()))
                 .lmsTenureUnit(resolveApplicationLmsTenureUnit(request.getLoanProduct(), request.getLmsTenureUnit()))
                 .personalInfo(personal)
-                .businessInfo(request.getBusinessInfo())
+                .businessInfo(ApplicantIdentityResolver.canonicaliseBusinessInfo(request.getBusinessInfo()))
                 .financialInfo(request.getFinancialInfo())
                 .collateralInfo(request.getCollateralInfo() != null ? new HashMap<>(request.getCollateralInfo()) : null)
                 .status(ApplicationStatus.DRAFT)
@@ -319,7 +319,10 @@ public class LoanApplicationServiceImpl implements ILoanApplicationService {
             app.setPersonalInfo(ApplicantIdentityResolver.canonicalisePersonalInfo(
                     mergeJsonb(app.getPersonalInfo(), request.getPersonalInfo())));
         }
-        if (request.getBusinessInfo() != null) app.setBusinessInfo(mergeJsonb(app.getBusinessInfo(), request.getBusinessInfo()));
+        if (request.getBusinessInfo() != null) {
+            app.setBusinessInfo(ApplicantIdentityResolver.canonicaliseBusinessInfo(
+                    mergeJsonb(app.getBusinessInfo(), request.getBusinessInfo())));
+        }
         if (request.getFinancialInfo() != null) app.setFinancialInfo(mergeJsonb(app.getFinancialInfo(), request.getFinancialInfo()));
         if (request.getCollateralInfo() != null) app.setCollateralInfo(mergeJsonb(app.getCollateralInfo(), request.getCollateralInfo()));
         if (request.getRemarks() != null) app.setRemarks(request.getRemarks());

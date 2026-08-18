@@ -152,6 +152,14 @@ public class IntegrationProperties {
          * Missing credentials alone must NOT enable simulation.
          */
         private boolean simulation = false;
+        /**
+         * INTERNAL/TEST-ONLY. Default false. Never infer from missing credentials.
+         * When true, a bureau pull whose payload includes
+         * {@code equifaxFixtureSource=CLASSPATH_SAMPLE} loads the certified classpath XML
+         * and runs the production parser. Live credentials still win. Client/production
+         * must leave this false.
+         */
+        private boolean internalFixtureIngestEnabled = false;
 
         /** True when all SOAP credential fields required for a live call are present. */
         public boolean isConfigured() {

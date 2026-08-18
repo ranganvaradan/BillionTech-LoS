@@ -237,6 +237,8 @@ los:
       read-timeout-ms: ${EQUIFAX_READ_TIMEOUT:60000}
       # BUREAU-P0-3: never infer simulation from missing credentials
       simulation: ${EQUIFAX_SIMULATION:false}
+      # INTERNAL/TEST-ONLY classpath XML ingest. Default false. Not a production fallback.
+      internal-fixture-ingest-enabled: ${EQUIFAX_INTERNAL_FIXTURE_INGEST:false}
 
     # Emsigner Digital Signing Provider
     emsigner:

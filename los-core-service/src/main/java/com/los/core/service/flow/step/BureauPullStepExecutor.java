@@ -118,6 +118,14 @@ public class BureauPullStepExecutor implements IStepExecutor {
         }
 
         Map<String, Object> borrowerInfo = ApplicantIdentityResolver.buildBureauBorrowerInfo(app);
+        if (context != null) {
+            Object fixtureSource = context.get(com.los.core.service.integration.providers.impl.EquifaxBureauProvider.FIXTURE_SOURCE_KEY);
+            if (fixtureSource != null && !String.valueOf(fixtureSource).isBlank()) {
+                borrowerInfo.put(
+                        com.los.core.service.integration.providers.impl.EquifaxBureauProvider.FIXTURE_SOURCE_KEY,
+                        String.valueOf(fixtureSource).trim());
+            }
+        }
 
         IIntegrationRouterService.BureauRouteResult bureauResult = integrationRouter.routeBureauPull(borrowerInfo);
 
