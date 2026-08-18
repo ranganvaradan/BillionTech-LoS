@@ -1,5 +1,6 @@
 package com.los.core.creditintelligence.config;
 
+import com.los.core.creditintelligence.policystudio.runtime.canonicalshadow.CanonicalShadowMode;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -13,6 +14,8 @@ public class CreditIntelligenceProperties {
 
     private Foundation foundation = new Foundation();
     private ShadowEvaluation shadowEvaluation = new ShadowEvaluation();
+    /** W11.3 — canonical shadow; never live authority. Default LEGACY_ONLY. */
+    private CanonicalShadow canonicalShadow = new CanonicalShadow();
     private SourceRegistry sourceRegistry = new SourceRegistry();
     private Canonicalization canonicalization = new Canonicalization();
     private Reconciliation reconciliation = new Reconciliation();
@@ -67,6 +70,19 @@ public class CreditIntelligenceProperties {
         private boolean async = false;
         /** KYC-5 — after-KYC Decision Policy shadow evaluation (never authoritative). */
         private boolean kycShadowEnabled = false;
+    }
+
+    @Data
+    public static class CanonicalShadow {
+        /**
+         * LEGACY_ONLY (default) or LEGACY_WITH_CANONICAL_SHADOW.
+         * CANONICAL_LIVE is not implemented in W11.3.
+         */
+        private CanonicalShadowMode mode = CanonicalShadowMode.LEGACY_ONLY;
+        private List<String> tenantIds = List.of();
+        private List<String> productCodes = List.of();
+        private List<String> customerCategoryIds = List.of();
+        private boolean async = false;
     }
 
     @Data

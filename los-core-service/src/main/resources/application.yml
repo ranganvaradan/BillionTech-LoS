@@ -409,6 +409,12 @@ credit-intelligence:
     tenant-ids: []
     product-codes: []
     async: false
+  canonical-shadow:
+    mode: ${CREDIT_INTELLIGENCE_CANONICAL_SHADOW_MODE:LEGACY_ONLY}
+    tenant-ids: []
+    product-codes: []
+    customer-category-ids: []
+    async: false
   source-registry:
     enabled: false
   canonicalization:

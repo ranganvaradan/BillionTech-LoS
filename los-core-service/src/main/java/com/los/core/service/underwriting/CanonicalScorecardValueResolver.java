@@ -61,11 +61,20 @@ public final class CanonicalScorecardValueResolver {
     }
 
     public static ResolveOutcome resolveCanonical(String canonicalParameterId, EvaluationContext evalCtx) {
+        return resolveCanonical(canonicalParameterId, evalCtx, ExecutionCapabilityAuthority.require());
+    }
+
+    /** Explicit spine — used by canonical shadow so it never depends on a different process-wide instance. */
+    public static ResolveOutcome resolveCanonical(
+            String canonicalParameterId,
+            EvaluationContext evalCtx,
+            CanonicalParameterExecutionService spine) {
         if (canonicalParameterId == null || canonicalParameterId.isBlank()) {
             return unavailable(null, ExecutionStatus.NOT_EXECUTABLE, "Blank canonical parameter id");
         }
-        CanonicalParameterExecutionService spine = ExecutionCapabilityAuthority.require();
-        ExecutionResult er = spine.resolveAndExecute(canonicalParameterId.trim(), evalCtx);
+        CanonicalParameterExecutionService exec = spine == null
+                ? ExecutionCapabilityAuthority.require() : spine;
+        ExecutionResult er = exec.resolveAndExecute(canonicalParameterId.trim(), evalCtx);
         return fromExecution(er);
     }
 

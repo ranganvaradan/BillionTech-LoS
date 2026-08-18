@@ -1,0 +1,14 @@
+package com.los.core.creditintelligence.policystudio.runtime.canonicalshadow;
+
+public enum CanonicalShadowFailureCode {
+    SHADOW_NOT_ENABLED,
+    SCOPE_NOT_ENABLED,
+    FROZEN_PACKAGE_NOT_RESOLVED,
+    EVALUATION_AS_OF_MISSING,
+    POLICY_GRAPH_NOT_PINNED,
+    POLICY_NOT_EXECUTABLE,
+    SCORECARD_NOT_RESOLVABLE,
+    SCORECARD_NOT_EXECUTABLE,
+    BUREAU_REPORT_NOT_PINNED,
+    CANONICAL_RUNTIME_ERROR
+}

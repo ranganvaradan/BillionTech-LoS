@@ -6,13 +6,16 @@ import com.los.core.creditintelligence.domain.CiPolicyVersion;
 import com.los.core.creditintelligence.policystudio.runtime.canonicalconfig.CanonicalApplicationConfigurationFreezeService;
 import com.los.core.creditintelligence.policystudio.runtime.canonicalconfig.CanonicalApplicationConfigurationResolution;
 import com.los.core.creditintelligence.policystudio.runtime.canonicalconfig.CanonicalResolutionStatus;
+import com.los.core.creditintelligence.policystudio.runtime.canonicalshadow.CanonicalShadowUnderwritingService;
 import com.los.core.creditintelligence.service.CreditIntelligenceFoundationService;
 import com.los.core.creditintelligence.service.PolicyVersionResolver;
 import com.los.core.creditintelligence.service.ShadowCreditEvaluationService;
 import com.los.core.creditintelligence.service.UnderwritingFactSnapshotBuilder;
 import com.los.core.model.entity.LoanApplication;
+import com.los.core.model.entity.UnderwritingEvaluation;
 import com.los.core.model.enums.BorrowerType;
 import com.los.core.service.credit.EffectiveUnderwritingContext;
+import com.los.core.service.underwriting.MultiRuleEvalResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -55,6 +58,8 @@ class CreditIntelligenceFoundationServiceTest {
     private com.los.core.creditintelligence.policystudio.lifecycle.ShadowPolicyRoutingService shadowPolicyRoutingService;
     @Mock
     private CanonicalApplicationConfigurationFreezeService canonicalApplicationConfigurationFreezeService;
+    @Mock
+    private CanonicalShadowUnderwritingService canonicalShadowUnderwritingService;
 
     private CreditIntelligenceProperties properties;
     private CreditIntelligenceFoundationService service;
@@ -66,7 +71,8 @@ class CreditIntelligenceFoundationServiceTest {
                 properties, snapshotBuilder, policyVersionResolver,
                 shadowCreditEvaluationService, creditIntelligenceShadowExecutor,
                 gstIngestionService, bankingIngestionService, taxIngestionService,
-                shadowPolicyRoutingService, canonicalApplicationConfigurationFreezeService);
+                shadowPolicyRoutingService, canonicalApplicationConfigurationFreezeService,
+                canonicalShadowUnderwritingService);
     }
 
     @Test
@@ -139,5 +145,39 @@ class CreditIntelligenceFoundationServiceTest {
 
         assertTrue(prep.isPresent());
         verify(policyVersionResolver).resolveAndFreeze(app, "u1");
+    }
+
+    @Test
+    void afterProductionDispatchesCanonicalShadowEvenWhenLegacyShadowDisabled() {
+        LoanApplication app = LoanApplication.builder()
+                .id(UUID.randomUUID())
+                .borrowerType(BorrowerType.INDIVIDUAL)
+                .loanProduct("PL")
+                .creditDecision("APPROVED")
+                .build();
+        UnderwritingEvaluation eval = UnderwritingEvaluation.builder().id(UUID.randomUUID()).build();
+        MultiRuleEvalResult multi = new MultiRuleEvalResult(List.of(), "APPROVED", "APPROVED", 80, List.of());
+
+        service.afterProduction(null, app, eval, multi, "APPROVED");
+
+        verify(canonicalShadowUnderwritingService).afterLiveDecision(app, eval, multi, "APPROVED");
+        verify(shadowCreditEvaluationService, never()).evaluate(any(), any(), any(), any(), any());
+        assertTrue("APPROVED".equals(app.getCreditDecision()));
+    }
+
+    @Test
+    void canonicalShadowFailureDoesNotPropagateFromAfterProduction() {
+        LoanApplication app = LoanApplication.builder()
+                .id(UUID.randomUUID())
+                .borrowerType(BorrowerType.INDIVIDUAL)
+                .loanProduct("PL")
+                .creditDecision("REJECTED")
+                .build();
+        doThrow(new IllegalStateException("canonical shadow boom"))
+                .when(canonicalShadowUnderwritingService).afterLiveDecision(any(), any(), any(), any());
+
+        service.afterProduction(null, app, null, null, "REJECTED");
+
+        assertTrue("REJECTED".equals(app.getCreditDecision()));
     }
 }

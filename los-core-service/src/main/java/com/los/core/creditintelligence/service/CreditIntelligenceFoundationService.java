@@ -13,6 +13,7 @@ import com.los.core.model.entity.LoanApplication;
 import com.los.core.model.entity.UnderwritingEvaluation;
 import com.los.core.service.credit.EffectiveUnderwritingContext;
 import com.los.core.service.underwriting.MultiRuleEvalResult;
+import com.los.core.creditintelligence.policystudio.runtime.canonicalshadow.CanonicalShadowUnderwritingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -41,6 +42,7 @@ public class CreditIntelligenceFoundationService {
     private final TaxIngestionService taxIngestionService;
     private final ShadowPolicyRoutingService shadowPolicyRoutingService;
     private final CanonicalApplicationConfigurationFreezeService canonicalApplicationConfigurationFreezeService;
+    private final CanonicalShadowUnderwritingService canonicalShadowUnderwritingService;
 
     public record PrepResult(CiFactSnapshot snapshot, CiPolicyVersion policyVersion, UUID tenantId) {
     }
@@ -125,6 +127,7 @@ public class CreditIntelligenceFoundationService {
     /**
      * After production underwriting evaluation is recorded, optionally run shadow.
      * Never throws to caller. Never alters production outcome / CAM / sanction.
+     * Canonical W11.3 shadow is independent of the legacy ShadowCreditEvaluationService flag.
      */
     public void afterProduction(
             PrepResult prep,
@@ -132,7 +135,11 @@ public class CreditIntelligenceFoundationService {
             UnderwritingEvaluation productionEval,
             MultiRuleEvalResult multi,
             String productionOutcome) {
-        if (prep == null || app == null) {
+        if (app == null) {
+            return;
+        }
+        dispatchCanonicalShadow(app, productionEval, multi, productionOutcome);
+        if (prep == null) {
             return;
         }
         if (!isShadowEnabledFor(app)) {
@@ -174,6 +181,25 @@ public class CreditIntelligenceFoundationService {
             }
         } catch (Exception ex) {
             log.warn("afterProduction shadow dispatch failed for {}: {}", app.getId(), ex.getMessage());
+        }
+    }
+
+    private void dispatchCanonicalShadow(
+            LoanApplication app,
+            UnderwritingEvaluation productionEval,
+            MultiRuleEvalResult multi,
+            String productionOutcome) {
+        try {
+            Runnable task = () -> canonicalShadowUnderwritingService.afterLiveDecision(
+                    app, productionEval, multi, productionOutcome);
+            CreditIntelligenceProperties.CanonicalShadow cfg = properties.getCanonicalShadow();
+            if (cfg != null && cfg.isAsync()) {
+                creditIntelligenceShadowExecutor.submit(task);
+            } else {
+                task.run();
+            }
+        } catch (Exception ex) {
+            log.warn("canonical shadow dispatch failed for {}: {}", app.getId(), ex.getMessage());
         }
     }
 }
