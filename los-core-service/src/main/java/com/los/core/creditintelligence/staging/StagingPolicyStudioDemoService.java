@@ -607,12 +607,14 @@ public class StagingPolicyStudioDemoService {
                             : "Rejected during Credit Head review";
                 }
             }
-            case "IGNORE", "IGNORE_FOR_NOW", "IGNORE_FOR_AUTOMATION" -> {
+            case "IGNORE", "IGNORE_FOR_NOW", "IGNORE_FOR_AUTOMATION", "DEFER_SOURCE_NOT_PROVEN" -> {
                 reviewState = ReviewState.REJECTED.name();
                 if (reason == null) {
-                    reason = "IGNORE_FOR_AUTOMATION".equals(action)
+                    reason = "DEFER_SOURCE_NOT_PROVEN".equals(action)
+                            ? "SOURCE_NOT_PROVEN — configured provider does not prove this requirement; retained in policy history"
+                            : ("IGNORE_FOR_AUTOMATION".equals(action)
                             ? "Ignored for automation — retained as policy evidence, excluded from Needs Input"
-                            : "Ignored for now — retained for draft, excluded from activation";
+                            : "Ignored for now — retained for draft, excluded from activation");
                 }
             }
             case "KEEP_AS_POLICY_REQUIREMENT" -> {
