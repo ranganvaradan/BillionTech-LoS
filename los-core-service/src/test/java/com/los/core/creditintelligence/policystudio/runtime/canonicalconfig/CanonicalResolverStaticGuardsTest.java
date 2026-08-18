@@ -46,6 +46,9 @@ class CanonicalResolverStaticGuardsTest {
         assertThat(all).contains("CUSTOMER_CATEGORY_NOT_PINNED");
         assertThat(all).contains("WORKFLOW_VERSION_NOT_PINNED");
         assertThat(all).contains("wall-clock now forbidden");
+        String app = Files.readString(Path.of(
+                "src/main/java/com/los/core/LosCoreServiceApplication.java"));
+        assertThat(app).contains("com.los.core.creditintelligence.policystudio.runtime.canonicalconfig");
     }
 
     @Test
