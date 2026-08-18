@@ -1484,11 +1484,10 @@ public class PolicyStudioTestExperienceService {
     }
 
     private static String overallFromCounts(int fail, int refer, int di, int pass) {
+        // Same precedence as CanonicalPolicyResult.aggregate: FAIL > any DATA_INSUFFICIENT > REFER > PASS.
         if (fail > 0) return "FAIL";
-        if (di > 0 && pass + refer == 0) return "DATA INSUFFICIENT";
-        int total = Math.max(1, pass + refer + di + fail);
-        if (di > 0 && di * 2 >= total) return "DATA INSUFFICIENT";
-        if (refer > 0 || di > 0) return "REFER";
+        if (di > 0) return "DATA INSUFFICIENT";
+        if (refer > 0) return "REFER";
         return "PASS";
     }
 

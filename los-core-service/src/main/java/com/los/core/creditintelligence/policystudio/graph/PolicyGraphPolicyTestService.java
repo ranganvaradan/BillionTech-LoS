@@ -102,6 +102,7 @@ public class PolicyGraphPolicyTestService {
         List<Map<String, Object>> rules = (List<Map<String, Object>>) gate.get("rules");
         List<Map<String, Object>> results = new ArrayList<>();
         List<Map<String, Object>> honesty = new ArrayList<>();
+        List<CanonicalRuleResult> canonicalResults = new ArrayList<>();
 
         int skippedNonParticipating = 0;
         for (Map<String, Object> rule : rules) {
@@ -121,6 +122,7 @@ public class PolicyGraphPolicyTestService {
                     new CanonicalPolicyRuntime.RuleSpec(ruleKey, null, expr, onMissing),
                     spine,
                     asOfRes.asOf());
+            canonicalResults.add(rr);
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("ruleKey", rule.get("ruleKey"));
             row.put("systemRuleId", rule.get("systemRuleId"));
@@ -142,6 +144,8 @@ public class PolicyGraphPolicyTestService {
             }
         }
         out.put("ruleResults", results);
+        out.put("overall", com.los.core.creditintelligence.policystudio.runtime
+                .CanonicalPolicyResult.aggregate(canonicalResults).name());
         out.put("participatingRuleCount", results.size());
         out.put("skippedNonParticipatingRuleCount", skippedNonParticipating);
         out.put("valueHonesty", honesty);
