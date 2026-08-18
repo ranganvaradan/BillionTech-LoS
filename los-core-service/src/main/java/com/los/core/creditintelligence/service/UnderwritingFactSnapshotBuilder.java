@@ -47,6 +47,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -144,6 +147,13 @@ public class UnderwritingFactSnapshotBuilder {
     private final com.los.core.creditintelligence.bureau.repository.CiBureauReportSummaryRepository reportSummaryRepository;
     private final com.los.core.creditintelligence.bureau.repository.CiBureauScoringElementRepository scoringElementRepository;
 
+    /**
+     * Used to detach frozen facts from the persistence context so later CAM / decision
+     * flushes cannot UPDATE {@code ci_underwriting_fact} rows. Optional in unit tests.
+     */
+    @PersistenceContext
+    private EntityManager entityManager;
+
     public record FoundationPrep(CiFactSnapshot snapshot, List<CiUnderwritingFact> facts) {
     }
 
@@ -240,10 +250,13 @@ public class UnderwritingFactSnapshotBuilder {
         sourceContext.put("sourceRecordIds", sourceIds);
         String sourceContextHash = contentHasher.hashMap(sourceContext);
 
-        snapshot.setStatus(SnapshotStatus.FROZEN.name());
         snapshot.setFactsHash(factsHash);
         snapshot.setSourceContextHash(sourceContextHash);
+        // Persist facts while BUILDING, then detach so freeze/CAM flushes cannot UPDATE them.
+        persistAndDetachFactsBeforeFreeze(saved);
+        snapshot.setStatus(SnapshotStatus.FROZEN.name());
         snapshot = snapshotRepository.save(snapshot);
+        detachSnapshot(snapshot);
 
         auditService.logEvent(
                 applicationId,
@@ -259,6 +272,45 @@ public class UnderwritingFactSnapshotBuilder {
                 "Fact snapshot frozen for credit intelligence");
 
         return new FoundationPrep(snapshot, saved);
+    }
+
+    /**
+     * Hibernate JSON columns on managed fact entities are often marked dirty on the next
+     * flush. After freeze, those UPDATEs hit {@code ci_prevent_frozen_fact_mutation}.
+     * Flush while BUILDING, then detach so CAM / decision persistence cannot mutate facts.
+     */
+    public void persistAndDetachFactsBeforeFreeze(List<CiUnderwritingFact> facts) {
+        if (entityManager == null) {
+            return;
+        }
+        entityManager.flush();
+        detachAll(facts);
+    }
+
+    public void detachSnapshot(CiFactSnapshot snapshot) {
+        if (entityManager == null || snapshot == null) {
+            return;
+        }
+        if (entityManager.contains(snapshot)) {
+            entityManager.detach(snapshot);
+        }
+    }
+
+    /** Test-visible: facts must leave the persistence context before CAM/decision flush. */
+    void detachFrozenFacts(CiFactSnapshot snapshot, List<CiUnderwritingFact> facts) {
+        persistAndDetachFactsBeforeFreeze(facts);
+        detachSnapshot(snapshot);
+    }
+
+    private void detachAll(List<CiUnderwritingFact> facts) {
+        if (entityManager == null || facts == null) {
+            return;
+        }
+        for (CiUnderwritingFact fact : facts) {
+            if (fact != null && entityManager.contains(fact)) {
+                entityManager.detach(fact);
+            }
+        }
     }
 
     /**

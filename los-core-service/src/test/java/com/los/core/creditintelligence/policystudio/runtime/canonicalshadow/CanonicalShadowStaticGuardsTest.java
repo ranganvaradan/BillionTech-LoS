@@ -17,7 +17,8 @@ class CanonicalShadowStaticGuardsTest {
     private static final List<Path> SHADOW_PATH = List.of(
             Path.of("src/main/java/com/los/core/creditintelligence/policystudio/runtime/canonicalshadow/CanonicalShadowUnderwritingService.java"),
             Path.of("src/main/java/com/los/core/creditintelligence/policystudio/runtime/canonicalshadow/CanonicalShadowContextFactory.java"),
-            Path.of("src/main/java/com/los/core/creditintelligence/policystudio/runtime/canonicalshadow/CanonicalShadowScorecardExecutor.java")
+            Path.of("src/main/java/com/los/core/creditintelligence/policystudio/runtime/canonicalshadow/CanonicalShadowScorecardExecutor.java"),
+            Path.of("src/main/java/com/los/core/creditintelligence/policystudio/parameters/execution/PersistedDerivedMetricSpine.java")
     );
 
     @Test

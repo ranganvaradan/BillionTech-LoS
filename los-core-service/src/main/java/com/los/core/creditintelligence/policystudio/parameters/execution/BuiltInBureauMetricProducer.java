@@ -93,15 +93,32 @@ public final class BuiltInBureauMetricProducer implements ParameterProducer {
             return valueResult(canonicalParameterId, fromFact, "facts", "CONTEXT_FACT_EXACT_ID");
         }
         @SuppressWarnings("unchecked")
-        Map<String, Object> precomputed = ctx.entities().get("precomputedMetrics") instanceof Map<?, ?> m
-                ? (Map<String, Object>) m : Map.of();
+        Map<String, Object> precomputed = ctx.entities().get(PersistedDerivedMetricSpine.PRECOMPUTED_METRICS)
+                instanceof Map<?, ?> m ? (Map<String, Object>) m : Map.of();
         if (precomputed.containsKey(canonicalParameterId) && precomputed.get(canonicalParameterId) != null) {
             Object v = precomputed.get(canonicalParameterId);
-            // Exact-ID assert
-            if (!precomputed.containsKey(canonicalParameterId)) {
-                return ExecutionResult.error(canonicalParameterId, "metricCode mismatch");
-            }
-            return valueResult(canonicalParameterId, v, "entities.precomputedMetrics", "PRECOMPUTED_EXACT_ID");
+            return valueResult(canonicalParameterId, v,
+                    "entities." + PersistedDerivedMetricSpine.PRECOMPUTED_METRICS,
+                    PersistedDerivedMetricSpine.SOURCE_PERSISTED_CANONICAL_DERIVED,
+                    persistedProvenance(ctx, canonicalParameterId));
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> statuses = ctx.entities().get(PersistedDerivedMetricSpine.PRECOMPUTED_METRIC_STATUSES)
+                instanceof Map<?, ?> m ? (Map<String, Object>) m : Map.of();
+        if (statuses.containsKey(canonicalParameterId)) {
+            String st = String.valueOf(statuses.get(canonicalParameterId));
+            Map<String, Object> prov = persistedProvenance(ctx, canonicalParameterId);
+            prov.put("persistedStatus", st);
+            return ExecutionResult.builder(canonicalParameterId)
+                    .status(ExecutionStatus.DATA_NOT_AVAILABLE)
+                    .producerType(ProducerType.BUILT_IN)
+                    .producerId(PRODUCER_ID)
+                    .capability(true)
+                    .reason("Persisted exact metricCode " + canonicalParameterId + " status=" + st
+                            + "; zero not invented")
+                    .provenance(prov)
+                    .exactProducerPath(PRODUCER_ID + " ← persisted[" + canonicalParameterId + "] (" + st + ")")
+                    .build();
         }
         return ExecutionResult.builder(canonicalParameterId)
                 .status(ExecutionStatus.DATA_NOT_AVAILABLE)
@@ -114,6 +131,11 @@ public final class BuiltInBureauMetricProducer implements ParameterProducer {
     }
 
     private static ExecutionResult valueResult(String id, Object value, String path, String sourceType) {
+        return valueResult(id, value, path, sourceType, Map.of());
+    }
+
+    private static ExecutionResult valueResult(
+            String id, Object value, String path, String sourceType, Map<String, Object> extraProvenance) {
         // Exact identity: path key must equal requested id (enforced by callers using id as map key).
         if (value == null) {
             return ExecutionResult.builder(id)
@@ -126,11 +148,17 @@ public final class BuiltInBureauMetricProducer implements ParameterProducer {
                     .build();
         }
         Map<String, Object> prov = new LinkedHashMap<>();
+        if (extraProvenance != null) {
+            prov.putAll(extraProvenance);
+        }
         prov.put("sourceType", sourceType);
         prov.put("producerId", PRODUCER_ID);
         prov.put("metricCode", id);
         prov.put("metricVersion", BureauMetricService.METRIC_VERSION);
         prov.put("exactMetricCodeAssert", true);
+        if (PersistedDerivedMetricSpine.SOURCE_PERSISTED_CANONICAL_DERIVED.equals(sourceType)) {
+            prov.put("persistedStatus", PersistedDerivedMetricSpine.STATUS_VALUE_PRESENT);
+        }
         return ExecutionResult.builder(id)
                 .status(ExecutionStatus.VALUE_AVAILABLE)
                 .value(value)
@@ -142,5 +170,15 @@ public final class BuiltInBureauMetricProducer implements ParameterProducer {
                 .provenance(prov)
                 .exactProducerPath(PRODUCER_ID + " ← " + path + "[" + id + "] (metricCode==" + id + ")")
                 .build();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> persistedProvenance(EvaluationContext ctx, String id) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        Object raw = ctx.entities().get(PersistedDerivedMetricSpine.PRECOMPUTED_METRIC_PROVENANCE);
+        if (raw instanceof Map<?, ?> m && m.get(id) instanceof Map<?, ?> row) {
+            out.putAll((Map<String, Object>) row);
+        }
+        return out;
     }
 }

@@ -40,6 +40,14 @@ public final class ScorecardPolicyEngineAccess {
         return ScorecardPolicyEngine.conditionMatchesWithRef(condition, value, app, ctx);
     }
 
+    public static boolean conditionMatches(String condition, BigDecimal value) {
+        return ScorecardPolicyEngine.conditionMatches(condition, value);
+    }
+
+    public static boolean stringConditionMatches(String condition, String stringValue) {
+        return ScorecardPolicyEngine.stringConditionMatches(condition, stringValue);
+    }
+
     public static String hardRuleFailureMessage(
             String parameter, String condition, BigDecimal value, String reason) {
         return ScorecardPolicyEngine.hardRuleFailureMessage(parameter, condition, value, reason);

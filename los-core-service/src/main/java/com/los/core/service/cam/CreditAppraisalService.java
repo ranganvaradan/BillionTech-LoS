@@ -301,6 +301,12 @@ public class CreditAppraisalService {
         return toResponse(cam, app);
     }
 
+    /**
+     * Builds or refreshes the CAM JSON for an application.
+     * Writes only {@link CreditAppraisalMemo} — never {@code ci_underwriting_fact}.
+     * A FROZEN fact snapshot must remain immutable; CAM references underwriting
+     * evaluation / application fields as a separate authority.
+     */
     @Transactional
     public CreditAppraisalMemo ensureCamForApplication(LoanApplication app) {
         Map<String, Object> built = buildCamJson(app);

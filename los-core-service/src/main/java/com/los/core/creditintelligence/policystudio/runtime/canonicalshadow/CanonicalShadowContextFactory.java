@@ -13,6 +13,7 @@ import com.los.core.creditintelligence.bureau.repository.CiBureauTradelineReposi
 import com.los.core.creditintelligence.policystudio.parameters.execution.CanonicalFactMaterializer;
 import com.los.core.creditintelligence.policystudio.parameters.execution.EvaluationContext;
 import com.los.core.creditintelligence.policystudio.parameters.execution.EvaluationMode;
+import com.los.core.creditintelligence.policystudio.parameters.execution.PersistedDerivedMetricSpine;
 import com.los.core.creditintelligence.policystudio.runtime.canonicalconfig.CanonicalApplicationConfiguration;
 import com.los.core.creditintelligence.policystudio.runtime.canonicalconfig.CanonicalCalculationPin;
 import lombok.RequiredArgsConstructor;
@@ -38,6 +39,7 @@ public class CanonicalShadowContextFactory {
     private final CiBureauInquiryRepository inquiryRepository;
     private final CiBureauReportSummaryRepository reportSummaryRepository;
     private final CiBureauScoringElementRepository scoringElementRepository;
+    private final PersistedDerivedMetricSpine persistedDerivedMetricSpine;
 
     public EvaluationContext build(CanonicalApplicationConfiguration freeze, UUID tenantId) {
         if (freeze == null || freeze.evaluationAsOf() == null) {
@@ -53,6 +55,7 @@ public class CanonicalShadowContextFactory {
                 .tenantId(tenantId)
                 .evaluationAsOf(freeze.evaluationAsOf());
         facts.forEach(b::fact);
+        persistedDerivedMetricSpine.bindExactReport(b, freeze.bureauReportId());
 
         Map<String, Object> extras = CanonicalFactMaterializer.provenanceEntityExtras(
                 null, null, collections);

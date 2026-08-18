@@ -185,4 +185,44 @@ class UnderwritingFactSnapshotBuilderTest {
                         .classification(FactClassification.VERIFIED.name())
                         .build()));
     }
+
+    @Test
+    void allowsAddFactOnBuildingSnapshot() {
+        UUID snapshotId = UUID.randomUUID();
+        when(snapshotRepository.findById(snapshotId)).thenReturn(Optional.of(
+                CiFactSnapshot.builder()
+                        .id(snapshotId)
+                        .status(SnapshotStatus.BUILDING.name())
+                        .tenantId(UUID.randomUUID())
+                        .build()));
+        when(factRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        CiUnderwritingFact saved = builder.addFact(snapshotId, CiUnderwritingFact.builder()
+                .canonicalPath("compat.X")
+                .valueType("DECIMAL")
+                .value(Map.of("v", 1))
+                .classification(FactClassification.VERIFIED.name())
+                .build());
+        assertEquals(snapshotId, saved.getSnapshotId());
+        verify(factRepository).save(any(CiUnderwritingFact.class));
+    }
+
+    @Test
+    void freezeDetachesFactsFromPersistenceContextBeforeCamFlush() {
+        jakarta.persistence.EntityManager em = mock(jakarta.persistence.EntityManager.class);
+        org.springframework.test.util.ReflectionTestUtils.setField(builder, "entityManager", em);
+        CiUnderwritingFact fact = CiUnderwritingFact.builder().id(UUID.randomUUID()).build();
+        CiFactSnapshot snap = CiFactSnapshot.builder().id(UUID.randomUUID())
+                .status(SnapshotStatus.FROZEN.name()).build();
+        when(em.contains(fact)).thenReturn(true);
+        when(em.contains(snap)).thenReturn(true);
+
+        builder.persistAndDetachFactsBeforeFreeze(List.of(fact));
+        builder.detachSnapshot(snap);
+
+        org.mockito.InOrder order = org.mockito.Mockito.inOrder(em);
+        order.verify(em).flush();
+        order.verify(em).detach(fact);
+        verify(em).detach(snap);
+    }
 }

@@ -123,6 +123,53 @@ class CreditAppraisalServiceTest {
     }
 
     @Test
+    void ensureCam_retryIsIdempotentOnSameApplication() {
+        UUID id = UUID.randomUUID();
+        LoanApplication app = LoanApplication.builder()
+                .id(id)
+                .applicationNumber("T-RETRY")
+                .borrowerType(BorrowerType.INDIVIDUAL)
+                .loanProduct("PL")
+                .requestedAmount(new BigDecimal("100000"))
+                .tenureMonths(12)
+                .status(ApplicationStatus.CAM_READY)
+                .personalInfo(Map.of("fullName", "Retry"))
+                .build();
+        CreditAppraisalMemo existing = CreditAppraisalMemo.builder()
+                .applicationId(id)
+                .camStatus("DRAFT")
+                .camVersion(1)
+                .camJson(Map.of("prior", true))
+                .build();
+        when(camRepository.findByApplicationId(id)).thenReturn(Optional.of(existing));
+        when(camRepository.save(any(CreditAppraisalMemo.class))).thenAnswer(i -> i.getArgument(0));
+        when(underwritingEvaluationRepository.findTopByApplicationIdOrderByEvaluatedAtDesc(id))
+                .thenReturn(Optional.empty());
+        when(kycOrchestrationService.computeKycOutcome(id)).thenReturn(Map.of("outcome", "PASS"));
+        when(creditControlService.buildReadView(app)).thenReturn(Map.of());
+        when(limitSizingService.capRecommendedIfConfigured(any(), any())).thenAnswer(i -> i.getArgument(1));
+
+        CreditAppraisalMemo first = service.ensureCamForApplication(app);
+        CreditAppraisalMemo second = service.ensureCamForApplication(app);
+        assertThat(first.getApplicationId()).isEqualTo(id);
+        assertThat(second.getApplicationId()).isEqualTo(id);
+        assertThat(first.getCamVersion()).isEqualTo(1);
+        assertThat(second.getCamVersion()).isEqualTo(1);
+        ArgumentCaptor<CreditAppraisalMemo> cap = ArgumentCaptor.forClass(CreditAppraisalMemo.class);
+        verify(camRepository, org.mockito.Mockito.times(2)).save(cap.capture());
+        assertThat(cap.getAllValues()).allMatch(c -> id.equals(c.getApplicationId()));
+    }
+
+    @Test
+    void ensureCam_sourceDoesNotWriteUnderwritingFacts() throws Exception {
+        String src = java.nio.file.Files.readString(java.nio.file.Path.of(
+                "src/main/java/com/los/core/service/cam/CreditAppraisalService.java"));
+        assertThat(src).doesNotContain("CiUnderwritingFact");
+        assertThat(src).doesNotContain("factRepository");
+        assertThat(src).contains("CreditAppraisalMemo");
+    }
+
+    @Test
     void getCam_backfillsMissingSanctioningDefaultsOnRead() {
         UUID id = UUID.randomUUID();
         LoanApplication app = LoanApplication.builder()
