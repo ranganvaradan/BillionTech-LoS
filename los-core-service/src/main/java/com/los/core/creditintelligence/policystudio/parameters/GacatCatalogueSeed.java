@@ -530,20 +530,33 @@ public final class GacatCatalogueSeed {
                 "BureauMetricService.evaluatePanDistinctCount",
                 List.of("pan count", "distinct pan"));
 
-        bureauSourceNotProven(p, "bureau.restructured_account_count", "Restructured account count",
-                "Count of tradelines with restructured status — SOURCE_NOT_PROVEN on Equifax sample vocabulary (Standard/STD/SPM only).",
+        bureauBuiltIn(p, "bureau.restructured_account_count", "Restructured account count", "COUNT", "PIT",
+                "Count of non-duplicate tradelines with Equifax PaymentStatus RES/RGM/RNC/RCV/RC/SFR "
+                        + "(or matching AccountStatus token) in account-level or any history month. "
+                        + "Each account counted once. Star/blank is not affirmative. Calculator: BureauMetricService.",
+                List.of("bureau.tradeline.account_status", "bureau.tradeline.payment_status_month"),
+                "BureauMetricService.evaluateEquifaxAdverseAccountCount",
                 List.of("restructured accounts"));
         bureauSourceNotProven(p, "bureau.account_sold_count", "Account-sold count",
-                "Count of tradelines with account-sold status — SOURCE_NOT_PROVEN on Equifax sample vocabulary.",
+                "Count of tradelines with account-sold status — SOURCE_NOT_PROVEN: Equifax saved legends have no Sold/Transferred PaymentStatus (AS=Auctioned and Settled is not Account Sold).",
                 List.of("account sold", "sold accounts"));
-        bureauSourceNotProven(p, "bureau.dbt_account_count", "DBT account count",
-                "Count of tradelines with DBT status — SOURCE_NOT_PROVEN on Equifax sample vocabulary.",
+        bureauBuiltIn(p, "bureau.dbt_account_count", "DBT account count", "COUNT", "PIT",
+                "Count of non-duplicate tradelines with Equifax PaymentStatus DBT (Doubtful) at account level or any history month. Each account counted once. Calculator: BureauMetricService.",
+                List.of("bureau.tradeline.account_status", "bureau.tradeline.payment_status_month"),
+                "BureauMetricService.evaluateEquifaxAdverseAccountCount",
                 List.of("dbt accounts"));
-        bureauSourceNotProven(p, "bureau.pwos_account_count", "PWOS account count",
-                "Count of tradelines with PWOS status — SOURCE_NOT_PROVEN on Equifax sample vocabulary.",
+        bureauBuiltIn(p, "bureau.pwos_account_count", "PWOS account count", "COUNT", "PIT",
+                "Count of non-duplicate tradelines with Equifax PaymentStatus PWOS (Post Write Off Settled). "
+                        + "Not derived from SettlementAmount or generic write-off. Each account counted once. Calculator: BureauMetricService.",
+                List.of("bureau.tradeline.account_status", "bureau.tradeline.payment_status_month"),
+                "BureauMetricService.evaluateEquifaxAdverseAccountCount",
                 List.of("pwos accounts"));
-        bureauSourceNotProven(p, "bureau.lss_account_count", "LSS account count",
-                "Count of tradelines with LSS status — SOURCE_NOT_PROVEN on Equifax sample vocabulary.",
+        bureauBuiltIn(p, "bureau.lss_account_count", "LSS account count", "COUNT", "PIT",
+                "Count of non-duplicate tradelines with Equifax PaymentStatus LOSS (canonical Loss/LSS). "
+                        + "Provider code LOSS is preserved in provenance. WOF/SFWO/WDWO are not this count. "
+                        + "Each account counted once. Calculator: BureauMetricService.",
+                List.of("bureau.tradeline.account_status", "bureau.tradeline.payment_status_month"),
+                "BureauMetricService.evaluateEquifaxAdverseAccountCount",
                 List.of("lss accounts"));
     }
 
@@ -994,7 +1007,8 @@ public final class GacatCatalogueSeed {
                 List.of("bureau.tradeline.account_status"),
                 "SOURCE_NOT_PROVEN", aliases, null, null,
                 Capability.of("BUREAU_RETAIL", true, true, true, false, false, "SCALAR", null,
-                        "SOURCE_NOT_PROVEN — Equifax sample vocabulary (Standard/STD/SPM) does not prove this status token",
+                        "SOURCE_NOT_PROVEN — Equifax saved legends have no Sold/Transferred PaymentStatus "
+                                + "(AS=Auctioned and Settled is not Account Sold)",
                         null, null, null),
                 true, true, true, false, false);
     }

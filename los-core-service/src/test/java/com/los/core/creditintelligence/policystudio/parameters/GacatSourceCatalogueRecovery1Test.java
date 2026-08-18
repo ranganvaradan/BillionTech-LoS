@@ -126,8 +126,12 @@ class GacatSourceCatalogueRecovery1Test {
         assertThat(thin.capability().missingDataTreatment()).contains("BUSINESS_DEFINITION_REQUIRED");
 
         CanonicalParameterDefinition restructured = registry.findById("bureau.restructured_account_count").orElseThrow();
-        assertThat(restructured.capability().implemented()).isFalse();
-        assertThat(restructured.capability().missingDataTreatment()).contains("SOURCE_NOT_PROVEN");
+        assertThat(restructured.capability().implemented()).isTrue();
+        assertThat(restructured.existingImplementationBinding()).contains("BureauMetricService");
+
+        CanonicalParameterDefinition sold = registry.findById("bureau.account_sold_count").orElseThrow();
+        assertThat(sold.capability().implemented()).isFalse();
+        assertThat(sold.capability().missingDataTreatment()).contains("SOURCE_NOT_PROVEN");
     }
 
     @Test

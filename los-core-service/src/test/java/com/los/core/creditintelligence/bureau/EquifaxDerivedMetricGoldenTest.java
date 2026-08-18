@@ -226,6 +226,33 @@ class EquifaxDerivedMetricGoldenTest {
                 metric(all, BureauMetricService.INQUIRIES_CURRENT_MONTH).getEvidence().get("asOfSource"));
     }
 
+    @Test
+    void sameDateInquiries_countSeparately() {
+        CiBureauReport report = baseReport();
+        CiBureauTradeline t = tl(BureauProductCategory.PERSONAL_LOAN, false);
+        Map<String, Object> data = Map.of(
+                "inquiries", List.of(
+                        Map.of("inquiryDate", "2024-06-10"),
+                        Map.of("inquiryDate", "2024-06-10")));
+        List<CiMetricResult> all = service.computeAndPersist(report, List.of(t), data);
+        assertEquals(2, intVal(metric(all, BureauMetricService.INQUIRIES_CURRENT_MONTH)));
+    }
+
+    @Test
+    void missingEmi_isExcludedNotInvented() {
+        CiBureauReport report = baseReport();
+        CiBureauTradeline live = tl(BureauProductCategory.PERSONAL_LOAN, false);
+        live.setIsLive(true);
+        live.setEmiAmount(null);
+        List<CiMetricResult> all = service.computeAndPersist(report, List.of(live), Map.of());
+        CiMetricResult obl = metric(all, BureauMetricService.TOTAL_MONTHLY_OBLIGATION);
+        assertEquals(BureauMetricOutcome.PASS.name(), obl.getOutcome());
+        assertEquals("PARTIAL", obl.getDataQualityStatus());
+        assertEquals("0", String.valueOf(obl.getValue().get("v")));
+        assertEquals(1, ((Number) obl.getEvidence().get("missingEmiCount")).intValue());
+        assertEquals(false, obl.getEvidence().get("emiInvented"));
+    }
+
     private void stubPh(UUID tradelineId, List<CiBureauPaymentHistory> rows) {
         lenient().when(paymentHistoryRepository.findByTradelineIdOrderByMonthDesc(tradelineId)).thenReturn(rows);
     }

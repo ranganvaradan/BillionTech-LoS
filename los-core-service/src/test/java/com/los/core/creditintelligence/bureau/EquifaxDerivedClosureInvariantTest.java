@@ -33,11 +33,7 @@ class EquifaxDerivedClosureInvariantTest {
 
     private static final List<String> CATALOGUE_NOT_EMITTED = List.of(
             "bureau.thin_file_indicator",
-            "bureau.dbt_account_count",
-            "bureau.pwos_account_count",
-            "bureau.lss_account_count",
-            "bureau.account_sold_count",
-            "bureau.restructured_account_count");
+            "bureau.account_sold_count");
 
     private AuthoredDerivedCalculationSupport overlaySupport;
 
@@ -51,7 +47,7 @@ class EquifaxDerivedClosureInvariantTest {
 
     @Test
     void emittedIdsSize_andCatalogueHonesty() {
-        assertThat(BuiltInBureauMetricProducer.EMITTED_IDS).hasSize(31);
+        assertThat(BuiltInBureauMetricProducer.EMITTED_IDS).hasSize(35);
         assertThat(GacatCatalogueSeed.BUREAU_RETAIL_DERIVED_TARGET_COUNT).isEqualTo(37);
 
         Set<String> catalogueIds = GacatCatalogueSeed.all().stream()

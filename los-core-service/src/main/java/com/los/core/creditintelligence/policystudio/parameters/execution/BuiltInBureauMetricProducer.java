@@ -50,7 +50,11 @@ public final class BuiltInBureauMetricProducer implements ParameterProducer {
             BureauMetricService.CREDIT_AFTER_OVERDUE_CLEAN_HISTORY_MONTHS,
             BureauMetricService.NON_CC_OVERDUE_EXCEPTION_VIOLATION_COUNT,
             BureauMetricService.SUIT_FILED_ACCOUNT_COUNT,
-            BureauMetricService.PAN_DISTINCT_COUNT
+            BureauMetricService.PAN_DISTINCT_COUNT,
+            BureauMetricService.RESTRUCTURED_ACCOUNT_COUNT,
+            BureauMetricService.DBT_ACCOUNT_COUNT,
+            BureauMetricService.PWOS_ACCOUNT_COUNT,
+            BureauMetricService.LSS_ACCOUNT_COUNT
     );
 
     @Override

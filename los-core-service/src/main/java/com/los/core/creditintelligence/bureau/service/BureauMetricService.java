@@ -73,10 +73,13 @@ public class BureauMetricService {
             "bureau.non_cc_overdue_exception_violation_count";
     public static final String SUIT_FILED_ACCOUNT_COUNT = "bureau.suit_filed_account_count";
     public static final String PAN_DISTINCT_COUNT = "bureau.pan_distinct_count";
+    public static final String RESTRUCTURED_ACCOUNT_COUNT = "bureau.restructured_account_count";
+    public static final String DBT_ACCOUNT_COUNT = "bureau.dbt_account_count";
+    public static final String PWOS_ACCOUNT_COUNT = "bureau.pwos_account_count";
+    public static final String LSS_ACCOUNT_COUNT = "bureau.lss_account_count";
     /*
-     * NOT emitted (unproven Equifax vocabulary on sample Standard/STD/SPM only):
-     * bureau.restructured_account_count, bureau.account_sold_count,
-     * bureau.dbt_account_count, bureau.pwos_account_count, bureau.lss_account_count.
+     * NOT emitted (Equifax saved samples do not prove the provider status):
+     * bureau.account_sold_count, bureau.thin_file_indicator.
      */
 
     public static final String WRITEOFF_CALCULATOR = "BureauMetricService.computeWriteoffCounts";
@@ -356,6 +359,13 @@ public class BureauMetricService {
         return BureauDerivedMetricCalculator.panDistinctCount(reportData);
     }
 
+    public ScalarEvaluation evaluateEquifaxAdverseAccountCount(
+            List<CiBureauTradeline> tradelines,
+            Map<UUID, List<PaymentHistoryMonthInput>> history,
+            EquifaxRetailPaymentStatusVocabulary.Family family) {
+        return BureauDerivedMetricCalculator.equifaxAdverseAccountCount(tradelines, history, family);
+    }
+
     @Transactional
     public List<CiMetricResult> computeAndPersist(
             CiBureauReport report,
@@ -392,6 +402,14 @@ public class BureauMetricService {
         results.add(persist(computeCreditAfterOverdueCleanHistory(report, tradelines, history, reportData)));
         results.add(persist(computeNonCcOverdueExceptionViolations(report, tradelines, history, reportData)));
         results.add(persist(computeSuitFiledAccountCount(report, tradelines, history)));
+        results.add(persist(computeEquifaxAdverseAccountCount(
+                report, tradelines, history, EquifaxRetailPaymentStatusVocabulary.Family.RESTRUCTURED)));
+        results.add(persist(computeEquifaxAdverseAccountCount(
+                report, tradelines, history, EquifaxRetailPaymentStatusVocabulary.Family.DBT)));
+        results.add(persist(computeEquifaxAdverseAccountCount(
+                report, tradelines, history, EquifaxRetailPaymentStatusVocabulary.Family.PWOS)));
+        results.add(persist(computeEquifaxAdverseAccountCount(
+                report, tradelines, history, EquifaxRetailPaymentStatusVocabulary.Family.LOSS)));
         results.add(persist(computePanDistinctCount(report, reportData)));
         return results;
     }
@@ -1272,6 +1290,21 @@ public class BureauMetricService {
         List<CiBureauTradeline> tls = emptyExtraction(report) ? List.of() : safe(tradelines);
         return toMetric(report, SUIT_FILED_ACCOUNT_COUNT,
                 BureauDerivedMetricCalculator.suitFiledAccountCount(tls, history));
+    }
+
+    private CiMetricResult computeEquifaxAdverseAccountCount(
+            CiBureauReport report,
+            List<CiBureauTradeline> tradelines,
+            Map<UUID, List<PaymentHistoryMonthInput>> history,
+            EquifaxRetailPaymentStatusVocabulary.Family family) {
+        String code = EquifaxRetailPaymentStatusVocabulary.canonicalParameterId(family);
+        CiMetricResult gated = tradelineGate(report, tradelines, code);
+        if (gated != null) {
+            return gated;
+        }
+        List<CiBureauTradeline> tls = emptyExtraction(report) ? List.of() : safe(tradelines);
+        return toMetric(report, code,
+                BureauDerivedMetricCalculator.equifaxAdverseAccountCount(tls, history, family));
     }
 
     private CiMetricResult computePanDistinctCount(CiBureauReport report, Map<String, Object> reportData) {

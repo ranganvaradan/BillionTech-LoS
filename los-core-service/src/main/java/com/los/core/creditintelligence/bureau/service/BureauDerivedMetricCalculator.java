@@ -667,6 +667,60 @@ final class BureauDerivedMetricCalculator {
         return pass(count, evidence, included, List.of());
     }
 
+    static ScalarEvaluation equifaxAdverseAccountCount(
+            List<CiBureauTradeline> tradelines,
+            Map<UUID, List<PaymentHistoryMonthInput>> history,
+            EquifaxRetailPaymentStatusVocabulary.Family family) {
+        Map<String, Object> evidence = new LinkedHashMap<>();
+        evidence.put("starOrBlankNotAffirmative", true);
+        evidence.put("accountCountedOnce", true);
+        evidence.put("family", family.name());
+        evidence.put("providerCodes", EquifaxRetailPaymentStatusVocabulary.codes(family));
+        evidence.put("providerProvenance", EquifaxRetailPaymentStatusVocabulary.EVIDENCE);
+        if (family == EquifaxRetailPaymentStatusVocabulary.Family.LOSS) {
+            evidence.put("providerCode", "LOSS");
+            evidence.put("canonicalConcept", "LSS");
+        }
+        if (family == EquifaxRetailPaymentStatusVocabulary.Family.PWOS) {
+            evidence.put("notDerivedFromSettlementAmount", true);
+            evidence.put("notDerivedFromGenericWriteOff", true);
+        }
+        if (tradelines == null) {
+            evidence.put("reason", "NO_TRADELINES");
+            return di(evidence);
+        }
+        int count = 0;
+        List<Object> included = new ArrayList<>();
+        for (CiBureauTradeline t : tradelines) {
+            if (t == null || t.getDuplicateOfTradelineId() != null) {
+                continue;
+            }
+            boolean accountHit = EquifaxRetailPaymentStatusVocabulary.matches(t.getAccountStatus(), family);
+            String monthHit = null;
+            for (PaymentHistoryMonthInput row : historyOf(t, history)) {
+                if (row == null) {
+                    continue;
+                }
+                // PaymentStatus only (providerRawStatus). AssetClassificationStatus must not
+                // token-collide (e.g. ACS "Loss" vs PaymentStatus LOSS).
+                if (EquifaxRetailPaymentStatusVocabulary.matches(row.providerRawStatus(), family)) {
+                    monthHit = EquifaxRetailPaymentStatusVocabulary.token(row.providerRawStatus());
+                    break;
+                }
+            }
+            if (accountHit || monthHit != null) {
+                count++;
+                Map<String, Object> row = new LinkedHashMap<>();
+                row.put("ref", refOf(t));
+                row.put("accountLevel", accountHit);
+                row.put("historyToken", monthHit);
+                included.add(row);
+            }
+        }
+        evidence.put("count", count);
+        return pass(count, evidence, included, List.of());
+    }
+
     static YearMonth overdueEventYm(List<PaymentHistoryMonthInput> rows, boolean fallbackAnyObservation) {
         YearMonth latestAdverse = null;
         YearMonth latestAny = null;

@@ -29,13 +29,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class EquifaxSourceCardCountReconciliationTest {
 
+    /** Isolated CPS without DB calc-defs still marks implemented derived NOT_READY; live READY is V149. */
     private static final Set<String> HONEST_NOT_READY_DERIVED = Set.of(
             "bureau.thin_file_indicator",
-            "bureau.restructured_account_count",
-            "bureau.account_sold_count",
-            "bureau.dbt_account_count",
-            "bureau.pwos_account_count",
-            "bureau.lss_account_count");
+            "bureau.account_sold_count");
 
     private final CanonicalParameterRegistry registry = PolicyStudioConvergencePresenter.registry();
     private final DataParametersAdminService admin = new DataParametersAdminService();
