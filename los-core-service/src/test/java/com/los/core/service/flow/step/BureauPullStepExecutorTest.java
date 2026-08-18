@@ -2,6 +2,7 @@ package com.los.core.service.flow.step;
 
 import com.los.core.exception.BusinessRuleException;
 import com.los.core.model.entity.LoanApplication;
+import com.los.core.model.entity.WorkflowConfig;
 import com.los.core.model.enums.ApplicationStatus;
 import com.los.core.model.enums.BorrowerType;
 import com.los.core.repository.KycStepResultRepository;
@@ -56,7 +57,14 @@ class BureauPullStepExecutorTest {
         LoanApplication app = baseApp(appId);
         when(applicationRepository.findById(appId)).thenReturn(Optional.of(app));
         when(activeWorkflowConfigService.findActiveForApplication(any()))
-                .thenReturn(Optional.empty());
+                .thenReturn(Optional.of(WorkflowConfig.builder()
+                        .id(UUID.fromString("00000000-0000-0000-0000-00000000bf01"))
+                        .name("pinned")
+                        .borrowerType("INDIVIDUAL")
+                        .loanProduct("PERSONAL")
+                        .active(true)
+                        .bureauEnabled(true)
+                        .build()));
         when(kycStepResultRepository.findTopByApplicationIdAndStepTypeOrderByCreatedAtDesc(any(), any()))
                 .thenReturn(Optional.empty());
         when(kycOrchestrationService.computeKycOutcome(appId))
@@ -75,7 +83,14 @@ class BureauPullStepExecutorTest {
         LoanApplication app = baseApp(appId);
         when(applicationRepository.findById(appId)).thenReturn(Optional.of(app));
         when(activeWorkflowConfigService.findActiveForApplication(any()))
-                .thenReturn(Optional.empty());
+                .thenReturn(Optional.of(WorkflowConfig.builder()
+                        .id(UUID.fromString("00000000-0000-0000-0000-00000000bf01"))
+                        .name("pinned")
+                        .borrowerType("INDIVIDUAL")
+                        .loanProduct("PERSONAL")
+                        .active(true)
+                        .bureauEnabled(true)
+                        .build()));
         when(kycStepResultRepository.findTopByApplicationIdAndStepTypeOrderByCreatedAtDesc(any(), any()))
                 .thenReturn(Optional.empty());
         when(kycOrchestrationService.computeKycOutcome(appId))
@@ -114,6 +129,7 @@ class BureauPullStepExecutorTest {
                 .customerId(UUID.randomUUID())
                 .borrowerType(BorrowerType.INDIVIDUAL)
                 .loanProduct("PERSONAL")
+                .workflowId(UUID.fromString("00000000-0000-0000-0000-00000000bf01"))
                 .status(ApplicationStatus.KYC_IN_PROGRESS)
                 .personalInfo(Map.of("pan", "ABCDE1234F"))
                 .build();

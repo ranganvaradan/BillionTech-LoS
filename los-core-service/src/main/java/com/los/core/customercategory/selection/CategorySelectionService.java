@@ -6,7 +6,6 @@ import com.los.core.exception.BusinessRuleException;
 import com.los.core.model.entity.LoanApplication;
 import com.los.core.model.entity.WorkflowConfig;
 import com.los.core.repository.LoanApplicationRepository;
-import com.los.core.repository.WorkflowConfigRepository;
 import com.los.core.service.workflow.WorkflowContentHash;
 import com.los.core.service.workflow.WorkflowResolutionSource;
 import lombok.RequiredArgsConstructor;
@@ -32,9 +31,9 @@ public class CategorySelectionService {
 
     private final LoanApplicationRepository applicationRepository;
     private final CustomerCategoryRepository categoryRepository;
-    private final WorkflowConfigRepository workflowConfigRepository;
     private final CustomerCategoryEligibilityService eligibilityService;
     private final CategoryDisambiguationService disambiguationService;
+    private final CategoryConfigurationPinValidator pinValidator;
 
     @Transactional(readOnly = true)
     public CategorySelectionDtos.EligibilityResult evaluate(UUID applicationId, boolean allowDraftSimulation) {
@@ -124,25 +123,8 @@ public class CategorySelectionService {
                     "category-selection",
                     Map.of("categoryId", String.valueOf(req.categoryId())));
         }
-        if (!hasUsableBinds(chosen)) {
-            throw new BusinessRuleException(
-                    "Category Policy/Workflow bindings incomplete",
-                    "CATEGORY_BINDINGS_INCOMPLETE",
-                    "category-selection",
-                    Map.of("categoryId", chosen.getId().toString()));
-        }
-
-        // Workflow conflict — do not silently overwrite
-        if (app.getWorkflowId() != null && chosen.getWorkflowId() != null
-                && !app.getWorkflowId().equals(chosen.getWorkflowId())) {
-            throw new BusinessRuleException(
-                    "Application already bound to a different Workflow Version than the selected Category",
-                    "CATEGORY_WORKFLOW_CONFLICT",
-                    "category-selection",
-                    Map.of(
-                            "applicationWorkflowId", app.getWorkflowId().toString(),
-                            "categoryWorkflowId", chosen.getWorkflowId().toString()));
-        }
+        CategoryConfigurationPinValidator.ValidatedPin pin =
+                pinValidator.validate(app, chosen, allowDraftSimulation);
 
         CategorySelectionSource source = req.selectionSource() != null
                 ? req.selectionSource()
@@ -152,17 +134,17 @@ public class CategorySelectionService {
 
         if (source == CategorySelectionSource.RM_SELECTED
                 && (req.reason() == null || req.reason().isBlank())) {
-            // Capture reason when governance requires — soft for now: allow but prefer reason
             log.info("RM Category selection without reason applicationId={} categoryId={} actor={}",
                     applicationId, chosen.getId(), req.actor());
         }
 
         Instant now = Instant.now();
+        WorkflowConfig wf = pin.workflow();
         app.setSelectedCustomerCategoryId(chosen.getId());
         app.setSelectedCustomerCategoryCode(chosen.getCode());
         app.setSelectedCustomerCategoryVersion(chosen.getVersionNo());
-        app.setSelectedPolicyApplicabilityId(chosen.getPolicyApplicabilityId());
-        app.setSelectedPolicyDocumentId(chosen.getPolicyDocumentId());
+        app.setSelectedPolicyApplicabilityId(pin.applicability().getId());
+        app.setSelectedPolicyDocumentId(pin.document().getId());
         app.setSelectedPolicyVersionLabel(chosen.getPolicyVersionLabel());
         app.setCategorySelectionSource(source.name());
         app.setCategorySelectedAt(now);
@@ -170,28 +152,11 @@ public class CategorySelectionService {
         app.setCategorySelectionReason(req.reason());
         app.setCategorySelectionState(CategorySelectionState.CATEGORY_SELECTED.name());
 
-        // Pin Workflow via W1 fields — Category supplies resolution source
-        WorkflowConfig wf = workflowConfigRepository.findById(chosen.getWorkflowId())
-                .orElseThrow(() -> new BusinessRuleException(
-                        "Category Workflow Version not found: " + chosen.getWorkflowId(),
-                        "WORKFLOW_VERSION_NOT_FOUND", "category-selection", null));
-        if (app.getWorkflowId() == null) {
-            app.setWorkflowId(wf.getId());
-            app.setWorkflowVersion(wf.getVersion());
-            app.setWorkflowResolutionSource(WorkflowResolutionSource.CATEGORY_SELECTION.name());
-            app.setWorkflowResolvedAt(now);
-            app.setWorkflowContentHash(WorkflowContentHash.of(wf));
-        } else {
-            // Same workflow — refresh meta if needed
-            app.setWorkflowVersion(wf.getVersion());
-            app.setWorkflowResolutionSource(WorkflowResolutionSource.CATEGORY_SELECTION.name());
-            if (app.getWorkflowContentHash() == null || app.getWorkflowContentHash().isBlank()) {
-                app.setWorkflowContentHash(WorkflowContentHash.of(wf));
-            }
-            if (app.getWorkflowResolvedAt() == null) {
-                app.setWorkflowResolvedAt(now);
-            }
-        }
+        app.setWorkflowId(wf.getId());
+        app.setWorkflowVersion(wf.getVersion());
+        app.setWorkflowResolutionSource(WorkflowResolutionSource.CATEGORY_SELECTION.name());
+        app.setWorkflowResolvedAt(now);
+        app.setWorkflowContentHash(WorkflowContentHash.of(wf));
 
         applicationRepository.save(app);
         log.info("Category selected applicationId={} category={}:{} source={} — W4/W6 NOT triggered",
@@ -398,7 +363,4 @@ public class CategorySelectionService {
         }
     }
 
-    private static boolean hasUsableBinds(CustomerCategoryEntity c) {
-        return c.getPolicyApplicabilityId() != null && c.getWorkflowId() != null;
-    }
 }

@@ -10,8 +10,7 @@ import java.util.Optional;
 
 /**
  * Application-scoped Workflow lookup (W1).
- * Delegates to {@link ApplicationWorkflowResolver}; never silently substitutes another active Workflow
- * when a persisted reference is broken.
+ * Consumes the persisted application pin only. Never discovers a product default.
  */
 @Service
 @RequiredArgsConstructor
@@ -23,10 +22,13 @@ public class ActiveWorkflowConfigService {
         if (app == null) {
             return Optional.empty();
         }
+        if (app.getWorkflowId() == null) {
+            return Optional.empty();
+        }
         try {
             return Optional.of(applicationWorkflowResolver.requireConfig(app));
         } catch (BusinessRuleException e) {
-            if ("WORKFLOW_NOT_RESOLVED".equals(e.getReason())) {
+            if (ApplicationConfigurationAuthority.isUnconfiguredReason(e.getReason())) {
                 return Optional.empty();
             }
             throw e;

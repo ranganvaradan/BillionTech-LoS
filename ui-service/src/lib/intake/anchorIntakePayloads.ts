@@ -55,7 +55,6 @@ export function buildAnchorCreateRequest(
   return {
     borrowerType: s.borrowerType,
     loanProduct: s.loanProduct,
-    ...(s.workflowId ? { workflowId: s.workflowId } : {}),
     intakeSegment: 'ANCHOR' satisfies IntakeSegment,
     requestedAmount: amount,
     tenureMonths: tenure ?? undefined,
@@ -105,7 +104,6 @@ export function buildAnchorFullUpdate(
     ),
   )
   return {
-    ...(s.workflowId ? { workflowId: s.workflowId } : {}),
     requestedAmount: Number.isFinite(amount) && amount > 0 ? amount : undefined,
     tenureMonths: tenure ?? undefined,
     personalInfo: {

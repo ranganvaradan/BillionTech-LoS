@@ -33,7 +33,7 @@ public class ItrWorkflowRequirement {
             WorkflowConfig workflow = applicationWorkflowResolver.requireConfig(app);
             return workflowHasMandatoryItr(workflow.getSteps());
         } catch (BusinessRuleException e) {
-            if ("WORKFLOW_NOT_RESOLVED".equals(e.getReason())) {
+            if (com.los.core.service.workflow.ApplicationConfigurationAuthority.isUnconfiguredReason(e.getReason())) {
                 return false;
             }
             throw e;

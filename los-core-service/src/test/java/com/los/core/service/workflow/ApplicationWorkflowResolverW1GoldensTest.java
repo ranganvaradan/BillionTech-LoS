@@ -24,13 +24,11 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -92,24 +90,16 @@ class ApplicationWorkflowResolverW1GoldensTest {
     }
 
     @Test
-    void goldenA_resolveOnce_secondCallSameVersion() {
+    void goldenA_unconfiguredApplicationDoesNotDiscoverDefault() {
         when(workflowConfigRepository.findByBorrowerTypeAndLoanProductAndIntakeSegmentAndActiveTrueOrderByVersionDesc(
                         "INDIVIDUAL", "PERSONAL_LOAN", "BORROWER"))
                 .thenReturn(List.of(wfV2, wfV1));
-        when(workflowConfigRepository.findById(wfV2Id)).thenReturn(Optional.of(wfV2));
 
-        ResolvedWorkflowVersion first = resolver.resolveForApplication(app);
-        assertEquals(wfV2Id, first.workflowId());
-        assertEquals(WorkflowResolutionSource.DEFAULT, first.resolutionSource());
-
-        // Simulate persisted state on app (resolver mutates app)
-        assertEquals(wfV2Id, app.getWorkflowId());
-
-        ResolvedWorkflowVersion second = resolver.resolveForApplication(app);
-        assertEquals(first.workflowId(), second.workflowId());
-        assertEquals(first.workflowVersion(), second.workflowVersion());
-        // No second discovery after bind
-        verify(workflowConfigRepository, times(1))
+        BusinessRuleException ex = assertThrows(BusinessRuleException.class, () -> resolver.resolveForApplication(app));
+        assertEquals("WORKFLOW_NOT_PINNED", ex.getReason());
+        assertEquals(null, app.getWorkflowId());
+        verify(loanApplicationRepository, never()).save(any());
+        verify(workflowConfigRepository, never())
                 .findByBorrowerTypeAndLoanProductAndIntakeSegmentAndActiveTrueOrderByVersionDesc(any(), any(), any());
     }
 
@@ -186,11 +176,11 @@ class ApplicationWorkflowResolverW1GoldensTest {
         assertEquals(wfV1Id, r.workflowId());
         assertEquals(WorkflowResolutionSource.LEGACY_EXISTING, r.resolutionSource());
         assertEquals(wfV1Id, app.getWorkflowId());
-        assertEquals(1, app.getWorkflowVersion());
+        verify(loanApplicationRepository, never()).save(any());
     }
 
     @Test
-    void goldenH_newApplicationMayResolveNewWorkflowAfterConfigChange() {
+    void goldenH_newApplicationDoesNotResolveLatestActive() {
         LoanApplication newApp = LoanApplication.builder()
                 .id(UUID.randomUUID())
                 .borrowerType(BorrowerType.INDIVIDUAL)
@@ -200,11 +190,11 @@ class ApplicationWorkflowResolverW1GoldensTest {
         when(workflowConfigRepository.findByBorrowerTypeAndLoanProductAndIntakeSegmentAndActiveTrueOrderByVersionDesc(
                         "INDIVIDUAL", "PERSONAL_LOAN", "BORROWER"))
                 .thenReturn(List.of(wfV2, wfV1));
-        when(workflowConfigRepository.findById(wfV2Id)).thenReturn(Optional.of(wfV2));
 
-        ResolvedWorkflowVersion r = resolver.resolveForApplication(newApp);
-        assertEquals(wfV2Id, r.workflowId());
-        assertNotEquals(wfV1Id, r.workflowId());
+        BusinessRuleException ex = assertThrows(BusinessRuleException.class, () -> resolver.resolveForApplication(newApp));
+        assertEquals("WORKFLOW_NOT_PINNED", ex.getReason());
+        assertEquals(null, newApp.getWorkflowId());
+        verify(loanApplicationRepository, never()).save(any());
     }
 
     @Test
@@ -219,7 +209,8 @@ class ApplicationWorkflowResolverW1GoldensTest {
                         any(), any(), any()))
                 .thenReturn(List.of());
         BusinessRuleException ex = assertThrows(BusinessRuleException.class, () -> resolver.resolveForApplication(bare));
-        assertEquals("WORKFLOW_NOT_RESOLVED", ex.getReason());
+        assertEquals("WORKFLOW_NOT_PINNED", ex.getReason());
+        verify(loanApplicationRepository, never()).save(any());
     }
 
     @Test

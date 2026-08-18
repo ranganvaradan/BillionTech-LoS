@@ -34,6 +34,12 @@ public class ApplicationResponse {
     private String lmsProductCode;
     private String lmsTenureUnit;
     private UUID workflowId;
+    private Integer workflowVersion;
+    private String workflowResolutionSource;
+    private UUID selectedCustomerCategoryId;
+    private UUID selectedPolicyApplicabilityId;
+    private UUID selectedPolicyDocumentId;
+    private String categorySelectionState;
     private ApplicationStatus status;
     private Map<String, Object> personalInfo;
     private Map<String, Object> businessInfo;

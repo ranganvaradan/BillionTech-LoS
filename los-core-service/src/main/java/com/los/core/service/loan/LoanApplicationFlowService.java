@@ -160,6 +160,7 @@ public class LoanApplicationFlowService {
         // requested amount above the program cap is rejected here rather than after LOS sanction.
         invoiceDiscountingSanctionDefaultsService.validateRequestedAmountWithinProgramLimit(app);
 
+        com.los.core.service.workflow.ApplicationConfigurationAuthority.assertReadyForSubmit(app);
         WorkflowConfig workflow = activeWorkflowConfigService.findActiveForApplication(app).orElse(null);
         workflowIntakeValidator.validateAtSubmit(app, workflow);
         itrWorkflowRequirement.requireSuccessIfMandatory(app, "application submission");

@@ -196,6 +196,7 @@ public class KycOrchestrationServiceImpl implements IKycOrchestrationService {
     public List<KycStepResultResponse> executeWorkflow(UUID applicationId, Map<String, Object> payload) {
         LoanApplication app = loanApplicationRepository.findById(applicationId)
                 .orElseThrow(() -> new ResourceNotFoundException("Application not found: " + applicationId));
+        com.los.core.service.workflow.ApplicationConfigurationAuthority.assertReadyForWorkflowExecution(app);
 
         // W1 — consume the application's resolved Workflow Version (not independent active lookup).
         WorkflowConfig workflowConfig = applicationWorkflowResolver.requireConfig(app);
@@ -262,6 +263,14 @@ public class KycOrchestrationServiceImpl implements IKycOrchestrationService {
         LoanApplication app = loanApplicationRepository.findById(applicationId)
                 .orElseThrow(() -> new ResourceNotFoundException("Application not found: " + applicationId));
 
+        if (app.getWorkflowId() == null) {
+            return Map.of(
+                    "applicationId", applicationId,
+                    "outcome", "CONFIGURATION_PENDING",
+                    "configurationPending", true,
+                    "reason", com.los.core.service.workflow.ApplicationConfigurationAuthority.WORKFLOW_NOT_PINNED,
+                    "stepSummary", List.of());
+        }
         WorkflowConfig workflowConfig = applicationWorkflowResolver.requireConfig(app);
         List<Map<String, Object>> steps = workflowConfig.getSteps();
         Map<String, Object> intakeConfig = workflowConfig.getIntakeConfig();

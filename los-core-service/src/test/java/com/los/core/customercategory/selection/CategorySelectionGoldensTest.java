@@ -1,5 +1,9 @@
 package com.los.core.customercategory.selection;
 
+import com.los.core.creditintelligence.policystudio.domain.CiPolicyDocument;
+import com.los.core.creditintelligence.policystudio.lifecycle.domain.CiPolicyApplicability;
+import com.los.core.creditintelligence.policystudio.lifecycle.repository.CiPolicyApplicabilityRepository;
+import com.los.core.creditintelligence.policystudio.repository.CiPolicyDocumentRepository;
 import com.los.core.customercategory.ConfigLifecycleStatus;
 import com.los.core.customercategory.CustomerCategoryEntity;
 import com.los.core.customercategory.CustomerCategoryRepository;
@@ -9,6 +13,7 @@ import com.los.core.model.entity.WorkflowConfig;
 import com.los.core.model.enums.BorrowerType;
 import com.los.core.model.enums.IntakeSegment;
 import com.los.core.repository.LoanApplicationRepository;
+import com.los.core.repository.UnderwritingScorecardRepository;
 import com.los.core.repository.WorkflowConfigRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -41,6 +46,9 @@ class CategorySelectionGoldensTest {
     @Mock CustomerCategoryRepository categoryRepository;
     @Mock LoanApplicationRepository applicationRepository;
     @Mock WorkflowConfigRepository workflowConfigRepository;
+    @Mock CiPolicyApplicabilityRepository applicabilityRepository;
+    @Mock CiPolicyDocumentRepository policyDocumentRepository;
+    @Mock UnderwritingScorecardRepository scorecardRepository;
     @Mock ApplicationCategoryDisambiguationAnswerRepository answerRepository;
 
     CustomerCategoryEligibilityService eligibilityService;
@@ -61,9 +69,11 @@ class CategorySelectionGoldensTest {
     void setUp() {
         eligibilityService = new CustomerCategoryEligibilityService(categoryRepository, applicationRepository);
         disambiguationService = new CategoryDisambiguationService(answerRepository);
+        CategoryConfigurationPinValidator pinValidator = new CategoryConfigurationPinValidator(
+                workflowConfigRepository, applicabilityRepository, policyDocumentRepository, scorecardRepository);
         selectionService = new CategorySelectionService(
-                applicationRepository, categoryRepository, workflowConfigRepository,
-                eligibilityService, disambiguationService);
+                applicationRepository, categoryRepository,
+                eligibilityService, disambiguationService, pinValidator);
 
         lenient().when(categoryRepository.findByStatus(any())).thenAnswer(inv ->
                 cats.values().stream()
@@ -103,12 +113,34 @@ class CategorySelectionGoldensTest {
         w1.setId(wfStarter);
         w1.setVersion(1);
         w1.setName("Starter WF");
+        w1.setActive(true);
         workflows.put(wfStarter, w1);
         WorkflowConfig w2 = new WorkflowConfig();
         w2.setId(wfBank);
         w2.setVersion(2);
         w2.setName("Bank WF");
+        w2.setActive(true);
         workflows.put(wfBank, w2);
+
+        lenient().when(applicabilityRepository.findById(any())).thenAnswer(inv -> {
+            UUID id = inv.getArgument(0);
+            CiPolicyApplicability a = new CiPolicyApplicability();
+            a.setId(id);
+            a.setPolicyDocumentId(id);
+            a.setBusinessStatus("ACTIVE");
+            a.setPolicyName("policy");
+            a.setPolicyVersionLabel("1.0");
+            return Optional.of(a);
+        });
+        lenient().when(policyDocumentRepository.findById(any())).thenAnswer(inv -> {
+            UUID id = inv.getArgument(0);
+            CiPolicyDocument d = new CiPolicyDocument();
+            d.setId(id);
+            d.setName("doc");
+            d.setScorecardId(null);
+            return Optional.of(d);
+        });
+        lenient().when(scorecardRepository.findById(any())).thenReturn(Optional.empty());
     }
 
     private CustomerCategoryEntity cat(String code, String name, UUID policy, UUID wf,
@@ -389,5 +421,46 @@ class CategorySelectionGoldensTest {
         assertEquals(only.getId(), handoff.categoryId());
         assertEquals(policyA, handoff.policyApplicabilityId());
         assertEquals(wfStarter, handoff.workflowId());
+    }
+
+    @Test
+    void missingPolicyDocumentId_notEligible() {
+        CustomerCategoryEntity c = cat("NO_DOC", "No Doc", policyA, wfStarter,
+                List.of(SafeDisambiguationCatalogue.OPT_FINANCIAL_STATEMENTS), true);
+        c.setPolicyDocumentId(null);
+        LoanApplication a = app(new BigDecimal("300000"));
+        var eval = selectionService.evaluate(a.getId(), true);
+        assertEquals(CategorySelectionState.NO_ELIGIBLE_CATEGORY, eval.state());
+    }
+
+    @Test
+    void pinValidationFailure_writesNothing() {
+        CustomerCategoryEntity only = cat("ONLY", "Only", policyA, wfStarter,
+                List.of(SafeDisambiguationCatalogue.OPT_FINANCIAL_STATEMENTS), true);
+        LoanApplication a = app(new BigDecimal("300000"));
+        when(policyDocumentRepository.findById(policyA)).thenReturn(Optional.empty());
+        BusinessRuleException ex = assertThrows(BusinessRuleException.class, () ->
+                selectionService.select(a.getId(),
+                        new CategorySelectionDtos.SelectRequest(
+                                only.getId(), "c", "CUSTOMER", null,
+                                CategorySelectionSource.CUSTOMER_SELECTED),
+                        true));
+        assertEquals("POLICY_DOCUMENT_NOT_FOUND", ex.getReason());
+        LoanApplication after = apps.get(a.getId());
+        assertNull(after.getSelectedCustomerCategoryId());
+        assertNull(after.getWorkflowId());
+        assertNull(after.getSelectedPolicyApplicabilityId());
+        assertNull(after.getSelectedPolicyDocumentId());
+    }
+
+    @Test
+    void missingAmount_pendingWithoutWorkflow() {
+        cat("ONLY", "Only", policyA, wfStarter,
+                List.of(SafeDisambiguationCatalogue.OPT_FINANCIAL_STATEMENTS), true);
+        LoanApplication a = app(null);
+        var eval = selectionService.evaluate(a.getId(), true);
+        assertEquals(CategorySelectionState.NO_ELIGIBLE_CATEGORY, eval.state());
+        assertTrue(eval.noMatchReasons().contains("AMOUNT"));
+        assertNull(apps.get(a.getId()).getWorkflowId());
     }
 }

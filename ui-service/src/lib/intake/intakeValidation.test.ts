@@ -17,8 +17,8 @@ function wf(over: Partial<WorkflowConfigResponse> & { loanProduct: string; borro
 
 describe('intakeValidation', () => {
   it('rejects product step when there is no active product for the borrower type', () => {
-    const s: IntakeFormState = { ...createEmptyIntakeFormState(), borrowerType: 'INDIVIDUAL', loanProduct: 'X' }
-    const workflows: WorkflowConfigResponse[] = [wf({ loanProduct: 'X', borrowerType: 'COMPANY', active: true })]
+    const s: IntakeFormState = { ...createEmptyIntakeFormState(), borrowerType: 'INDIVIDUAL', loanProduct: 'PERSONAL_LOAN' }
+    const workflows: WorkflowConfigResponse[] = [wf({ loanProduct: 'PERSONAL_LOAN', borrowerType: 'COMPANY', active: true })]
     const err = validateProductStep(s, 'BORROWER_SELF_SERVICE', workflows)
     expect(err).toContain('No active')
   })

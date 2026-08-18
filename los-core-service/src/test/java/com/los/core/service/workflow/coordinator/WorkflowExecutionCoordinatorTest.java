@@ -47,6 +47,7 @@ class WorkflowExecutionCoordinatorTest {
         app.setId(id);
         app.setBorrowerType(BorrowerType.INDIVIDUAL);
         app.setLoanProduct("PERSONAL_LOAN");
+        app.setWorkflowId(UUID.fromString("00000000-0000-0000-0000-00000000aa01"));
         when(loanApplicationRepository.findById(id)).thenReturn(Optional.of(app));
     }
 
@@ -114,14 +115,21 @@ class WorkflowExecutionCoordinatorTest {
     }
 
     @Test
-    void strictMode_noConfigRow_allowsKyc() {
+    void unpinnedApplication_kycStepFailsClosed() {
+        app.setWorkflowId(null);
+        WorkflowExecutionCoordinator c = newWorkflowCoordinator(false, WorkflowResolutionOptions.defaults());
+        BusinessRuleException ex = assertThrows(BusinessRuleException.class, () ->
+                c.executeFlowStepForApplication(id, FlowStepType.KYC_WORKFLOW, Map.of()));
+        assertEquals("WORKFLOW_NOT_PINNED", ex.getReason());
+    }
+
+    @Test
+    void unpinnedApplication_resolvedOrderIsEmpty() {
+        app.setWorkflowId(null);
         when(activeWorkflowConfigService.findActiveForApplication(any(LoanApplication.class)))
                 .thenReturn(Optional.empty());
-        when(stepExecutionRecordingService.executeWithRecording(
-                eq(FlowStepType.KYC_WORKFLOW), eq(id), anyMap()))
-                .thenReturn(StepResult.ok(Map.of("k", 1)));
-        WorkflowExecutionCoordinator c = newWorkflowCoordinator(true, WorkflowResolutionOptions.defaults());
-        assertEquals(1, c.executeFlowStepForApplication(id, FlowStepType.KYC_WORKFLOW, Map.of("kycPayload", Map.of())).output().get("k"));
+        WorkflowExecutionCoordinator c = newWorkflowCoordinator(false, WorkflowResolutionOptions.defaults());
+        assertEquals(List.of(), c.getResolvedOrderedFlowStepTypes(id));
     }
 
     private WorkflowExecutionCoordinator newWorkflowCoordinator(boolean strict, WorkflowResolutionOptions options) {

@@ -158,11 +158,8 @@ export function validateProductStep(
     s.loanProduct,
     intakeSegment,
   )
-  if (matchingWorkflows.length > 1 && !s.workflowId) {
-    return 'Select the workflow to use for this application.'
-  }
-  if (s.workflowId && !matchingWorkflows.some((w) => w.id === s.workflowId)) {
-    return 'Select a workflow from the active options for this product.'
+  if (matchingWorkflows.length === 0) {
+    return 'No active workflow catalogue exists for this product. Ask an admin to configure Customer Category.'
   }
 
   const amount = parseAmount(s.requestedAmount)
@@ -225,11 +222,8 @@ export function validateNotifyBasics(
   const matchingWorkflows = matchingWorkflowsForBorrowerType(activeWorkflows, s.borrowerType).filter(
     (w) => w.loanProduct === s.loanProduct,
   )
-  if (matchingWorkflows.length > 1 && !s.workflowId) {
-    return 'Select the workflow to use before notifying the borrower.'
-  }
-  if (s.workflowId && !matchingWorkflows.some((w) => w.id === s.workflowId)) {
-    return 'Select a valid workflow before notifying the borrower.'
+  if (matchingWorkflows.length === 0) {
+    return 'No active workflow catalogue exists for this product. Ask an admin to configure Customer Category.'
   }
 
   if (isInvoiceDiscountingProduct(s.loanProduct)) {

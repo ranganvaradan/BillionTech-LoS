@@ -29,6 +29,7 @@ describe('intakePayloads', () => {
       requestedAmount: '100000',
       tenureMonths: '12',
       purpose: 'Working capital',
+      workflowId: 'should-not-be-sent',
       fullName: 'Jane Doe',
       email: 'j@ex.com',
       mobile: '9000000000',
@@ -43,6 +44,7 @@ describe('intakePayloads', () => {
     }
     const created = buildIntakeCreateRequest(s, 'BORROWER_SELF_SERVICE', null)
     expect(created.requestedAmount).toBe(100_000)
+    expect(created.workflowId).toBeUndefined()
     expect(created.tenureMonths).toBe(12)
     const pi = created.personalInfo as Record<string, string>
     expect(pi.purpose).toBe('Working capital')

@@ -24,6 +24,7 @@ import com.los.core.service.loan.intake.ApplicationCustomerIdResolver;
 import com.los.core.service.loan.intake.AnchorIntakeValidation;
 import com.los.core.service.loan.intake.IntakeMetadataEnricher;
 import com.los.core.service.underwriting.UnderwritingEvaluationService;
+import com.los.core.service.workflow.ApplicationConfigurationAuthority;
 import com.los.core.service.workflow.ApplicationWorkflowResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -138,8 +139,13 @@ public class LoanApplicationServiceImpl implements ILoanApplicationService {
         UUID customerId = applicationCustomerIdResolver.resolveCustomerId(request, actingUserId, actingUserRole);
         Map<String, Object> personal = intakeMetadataEnricher.enrichPersonalInfo(request, customerId, actingUserId, actingUserRole);
         IntakeSegment segment = AnchorIntakeValidation.resolveSegment(request);
-        UUID workflowId = resolveWorkflowBinding(
-                request.getWorkflowId(), request.getBorrowerType(), request.getLoanProduct(), segment);
+        ApplicationConfigurationAuthority.assertOrdinaryCreateDoesNotSelectWorkflow(
+                request.getWorkflowId(), actingUserRole);
+        UUID workflowId = null;
+        if (request.getWorkflowId() != null) {
+            workflowId = resolveWorkflowBinding(
+                    request.getWorkflowId(), request.getBorrowerType(), request.getLoanProduct(), segment);
+        }
 
         LoanApplication application = LoanApplication.builder()
                 .applicationNumber(applicationNumber)
@@ -306,10 +312,7 @@ public class LoanApplicationServiceImpl implements ILoanApplicationService {
             app.setLmsTenureUnit(blankToNull(request.getLmsTenureUnit()));
         }
         if (request.getWorkflowId() != null) {
-            UUID bound = resolveWorkflowBinding(
-                    request.getWorkflowId(), app.getBorrowerType(), app.getLoanProduct(), app.getIntakeSegment());
-            WorkflowConfig cfg = workflowConfigRepository.findById(bound).orElseThrow();
-            applicationWorkflowResolver.stampExplicit(app, cfg);
+            ApplicationConfigurationAuthority.assertWorkflowIdUpdateAllowed(app, request.getWorkflowId());
         }
         if (request.getPersonalInfo() != null) app.setPersonalInfo(mergeJsonb(app.getPersonalInfo(), request.getPersonalInfo()));
         if (request.getBusinessInfo() != null) app.setBusinessInfo(mergeJsonb(app.getBusinessInfo(), request.getBusinessInfo()));
@@ -519,6 +522,12 @@ public class LoanApplicationServiceImpl implements ILoanApplicationService {
                 .loanProduct(app.getLoanProduct())
                 .intakeSegment(app.getIntakeSegment())
                 .workflowId(app.getWorkflowId())
+                .workflowVersion(app.getWorkflowVersion())
+                .workflowResolutionSource(app.getWorkflowResolutionSource())
+                .selectedCustomerCategoryId(app.getSelectedCustomerCategoryId())
+                .selectedPolicyApplicabilityId(app.getSelectedPolicyApplicabilityId())
+                .selectedPolicyDocumentId(app.getSelectedPolicyDocumentId())
+                .categorySelectionState(app.getCategorySelectionState())
                 .intakeOwner(app.getIntakeOwner())
                 .intakeCompletedStep(app.getIntakeCompletedStep())
                 .borrowerSentBackNotes(app.getBorrowerSentBackNotes())

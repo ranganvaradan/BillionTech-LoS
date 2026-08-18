@@ -181,8 +181,7 @@ public class CustomerCategoryEligibilityService {
     }
 
     private static boolean hasUsableBinds(CustomerCategoryEntity c) {
-        return c.getPolicyApplicabilityId() != null
-                && c.getWorkflowId() != null;
+        return CategoryConfigurationPinValidator.hasUsableBinds(c);
     }
 
     private static boolean dimMatch(String categoryDim, String appValue) {

@@ -54,6 +54,7 @@ public class ProductRoutingConvergenceService {
                 : workflowConfigRepository
                         .findByBorrowerTypeAndLoanProductAndIntakeSegmentAndActiveTrueOrderByVersionDesc(
                                 borrowerType, loanProduct, segment);
+        // Catalog listing only — never persist or select a default onto an application.
         Optional<WorkflowConfig> wf = activeWorkflowConfigService.findActiveForApplication(app);
         out.put("workflow", workflowResolution(wf.orElse(null), wfPeers));
 
@@ -167,8 +168,8 @@ public class ProductRoutingConvergenceService {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("sourceOfTruth", "Runtime Workflow");
         m.put("label", "Runtime Workflow");
-        m.put("resolver", "ActiveWorkflowConfigService.findActiveForApplication");
-        m.put("prioritySemantics", "bound workflow_id else max active version (orderByVersionDesc)");
+        m.put("resolver", "catalog list only — application pin required to consume a workflow");
+        m.put("prioritySemantics", "no application default; Category pin is the new-app authority");
         if (chosen == null) {
             m.put("match", "NO_MATCH");
             m.put("id", null);

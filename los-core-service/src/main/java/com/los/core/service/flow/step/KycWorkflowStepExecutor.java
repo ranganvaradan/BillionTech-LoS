@@ -73,7 +73,7 @@ public class KycWorkflowStepExecutor implements IStepExecutor {
             applicationRepository.save(app);
             boolean autoBureauEnabled = activeWorkflowConfigService.findActiveForApplication(app)
                     .map(workflow -> workflow.isBureauEnabled() && workflow.isAutoPullBureauAfterKycSuccess())
-                    .orElse(true);
+                    .orElse(false);
             if (autoBureauEnabled) {
                 eventPublisher.publishEvent(
                         new AutoBureauPullRequestedEvent(applicationId, "KYC_WORKFLOW_SUCCESS"));

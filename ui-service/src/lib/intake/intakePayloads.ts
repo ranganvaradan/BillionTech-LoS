@@ -11,34 +11,28 @@ import {
 } from '@/lib/intake/intakeOptionCatalogs'
 
 function appendLmsConfigToCreate(s: IntakeFormState, payload: CreateApplicationRequest): CreateApplicationRequest {
-  const withWorkflow = {
-    ...payload,
-    ...(s.workflowId ? { workflowId: s.workflowId } : {}),
-  }
+  const withProduct = { ...payload }
   if (isInvoiceDiscountingProduct(s.loanProduct)) {
-    return withWorkflow
+    return withProduct
   }
   const code = s.lmsProductCode.trim()
   const unit = s.lmsTenureUnit.trim()
   return {
-    ...withWorkflow,
+    ...withProduct,
     ...(code ? { lmsProductCode: code } : {}),
     ...(unit ? { lmsTenureUnit: unit } : {}),
   }
 }
 
 function appendLmsConfigToUpdate(s: IntakeFormState, payload: UpdateApplicationRequest): UpdateApplicationRequest {
-  const withWorkflow = {
-    ...payload,
-    ...(s.workflowId ? { workflowId: s.workflowId } : {}),
-  }
+  const withProduct = { ...payload }
   if (isInvoiceDiscountingProduct(s.loanProduct)) {
-    return withWorkflow
+    return withProduct
   }
   const code = s.lmsProductCode.trim()
   const unit = s.lmsTenureUnit.trim()
   return {
-    ...withWorkflow,
+    ...withProduct,
     ...(code ? { lmsProductCode: code } : {}),
     ...(unit ? { lmsTenureUnit: unit } : {}),
   }
@@ -221,7 +215,6 @@ export function buildIntakeCreateRequest(s: IntakeFormState, mode: IntakeMode, s
   const payload: CreateApplicationRequest = {
     borrowerType: s.borrowerType,
     loanProduct: s.loanProduct as LoanProductCode,
-    ...(s.workflowId ? { workflowId: s.workflowId } : {}),
     requestedAmount: amount,
     personalInfo: personal,
   }
@@ -255,7 +248,6 @@ export function buildIntakeBorrowerUpdate(s: IntakeFormState, mode: IntakeMode, 
   const out: UpdateApplicationRequest = {}
   if (!Number.isNaN(amount) && amount > 0) out.requestedAmount = amount
   if (tenure != null) out.tenureMonths = tenure
-  if (s.workflowId) out.workflowId = s.workflowId
 
   const p = primaryPhone(s)
   const personal: Record<string, string> = trimStringRecord({

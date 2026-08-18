@@ -33,6 +33,7 @@ class ActiveWorkflowConfigServiceTest {
     void findActive_delegatesToResolver() {
         LoanApplication app = LoanApplication.builder()
                 .id(UUID.randomUUID())
+                .workflowId(UUID.randomUUID())
                 .borrowerType(BorrowerType.COMPANY)
                 .loanProduct("BUSINESS_WC_INVOICE_DISCOUNTING")
                 .intakeSegment(IntakeSegment.ANCHOR)
@@ -44,17 +45,12 @@ class ActiveWorkflowConfigServiceTest {
     }
 
     @Test
-    void findActive_emptyWhenNotResolved() {
+    void findActive_emptyWhenWorkflowNotPinned() {
         LoanApplication app = LoanApplication.builder()
                 .id(UUID.randomUUID())
                 .borrowerType(BorrowerType.INDIVIDUAL)
                 .loanProduct("  ")
                 .build();
-        when(applicationWorkflowResolver.requireConfig(app)).thenThrow(new BusinessRuleException(
-                "No Workflow could be resolved",
-                "WORKFLOW_NOT_RESOLVED",
-                "RESOLVE_WORKFLOW",
-                MapLike.empty()));
         assertTrue(service.findActiveForApplication(app).isEmpty());
     }
 

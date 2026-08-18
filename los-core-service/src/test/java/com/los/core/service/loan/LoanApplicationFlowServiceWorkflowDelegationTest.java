@@ -1,5 +1,7 @@
 package com.los.core.service.loan;
 
+import com.los.core.model.entity.LoanApplication;
+import com.los.core.model.enums.BorrowerType;
 import com.los.core.repository.LoanApplicationRepository;
 import com.los.core.service.audit.AuditService;
 import com.los.core.service.credit.ICreditDecisionService;
@@ -16,6 +18,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -64,6 +67,12 @@ class LoanApplicationFlowServiceWorkflowDelegationTest {
     @Test
     void pullBureau_delegatesToCoordinator() {
         UUID id = UUID.randomUUID();
+        LoanApplication app = new LoanApplication();
+        app.setId(id);
+        app.setBorrowerType(BorrowerType.INDIVIDUAL);
+        app.setLoanProduct("PERSONAL_LOAN");
+        app.setWorkflowId(UUID.randomUUID());
+        when(applicationRepository.findById(id)).thenReturn(Optional.of(app));
         when(workflowExecutionCoordinator.executeFlowStepForApplication(
                 id, FlowStepType.BUREAU_PULL, Map.of()))
                 .thenReturn(StepResult.ok(Map.of("success", true)));

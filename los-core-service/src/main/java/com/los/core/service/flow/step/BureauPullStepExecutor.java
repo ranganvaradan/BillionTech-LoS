@@ -57,7 +57,10 @@ public class BureauPullStepExecutor implements IStepExecutor {
                 .orElseThrow(() -> new com.los.core.exception.ResourceNotFoundException("Application not found: " + applicationId));
         boolean bureauEnabled = activeWorkflowConfigService.findActiveForApplication(app)
                 .map(com.los.core.model.entity.WorkflowConfig::isBureauEnabled)
-                .orElse(true);
+                .orElse(false);
+        if (app.getWorkflowId() == null) {
+            throw com.los.core.service.workflow.ApplicationConfigurationAuthority.notPinned(app);
+        }
         if (!bureauEnabled) {
             throw new BusinessRuleException(
                     "Bureau pull is disabled for the workflow bound to this application",

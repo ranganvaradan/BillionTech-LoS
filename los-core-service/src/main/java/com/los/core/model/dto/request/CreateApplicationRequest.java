@@ -34,7 +34,10 @@ public class CreateApplicationRequest {
     /** Encore tenure unit (optional; falls back to active workflow default). */
     private String lmsTenureUnit;
 
-    /** Optional explicit workflow binding for new multi-workflow products. */
+    /**
+     * Controlled ADMIN / MIGRATION / TEST only (Option B).
+     * Ordinary intake must omit this; Customer Category pins the workflow.
+     */
     private UUID workflowId;
 
     private Map<String, Object> personalInfo;

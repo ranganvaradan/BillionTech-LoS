@@ -77,6 +77,7 @@ class KycOrchestrationServiceBureauExclusionTest {
                 .borrowerType(BorrowerType.INDIVIDUAL)
                 .loanProduct("PERSONAL_LOAN")
                 .status(ApplicationStatus.KYC_IN_PROGRESS)
+                .workflowId(UUID.fromString("00000000-0000-0000-0000-00000000b001"))
                 .build();
         app.setId(appId);
         when(loanApplicationRepository.findById(appId)).thenReturn(Optional.of(app));
@@ -115,6 +116,7 @@ class KycOrchestrationServiceBureauExclusionTest {
                 .customerId(UUID.randomUUID())
                 .borrowerType(BorrowerType.INDIVIDUAL)
                 .loanProduct("PERSONAL_LOAN")
+                .workflowId(UUID.fromString("00000000-0000-0000-0000-00000000b002"))
                 .build();
         app.setId(appId);
         when(loanApplicationRepository.findById(appId)).thenReturn(Optional.of(app));
@@ -132,5 +134,22 @@ class KycOrchestrationServiceBureauExclusionTest {
         Map<String, Object> out = kycOrchestrationService.computeKycOutcome(appId);
         // Missing mandatory identity (PAN) → FAIL; BUREAU_PULL is ignored as non-identity.
         assertEquals("FAIL", out.get("outcome"));
+    }
+
+    @Test
+    void computeKycOutcome_unconfiguredDraftIsPending() {
+        LoanApplication app = LoanApplication.builder()
+                .applicationNumber("T-3")
+                .customerId(UUID.randomUUID())
+                .borrowerType(BorrowerType.INDIVIDUAL)
+                .loanProduct("PERSONAL_LOAN")
+                .build();
+        app.setId(appId);
+        when(loanApplicationRepository.findById(appId)).thenReturn(Optional.of(app));
+
+        Map<String, Object> out = kycOrchestrationService.computeKycOutcome(appId);
+        assertEquals("CONFIGURATION_PENDING", out.get("outcome"));
+        assertEquals(true, out.get("configurationPending"));
+        verify(applicationWorkflowResolver, never()).requireConfig(any());
     }
 }

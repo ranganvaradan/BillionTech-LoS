@@ -43,7 +43,7 @@ public class WorkflowExecutionCoordinator {
                 .orElseThrow(() -> new ResourceNotFoundException("Application not found: " + applicationId));
         return loadConfig(app)
                 .map(c -> WorkflowFlowStepOrderResolver.resolve(c, workflowResolutionOptions))
-                .orElseGet(() -> List.copyOf(workflowResolutionOptions.emptyConfigFallback()));
+                .orElseGet(List::of);
     }
 
     /**
@@ -52,6 +52,10 @@ public class WorkflowExecutionCoordinator {
     public StepResult executeFlowStepForApplication(UUID applicationId, String flowStepType, Map<String, Object> context) {
         LoanApplication app = loanApplicationRepository.findById(applicationId)
                 .orElseThrow(() -> new ResourceNotFoundException("Application not found: " + applicationId));
+        if (!WorkflowFlowStepOrderResolver.isPostSanctionFlowStep(flowStepType)
+                && app.getWorkflowId() == null) {
+            throw com.los.core.service.workflow.ApplicationConfigurationAuthority.notPinned(app);
+        }
         assertFlowStepAllowedIfStrict(app, flowStepType);
         return stepExecutionRecordingService.executeWithRecording(flowStepType, applicationId, context);
     }
