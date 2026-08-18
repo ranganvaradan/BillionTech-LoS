@@ -494,12 +494,22 @@ public class StagingPolicyStudioDemoService {
     public Map<String, Object> sessionView(UUID documentId, String tenantHeader) {
         UUID tenantId = resolveTenant(tenantHeader);
         PolicyStudioSession session = orchestrator.requireSession(documentId, tenantId);
-        Map<String, Object> meta = sessionMeta.getOrDefault(documentId, Map.of(
-                "kind", "session",
-                "demo", false,
-                "canResetDemo", false,
-                "fileName", session.getDocument() == null ? null : session.getDocument().getOriginalFileReference()));
-        return toProspectView(session, new LinkedHashMap<>(meta));
+        Map<String, Object> stored = sessionMeta.get(documentId);
+        Map<String, Object> meta;
+        if (stored != null) {
+            meta = new LinkedHashMap<>(stored);
+        } else {
+            meta = new LinkedHashMap<>();
+            meta.put("kind", "session");
+            meta.put("demo", false);
+            meta.put("canResetDemo", false);
+            String fileName = session.getDocument() == null
+                    ? null : session.getDocument().getOriginalFileReference();
+            if (fileName != null) {
+                meta.put("fileName", fileName);
+            }
+        }
+        return toProspectView(session, meta);
     }
 
     public Map<String, Object> resolveAmbiguity(
