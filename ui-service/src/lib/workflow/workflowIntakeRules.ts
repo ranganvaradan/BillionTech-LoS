@@ -1,4 +1,5 @@
 import type { IntakeFormState } from '@/lib/intake/intakeTypes'
+import { indiaStateMatchesAllowed } from '@/lib/intake/indiaStateIdentity'
 import {
   DEFAULT_LOAN_PURPOSE_OPTIONS,
   DEFAULT_OCCUPATION_OPTIONS,
@@ -109,33 +110,33 @@ export function resolveWorkflowAllowedStates(
 /** Case-insensitive check; empty state is left to location validation. */
 export function isStateAllowedByWorkflow(state: string, allowedStates: string[] | null): boolean {
   if (!allowedStates || allowedStates.length === 0) return true
-  const st = state.trim().toLowerCase()
-  if (!st) return true
-  return allowedStates.some((a) => a.trim().toLowerCase() === st)
+  if (!state.trim()) return true
+  return indiaStateMatchesAllowed(state, allowedStates)
 }
 
+/** Exact Workflow Version by id — Category pin / historical pin. Never invents latest. */
+export function workflowById(
+  workflows: WorkflowConfigResponse[],
+  workflowId?: string | null,
+): WorkflowConfigResponse | null {
+  const id = (workflowId ?? '').trim()
+  if (!id) return null
+  return workflows.find((w) => w.id === id) ?? null
+}
+
+/**
+ * Application intake must use the Category pin. Never invents latest/product-default.
+ * `borrowerType` / `loanProduct` / `intakeSegment` are ignored — kept so existing
+ * call sites fail closed instead of silently switching authority.
+ */
 export function activeWorkflowForProduct(
   workflows: WorkflowConfigResponse[],
-  borrowerType: string,
-  loanProduct: string,
+  _borrowerType: string,
+  _loanProduct: string,
   workflowId?: string,
-  intakeSegment: 'BORROWER' | 'ANCHOR' = 'BORROWER',
+  _intakeSegment: 'BORROWER' | 'ANCHOR' = 'BORROWER',
 ): WorkflowConfigResponse | null {
-  const segment = intakeSegment === 'ANCHOR' ? 'ANCHOR' : 'BORROWER'
-  const matches = workflows
-    .filter(
-      (w) =>
-        w.active &&
-        w.borrowerType === borrowerType &&
-        w.loanProduct === loanProduct &&
-        (w.intakeSegment ?? 'BORROWER') === segment,
-    )
-    .sort((a, b) => b.version - a.version)
-  if (workflowId) {
-    const exact = matches.find((w) => w.id === workflowId)
-    if (exact) return exact
-  }
-  return matches[0] ?? null
+  return workflowById(workflows, workflowId)
 }
 
 function collectAtIntake(step: Record<string, unknown>): boolean {

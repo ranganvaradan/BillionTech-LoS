@@ -4,6 +4,7 @@ import {
   dedupeByLoanProduct,
   productsForBorrowerType,
   productsForIntakeSegment,
+  resolveWorkflowIdForProduct,
   uniqueActiveWorkflowLoanProducts,
   workflowIntakeSegment,
   workflowLoanProductDisplayName,
@@ -146,5 +147,16 @@ describe('workflowIntakeSegment + productsForIntakeSegment', () => {
     const anchor = productsForIntakeSegment(rows, 'ANCHOR', 'COMPANY')
     expect(anchor).toHaveLength(1)
     expect(anchor[0]!.id).toBe('a')
+  })
+})
+
+describe('resolveWorkflowIdForProduct', () => {
+  it('never invents latest when the application has no pin', () => {
+    const rows = [
+      wf({ id: 'old', loanProduct: 'PERSONAL_LOAN', version: 1 }),
+      wf({ id: 'new', loanProduct: 'PERSONAL_LOAN', version: 9 }),
+    ]
+    expect(resolveWorkflowIdForProduct(rows, 'INDIVIDUAL', 'PERSONAL_LOAN')).toBe('')
+    expect(resolveWorkflowIdForProduct(rows, 'INDIVIDUAL', 'PERSONAL_LOAN', 'old')).toBe('old')
   })
 })

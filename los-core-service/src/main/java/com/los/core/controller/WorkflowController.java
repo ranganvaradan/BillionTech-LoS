@@ -59,6 +59,12 @@ public class WorkflowController {
         return ResponseEntity.ok(workflowEngineService.getActiveWorkflow(borrowerType, loanProduct, intakeSegment));
     }
 
+    @GetMapping("/{workflowId}")
+    @Operation(summary = "Get an exact Workflow Version by id (application pin / admin inspect)")
+    public ResponseEntity<WorkflowConfigResponse> getById(@PathVariable UUID workflowId) {
+        return ResponseEntity.ok(workflowEngineService.getWorkflow(workflowId));
+    }
+
     @GetMapping
     @Operation(summary = "List all workflow configurations")
     public ResponseEntity<List<WorkflowConfigResponse>> list() {

@@ -79,7 +79,8 @@ import {
   type StaffMultiPartyPath,
 } from '@/components/intake/CoApplicantsSection'
 import { CoApplicantPortal } from '@/components/intake/CoApplicantPortal'
-import { activeCatalogHasSecuredProduct, matchingWorkflowsForProduct, resolveWorkflowIdForProduct, uniqueActiveWorkflowLoanProducts, workflowLoanProductDisplayName } from '@/utils/workflowProducts'
+import { CategorySelectionPanel } from '@/components/category/CategorySelectionPanel'
+import { activeCatalogHasSecuredProduct, matchingWorkflowsForProduct, uniqueActiveWorkflowLoanProducts, workflowLoanProductDisplayName } from '@/utils/workflowProducts'
 import { hydrateIntakeFormFromApplication } from '@/lib/intake/hydrateIntakeFromApplication'
 import {
   applyHydratedIntakeDefaults,
@@ -91,13 +92,14 @@ import {
   isDelegatedBorrowerIntake,
 } from '@/lib/borrowerApplicationDeletable'
 import {
-  activeWorkflowForProduct,
+  workflowById,
   resolveCoApplicantConfig,
   resolveDocumentSlots,
   resolveWorkflowAllowedStates,
   shouldCollectLoanPurposeField,
   shouldCollectPersonalField,
   shouldShowKycIntakeField,
+  validateWorkflowTenure,
   workflowRequiresMandatoryItr,
   workflowRequiresMandatoryGstAnalysis,
   workflowHasStep,
@@ -251,14 +253,7 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
       ),
     [activeWorkflows, workflowBorrowerType, form.loanProduct, intakeSegmentForWorkflow],
   )
-  const selectedWorkflow =
-    activeWorkflowForProduct(
-      activeWorkflows,
-      workflowBorrowerType,
-      form.loanProduct,
-      form.workflowId,
-      intakeSegmentForWorkflow,
-    ) ?? null
+  const selectedWorkflow = workflowById(activeWorkflows, form.workflowId)
   const requiresItr = useMemo(
     () => workflowRequiresMandatoryItr(selectedWorkflow) || workflowHasStep(selectedWorkflow, 'ITR_RETURN_FORMS'),
     [selectedWorkflow],
@@ -395,14 +390,13 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
     setWorkflowsError(null)
     try {
       const all = await listWorkflows()
-      const act = all.filter((w) => w.active)
-      setActiveWorkflows(act)
+      setActiveWorkflows(all)
       setWorkflowsState('ok')
       setForm((f) => {
-        const unique = uniqueActiveWorkflowLoanProducts(act)
+        const unique = uniqueActiveWorkflowLoanProducts(all)
         if (unique.length === 0) {
-          return f.loanProduct || f.workflowId
-            ? { ...f, loanProduct: '', workflowId: '', invoiceOnboardingChoice: '' }
+          return f.loanProduct
+            ? { ...f, loanProduct: '', invoiceOnboardingChoice: '' }
             : f
         }
         let loanProduct = f.loanProduct
@@ -417,12 +411,9 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
           isInvoiceDiscountingProduct(loanProduct) && invoiceOnboardingChoice === 'ANCHOR'
             ? 'ANCHOR'
             : 'BORROWER'
-        const bt = segment === 'ANCHOR' ? ANCHOR_BORROWER_TYPE : f.borrowerType
-        const workflowId = resolveWorkflowIdForProduct(act, bt, loanProduct, f.workflowId, segment)
         return {
           ...f,
           loanProduct,
-          workflowId,
           invoiceOnboardingChoice,
           ...(segment === 'ANCHOR' ? { borrowerType: ANCHOR_BORROWER_TYPE } : {}),
         }
@@ -912,7 +903,7 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
           notifySuccess('Basics saved. Use “Save draft & notify” to invite applicants, or switch to staff fill.')
           return
         }
-        setStep(needColl ? steps.collateral : steps.documents)
+        setStep(steps.category)
       } catch (err) {
         const msg = intakeErrorMessage(err, 'Could not save application details.')
         setError(msg)
@@ -920,6 +911,27 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
       } finally {
         setBusy(false)
       }
+      return
+    }
+    if (step === steps.category) {
+      if (!form.workflowId.trim()) {
+        setError('Select a Customer Category so this application can pin its Workflow Version.')
+        return
+      }
+      const pinned = workflowById(activeWorkflows, form.workflowId)
+      const tenureErr = validateWorkflowTenure(form, pinned)
+      if (tenureErr) {
+        setError(tenureErr)
+        setStep(steps.product)
+        return
+      }
+      const borrowerErr = validateBorrowerStep(form, mode, pinned)
+      if (borrowerErr) {
+        setError(borrowerErr)
+        setStep(steps.borrower)
+        return
+      }
+      setStep(needColl ? steps.collateral : steps.documents)
       return
     }
     if (step === steps.collateral && needColl) {
@@ -1446,13 +1458,7 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
                           loanProduct: lp,
                           invoiceOnboardingChoice: choice,
                           ...(segment === 'ANCHOR' ? { borrowerType: ANCHOR_BORROWER_TYPE } : {}),
-                          workflowId: resolveWorkflowIdForProduct(
-                            activeWorkflows,
-                            bt,
-                            lp,
-                            '',
-                            segment,
-                          ),
+                          workflowId: f.workflowId,
                         }
                       })
                     }}
@@ -1465,10 +1471,11 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
                       </option>
                     ))}
                   </select>
-                  {workflowsForSelectedProduct.length > 1 &&
+                  {mode === 'ADMIN_INTERNAL' &&
+                  workflowsForSelectedProduct.length > 1 &&
                   !(isInvoiceDiscountingProduct(form.loanProduct) && form.invoiceOnboardingChoice === 'ANCHOR') ? (
                     <label className="mt-2 block text-sm text-slate-700">
-                      <span className="mb-1 block text-xs font-medium text-slate-500">Workflow *</span>
+                      <span className="mb-1 block text-xs font-medium text-slate-500">Workflow (admin / test) *</span>
                       <select
                         className="bt-input w-full text-slate-900 disabled:cursor-not-allowed disabled:bg-slate-50"
                         value={form.workflowId}
@@ -1483,13 +1490,17 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
                         ))}
                       </select>
                     </label>
-                  ) : selectedWorkflow &&
-                    !(isInvoiceDiscountingProduct(form.loanProduct) && form.invoiceOnboardingChoice === 'ANCHOR') ? (
+                  ) : selectedWorkflow ? (
                     <p className="mt-1.5 text-xs text-slate-500">
-                      Active workflow: <span className="font-medium text-slate-800">{selectedWorkflow.name}</span> (v
+                      Workflow pinned by Customer Category:{' '}
+                      <span className="font-medium text-slate-800">{selectedWorkflow.name}</span> (v
                       {selectedWorkflow.version})
                     </p>
-                  ) : null}
+                  ) : (
+                    <p className="mt-1.5 text-xs text-slate-500">
+                      Workflow Version is pinned after Customer Category selection — not chosen independently.
+                    </p>
+                  )}
                 </label>
 
                 {isInvoiceDiscountingProduct(form.loanProduct) ? (
@@ -1498,18 +1509,10 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
                     onChange={(choice) =>
                       setForm((f) => {
                         const segment = choice === 'ANCHOR' ? 'ANCHOR' : 'BORROWER'
-                        const bt = segment === 'ANCHOR' ? ANCHOR_BORROWER_TYPE : f.borrowerType
-                        const workflowId = resolveWorkflowIdForProduct(
-                          activeWorkflows,
-                          bt,
-                          f.loanProduct,
-                          '',
-                          segment,
-                        )
                         return {
                           ...f,
                           invoiceOnboardingChoice: choice,
-                          workflowId,
+                          workflowId: f.workflowId,
                           ...(choice === 'ANCHOR'
                             ? { purpose: '', borrowerType: ANCHOR_BORROWER_TYPE }
                             : {}),
@@ -1538,12 +1541,7 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
                               ...f,
                               borrowerType: bt,
                               loanProduct,
-                              workflowId: resolveWorkflowIdForProduct(
-                                activeWorkflows,
-                                bt,
-                                loanProduct,
-                                '',
-                              ),
+                              workflowId: f.workflowId,
                             }
                           })
                         }}
@@ -1655,7 +1653,7 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
                         ...f,
                         borrowerType: bt,
                         loanProduct,
-                        workflowId: resolveWorkflowIdForProduct(activeWorkflows, bt, loanProduct, ''),
+                        workflowId: f.workflowId,
                       }))
                     }}
                     disabled={workflowsState !== 'ok' || !activeWorkflows.length || productLocked}
@@ -1677,7 +1675,7 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
                       setForm((f) => ({
                         ...f,
                         loanProduct: lp,
-                        workflowId: resolveWorkflowIdForProduct(activeWorkflows, f.borrowerType, lp, ''),
+                        workflowId: f.workflowId,
                       }))
                     }}
                     disabled={workflowsState !== 'ok' || !productsForType.length || productLocked}
@@ -2063,6 +2061,25 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
           collectOccupation={coApplicantConfig?.personalFields?.occupation?.collect === true}
           requireDob={coApplicantConfig?.personalFields?.dateOfBirth?.required === true}
         />
+      ) : null}
+
+      {step === steps.category && applicationId ? (
+        <section className="space-y-4 bt-card p-5">
+          <h2 className="bt-card-title">Customer Category</h2>
+          <p className="text-xs text-slate-600">
+            Category selection pins the exact Workflow Version and Policy Document for this application.
+            Intake fields on the next steps come from that pin — not from a product default.
+          </p>
+          <CategorySelectionPanel
+            applicationId={applicationId}
+            actor={user?.name || 'user'}
+            actorRole={variant === 'staff' ? 'RM' : 'CUSTOMER'}
+            onSelected={(result) => {
+              const wf = result.selected?.workflowId
+              if (wf) setForm((f) => ({ ...f, workflowId: wf }))
+            }}
+          />
+        </section>
       ) : null}
 
       {step === steps.collateral && needColl && detectSecuredCollateralKind(form.loanProduct) ? (
@@ -2469,6 +2486,7 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
                   (variant === 'staff' &&
                     isInvoiceDiscountingProduct(form.loanProduct) &&
                     !form.invoiceOnboardingChoice))) ||
+              (step === steps.category && !form.workflowId.trim()) ||
               (step === steps.kyc && !applicationId) ||
               (step === steps.documents && !applicationId) ||
               (step === steps.consent && !applicationId) ||

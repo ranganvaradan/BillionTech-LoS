@@ -188,6 +188,13 @@ public class WorkflowEngineServiceImpl implements IWorkflowEngineService {
     }
 
     @Override
+    public WorkflowConfigResponse getWorkflow(UUID workflowId) {
+        WorkflowConfig config = workflowRepository.findById(workflowId)
+                .orElseThrow(() -> new ResourceNotFoundException("Workflow not found: " + workflowId));
+        return toResponse(config);
+    }
+
+    @Override
     public List<WorkflowConfigResponse> listWorkflows() {
         return workflowRepository.findAll().stream()
                 .map(this::toResponse)

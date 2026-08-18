@@ -20,6 +20,8 @@ public interface IWorkflowEngineService {
 
     WorkflowConfigResponse getActiveWorkflow(BorrowerType borrowerType, String loanProduct, IntakeSegment intakeSegment);
 
+    WorkflowConfigResponse getWorkflow(UUID workflowId);
+
     List<WorkflowConfigResponse> listWorkflows();
 
     void activateWorkflow(UUID workflowId);

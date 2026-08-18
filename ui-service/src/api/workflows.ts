@@ -6,6 +6,11 @@ export async function listWorkflows(): Promise<WorkflowConfigResponse[]> {
   return data
 }
 
+export async function getWorkflow(workflowId: string): Promise<WorkflowConfigResponse> {
+  const { data } = await http.get<WorkflowConfigResponse>(`/workflows/${workflowId}`)
+  return data
+}
+
 export async function getActiveWorkflow(
   borrowerType: string,
   loanProduct: string,

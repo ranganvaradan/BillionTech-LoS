@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getKycOutcome, getKycResults } from '@/api/kyc'
 import { retryKycFlow, runKycFlow, submitApplicationForKyc } from '@/api/flow'
-import { getActiveWorkflow, listWorkflows } from '@/api/workflows'
+import { getWorkflow } from '@/api/workflows'
 import { messageForKycAction, messageFromKycRunOutput, businessKycOutcomeLabel, businessKycStepLabel } from '@/api/kycErrorMessage'
 import { updateApplication } from '@/api/applications'
 import { ErrorState } from '@/components/ErrorState'
@@ -449,25 +449,18 @@ export function KycDetailsSection({
 
   useEffect(() => {
     void (async () => {
+      const boundId = (app.workflowId ?? '').trim()
+      if (!boundId) {
+        setActiveWorkflow(null)
+        return
+      }
       try {
-        const workflows = await listWorkflows()
-        const boundId = (app.workflowId ?? '').trim()
-        const bound = boundId ? workflows.find((w) => w.id === boundId) : undefined
-        if (bound) {
-          setActiveWorkflow(bound)
-          return
-        }
-        const workflow = await getActiveWorkflow(
-          app.borrowerType,
-          app.loanProduct,
-          app.intakeSegment ?? 'BORROWER',
-        )
-        setActiveWorkflow(workflow)
+        setActiveWorkflow(await getWorkflow(boundId))
       } catch {
         setActiveWorkflow(null)
       }
     })()
-  }, [app.borrowerType, app.loanProduct, app.intakeSegment, app.workflowId])
+  }, [app.workflowId])
 
   useEffect(() => {
     setFormDirty(false)

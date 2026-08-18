@@ -1,5 +1,5 @@
 import { isInvoiceDiscountingProduct } from '@/catalog/loanProducts'
-import { activeWorkflowForProduct, isWorkflowDrivenIntake } from '@/lib/workflow/workflowIntakeRules'
+import { workflowById, isWorkflowDrivenIntake } from '@/lib/workflow/workflowIntakeRules'
 import type { ApplicationResponse } from '@/types/application'
 import type { WorkflowConfigResponse } from '@/types/workflow'
 import { isBorrowerResumableIntakeStatus } from '@/lib/borrowerApplicationDeletable'
@@ -44,14 +44,7 @@ export function inferFirstIncompleteIntakeStep(
   needPlp: boolean,
   needColl: boolean,
 ): number {
-  const workflow =
-    activeWorkflowForProduct(
-      activeWorkflows,
-      form.borrowerType,
-      form.loanProduct,
-      form.workflowId,
-      form.invoiceOnboardingChoice === 'ANCHOR' ? 'ANCHOR' : 'BORROWER',
-    ) ?? null
+  const workflow = workflowById(activeWorkflows, form.workflowId)
 
   if (validateProductStep(form, mode, activeWorkflows)) {
     return steps.product
@@ -63,6 +56,10 @@ export function inferFirstIncompleteIntakeStep(
 
   if (validateBorrowerStep(form, mode, workflow)) {
     return steps.borrower
+  }
+
+  if (!form.workflowId?.trim()) {
+    return steps.category
   }
 
   if (needColl && validateCollateralIntakeStep(form)) {

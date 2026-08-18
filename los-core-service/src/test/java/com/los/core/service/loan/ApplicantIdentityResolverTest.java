@@ -67,4 +67,20 @@ class ApplicantIdentityResolverTest {
         assertEquals("", ApplicantIdentityResolver.normalizeIndianMobileDigits(""));
         assertEquals("", ApplicantIdentityResolver.normalizeIndianMobileDigits(null));
     }
+
+    @Test
+    void resolvePanFromPanAlias() {
+        LoanApplication app = LoanApplication.builder()
+                .intakeSegment(IntakeSegment.BORROWER)
+                .personalInfo(Map.of("pan", "abcde1234f"))
+                .build();
+        assertEquals("ABCDE1234F", ApplicantIdentityResolver.resolvePanNumber(app));
+    }
+
+    @Test
+    void canonicalisePersonalInfoWritesPanNumber() {
+        Map<String, Object> out = ApplicantIdentityResolver.canonicalisePersonalInfo(Map.of("pan", "abcde1234f"));
+        assertEquals("ABCDE1234F", out.get("panNumber"));
+        assertEquals("abcde1234f", out.get("pan"));
+    }
 }

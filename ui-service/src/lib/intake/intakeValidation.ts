@@ -9,7 +9,7 @@ import type { WorkflowConfigResponse } from '@/types/workflow'
 import { matchingWorkflowsForBorrowerType, matchingWorkflowsForProduct, uniqueActiveWorkflowLoanProducts, productsForBorrowerType } from '@/utils/workflowProducts'
 import { ANCHOR_BORROWER_TYPE } from '@/lib/intake/anchorIntakeConstants'
 import {
-  activeWorkflowForProduct,
+  workflowById,
   isWorkflowDrivenIntake,
   missingRequiredWorkflowDocuments,
   resolveWorkflowAllowedStates,
@@ -173,13 +173,7 @@ export function validateProductStep(
       return 'Tenure must be a positive whole number of months, or leave it blank.'
     }
   }
-  const workflow = activeWorkflowForProduct(
-    activeWorkflows,
-    workflowBorrowerType,
-    s.loanProduct,
-    s.workflowId,
-    intakeSegment,
-  )
+  const workflow = workflowById(activeWorkflows, s.workflowId)
   const tenureErr = validateWorkflowTenure(s, workflow)
   if (tenureErr) return tenureErr
   if (intakeSegment !== 'ANCHOR') {

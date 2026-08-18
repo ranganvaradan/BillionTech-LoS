@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { fetchGeoCitiesForState, type GeoStateRow } from '@/api/geoMaster'
+import { indiaStateIdentity } from '@/lib/intake/indiaStateIdentity'
 import { ensureGeoStatesLoaded, syncCitiesForStateName } from '@/lib/intake/masterGeoClientCache'
 
 const INPUT_CLASS = 'bt-input w-full'
@@ -24,9 +25,12 @@ export interface IndiaStateCityPincodeFieldsProps {
 }
 
 function matchStateName(states: readonly GeoStateRow[], stateValue: string): GeoStateRow | undefined {
-  const k = stateValue.trim().toLowerCase()
-  if (!k) return undefined
-  return states.find((r) => r.stateName.toLowerCase() === k)
+  const identity = indiaStateIdentity(stateValue)
+  if (!identity) return undefined
+  return states.find(
+    (r) =>
+      indiaStateIdentity(r.stateName) === identity || indiaStateIdentity(r.stateCode) === identity,
+  )
 }
 
 /**
@@ -72,9 +76,13 @@ export function IndiaStateCityPincodeFields({
 
   const filteredGeoStates = useMemo(() => {
     if (!allowedStates || allowedStates.length === 0) return geoStates
-    const allow = new Set(allowedStates.map((s) => s.trim().toLowerCase()).filter(Boolean))
-    if (allow.size === 0) return geoStates
-    return geoStates.filter((r) => allow.has(r.stateName.toLowerCase()))
+    const allow = allowedStates.map((s) => indiaStateIdentity(s)).filter(Boolean)
+    if (allow.length === 0) return geoStates
+    return geoStates.filter((r) => {
+      const nameId = indiaStateIdentity(r.stateName)
+      const codeId = indiaStateIdentity(r.stateCode)
+      return allow.some((a) => a === nameId || a === codeId)
+    })
   }, [geoStates, allowedStates])
 
   const matchedMasterState = useMemo(
@@ -87,7 +95,7 @@ export function IndiaStateCityPincodeFields({
   const inAllowedList =
     !allowedStates ||
     allowedStates.length === 0 ||
-    allowedStates.some((s) => s.trim().toLowerCase() === stateTrim.toLowerCase())
+    allowedStates.some((s) => indiaStateIdentity(s) === indiaStateIdentity(stateTrim))
   const stateUnknown = Boolean(stateTrim && (!matchedMasterState || !inAllowedList))
 
   useEffect(() => {

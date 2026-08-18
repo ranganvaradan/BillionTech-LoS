@@ -98,4 +98,13 @@ describe('hydrateIntakeFormFromApplication', () => {
     expect(form.contactEmail).toBe('priya@example.com')
     expect(form.gstin).toBe('29AAAAA0000A1Z5')
   })
+
+  it('hydrates PAN from the pan alias onto the canonical panNumber field', () => {
+    const form = hydrateIntakeFormFromApplication(
+      app({
+        personalInfo: { pan: 'GLCC27052Z', fullName: 'Test' },
+      }),
+    )
+    expect(form.panNumber).toBe('GLCC27052Z')
+  })
 })

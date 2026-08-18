@@ -61,21 +61,16 @@ export function matchingWorkflowsForProduct(
 }
 
 /**
- * Prefer the current binding when still valid; otherwise the sole match or highest version.
- * Empty when there is no active workflow for the product.
+ * Returns the already-pinned workflow id. Never invents latest / sole-match / product default.
  */
 export function resolveWorkflowIdForProduct(
-  activeWorkflows: WorkflowConfigResponse[],
-  borrowerType: string,
-  loanProduct: string,
+  _activeWorkflows: WorkflowConfigResponse[],
+  _borrowerType: string,
+  _loanProduct: string,
   currentWorkflowId?: string | null,
-  intakeSegment: WorkflowIntakeSegmentUi = 'BORROWER',
+  _intakeSegment: WorkflowIntakeSegmentUi = 'BORROWER',
 ): string {
-  const matches = matchingWorkflowsForProduct(activeWorkflows, borrowerType, loanProduct, intakeSegment)
-  if (matches.length === 0) return ''
-  const current = (currentWorkflowId ?? '').trim()
-  if (current && matches.some((w) => w.id === current)) return current
-  return matches[0]!.id
+  return (currentWorkflowId ?? '').trim()
 }
 
 /**

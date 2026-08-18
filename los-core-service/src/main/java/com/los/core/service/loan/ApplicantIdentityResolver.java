@@ -20,7 +20,8 @@ public final class ApplicantIdentityResolver {
         if (app == null) {
             return "";
         }
-        String fromPersonal = stringValue(app.getPersonalInfo(), "panNumber");
+        String fromPersonal = firstNonBlank(
+                app.getPersonalInfo(), "panNumber", "pan", "panNo");
         if (!fromPersonal.isBlank()) {
             return fromPersonal.trim().toUpperCase();
         }
@@ -31,6 +32,21 @@ public final class ApplicantIdentityResolver {
             }
         }
         return "";
+    }
+
+    /**
+     * Persist PAN under the canonical key {@code panNumber} without dropping aliases.
+     */
+    public static Map<String, Object> canonicalisePersonalInfo(Map<String, Object> personal) {
+        if (personal == null || personal.isEmpty()) {
+            return personal;
+        }
+        Map<String, Object> out = new HashMap<>(personal);
+        String pan = firstNonBlank(out, "panNumber", "pan", "panNo");
+        if (!pan.isBlank()) {
+            out.put("panNumber", pan.trim().toUpperCase());
+        }
+        return out;
     }
 
     /**

@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest'
 import { createEmptyIntakeFormState } from '@/lib/intake/intakeTypes'
 import type { WorkflowConfigResponse } from '@/types/workflow'
 import {
+  activeWorkflowForProduct,
   intakeConfigFromApi,
   isStateAllowedByWorkflow,
   isWorkflowDrivenIntake,
   missingRequiredWorkflowDocuments,
   resolveWorkflowAllowedStates,
+  shouldShowKycIntakeField,
   validateMandatoryGroups,
   validateWorkflowAge,
   validateWorkflowKycStep,
@@ -14,6 +16,7 @@ import {
   validateWorkflowOccupation,
   validateWorkflowTenure,
   validateWorkflowCustomFields,
+  workflowById,
 } from './workflowIntakeRules'
 
 function wf(over: Partial<WorkflowConfigResponse>): WorkflowConfigResponse {
@@ -44,6 +47,15 @@ describe('workflowIntakeRules', () => {
     )
     expect(allowed).toEqual(['Tamil Nadu', 'Karnataka'])
     expect(isStateAllowedByWorkflow('tamil nadu', allowed)).toBe(true)
+    expect(isStateAllowedByWorkflow('Kerala', allowed)).toBe(false)
+  })
+
+  it('iso short code TN matches configured Tamil Nadu', () => {
+    const allowed = resolveWorkflowAllowedStates(
+      wf({ intakeConfig: { allowedStates: ['Tamil Nadu'] } }),
+    )
+    expect(isStateAllowedByWorkflow('TN', allowed)).toBe(true)
+    expect(isStateAllowedByWorkflow('TAMIL_NADU', allowed)).toBe(true)
     expect(isStateAllowedByWorkflow('Kerala', allowed)).toBe(false)
   })
 
@@ -178,5 +190,54 @@ describe('workflowIntakeRules', () => {
     expect(validateWorkflowCustomFields(form, workflow)).toMatch(/GST Turnover/)
     form.customFieldValues.gstTurnover = '250000'
     expect(validateWorkflowCustomFields(form, workflow)).toBeNull()
+  })
+
+  it('two pinned workflow versions can require different intake fields', () => {
+    const panWf = wf({
+      id: 'wf-pan',
+      version: 1,
+      intakeConfig: { policy: 'WORKFLOW_DRIVEN' },
+      steps: [{ step: 'PAN_VERIFY', mandatory: true, collectAtIntake: true, fieldRequiredAtIntake: true }],
+    })
+    const gstWf = wf({
+      id: 'wf-gst',
+      version: 99,
+      intakeConfig: { policy: 'WORKFLOW_DRIVEN' },
+      steps: [{ step: 'GSTIN_VERIFY', mandatory: true, collectAtIntake: true, fieldRequiredAtIntake: true }],
+    })
+    const catalog = [panWf, gstWf]
+    const form = createEmptyIntakeFormState()
+    form.gstin = '22AAAAA0000A1Z5'
+
+    expect(workflowById(catalog, 'wf-pan')?.id).toBe('wf-pan')
+    expect(workflowById(catalog, 'wf-gst')?.id).toBe('wf-gst')
+    expect(activeWorkflowForProduct(catalog, 'INDIVIDUAL', 'PERSONAL_LOAN')).toBeNull()
+    expect(activeWorkflowForProduct(catalog, 'INDIVIDUAL', 'PERSONAL_LOAN', 'wf-pan')?.id).toBe('wf-pan')
+
+    expect(validateWorkflowKycStep(form, workflowById(catalog, 'wf-pan'))).toMatch(/PAN/)
+    expect(validateWorkflowKycStep(form, workflowById(catalog, 'wf-gst'))).toBeNull()
+    expect(shouldShowKycIntakeField(panWf, 'PAN_VERIFY', false)).toBe(true)
+    expect(shouldShowKycIntakeField(gstWf, 'PAN_VERIFY', false)).toBe(false)
+    expect(shouldShowKycIntakeField(gstWf, 'GSTIN_VERIFY', false)).toBe(true)
+  })
+
+  it('does not drop a pinned required field when a later product workflow exists', () => {
+    const pinned = wf({
+      id: 'historical-pin',
+      version: 1,
+      intakeConfig: { policy: 'WORKFLOW_DRIVEN' },
+      steps: [{ step: 'PAN_VERIFY', mandatory: true, collectAtIntake: true, fieldRequiredAtIntake: true }],
+    })
+    const later = wf({
+      id: 'latest-active',
+      version: 9,
+      intakeConfig: { policy: 'WORKFLOW_DRIVEN' },
+      steps: [{ step: 'GSTIN_VERIFY', mandatory: true, collectAtIntake: true, fieldRequiredAtIntake: true }],
+    })
+    const form = createEmptyIntakeFormState()
+    const resolved = workflowById([pinned, later], 'historical-pin')
+    expect(resolved?.id).toBe('historical-pin')
+    expect(validateWorkflowKycStep(form, resolved)).toMatch(/PAN/)
+    expect(validateWorkflowKycStep(form, later)).not.toMatch(/PAN/)
   })
 })

@@ -137,7 +137,8 @@ public class LoanApplicationServiceImpl implements ILoanApplicationService {
                 request.getBorrowerType(), AnchorIntakeValidation.resolveSegment(request));
 
         UUID customerId = applicationCustomerIdResolver.resolveCustomerId(request, actingUserId, actingUserRole);
-        Map<String, Object> personal = intakeMetadataEnricher.enrichPersonalInfo(request, customerId, actingUserId, actingUserRole);
+        Map<String, Object> personal = ApplicantIdentityResolver.canonicalisePersonalInfo(
+                intakeMetadataEnricher.enrichPersonalInfo(request, customerId, actingUserId, actingUserRole));
         IntakeSegment segment = AnchorIntakeValidation.resolveSegment(request);
         ApplicationConfigurationAuthority.assertOrdinaryCreateDoesNotSelectWorkflow(
                 request.getWorkflowId(), actingUserRole);
@@ -314,7 +315,10 @@ public class LoanApplicationServiceImpl implements ILoanApplicationService {
         if (request.getWorkflowId() != null) {
             ApplicationConfigurationAuthority.assertWorkflowIdUpdateAllowed(app, request.getWorkflowId());
         }
-        if (request.getPersonalInfo() != null) app.setPersonalInfo(mergeJsonb(app.getPersonalInfo(), request.getPersonalInfo()));
+        if (request.getPersonalInfo() != null) {
+            app.setPersonalInfo(ApplicantIdentityResolver.canonicalisePersonalInfo(
+                    mergeJsonb(app.getPersonalInfo(), request.getPersonalInfo())));
+        }
         if (request.getBusinessInfo() != null) app.setBusinessInfo(mergeJsonb(app.getBusinessInfo(), request.getBusinessInfo()));
         if (request.getFinancialInfo() != null) app.setFinancialInfo(mergeJsonb(app.getFinancialInfo(), request.getFinancialInfo()));
         if (request.getCollateralInfo() != null) app.setCollateralInfo(mergeJsonb(app.getCollateralInfo(), request.getCollateralInfo()));

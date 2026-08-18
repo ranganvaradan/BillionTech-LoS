@@ -6,6 +6,7 @@ import com.los.core.model.entity.WorkflowConfig;
 import com.los.core.model.enums.BorrowerType;
 import com.los.core.repository.DocumentRepository;
 import com.los.core.service.loan.ApplicantIdentityResolver;
+import com.los.core.service.master.IndiaStateIdentity;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -74,8 +75,7 @@ public class WorkflowIntakeValidator {
         if (state.isBlank()) {
             return;
         }
-        boolean ok = allowed.stream().anyMatch(a -> a.equalsIgnoreCase(state));
-        if (!ok) {
+        if (!IndiaStateIdentity.matchesAllowed(state, allowed)) {
             throw new BusinessRuleException(
                     "Selected state is not configured for this workflow: " + state,
                     "STATE_NOT_ALLOWED_FOR_WORKFLOW",
@@ -465,7 +465,9 @@ public class WorkflowIntakeValidator {
             Map<String, Object> business,
             LoanApplication app) {
         return switch (fieldKey) {
-            case "panNumber" -> app != null ? ApplicantIdentityResolver.resolvePanNumber(app) : stringValue(personal.get("panNumber"));
+            case "panNumber" -> app != null
+                    ? ApplicantIdentityResolver.resolvePanNumber(app)
+                    : firstNonBlank(personal.get("panNumber"), personal.get("pan"), personal.get("panNo"));
             case "aadhaar" -> firstNonBlank(
                     personal.get("aadhaarNumber"),
                     personal.get("aadhaarLast4"),

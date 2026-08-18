@@ -122,4 +122,84 @@ class WorkflowIntakeValidatorTest {
                 .isInstanceOf(BusinessRuleException.class)
                 .hasMessageContaining("GST Turnover");
     }
+
+    @Test
+    void allowedStatesMatchIsoCodeAgainstConfiguredName() {
+        LoanApplication app = LoanApplication.builder()
+                .borrowerType(BorrowerType.INDIVIDUAL)
+                .personalInfo(Map.of("state", "TN"))
+                .build();
+        WorkflowConfig wf = WorkflowConfig.builder()
+                .intakeConfig(Map.of("policy", "LEGACY", "allowedStates", List.of("Tamil Nadu")))
+                .steps(List.of())
+                .build();
+        assertThatCode(() -> validator.validateAtSubmit(app, wf)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void panAliasSatisfiesWorkflowDrivenPanVerify() {
+        UUID appId = UUID.randomUUID();
+        LoanApplication app = LoanApplication.builder()
+                .id(appId)
+                .borrowerType(BorrowerType.INDIVIDUAL)
+                .tenureMonths(12)
+                .personalInfo(Map.of("pan", "ABCDE1234F", "dateOfBirth", "1990-01-01",
+                        "occupation", "SALARIED_PRIVATE", "loanPurpose", "EDUCATION"))
+                .build();
+        WorkflowConfig wf = WorkflowConfig.builder()
+                .intakeConfig(KycStepIntakeCatalog.defaultWorkflowDrivenIntakeConfig())
+                .steps(List.of(Map.of("step", "PAN_VERIFY", "mandatory", true, "collectAtIntake", true)))
+                .build();
+        when(documentRepository.findByApplicationIdAndIsLatestTrueOrderByCreatedAtDesc(appId))
+                .thenReturn(List.of());
+        assertThatCode(() -> validator.validateAtSubmit(app, wf)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void twoWorkflowVersionsCanRequireDifferentIntakeFields() {
+        UUID appId = UUID.randomUUID();
+        LoanApplication panApp = LoanApplication.builder()
+                .id(appId)
+                .borrowerType(BorrowerType.INDIVIDUAL)
+                .tenureMonths(12)
+                .personalInfo(Map.of("gstin", "22AAAAA0000A1Z5", "dateOfBirth", "1990-01-01",
+                        "occupation", "SALARIED_PRIVATE", "loanPurpose", "EDUCATION"))
+                .build();
+        WorkflowConfig panWorkflow = WorkflowConfig.builder()
+                .id(UUID.randomUUID())
+                .intakeConfig(KycStepIntakeCatalog.defaultWorkflowDrivenIntakeConfig())
+                .steps(List.of(Map.of("step", "PAN_VERIFY", "mandatory", true, "collectAtIntake", true)))
+                .build();
+        WorkflowConfig gstWorkflow = WorkflowConfig.builder()
+                .id(UUID.randomUUID())
+                .intakeConfig(KycStepIntakeCatalog.defaultWorkflowDrivenIntakeConfig())
+                .steps(List.of(Map.of("step", "GSTIN_VERIFY", "mandatory", true, "collectAtIntake", true)))
+                .build();
+        when(documentRepository.findByApplicationIdAndIsLatestTrueOrderByCreatedAtDesc(appId))
+                .thenReturn(List.of());
+        assertThatThrownBy(() -> validator.validateAtSubmit(panApp, panWorkflow))
+                .isInstanceOf(BusinessRuleException.class)
+                .hasMessageContaining("PAN_VERIFY");
+        assertThatCode(() -> validator.validateAtSubmit(panApp, gstWorkflow)).doesNotThrowAnyException();
+    }
+
+    @Test
+    void requiredPanDoesNotDisappearWhenALaterGstWorkflowExists() {
+        UUID appId = UUID.randomUUID();
+        LoanApplication app = LoanApplication.builder()
+                .id(appId)
+                .borrowerType(BorrowerType.INDIVIDUAL)
+                .tenureMonths(12)
+                .personalInfo(Map.of("dateOfBirth", "1990-01-01",
+                        "occupation", "SALARIED_PRIVATE", "loanPurpose", "EDUCATION"))
+                .build();
+        WorkflowConfig pinnedPan = WorkflowConfig.builder()
+                .id(UUID.randomUUID())
+                .intakeConfig(KycStepIntakeCatalog.defaultWorkflowDrivenIntakeConfig())
+                .steps(List.of(Map.of("step", "PAN_VERIFY", "mandatory", true, "collectAtIntake", true)))
+                .build();
+        assertThatThrownBy(() -> validator.validateAtSubmit(app, pinnedPan))
+                .isInstanceOf(BusinessRuleException.class)
+                .hasMessageContaining("PAN_VERIFY");
+    }
 }

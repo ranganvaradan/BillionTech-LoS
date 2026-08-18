@@ -37,7 +37,7 @@ import { borrowerTypeLabel } from '@/catalog/borrowerTypes'
 import { loanProductLabel, isInvoiceDiscountingProduct } from '@/catalog/loanProducts'
 import { lmsTenureUnitLabel, tenureMagnitudeLabel } from '@/catalog/lmsTenureUnits'
 import { requiresCollateral } from '@/lib/intake/securedProducts'
-import { getActiveWorkflow } from '@/api/workflows'
+import { getWorkflow } from '@/api/workflows'
 import { getVkycEligibility, getVkycTimeline } from '@/api/vkyc'
 import { applicationPartyLabels } from '@/lib/applicationPartyLabels'
 import { buildVkycWorkflowGate, type VkycWorkflowGate } from '@/lib/vkycWorkflowGate'
@@ -116,7 +116,10 @@ export function ApplicationDetailPage() {
       return
     }
     try {
-      const workflow = await getActiveWorkflow(app.borrowerType, app.loanProduct, app.intakeSegment ?? 'BORROWER')
+      const boundId = (app.workflowId ?? '').trim()
+      const workflow = boundId
+        ? await getWorkflow(boundId)
+        : null
       setActiveWorkflow(workflow)
       const hasVkyc = (workflow.steps ?? []).some((s) => {
         const step = String((s as Record<string, unknown>).step ?? '').trim().toUpperCase()
