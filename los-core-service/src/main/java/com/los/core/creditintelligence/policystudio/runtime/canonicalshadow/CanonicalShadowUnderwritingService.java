@@ -414,22 +414,7 @@ public class CanonicalShadowUnderwritingService {
     }
 
     static boolean participates(CiPolicyRuleGraphNode node) {
-        if (node == null) {
-            return false;
-        }
-        Map<String, Object> meta = node.getMetadata() == null ? Map.of() : node.getMetadata();
-        String disposition = String.valueOf(meta.getOrDefault("disposition", ""));
-        if (Boolean.TRUE.equals(meta.get("deleted")) || "DELETED".equalsIgnoreCase(disposition)) {
-            return false;
-        }
-        if ("IGNORED".equalsIgnoreCase(disposition) || "IGNORE_FOR_AUTOMATION".equalsIgnoreCase(disposition)) {
-            return false;
-        }
-        if (Boolean.TRUE.equals(meta.get("dataRequirementOnly"))
-                || Boolean.TRUE.equals(meta.get("metricAdjustment"))) {
-            return false;
-        }
-        return true;
+        return com.los.core.creditintelligence.policystudio.graph.PolicyGraphParticipation.participates(node);
     }
 
     private static FinalUnderwritingDecision.FinalOutcome bandOf(Map<String, Object> scorecard) {

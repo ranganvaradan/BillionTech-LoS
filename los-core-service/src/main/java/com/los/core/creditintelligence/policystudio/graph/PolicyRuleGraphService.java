@@ -61,6 +61,8 @@ public class PolicyRuleGraphService {
             row.put("onMissing", n.getOnMissing());
             row.put("humanWording", n.getHumanWording());
             row.put("contentHash", n.getContentHash());
+            row.put("metadata", n.getMetadata() == null ? Map.of() : n.getMetadata());
+            row.put("participates", PolicyGraphParticipation.participates(n));
             out.add(row);
         }
         return out;

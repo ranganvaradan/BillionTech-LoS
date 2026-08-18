@@ -103,7 +103,15 @@ public class PolicyGraphPolicyTestService {
         List<Map<String, Object>> results = new ArrayList<>();
         List<Map<String, Object>> honesty = new ArrayList<>();
 
+        int skippedNonParticipating = 0;
         for (Map<String, Object> rule : rules) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> meta = rule.get("metadata") instanceof Map<?, ?> m
+                    ? (Map<String, Object>) m : Map.of();
+            if (!PolicyGraphParticipation.participates(meta)) {
+                skippedNonParticipating++;
+                continue;
+            }
             @SuppressWarnings("unchecked")
             Map<String, Object> expr = (Map<String, Object>) rule.get("expression");
             String onMissing = rule.get("onMissing") == null
@@ -115,6 +123,7 @@ public class PolicyGraphPolicyTestService {
                     asOfRes.asOf());
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("ruleKey", rule.get("ruleKey"));
+            row.put("systemRuleId", rule.get("systemRuleId"));
             row.put("expression", expr);
             row.put("outcome", mapOutcome(rr));
             row.put("canonicalResult", rr.result().name());
@@ -133,6 +142,8 @@ public class PolicyGraphPolicyTestService {
             }
         }
         out.put("ruleResults", results);
+        out.put("participatingRuleCount", results.size());
+        out.put("skippedNonParticipatingRuleCount", skippedNonParticipating);
         out.put("valueHonesty", honesty);
         out.put("simulationOverrides", overrideRows);
         out.put("authoringPersistedTestParity", true);
