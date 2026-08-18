@@ -12,6 +12,8 @@ public interface CiGacatDerivedCalculationDefinitionRepository
     List<CiGacatDerivedCalculationDefinition> findByCanonicalParameterIdOrderByVersionNoDesc(
             String canonicalParameterId);
 
+    List<CiGacatDerivedCalculationDefinition> findByCanonicalParameterId(String canonicalParameterId);
+
     Optional<CiGacatDerivedCalculationDefinition>
             findFirstByCanonicalParameterIdAndTenantIdIsNullAndStatusNotOrderByVersionNoDesc(
                     String canonicalParameterId, String retiredStatus);

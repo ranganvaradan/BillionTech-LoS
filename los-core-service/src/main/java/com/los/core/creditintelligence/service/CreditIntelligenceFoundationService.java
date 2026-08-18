@@ -7,6 +7,7 @@ import com.los.core.creditintelligence.banking.service.BankingIngestionService;
 import com.los.core.creditintelligence.gst.service.GstIngestionService;
 import com.los.core.creditintelligence.policystudio.lifecycle.PolicyApplicabilityResolver;
 import com.los.core.creditintelligence.policystudio.lifecycle.ShadowPolicyRoutingService;
+import com.los.core.creditintelligence.policystudio.runtime.canonicalconfig.CanonicalApplicationConfigurationFreezeService;
 import com.los.core.creditintelligence.tax.service.TaxIngestionService;
 import com.los.core.model.entity.LoanApplication;
 import com.los.core.model.entity.UnderwritingEvaluation;
@@ -39,6 +40,7 @@ public class CreditIntelligenceFoundationService {
     private final BankingIngestionService bankingIngestionService;
     private final TaxIngestionService taxIngestionService;
     private final ShadowPolicyRoutingService shadowPolicyRoutingService;
+    private final CanonicalApplicationConfigurationFreezeService canonicalApplicationConfigurationFreezeService;
 
     public record PrepResult(CiFactSnapshot snapshot, CiPolicyVersion policyVersion, UUID tenantId) {
     }
@@ -102,6 +104,14 @@ public class CreditIntelligenceFoundationService {
             UnderwritingFactSnapshotBuilder.FoundationPrep prep =
                     snapshotBuilder.buildAndFreeze(app, ctx, kycOutcome, createdBy);
             CiPolicyVersion policyVersion = policyVersionResolver.resolveAndFreeze(app, createdBy);
+            try {
+                // W11.2 observe-only: freeze canonical identity package for later shadow.
+                // Failure must not change live underwriting authority or outcome.
+                canonicalApplicationConfigurationFreezeService.freezeObservably(app);
+            } catch (Exception freezeEx) {
+                log.warn("Canonical application configuration freeze ignored for {}: {}",
+                        app.getId(), freezeEx.getMessage());
+            }
             return Optional.of(new PrepResult(
                     prep.snapshot(),
                     policyVersion,

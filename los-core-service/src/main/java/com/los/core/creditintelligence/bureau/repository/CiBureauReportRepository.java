@@ -15,4 +15,7 @@ public interface CiBureauReportRepository extends JpaRepository<CiBureauReport, 
     List<CiBureauReport> findByApplicationIdOrderByCreatedAtDesc(UUID applicationId);
 
     Optional<CiBureauReport> findFirstByApplicationIdOrderByCreatedAtDesc(UUID applicationId);
+
+    /** Unordered load — canonical resolver must not pick newest-by-createdAt. */
+    List<CiBureauReport> findByApplicationId(UUID applicationId);
 }
