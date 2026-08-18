@@ -544,7 +544,9 @@ public class PolicyImplementabilityService {
             return false;
         }
         String ds = String.valueOf(d).toUpperCase(Locale.ROOT);
-        return "IGNORED".equals(ds) || "DELETED".equals(ds) || "EXCLUDED".equals(ds);
+        return "IGNORED".equals(ds) || "DELETED".equals(ds) || "EXCLUDED".equals(ds)
+                || "DEFERRED_SOURCE_NOT_PROVEN".equals(ds)
+                || "IGNORE_FOR_AUTOMATION".equals(ds);
     }
 
     private static String dispositionOf(CiPolicyRuleCandidate rule) {

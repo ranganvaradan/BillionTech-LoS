@@ -52,6 +52,16 @@ class PolicyCanonicalLifecycleInvariantTest {
     }
 
     @Test
+    void documentDraftReadyCannotMaskCatalogueApproved() {
+        String sessionFromDocument = PolicyBusinessLifecycleStatus.fromStored("DRAFT_READY");
+        assertThat(sessionFromDocument).isEqualTo(PolicyBusinessLifecycleStatus.DRAFT);
+        assertThat(PolicyCanonicalLifecycleAuthority.reconcile(sessionFromDocument, "APPROVED"))
+                .isEqualTo(PolicyBusinessLifecycleStatus.APPROVED);
+        assertThat(PolicyCanonicalLifecycleAuthority.reconcile(sessionFromDocument, "ACTIVE"))
+                .isEqualTo(PolicyBusinessLifecycleStatus.ACTIVE);
+    }
+
+    @Test
     void activeCannotBorrowDraftMetadata() {
         assertThat(PolicyCanonicalLifecycleAuthority.reconcile("ACTIVE", "DRAFT"))
                 .isEqualTo(PolicyBusinessLifecycleStatus.ACTIVE);

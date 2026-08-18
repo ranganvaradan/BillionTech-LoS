@@ -684,16 +684,29 @@ public class StagingPolicyStudioDemoService {
                     ? new LinkedHashMap<>()
                     : new LinkedHashMap<>(rule.getMetadata());
             switch (action) {
-                case "IGNORE", "IGNORE_FOR_NOW", "IGNORE_FOR_AUTOMATION" -> {
-                    if ("IGNORE_FOR_AUTOMATION".equals(action)) {
+                case "IGNORE", "IGNORE_FOR_NOW", "IGNORE_FOR_AUTOMATION", "DEFER_SOURCE_NOT_PROVEN" -> {
+                    boolean sourceNotProvenDefer = "DEFER_SOURCE_NOT_PROVEN".equals(action)
+                            || PolicyExecutionReadiness.ruleBlockedOnlyBySourceNotProven(rule);
+                    if (sourceNotProvenDefer) {
+                        if (reason == null || reason.isBlank()
+                                || !reason.toUpperCase(Locale.ROOT).contains("SOURCE_NOT_PROVEN")) {
+                            throw new BusinessRuleException(
+                                    "SOURCE_NOT_PROVEN deferral requires an auditable reason that names SOURCE_NOT_PROVEN.",
+                                    "POLICY_DEFER_REASON_REQUIRED",
+                                    "Record why the configured provider does not prove this requirement",
+                                    Map.of("ruleId", rule.getId() == null ? "" : rule.getId().toString(),
+                                            "uiAction", action));
+                        }
+                    } else if ("IGNORE_FOR_AUTOMATION".equals(action)) {
                         assertNonExecutableDispositionAllowed(rule, action);
                     }
                     String prevDisp = String.valueOf(meta.getOrDefault("disposition", ""));
                     meta.put("previousDisposition", prevDisp);
-                    meta.put("disposition", "IGNORE_FOR_AUTOMATION".equals(action)
-                            ? "IGNORE_FOR_AUTOMATION" : "IGNORED");
-                    meta.put("businessDisposition", "IGNORE_FOR_AUTOMATION".equals(action)
-                            ? "IGNORE_FOR_AUTOMATION" : "IGNORED");
+                    String disp = "DEFER_SOURCE_NOT_PROVEN".equals(action) || sourceNotProvenDefer
+                            ? "DEFERRED_SOURCE_NOT_PROVEN"
+                            : ("IGNORE_FOR_AUTOMATION".equals(action) ? "IGNORE_FOR_AUTOMATION" : "IGNORED");
+                    meta.put("disposition", disp);
+                    meta.put("businessDisposition", disp);
                     meta.put("excludedFromActivation", true);
                     meta.put("deleted", false);
                     meta.put("NEEDS_INPUT", false);
@@ -1463,6 +1476,9 @@ public class StagingPolicyStudioDemoService {
         if (rule == null) {
             return;
         }
+        if (PolicyExecutionReadiness.ruleBlockedOnlyBySourceNotProven(rule)) {
+            return;
+        }
         Map<String, Object> meta = rule.getMetadata() == null ? Map.of() : rule.getMetadata();
         if (Boolean.TRUE.equals(meta.get("dataRequirementOnly"))
                 || Boolean.TRUE.equals(meta.get("metricAdjustment"))
@@ -1592,6 +1608,15 @@ public class StagingPolicyStudioDemoService {
                 out.put("currentExecutionReadiness", life.get("currentExecutionReadiness"));
                 out.put("contentEditable", life.get("contentEditable"));
                 out.put("lifecycleAuthority", life.get("lifecycleAuthority"));
+                Object headerObj = out.get("policyHeader");
+                if (headerObj instanceof Map<?, ?> rawHeader && life.get("businessStatus") != null) {
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> header = (Map<String, Object>) rawHeader;
+                    header.putIfAbsent("documentIngestionStatus", header.get("status"));
+                    header.put("status", life.get("businessStatus"));
+                    header.put("lifecycleStatus", life.get("businessStatus"));
+                    header.put("lifecycleAuthority", life.get("lifecycleAuthority"));
+                }
             } catch (Exception e) {
                 log.debug("lifecycle enrich skipped: {}", e.getClass().getSimpleName());
             }

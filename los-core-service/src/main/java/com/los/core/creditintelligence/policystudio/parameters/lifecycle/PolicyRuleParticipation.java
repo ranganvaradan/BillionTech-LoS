@@ -52,7 +52,8 @@ public final class PolicyRuleParticipation {
         }
         // Ignore family: retained historically, does not participate in current readiness.
         if ("IGNORED".equalsIgnoreCase(disposition)
-                || "IGNORE_FOR_AUTOMATION".equalsIgnoreCase(disposition)) {
+                || "IGNORE_FOR_AUTOMATION".equalsIgnoreCase(disposition)
+                || "DEFERRED_SOURCE_NOT_PROVEN".equalsIgnoreCase(disposition)) {
             return Kind.NON_PARTICIPATING;
         }
         if ("KEEP_AS_POLICY_REQUIREMENT".equalsIgnoreCase(disposition)) {

@@ -131,7 +131,12 @@ public class StagingDemoController {
                 row.put("documentId", docId);
                 row.put("applicabilityId", c.get("applicabilityId"));
                 row.put("policyName", c.get("policyName"));
-                row.put("status", c.get("status"));
+                Object catalogueStatus = c.get("status");
+                row.put("status", catalogueStatus);
+                row.put("lifecycleStatus", catalogueStatus);
+                row.put("approvalStatus", catalogueStatus);
+                row.put("lifecycleAuthority",
+                        com.los.core.creditintelligence.policystudio.lifecycle.PolicyCanonicalLifecycleAuthority.NAME);
                 row.put("policyVersion", c.get("policyVersion"));
                 row.put("products", c.get("products"));
                 row.put("effectiveFrom", c.get("effectiveFrom"));

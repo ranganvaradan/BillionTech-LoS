@@ -49,6 +49,23 @@ class PolicyRuleParticipationReadinessInvariantTest {
     }
 
     @Test
+    void deferredSourceNotProvenIsNonParticipatingAndDoesNotReadyTheParameter() {
+        PolicyStudioSession session = sessionOf(
+                rule("bureau.account_sold_count", "DEFERRED_SOURCE_NOT_PROVEN", false, "CM_SOLD"));
+        assertThat(PolicyRuleParticipation.classify(session.getRuleCandidates().get(0)))
+                .isEqualTo(PolicyRuleParticipation.Kind.NON_PARTICIPATING);
+        assertThat(PolicyExecutionReadiness.currentParameterBlockers(session)).isEmpty();
+        assertThat(CanonicalParameterStateService.state("bureau.account_sold_count").get("businessReadiness"))
+                .isNotEqualTo("READY");
+    }
+
+    @Test
+    void accountSoldIsSourceNotProvenAndScoreIsNot() {
+        assertThat(PolicyExecutionReadiness.isSourceNotProven("bureau.account_sold_count")).isTrue();
+        assertThat(PolicyExecutionReadiness.isSourceNotProven("bureau.score")).isFalse();
+    }
+
+    @Test
     void caseA_notReady_onlyIgnoredRule_isNotPolicyBlocker() {
         PolicyStudioSession session = sessionOf(rule(NOT_READY_PARAM, "IGNORED", false, "CM_A"));
         assertThat(CanonicalParameterStateService.state(NOT_READY_PARAM).get("businessReadiness"))
@@ -158,7 +175,9 @@ class PolicyRuleParticipationReadinessInvariantTest {
         meta.put("excludedFromActivation",
                 "IGNORED".equals(disposition)
                         || "DELETED".equals(disposition)
-                        || "KEEP_AS_POLICY_REQUIREMENT".equals(disposition));
+                        || "KEEP_AS_POLICY_REQUIREMENT".equals(disposition)
+                        || "DEFERRED_SOURCE_NOT_PROVEN".equals(disposition)
+                        || "IGNORE_FOR_AUTOMATION".equals(disposition));
         meta.put("parameterId", parameterId);
         return CiPolicyRuleCandidate.builder()
                 .id(UUID.randomUUID())

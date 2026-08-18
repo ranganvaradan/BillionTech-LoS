@@ -137,7 +137,8 @@ public final class PolicyExecutionReadiness {
         if ("IGNORED".equalsIgnoreCase(disposition)
                 || "DELETED".equalsIgnoreCase(disposition)
                 || "KEEP_AS_POLICY_REQUIREMENT".equalsIgnoreCase(disposition)
-                || "IGNORE_FOR_AUTOMATION".equalsIgnoreCase(disposition)) {
+                || "IGNORE_FOR_AUTOMATION".equalsIgnoreCase(disposition)
+                || "DEFERRED_SOURCE_NOT_PROVEN".equalsIgnoreCase(disposition)) {
             return false;
         }
         return true;
@@ -276,6 +277,47 @@ public final class PolicyExecutionReadiness {
             }
         }
         return null;
+    }
+
+    /** GACAT honesty: configured provider does not prove this parameter. Not a READY flag. */
+    public static boolean isSourceNotProven(String canonicalId) {
+        if (canonicalId == null || canonicalId.isBlank()) {
+            return false;
+        }
+        return CanonicalParameterRegistry.shared().findById(canonicalId.trim())
+                .map(def -> {
+                    String bind = def.existingImplementationBinding();
+                    String treat = def.capability() == null ? null : def.capability().missingDataTreatment();
+                    return "SOURCE_NOT_PROVEN".equalsIgnoreCase(bind)
+                            || (treat != null && treat.toUpperCase(Locale.ROOT).contains("SOURCE_NOT_PROVEN"));
+                })
+                .orElse(false);
+    }
+
+    /**
+     * Executable rule may be deferred (not READY, not PASS) when every blocking operand
+     * is SOURCE_NOT_PROVEN in GACAT. Other not-ready reasons still cannot be ignored.
+     */
+    public static boolean ruleBlockedOnlyBySourceNotProven(CiPolicyRuleCandidate r) {
+        if (r == null) {
+            return false;
+        }
+        List<Map<String, Object>> blocking = executionBlockingOperands(r);
+        if (blocking.isEmpty()) {
+            // Still allow deferral when the bound parameter itself is SOURCE_NOT_PROVEN.
+            for (Map<String, Object> op : operandsOf(r)) {
+                if (isSourceNotProven(operandCanonicalId(op))) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        for (Map<String, Object> op : blocking) {
+            if (!isSourceNotProven(operandCanonicalId(op))) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /** MANUAL is valid only when capture path fields exist (existing model — no new engine). */

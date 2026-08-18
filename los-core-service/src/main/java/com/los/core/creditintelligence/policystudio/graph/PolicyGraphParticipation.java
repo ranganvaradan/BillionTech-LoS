@@ -29,7 +29,9 @@ public final class PolicyGraphParticipation {
         if (Boolean.TRUE.equals(meta.get("excludedFromActivation"))) {
             return false;
         }
-        if ("IGNORED".equalsIgnoreCase(disposition) || "IGNORE_FOR_AUTOMATION".equalsIgnoreCase(disposition)) {
+        if ("IGNORED".equalsIgnoreCase(disposition)
+                || "IGNORE_FOR_AUTOMATION".equalsIgnoreCase(disposition)
+                || "DEFERRED_SOURCE_NOT_PROVEN".equalsIgnoreCase(disposition)) {
             return false;
         }
         if (Boolean.TRUE.equals(meta.get("dataRequirementOnly"))

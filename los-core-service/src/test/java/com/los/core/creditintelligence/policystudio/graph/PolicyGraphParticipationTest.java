@@ -22,8 +22,11 @@ class PolicyGraphParticipationTest {
     }
 
     @Test
-    void ignoredRuleDoesNotParticipate() {
-        assertThat(PolicyGraphParticipation.participates(Map.of("disposition", "IGNORED"))).isFalse();
+    void deferredSourceNotProvenDoesNotParticipate() {
+        assertThat(PolicyGraphParticipation.participates(Map.of(
+                "disposition", "DEFERRED_SOURCE_NOT_PROVEN",
+                "excludedFromActivation", true,
+                "dispositionReason", "SOURCE_NOT_PROVEN"))).isFalse();
     }
 
     @Test
