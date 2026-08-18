@@ -1,6 +1,8 @@
 package com.los.core.creditintelligence.policystudio.catalogue;
 
 import com.los.core.creditintelligence.config.CreditIntelligenceProperties;
+import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterRegistry;
+import com.los.core.creditintelligence.policystudio.parameters.PolicyAuthorableParameterProjection;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -118,10 +120,17 @@ class CreditCapabilityCatalogueServiceTest {
         assertThat(groups).containsKeys("Bureau", "Banking", "Financial", "Eligibility", "KYC");
         assertThat(groups).doesNotContainKey("");
         assertThat(((List<?>) groups.get("Bureau"))).isNotEmpty();
-        // Primary catalogue hides advanced aliases (e.g. ELIG.MIN_BUREAU_SCORE)
         assertThat(((Number) view.get("capabilityCount")).intValue())
-                .isLessThanOrEqualTo(service.listCapabilities().size());
-        assertThat(view.get("totalCapabilityCount")).isEqualTo(service.listCapabilities().size());
+                .isEqualTo(PolicyAuthorableParameterProjection.authorableOf(
+                        CanonicalParameterRegistry.fromSeedForTestsOnly()).size());
+        assertThat(view.get("legacyTemplateCount")).isEqualTo(service.listCapabilities().size());
+        assertThat(view.get("authorableProjectionAuthority"))
+                .isEqualTo(PolicyAuthorableParameterProjection.AUTHORITY);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> caps = (List<Map<String, Object>>) view.get("capabilities");
+        assertThat(caps).extracting(m -> m.get("businessCapabilityId")).doesNotContain("BUREAU.MIN_SCORE");
+        assertThat(service.findById("bureau.score")).isPresent();
+        assertThat(service.findById("BUREAU.MIN_SCORE")).isPresent();
     }
 
     @Test

@@ -117,7 +117,7 @@ public final class RuleOperandPresenter {
                 continue; // never attach EDI from contaminated hints
             }
             if (seenParams.contains(path)) continue;
-            registry().findById(path).ifPresent(def -> {
+            registry().findById(path).ifPresentOrElse(def -> {
                 String key = operandKeyFor(path);
                 if (seenKeys.contains(key)) return;
                 seenKeys.add(key);
@@ -128,6 +128,12 @@ public final class RuleOperandPresenter {
                 } else {
                     operands.add(faceFromDefinition(key, def.businessName(), def, true));
                 }
+            }, () -> {
+                String key = operandKeyFor(path);
+                if (seenKeys.contains(key) || seenParams.contains(path)) return;
+                seenKeys.add(key);
+                seenParams.add(path);
+                operands.add(existingMappingUnresolvedFace(key, path));
             });
         }
 
@@ -408,6 +414,30 @@ public final class RuleOperandPresenter {
         return face;
     }
 
+    /**
+     * Persisted canonical id exists but cannot resolve in GACAT — not a blank mapping.
+     */
+    private static Map<String, Object> existingMappingUnresolvedFace(String key, String persistedParameterId) {
+        Map<String, Object> face = new LinkedHashMap<>();
+        face.put("operandKey", key);
+        face.put("businessName", persistedParameterId);
+        face.put("label", persistedParameterId);
+        face.put("parameterId", persistedParameterId);
+        face.put("persistedParameterId", persistedParameterId);
+        face.put("resolutionState", ParameterResolutionSupport.STATUS_EXISTING_MAPPING_UNRESOLVED);
+        face.put("availability", ParameterResolutionSupport.AVAIL_EXISTING_MAPPING_UNRESOLVED);
+        face.put("availabilityLabel", "EXISTING_MAPPING_UNRESOLVED");
+        face.put("evaluatedFrom", "UNKNOWN");
+        face.put("status", ParameterResolutionSupport.STATUS_EXISTING_MAPPING_UNRESOLVED);
+        face.put("unresolved", false);
+        face.put("existingMappingUnresolved", true);
+        face.put("unavailable", false);
+        face.put("resolveAction", true);
+        face.put("message", "EXISTING_MAPPING_UNRESOLVED");
+        face.put("distinctFromUnavailable", true);
+        return face;
+    }
+
     private static String availabilityCmLabel(String availability) {
         if (availability == null) return "Unknown";
         return switch (availability) {
@@ -417,6 +447,7 @@ public final class RuleOperandPresenter {
             case ParameterResolutionSupport.AVAIL_UNAVAILABLE -> "Unavailable";
             case ParameterResolutionSupport.AVAIL_NEEDS_CONFIG -> "Needs configuration";
             case ParameterResolutionSupport.AVAIL_NEEDS_INPUT -> "Not yet mapped";
+            case ParameterResolutionSupport.AVAIL_EXISTING_MAPPING_UNRESOLVED -> "EXISTING_MAPPING_UNRESOLVED";
             default -> availability;
         };
     }

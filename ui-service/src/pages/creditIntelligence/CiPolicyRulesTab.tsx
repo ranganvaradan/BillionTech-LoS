@@ -763,6 +763,7 @@ export function CiPolicyRulesTab({
                             const op = asRecord(opRaw)
                             const unresolved = Boolean(op.unresolved)
                             const unavailable = Boolean(op.unavailable)
+                            const mappingUnresolved = Boolean(op.existingMappingUnresolved)
                             const presentation = derivePolicyStudioOperandPresentation(op, {
                               ruleNeedsReview,
                               proposalReadyForReview:
@@ -800,7 +801,20 @@ export function CiPolicyRulesTab({
                                     </span>
                                   ) : null}
                                 </div>
-                                {unresolved || presentation.showMapResolver ? (
+                                {mappingUnresolved ? (
+                                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                                    <span className="text-amber-900">EXISTING_MAPPING_UNRESOLVED</span>
+                                    <button
+                                      type="button"
+                                      disabled={busy}
+                                      className="bt-btn bt-btn-secondary bt-btn-sm"
+                                      data-testid={`resolve-parameter-${String(op.operandKey ?? oi)}`}
+                                      onClick={() => setResolver({ ruleId: id, operand: op })}
+                                    >
+                                      Change parameter
+                                    </button>
+                                  </div>
+                                ) : unresolved || presentation.showMapResolver ? (
                                   <div className="mt-1 flex flex-wrap items-center gap-2">
                                     <span className="text-amber-900">Not yet mapped</span>
                                     <button

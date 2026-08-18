@@ -2,6 +2,16 @@ import { describe, expect, it } from 'vitest'
 import { derivePolicyStudioOperandPresentation } from './policyStudioResolverState'
 
 describe('policyStudioResolverState golden readiness', () => {
+  it('persisted unresolved mapping is EXISTING_MAPPING_UNRESOLVED not Not yet mapped', () => {
+    const p = derivePolicyStudioOperandPresentation({
+      parameterId: 'bureau.gone',
+      existingMappingUnresolved: true,
+      unresolved: false,
+    })
+    expect(p.parameterLabel).toBe('EXISTING_MAPPING_UNRESOLVED')
+    expect(p.showMapResolver).toBe(false)
+  })
+
   it('DPD30-like executable operand is Ready without calc resolver', () => {
     const p = derivePolicyStudioOperandPresentation({
       canonicalParameterId: 'bureau.dpd_30_plus_count_6m',

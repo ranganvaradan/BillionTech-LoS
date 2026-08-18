@@ -31,6 +31,8 @@ public final class ParameterResolutionSupport {
     public static final String AVAIL_UNAVAILABLE = "UNAVAILABLE";
     public static final String AVAIL_NEEDS_CONFIG = "NEEDS_CONFIGURATION";
     public static final String AVAIL_NEEDS_INPUT = "NEEDS_INPUT";
+    public static final String AVAIL_EXISTING_MAPPING_UNRESOLVED = "EXISTING_MAPPING_UNRESOLVED";
+    public static final String STATUS_EXISTING_MAPPING_UNRESOLVED = "EXISTING_MAPPING_UNRESOLVED";
 
     private ParameterResolutionSupport() {}
 

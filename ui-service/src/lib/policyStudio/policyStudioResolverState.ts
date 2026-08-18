@@ -110,6 +110,21 @@ export function derivePolicyStudioOperandPresentation(
     }
   }
 
+  if (op.existingMappingUnresolved === true) {
+    return {
+      case: 'CHANGE_PARAMETER',
+      parameterLabel: 'EXISTING_MAPPING_UNRESOLVED',
+      parameterState: 'EXISTING_MAPPING_UNRESOLVED',
+      showCalculationResolver: false,
+      showManualResolver: false,
+      showMapResolver: false,
+      resolverActionLabel: 'Change parameter',
+      setupFlowHint: null,
+      explanation: 'A persisted mapping exists but cannot be resolved in GACAT.',
+      capability: false,
+    }
+  }
+
   if (op.unresolved === true) {
     return {
       case: 'UNRESOLVED_MAP',

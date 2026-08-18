@@ -190,7 +190,14 @@ export function CiParameterResolverPanel({
             <h2 className="text-lg font-semibold text-slate-900">Resolve parameter</h2>
             <p className="text-sm text-slate-600">
               {term}
-              <span className="ml-2 text-amber-800">· Not yet mapped</span>
+              <span className="ml-2 text-amber-800">
+                ·{' '}
+                {operand.existingMappingUnresolved === true
+                  ? 'EXISTING_MAPPING_UNRESOLVED'
+                  : operand.unresolved === true || !operand.parameterId
+                    ? 'Not yet mapped'
+                    : String(operand.parameterId)}
+              </span>
             </p>
             <p className="mt-1 text-xs text-slate-500">Use in this policy · draft scoped · not production authority</p>
           </div>

@@ -193,12 +193,18 @@ class CatalogueCapabilityDraftServiceTest {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> caps = (List<Map<String, Object>>) primary.get("capabilities");
         assertThat(caps).noneMatch(c -> "ELIG.MIN_BUREAU_SCORE".equals(c.get("businessCapabilityId")));
-        assertThat(caps).anyMatch(c -> "BUREAU.MIN_SCORE".equals(c.get("businessCapabilityId")));
+        assertThat(caps).noneMatch(c -> "BUREAU.MIN_SCORE".equals(c.get("businessCapabilityId")));
+        assertThat(caps).anyMatch(c -> "bureau.score".equals(c.get("businessCapabilityId")));
 
         Map<String, Object> advanced = catalogue.catalogueView(true);
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> advCaps = (List<Map<String, Object>>) advanced.get("capabilities");
-        assertThat(advCaps).anyMatch(c -> "ELIG.MIN_BUREAU_SCORE".equals(c.get("businessCapabilityId")));
+        assertThat(advCaps).noneMatch(c -> "ELIG.MIN_BUREAU_SCORE".equals(c.get("businessCapabilityId")));
+        assertThat(advCaps).noneMatch(c -> "BUREAU.MIN_SCORE".equals(c.get("businessCapabilityId")));
+        assertThat(advCaps).anyMatch(c -> "bureau.score".equals(c.get("businessCapabilityId")));
+        assertThat(catalogue.listCapabilities())
+                .extracting(BusinessCapability::businessCapabilityId)
+                .contains("BUREAU.MIN_SCORE");
     }
 
     @Test

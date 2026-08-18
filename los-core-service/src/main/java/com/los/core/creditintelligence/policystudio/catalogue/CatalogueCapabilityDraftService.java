@@ -234,6 +234,9 @@ public class CatalogueCapabilityDraftService {
         meta.put("businessCapabilityId", cap.businessCapabilityId());
         meta.put("businessTitle", cap.businessName());
         meta.put("businessSummary", built.businessSummary());
+        if (built.metricPath() != null && built.metricPath().contains(".")) {
+            meta.put("parameterId", built.metricPath());
+        }
         meta.put("parameters", new LinkedHashMap<>(parameters));
         meta.put("failureTreatment", treatment.toUpperCase(Locale.ROOT));
         meta.put("dataRequirement", dataRequirement);

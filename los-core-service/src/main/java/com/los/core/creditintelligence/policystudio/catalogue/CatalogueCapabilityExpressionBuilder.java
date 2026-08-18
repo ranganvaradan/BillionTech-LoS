@@ -1,6 +1,7 @@
 package com.los.core.creditintelligence.policystudio.catalogue;
 
 import com.los.core.creditintelligence.policystudio.dsl.PolicyDsl;
+import com.los.core.creditintelligence.policystudio.parameters.PolicyAuthorableParameterProjection;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -316,7 +317,10 @@ public final class CatalogueCapabilityExpressionBuilder {
                     List.of("policy.defaultGate"),
                     "policy.defaultGate");
             default -> {
-                // Generic threshold capability — store params in metadata expression placeholder.
+                if (PolicyAuthorableParameterProjection.isAuthorable(id)) {
+                    yield gacatAuthorableComparison(cap, params, failOutcome);
+                }
+                // Legacy unknown template — placeholder only; not a silent executable mapping.
                 Map<String, Object> expr = new LinkedHashMap<>();
                 expr.put("op", "CATALOGUE_CAPABILITY");
                 expr.put("businessCapabilityId", id);
@@ -420,6 +424,53 @@ public final class CatalogueCapabilityExpressionBuilder {
             case "PRICE_ADJUSTMENT", "PRICING" -> "Pricing";
             default -> "Reject";
         };
+    }
+
+    /**
+     * GACAT Add Rule: the authored predicate is the eligibility condition.
+     * {@code whenMatched=PASS} (default) → condition true means borrower passes.
+     * {@code whenMatched=FAIL} → condition true is an adverse event.
+     */
+    private static BuiltRule gacatAuthorableComparison(
+            BusinessCapability cap, Map<String, Object> params, String failOutcome) {
+        String metric = cap.factOrMeasure() == null ? cap.businessCapabilityId() : cap.factOrMeasure();
+        String operator = stringParam(params, "operator", "LTE").toUpperCase(Locale.ROOT);
+        Object threshold = params.get("threshold");
+        if (threshold == null || String.valueOf(threshold).isBlank()) {
+            threshold = 0;
+        }
+        if (threshold instanceof String s) {
+            String t = s.trim();
+            if ("true".equalsIgnoreCase(t) || "false".equalsIgnoreCase(t)) {
+                threshold = Boolean.parseBoolean(t);
+            } else {
+                try {
+                    if (t.contains(".")) {
+                        threshold = new BigDecimal(t);
+                    } else {
+                        threshold = Long.parseLong(t);
+                    }
+                } catch (NumberFormatException ignored) {
+                    // keep string
+                }
+            }
+        }
+        Map<String, Object> expression = switch (operator) {
+            case "GT" -> PolicyDsl.gt(PolicyDsl.metric(metric), threshold);
+            case "GTE" -> PolicyDsl.gte(PolicyDsl.metric(metric), threshold);
+            case "LT" -> PolicyDsl.lt(PolicyDsl.metric(metric), threshold);
+            case "EQ" -> PolicyDsl.eq(PolicyDsl.metric(metric), threshold);
+            default -> PolicyDsl.lte(PolicyDsl.metric(metric), threshold);
+        };
+        String whenMatched = stringParam(params, "whenMatched", "PASS").toUpperCase(Locale.ROOT);
+        boolean adverse = "FAIL".equals(whenMatched) || "ADVERSE".equals(whenMatched);
+        String onTrue = adverse ? failOutcome : "PASS";
+        String onFalse = adverse ? "PASS" : failOutcome;
+        String summary = cap.businessName() + " " + operator + " " + threshold
+                + (adverse ? " (adverse when matched)" : " (eligibility when matched)");
+        return built(expression, onTrue, onFalse,
+                "GACAT_" + metric.replace('.', '_').toUpperCase(Locale.ROOT),
+                summary, List.of(metric), metric);
     }
 
     private static BuiltRule built(

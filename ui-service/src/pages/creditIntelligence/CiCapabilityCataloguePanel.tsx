@@ -16,16 +16,6 @@ function asList(v: unknown): unknown[] {
   return Array.isArray(v) ? v : []
 }
 
-const COMMON_IDS = [
-  'BUREAU.MIN_SCORE',
-  'FIN.FOIR_MAX',
-  'ELIG.BUSINESS_VINTAGE_MIN',
-  'BANK.CHEQUE_BOUNCE_MAX',
-  'BANK.TURNOVER_PCT_GST_MIN',
-  'FIN.DSCR_MIN',
-  'LIMIT.ABS_CAP',
-]
-
 const TREATMENT_LABELS: Record<string, string> = {
   REJECT: 'Reject',
   MANUAL_REVIEW: 'Manual Review',
@@ -133,7 +123,6 @@ export function CiCapabilityCataloguePanel({
   const [catalogue, setCatalogue] = useState<CreditCapabilityCatalogue | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
-  const [showAdvanced, setShowAdvanced] = useState(false)
   const [params, setParams] = useState<Record<string, unknown>>({})
   const [treatment, setTreatment] = useState('REJECT')
   const [useManualInput, setUseManualInput] = useState(false)
@@ -145,7 +134,7 @@ export function CiCapabilityCataloguePanel({
     if (!open) return
     setLoading(true)
     setError(null)
-    void getCreditCapabilityCatalogue(showAdvanced)
+    void getCreditCapabilityCatalogue(false)
       .then((data) => {
         setCatalogue(data)
         if (!editCapability) {
@@ -155,7 +144,7 @@ export function CiCapabilityCataloguePanel({
       })
       .catch((e) => setError(e instanceof ApiError ? e.message : 'Could not load capability catalogue'))
       .finally(() => setLoading(false))
-  }, [open, showAdvanced, editCapability])
+  }, [open, editCapability])
 
   useEffect(() => {
     if (!open || !editCapability || !catalogue) return
@@ -217,9 +206,7 @@ export function CiCapabilityCataloguePanel({
   if (!open) return null
 
   const common = asList((catalogue as Record<string, unknown> | null)?.commonCapabilities).map(asRecord)
-  const commonList = common.length
-    ? common
-    : allCaps.filter((c) => COMMON_IDS.includes(String(c.businessCapabilityId)))
+  const commonList = common.length ? common : allCaps.slice(0, 8)
 
   const onSelect = (id: string) => {
     setSelectedId(id)
@@ -311,15 +298,6 @@ export function CiCapabilityCataloguePanel({
                 onChange={(e) => setSearch(e.target.value)}
               />
             </label>
-            <label className="flex items-center gap-2 text-xs text-slate-600">
-              <input
-                type="checkbox"
-                checked={showAdvanced}
-                onChange={(e) => setShowAdvanced(e.target.checked)}
-              />
-              Show advanced / alias capabilities
-            </label>
-
             {!search.trim() && commonList.length ? (
               <CiSection title="Common rules">
                 <ul className="flex flex-wrap gap-2">
@@ -394,12 +372,6 @@ export function CiCapabilityCataloguePanel({
                   </div>
                 </div>
                 <p className="text-slate-700">{String(selected.description ?? '')}</p>
-
-                {String(selected.businessCapabilityId) === 'BUREAU.MIN_SCORE' ? (
-                  <p className="rounded bg-sky-50 px-2 py-1.5 text-xs text-sky-950">
-                    Preferred bureau score capability. The product eligibility gate is under Advanced only.
-                  </p>
-                ) : null}
 
                 <dl className="grid gap-2 sm:grid-cols-2">
                   <div>

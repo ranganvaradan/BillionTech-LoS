@@ -242,15 +242,23 @@ public class StagingDemoController {
     @GetMapping("/policy-studio/parameters")
     public Map<String, Object> parameterCatalogue(
             @RequestHeader(value = "X-Internal-Token", required = false) String token,
-            @RequestParam(value = "source", required = false) String source) {
+            @RequestParam(value = "source", required = false) String source,
+            @RequestParam(value = "includeNonSelectable", required = false) Boolean includeNonSelectableParam) {
         assertInternalToken(token);
         assertStagingDemoEnabled();
         var registry = com.los.core.creditintelligence.policystudio.parameters
                 .PolicyStudioConvergencePresenter.registry();
+        boolean includeNonSelectable = Boolean.TRUE.equals(includeNonSelectableParam);
         if (source != null && !source.isBlank()) {
-            return registry.browseBySource(source);
+            return includeNonSelectable
+                    ? registry.browseBySource(source)
+                    : com.los.core.creditintelligence.policystudio.parameters
+                    .PolicyAuthorableParameterProjection.browseBySource(registry, source);
         }
-        return registry.catalogueView();
+        return includeNonSelectable
+                ? registry.catalogueView()
+                : com.los.core.creditintelligence.policystudio.parameters
+                .PolicyAuthorableParameterProjection.catalogueView(registry);
     }
 
     @GetMapping("/policy-studio/parameters/search")
@@ -260,7 +268,10 @@ public class StagingDemoController {
         assertInternalToken(token);
         assertStagingDemoEnabled();
         return com.los.core.creditintelligence.policystudio.parameters
-                .PolicyStudioConvergencePresenter.registry().search(q);
+                .PolicyAuthorableParameterProjection.search(
+                        com.los.core.creditintelligence.policystudio.parameters
+                                .PolicyStudioConvergencePresenter.registry(),
+                        q);
     }
 
     @PostMapping("/policy-studio/parameters/propose-definition")
@@ -396,7 +407,10 @@ public class StagingDemoController {
         } catch (ResponseStatusException e) {
             throw e;
         } catch (Exception e) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Policy session not found");
+            log.error("policy-studio sessionView failed documentId={} reason={}",
+                    documentId, e.toString(), e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Policy Studio session could not be projected");
         }
     }
 
@@ -421,7 +435,10 @@ public class StagingDemoController {
         } catch (ResponseStatusException e) {
             throw e;
         } catch (Exception e) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Policy session not found");
+            log.error("policy-studio implementability failed documentId={} reason={}",
+                    documentId, e.toString(), e);
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
+                    "Policy Studio session could not be projected");
         }
     }
 

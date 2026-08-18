@@ -76,6 +76,34 @@ class PolicyParameterResolver1Test {
     }
 
     @Test
+    void persistedCanonicalIdMissingFromGacat_isExistingMappingUnresolved_notNotYetMapped() {
+        List<Map<String, Object>> ops = RuleOperandPresenter.buildOperands(
+                "CM_UNKNOWN_METRIC_GTE",
+                List.of("bureau.not_a_real_canonical_id"),
+                Map.of("parameterId", "bureau.not_a_real_canonical_id"),
+                Map.of());
+        assertEquals(1, ops.size());
+        Map<String, Object> face = ops.get(0);
+        assertEquals("bureau.not_a_real_canonical_id", face.get("parameterId"));
+        assertEquals("EXISTING_MAPPING_UNRESOLVED", face.get("availabilityLabel"));
+        assertEquals(ParameterResolutionSupport.STATUS_EXISTING_MAPPING_UNRESOLVED, face.get("status"));
+        assertFalse(Boolean.TRUE.equals(face.get("unresolved")));
+        assertTrue(Boolean.TRUE.equals(face.get("existingMappingUnresolved")));
+        assertNotEquals("Not yet mapped", face.get("message"));
+    }
+
+    @Test
+    void genuinelyUnmappedOperand_stillSaysNotYetMapped() {
+        Map<String, Object> face = RuleOperandPresenter.buildOperands(
+                "UNKNOWN_RULE",
+                List.of(),
+                Map.of(),
+                Map.of()).stream().findFirst().orElse(Map.of());
+        // No expression paths → no invented operand
+        assertTrue(face.isEmpty() || "Not yet mapped".equals(face.get("availabilityLabel")));
+    }
+
+    @Test
     void searchCibilFindsExistingBureauScore() {
         Map<String, Object> hit = registry.search("CIBIL");
         assertTrue(((Number) hit.get("count")).intValue() >= 1);

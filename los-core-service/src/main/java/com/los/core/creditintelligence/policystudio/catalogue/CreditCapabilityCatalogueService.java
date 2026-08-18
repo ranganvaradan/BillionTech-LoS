@@ -1,6 +1,8 @@
 package com.los.core.creditintelligence.policystudio.catalogue;
 
 import com.los.core.creditintelligence.config.CreditIntelligenceProperties;
+import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterRegistry;
+import com.los.core.creditintelligence.policystudio.parameters.PolicyAuthorableParameterProjection;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -41,28 +43,38 @@ public class CreditCapabilityCatalogueService {
         if (businessCapabilityId == null) {
             return Optional.empty();
         }
-        return capabilities.stream()
+        Optional<BusinessCapability> legacy = capabilities.stream()
                 .filter(c -> businessCapabilityId.equals(c.businessCapabilityId()))
                 .findFirst();
+        if (legacy.isPresent()) {
+            return legacy;
+        }
+        return GacatPolicyAuthorableCapabilityFactory.findAuthorable(registry(), businessCapabilityId);
     }
 
     /**
      * Credit Manager facing catalogue payload.
+     * Add Rule universe = GACAT {@code policySelectableDefault} (same as Change Parameter).
+     * Legacy BUREAU.MIN_SCORE templates remain on {@link #listCapabilities()} for ingestion
+     * matching only — never as Add Rule selectable capabilities, including advanced.
      *
-     * @param advanced when true, include engine/class binding details, alias capabilities, normalization notes
+     * @param advanced when true, attach ingestion-template documentation; does not enlarge the authorable set
      */
     public Map<String, Object> catalogueView(boolean advanced) {
-        List<BusinessCapability> visible = capabilities.stream()
-                .filter(c -> advanced || CreditCapabilityDefinitions.primaryCatalogueVisible(c.businessCapabilityId()))
-                .toList();
+        List<BusinessCapability> authorable = GacatPolicyAuthorableCapabilityFactory.all(registry());
+        List<BusinessCapability> visible = new ArrayList<>(authorable);
 
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("title", "Credit capability catalogue");
-        out.put("purpose", "Normalized underwriting capabilities for Policy Studio — read model only");
+        out.put("purpose", "GACAT authorable parameters for Policy Studio — same universe as Change Parameter");
         out.put("allowCanonicalAuthority", allowCanonicalAuthority());
         out.put("productionAuthority", "DISABLED");
-        out.put("capabilityCount", visible.size());
-        out.put("totalCapabilityCount", capabilities.size());
+        out.put("capabilityCount", authorable.size());
+        out.put("totalCapabilityCount", authorable.size());
+        out.put("legacyTemplateCount", capabilities.size());
+        out.put("authorableProjectionAuthority", PolicyAuthorableParameterProjection.AUTHORITY);
+        out.put("policyAuthorableOnly", true);
+        out.put("legacyParameterCatalogueConsumerCount", 0);
 
         Map<String, List<Map<String, Object>>> groups = new LinkedHashMap<>();
         for (CapabilityDomain domain : CapabilityDomain.values()) {
@@ -78,22 +90,33 @@ public class CreditCapabilityCatalogueService {
         out.put("capabilities", visible.stream().map(c -> enrichView(c, advanced)).toList());
 
         List<Map<String, Object>> common = new ArrayList<>();
-        for (String id : CreditCapabilityDefinitions.commonCapabilityIds()) {
-            findById(id).ifPresent(c -> common.add(enrichView(c, advanced)));
+        for (BusinessCapability c : authorable) {
+            if (c.factOrMeasure() != null && registry().findById(c.factOrMeasure())
+                    .map(d -> d.liveRuleParameter() != null && !d.liveRuleParameter().isBlank())
+                    .orElse(false)) {
+                common.add(enrichView(c, advanced));
+            }
+            if (common.size() >= 8) {
+                break;
+            }
+        }
+        if (common.isEmpty()) {
+            authorable.stream().limit(8).forEach(c -> common.add(enrichView(c, advanced)));
         }
         out.put("commonCapabilities", common);
         out.put("searchAliases", CreditCapabilityDefinitions.searchAliases());
         out.put("bureauDuplicateResolution", Map.of(
-                "preferredCapabilityId", "BUREAU.MIN_SCORE",
-                "advancedAliasCapabilityId", "ELIG.MIN_BUREAU_SCORE",
-                "note", "Prefer Minimum Bureau Score (BUREAU.MIN_SCORE). Eligibility bureau gate is an advanced "
-                        + "production-ruleset binding — IDs are not merged."));
+                "preferredCapabilityId", "bureau.score",
+                "advancedAliasCapabilityId", "BUREAU.MIN_SCORE",
+                "note", "Add Rule uses GACAT canonical IDs. Legacy BUREAU.MIN_SCORE remains an advanced template "
+                        + "and an ingestion-matcher id — not a second authorable universe."));
 
         if (advanced) {
             out.put("normalizationNotes", CreditCapabilityDefinitions.normalizationNotes());
             out.put("productionFixtureMappings",
                     ProductionUnderwritingCapabilityAdapter.mapHardRules(
                             ProductionUnderwritingCapabilityAdapter.scfFixtureHardRules()));
+            out.put("legacyTemplates", capabilities.stream().map(c -> enrichView(c, true)).toList());
         }
         return out;
     }
@@ -110,9 +133,12 @@ public class CreditCapabilityCatalogueService {
                 aliasHits.addAll(e.getValue());
             }
         }
+        expandLegacyAliasHitsToCanonicalIds(aliasHits);
+        List<BusinessCapability> haystack = new ArrayList<>(GacatPolicyAuthorableCapabilityFactory.all(registry()));
         List<Map<String, Object>> matched = new ArrayList<>();
-        for (BusinessCapability c : capabilities) {
-            if (!advanced && !CreditCapabilityDefinitions.primaryCatalogueVisible(c.businessCapabilityId())) {
+        Set<String> seen = new LinkedHashSet<>();
+        for (BusinessCapability c : haystack) {
+            if (!seen.add(c.businessCapabilityId())) {
                 continue;
             }
             String hay = (c.businessCapabilityId() + " " + c.businessName() + " " + c.description() + " "
@@ -133,6 +159,29 @@ public class CreditCapabilityCatalogueService {
         out.put("groups", groups);
         out.put("capabilityCount", matched.size());
         return out;
+    }
+
+    private void expandLegacyAliasHitsToCanonicalIds(Set<String> aliasHits) {
+        for (String id : List.copyOf(aliasHits)) {
+            capabilities.stream()
+                    .filter(c -> id.equals(c.businessCapabilityId()))
+                    .findFirst()
+                    .ifPresent(c -> {
+                        String fact = c.factOrMeasure();
+                        if (fact == null) {
+                            return;
+                        }
+                        for (String token : fact.split("[^A-Za-z0-9._]+")) {
+                            if (token.contains(".")) {
+                                aliasHits.add(token);
+                            }
+                        }
+                    });
+        }
+    }
+
+    private CanonicalParameterRegistry registry() {
+        return CanonicalParameterRegistry.shared();
     }
 
     public Map<String, Object> mapProductionHardRule(Map<String, Object> hardRule) {
@@ -209,12 +258,18 @@ public class CreditCapabilityCatalogueService {
 
     private Map<String, Object> enrichView(BusinessCapability c, boolean advanced) {
         Map<String, Object> view = new LinkedHashMap<>(c.toBusinessView(advanced));
-        view.put("primaryCatalogue", CreditCapabilityDefinitions.primaryCatalogueVisible(c.businessCapabilityId()));
+        boolean gacat = c.businessCapabilityId() != null && c.businessCapabilityId().contains(".")
+                && c.businessCapabilityId().equals(c.factOrMeasure());
+        view.put("canonicalParameterId", gacat ? c.businessCapabilityId() : null);
+        view.put("gacatAuthorable", gacat);
+        view.put("legacyCapabilityTemplate", !gacat);
+        view.put("primaryCatalogue", gacat
+                || CreditCapabilityDefinitions.primaryCatalogueVisible(c.businessCapabilityId()));
         if ("ELIG.MIN_BUREAU_SCORE".equals(c.businessCapabilityId())) {
             view.put("aliasOf", "BUREAU.MIN_SCORE");
             view.put("catalogueVisibility", "ADVANCED");
         } else {
-            view.put("catalogueVisibility", "PRIMARY");
+            view.put("catalogueVisibility", gacat ? "PRIMARY" : (advanced ? "ADVANCED" : "PRIMARY"));
         }
         return view;
     }
