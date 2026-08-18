@@ -88,6 +88,7 @@ class PersistedDerivedMetricSpineTest {
         assertThat(er.status()).isEqualTo(ExecutionStatus.VALUE_AVAILABLE);
         assertThat(toNumber(er.value()).intValue()).isZero();
         assertThat(er.valueAvailable()).isTrue();
+        assertThat(ctx.facts().get(BureauMetricService.OVERDUE_AGE_MONTHS)).isEqualTo(0);
     }
 
     @Test
@@ -144,6 +145,24 @@ class PersistedDerivedMetricSpineTest {
         assertThat(er.provenance().get("sourceType"))
                 .isEqualTo(PersistedDerivedMetricSpine.SOURCE_PERSISTED_CANONICAL_DERIVED);
         assertThat(String.valueOf(er.exactProducerPath())).doesNotContain("EQUIFAX");
+    }
+
+    @Test
+    void emptyPrecomputedEntityOverlay_doesNotHidePersistedBind() {
+        UUID reportId = UUID.randomUUID();
+        when(metricResultRepository.findByBureauReportId(reportId)).thenReturn(List.of(
+                metric(reportId, BureauMetricService.RECENT_INQUIRIES_90D, "PASS", 1, Instant.now())
+        ));
+        EvaluationContext.Builder b = EvaluationContext.builder()
+                .mode(EvaluationMode.UNDERWRITING)
+                .evaluationAsOf(LocalDate.of(2026, 1, 15))
+                .applicationId(UUID.randomUUID())
+                .entity(PersistedDerivedMetricSpine.PRECOMPUTED_METRICS, Map.of())
+                .entity(PersistedDerivedMetricSpine.PRECOMPUTED_METRIC_STATUSES, Map.of());
+        spine.bindExactReport(b, reportId);
+        ExecutionResult er = cpes.resolveAndExecute(BureauMetricService.RECENT_INQUIRIES_90D, b.build());
+        assertThat(er.status()).isEqualTo(ExecutionStatus.VALUE_AVAILABLE);
+        assertThat(toNumber(er.value()).intValue()).isEqualTo(1);
     }
 
     @Test

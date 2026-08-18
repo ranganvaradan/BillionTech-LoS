@@ -5,7 +5,6 @@ import com.los.core.creditintelligence.policystudio.graph.CiPolicyRuleGraph;
 import com.los.core.creditintelligence.policystudio.graph.CiPolicyRuleGraphNode;
 import com.los.core.creditintelligence.policystudio.parameters.execution.CanonicalParameterExecutionService;
 import com.los.core.creditintelligence.policystudio.parameters.execution.EvaluationContext;
-import com.los.core.creditintelligence.policystudio.parameters.execution.ExecutionResult;
 import com.los.core.creditintelligence.policystudio.repository.CiPolicyRuleGraphNodeRepository;
 import com.los.core.creditintelligence.policystudio.repository.CiPolicyRuleGraphRepository;
 import com.los.core.creditintelligence.policystudio.runtime.CanonicalPolicyResult;
@@ -210,7 +209,8 @@ public class CanonicalShadowUnderwritingService {
                 spine,
                 freeze.evaluationAsOf()));
 
-        List<Map<String, Object>> parameterEvidence = parameterRows(policy, freeze, spine);
+        List<Map<String, Object>> parameterEvidence =
+                CanonicalShadowParameterEvidence.rows(policy, freeze, spine, cpes);
         Map<String, Object> scorecard = scorecardExecutor.execute(freeze, spine);
         boolean scorecardBroken = Boolean.FALSE.equals(scorecard.get("executable"))
                 && freeze.scorecardId() != null
@@ -373,41 +373,6 @@ public class CanonicalShadowUnderwritingService {
         }
         Map<String, Object> src = eval.getSelectedSourceJson();
         return src != null && "LEGACY".equalsIgnoreCase(String.valueOf(src.get("underwritingSource")));
-    }
-
-    private static List<Map<String, Object>> parameterRows(
-            CanonicalPolicyResult policy,
-            CanonicalApplicationConfiguration freeze,
-            EvaluationContext spine) {
-        List<Map<String, Object>> out = new ArrayList<>();
-        if (policy == null) {
-            return out;
-        }
-        for (CanonicalRuleResult rr : policy.ruleResults()) {
-            for (String id : rr.canonicalParameterIds()) {
-                Map<String, Object> row = new LinkedHashMap<>();
-                row.put("parameterId", id);
-                ExecutionResult er = rr.actualExecution() != null
-                        && id.equals(rr.actualExecution().canonicalParameterId())
-                        ? rr.actualExecution() : null;
-                if (er != null) {
-                    row.put("canonicalStatus", er.status() == null ? null : er.status().name());
-                    row.put("canonicalValue", er.value());
-                    row.put("valueAvailable", er.valueAvailable());
-                    row.put("calculationAuthority", er.producerId());
-                    Map<String, Object> prov = er.provenance() == null ? Map.of() : er.provenance();
-                    row.put("sourceReportId", freeze.bureauReportId() == null ? null : freeze.bureauReportId().toString());
-                    row.put("evaluationAsOf", freeze.evaluationAsOf() == null ? null : freeze.evaluationAsOf().toString());
-                    Object defId = spine.entities().get("pinnedCalculationDefinitionIds");
-                    if (defId instanceof Map<?, ?> m) {
-                        row.put("calculationDefinitionId", m.get(id));
-                    }
-                    row.put("provenanceKeys", new ArrayList<>(prov.keySet()));
-                }
-                out.add(row);
-            }
-        }
-        return out;
     }
 
     private static Map<String, Object> ruleRow(

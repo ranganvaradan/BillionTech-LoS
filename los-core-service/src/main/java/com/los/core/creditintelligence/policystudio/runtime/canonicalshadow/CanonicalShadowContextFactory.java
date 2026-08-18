@@ -55,7 +55,6 @@ public class CanonicalShadowContextFactory {
                 .tenantId(tenantId)
                 .evaluationAsOf(freeze.evaluationAsOf());
         facts.forEach(b::fact);
-        persistedDerivedMetricSpine.bindExactReport(b, freeze.bureauReportId());
 
         Map<String, Object> extras = CanonicalFactMaterializer.provenanceEntityExtras(
                 null, null, collections);
@@ -84,6 +83,8 @@ public class CanonicalShadowContextFactory {
                 b.entity(k, v);
             }
         });
+        // Bind last so provenance extras cannot overwrite persisted derived maps.
+        persistedDerivedMetricSpine.bindExactReport(b, freeze.bureauReportId());
         return b.build();
     }
 

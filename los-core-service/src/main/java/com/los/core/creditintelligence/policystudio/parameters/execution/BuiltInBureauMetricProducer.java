@@ -88,10 +88,6 @@ public final class BuiltInBureauMetricProducer implements ParameterProducer {
         if (fromInput != null) {
             return valueResult(canonicalParameterId, fromInput, "inputs", "POLICY_TEST_INPUT_OVERLAY");
         }
-        Object fromFact = ctx.facts().get(canonicalParameterId);
-        if (fromFact != null) {
-            return valueResult(canonicalParameterId, fromFact, "facts", "CONTEXT_FACT_EXACT_ID");
-        }
         @SuppressWarnings("unchecked")
         Map<String, Object> precomputed = ctx.entities().get(PersistedDerivedMetricSpine.PRECOMPUTED_METRICS)
                 instanceof Map<?, ?> m ? (Map<String, Object>) m : Map.of();
@@ -119,6 +115,10 @@ public final class BuiltInBureauMetricProducer implements ParameterProducer {
                     .provenance(prov)
                     .exactProducerPath(PRODUCER_ID + " ← persisted[" + canonicalParameterId + "] (" + st + ")")
                     .build();
+        }
+        Object fromFact = ctx.facts().get(canonicalParameterId);
+        if (fromFact != null) {
+            return valueResult(canonicalParameterId, fromFact, "facts", "CONTEXT_FACT_EXACT_ID");
         }
         return ExecutionResult.builder(canonicalParameterId)
                 .status(ExecutionStatus.DATA_NOT_AVAILABLE)

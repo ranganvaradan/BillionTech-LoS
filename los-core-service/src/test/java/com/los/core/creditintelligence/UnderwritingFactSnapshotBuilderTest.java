@@ -218,11 +218,13 @@ class UnderwritingFactSnapshotBuilderTest {
         when(em.contains(snap)).thenReturn(true);
 
         builder.persistAndDetachFactsBeforeFreeze(List.of(fact));
+        builder.flushFrozenSnapshot(snap);
         builder.detachSnapshot(snap);
 
         org.mockito.InOrder order = org.mockito.Mockito.inOrder(em);
         order.verify(em).flush();
         order.verify(em).detach(fact);
+        order.verify(em).flush();
         verify(em).detach(snap);
     }
 }

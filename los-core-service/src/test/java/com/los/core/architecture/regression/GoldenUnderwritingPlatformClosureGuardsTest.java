@@ -23,6 +23,7 @@ class GoldenUnderwritingPlatformClosureGuardsTest {
             Path.of("src/main/java/com/los/core/creditintelligence/policystudio/parameters/execution/PersistedDerivedMetricSpine.java"),
             Path.of("src/main/java/com/los/core/creditintelligence/policystudio/parameters/execution/BuiltInBureauMetricProducer.java"),
             Path.of("src/main/java/com/los/core/creditintelligence/policystudio/runtime/canonicalshadow/CanonicalShadowContextFactory.java"),
+            Path.of("src/main/java/com/los/core/creditintelligence/policystudio/runtime/canonicalshadow/CanonicalShadowParameterEvidence.java"),
             Path.of("src/main/java/com/los/core/creditintelligence/policystudio/runtime/canonicalshadow/CanonicalShadowScorecardExecutor.java"),
             Path.of("src/main/java/com/los/core/service/underwriting/PolicyWeightedScorecardEngine.java")
     );
@@ -53,6 +54,7 @@ class GoldenUnderwritingPlatformClosureGuardsTest {
         String builder = Files.readString(Path.of(
                 "src/main/java/com/los/core/creditintelligence/service/UnderwritingFactSnapshotBuilder.java"));
         assertThat(builder).contains("persistAndDetachFactsBeforeFreeze");
+        assertThat(builder).contains("flushFrozenSnapshot");
         assertThat(builder).doesNotContain("setStatus(SnapshotStatus.BUILDING.name()) // unfreeze");
         String cam = Files.readString(Path.of(
                 "src/main/java/com/los/core/service/cam/CreditAppraisalService.java"));
@@ -64,11 +66,19 @@ class GoldenUnderwritingPlatformClosureGuardsTest {
         String spine = Files.readString(Path.of(
                 "src/main/java/com/los/core/creditintelligence/policystudio/parameters/execution/PersistedDerivedMetricSpine.java"));
         assertThat(spine).contains("findByBureauReportId");
+        assertThat(spine).contains("builder.fact(id, unwrapped)");
         assertThat(spine).doesNotContain("findByApplicationIdOrderByCreatedAtDesc");
         assertThat(spine).doesNotContain("findFirstByApplicationIdOrderByCreatedAtDesc");
         String factory = Files.readString(Path.of(
                 "src/main/java/com/los/core/creditintelligence/policystudio/runtime/canonicalshadow/CanonicalShadowContextFactory.java"));
         assertThat(factory).contains("persistedDerivedMetricSpine.bindExactReport");
+        int bindAt = factory.lastIndexOf("persistedDerivedMetricSpine.bindExactReport");
+        int extrasAt = factory.indexOf("extras.forEach");
+        assertThat(bindAt).isGreaterThan(extrasAt);
+        String evidence = Files.readString(Path.of(
+                "src/main/java/com/los/core/creditintelligence/policystudio/runtime/canonicalshadow/CanonicalShadowParameterEvidence.java"));
+        assertThat(evidence).contains("cpes.resolveAndExecute");
+        assertThat(evidence).doesNotContain("rr.actualExecution");
         String producer = Files.readString(Path.of(
                 "src/main/java/com/los/core/creditintelligence/policystudio/parameters/execution/BuiltInBureauMetricProducer.java"));
         assertThat(producer).contains("PersistedDerivedMetricSpine.PRECOMPUTED_METRICS");

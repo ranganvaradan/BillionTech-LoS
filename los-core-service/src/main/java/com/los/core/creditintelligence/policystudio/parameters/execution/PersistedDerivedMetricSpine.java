@@ -80,6 +80,7 @@ public class PersistedDerivedMetricSpine {
             }
             values.put(id, unwrapped);
             statuses.put(id, STATUS_VALUE_PRESENT);
+            builder.fact(id, unwrapped);
         }
         builder.entity(PRECOMPUTED_METRICS, values);
         builder.entity(PRECOMPUTED_METRIC_STATUSES, statuses);

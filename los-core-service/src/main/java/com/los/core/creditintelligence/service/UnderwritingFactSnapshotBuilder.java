@@ -256,6 +256,7 @@ public class UnderwritingFactSnapshotBuilder {
         persistAndDetachFactsBeforeFreeze(saved);
         snapshot.setStatus(SnapshotStatus.FROZEN.name());
         snapshot = snapshotRepository.save(snapshot);
+        flushFrozenSnapshot(snapshot);
         detachSnapshot(snapshot);
 
         auditService.logEvent(
@@ -294,6 +295,14 @@ public class UnderwritingFactSnapshotBuilder {
         if (entityManager.contains(snapshot)) {
             entityManager.detach(snapshot);
         }
+    }
+
+    /** Persist FROZEN status before detach so commit cannot drop the status change. */
+    public void flushFrozenSnapshot(CiFactSnapshot snapshot) {
+        if (entityManager == null || snapshot == null) {
+            return;
+        }
+        entityManager.flush();
     }
 
     /** Test-visible: facts must leave the persistence context before CAM/decision flush. */
