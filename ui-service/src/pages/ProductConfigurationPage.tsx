@@ -11,7 +11,7 @@ import {
   patchExternalProductMappingStatus,
 } from '@/api/liveReadiness'
 import { ApiError } from '@/api/http'
-import { canonicalLosProductOption } from '@/lib/productConfiguration/losProductOption'
+import { distinctCanonicalLosProductOptions } from '@/lib/productConfiguration/losProductOption'
 
 function asList(v: unknown): unknown[] {
   return Array.isArray(v) ? v : []
@@ -47,6 +47,11 @@ export function ProductConfigurationPage() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
+  const canonicalProductOptions = useMemo(
+    () => distinctCanonicalLosProductOptions(asList(options?.products)),
+    [options],
+  )
+
   useEffect(() => {
     getProductConfigurationOptions()
       .then((data) => {
@@ -57,8 +62,8 @@ export function ProductConfigurationPage() {
           setLoanProduct(String(golden.loanProduct))
         } else if (Array.isArray(data.products) && data.products.length > 0) {
           // Canonical product list comes from the backend (no free typing).
-          const first = canonicalLosProductOption(data.products[0])
-          if (first.code) setLoanProduct(first.code)
+          const first = distinctCanonicalLosProductOptions(data.products)[0]
+          if (first?.code) setLoanProduct(first.code)
         }
         if (golden.workflowId) setWorkflowId(String(golden.workflowId))
         if (golden.liveRuleSetId) setLiveRuleSetId(String(golden.liveRuleSetId))
@@ -223,17 +228,14 @@ export function ProductConfigurationPage() {
               className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
               value={loanProduct}
               onChange={(e) => setLoanProduct(e.target.value)}
-              disabled={!options || !Array.isArray(options.products) || options.products.length === 0}
+              disabled={!options || canonicalProductOptions.length === 0}
             >
               <option value="">— select —</option>
-              {asList(options?.products)
-                .map((p) => canonicalLosProductOption(p))
-                .filter((o) => Boolean(o.code))
-                .map((o) => (
-                  <option key={o.code} value={o.code}>
-                    {o.label}
-                  </option>
-                ))}
+              {canonicalProductOptions.map((o) => (
+                <option key={o.code} value={o.code}>
+                  {o.label}
+                </option>
+              ))}
             </select>
           </label>
           <label className="text-sm">
@@ -396,17 +398,14 @@ export function ProductConfigurationPage() {
               className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
               value={loanProduct}
               onChange={(e) => setLoanProduct(e.target.value)}
-              disabled={!options || !Array.isArray(options.products) || options.products.length === 0}
+              disabled={!options || canonicalProductOptions.length === 0}
             >
               <option value="">— select —</option>
-              {asList(options?.products)
-                .map((p) => canonicalLosProductOption(p))
-                .filter((o) => Boolean(o.code))
-                .map((o) => (
-                  <option key={o.code} value={o.code}>
-                    {o.label}
-                  </option>
-                ))}
+              {canonicalProductOptions.map((o) => (
+                <option key={o.code} value={o.code}>
+                  {o.label}
+                </option>
+              ))}
             </select>
           </label>
         </div>

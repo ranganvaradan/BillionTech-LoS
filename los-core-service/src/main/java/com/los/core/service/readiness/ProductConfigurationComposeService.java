@@ -269,22 +269,26 @@ public class ProductConfigurationComposeService {
         return out;
     }
 
+    /**
+     * Canonical LOS Product options for Product Configuration selectors.
+     * One row per distinct {@code loan_product} code from active workflows — not workflow names,
+     * not (borrowerType, product, segment) triples. Display labels are resolved in the UI using the
+     * same shared catalog as Application Intake ({@code loanProductLabel}).
+     */
     private List<Map<String, Object>> distinctProducts() {
         Set<String> seen = new LinkedHashSet<>();
         List<Map<String, Object>> rows = new ArrayList<>();
         for (WorkflowConfig w : workflowConfigRepository.findAll()) {
-            String key = (w.getBorrowerType() + "|" + w.getLoanProduct() + "|"
-                    + (w.getIntakeSegment() == null ? "BORROWER" : w.getIntakeSegment()))
-                    .toUpperCase(Locale.ROOT);
+            if (!w.isActive()) continue;
+            String code = w.getLoanProduct();
+            if (code == null || code.isBlank()) continue;
+            String key = code.trim().toUpperCase(Locale.ROOT);
             if (!seen.add(key)) continue;
             Map<String, Object> row = new LinkedHashMap<>();
-            row.put("borrowerType", w.getBorrowerType());
-            row.put("loanProduct", w.getLoanProduct());
-            row.put("intakeSegment", w.getIntakeSegment());
-            row.put("sampleWorkflowId", w.getId() == null ? null : w.getId().toString());
-            row.put("sampleWorkflowName", w.getName());
+            row.put("loanProduct", code.trim());
             rows.add(row);
         }
+        rows.sort(Comparator.comparing(m -> String.valueOf(m.get("loanProduct")), String.CASE_INSENSITIVE_ORDER));
         return rows;
     }
 
