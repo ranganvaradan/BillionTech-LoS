@@ -109,6 +109,19 @@ public final class PolicyVersionScorecardLinkage {
         return authoritativeScorecardId != null ? 1 : 0;
     }
 
+    /**
+     * Observational identity only — does not execute the scorecard or change live decision authority.
+     */
+    public static void stampObservationalIdentity(Map<String, Object> out, UUID scorecardId, Integer version) {
+        if (out == null) {
+            return;
+        }
+        out.put("scorecardId", scorecardId == null ? null : scorecardId.toString());
+        out.put("scorecardVersion", version);
+        out.put("scorecardLinkageAuthority", AUTHORITY);
+        out.put("scorecardLinked", scorecardId != null);
+    }
+
     public static void applyProjection(Map<String, Object> header, CiPolicyDocument doc) {
         applyProjection(header, doc, null);
     }

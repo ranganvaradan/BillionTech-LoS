@@ -4,6 +4,7 @@ import com.los.core.creditintelligence.bureau.domain.CiBureauReport;
 import com.los.core.creditintelligence.bureau.repository.CiBureauReportRepository;
 import com.los.core.creditintelligence.policystudio.domain.CiPolicyDocument;
 import com.los.core.creditintelligence.policystudio.graph.CiPolicyRuleGraph;
+import com.los.core.creditintelligence.policystudio.graph.CiPolicyRuleGraphNode;
 import com.los.core.creditintelligence.policystudio.graph.CiPolicyRuleGraphOperand;
 import com.los.core.creditintelligence.policystudio.lifecycle.domain.CiPolicyApplicability;
 import com.los.core.creditintelligence.policystudio.lifecycle.repository.CiPolicyApplicabilityRepository;
@@ -11,6 +12,7 @@ import com.los.core.creditintelligence.policystudio.parameters.CanonicalParamete
 import com.los.core.creditintelligence.policystudio.parameters.derived.CiGacatDerivedCalculationDefinition;
 import com.los.core.creditintelligence.policystudio.parameters.derived.CiGacatDerivedCalculationDefinitionRepository;
 import com.los.core.creditintelligence.policystudio.repository.CiPolicyDocumentRepository;
+import com.los.core.creditintelligence.policystudio.repository.CiPolicyRuleGraphNodeRepository;
 import com.los.core.creditintelligence.policystudio.repository.CiPolicyRuleGraphOperandRepository;
 import com.los.core.creditintelligence.policystudio.repository.CiPolicyRuleGraphRepository;
 import com.los.core.customercategory.ConfigLifecycleStatus;
@@ -65,6 +67,7 @@ class CanonicalApplicationConfigurationResolverTest {
     @Mock CiPolicyDocumentRepository policyDocumentRepository;
     @Mock UnderwritingScorecardRepository scorecardRepository;
     @Mock CiPolicyRuleGraphRepository ruleGraphRepository;
+    @Mock CiPolicyRuleGraphNodeRepository ruleGraphNodeRepository;
     @Mock CiPolicyRuleGraphOperandRepository operandRepository;
     @Mock CiGacatDerivedCalculationDefinitionRepository calculationDefinitionRepository;
     @Mock CiBureauReportRepository bureauReportRepository;
@@ -88,6 +91,7 @@ class CanonicalApplicationConfigurationResolverTest {
                 policyDocumentRepository,
                 scorecardRepository,
                 ruleGraphRepository,
+                ruleGraphNodeRepository,
                 operandRepository,
                 calculationDefinitionRepository,
                 bureauReportRepository);
@@ -108,6 +112,7 @@ class CanonicalApplicationConfigurationResolverTest {
                 .thenReturn(List.of());
         lenient().when(bureauReportRepository.findByApplicationId(any())).thenReturn(List.of());
         lenient().when(operandRepository.findByGraphId(any())).thenReturn(List.of());
+        lenient().when(ruleGraphNodeRepository.findByGraphIdOrderBySortOrderAsc(any())).thenReturn(List.of());
     }
 
     @Test
@@ -217,6 +222,7 @@ class CanonicalApplicationConfigurationResolverTest {
                 .containsEntry("LATEST_WORKFLOW_LOOKUP_COUNT", "0")
                 .containsEntry("LATEST_POLICY_LOOKUP_COUNT", "0")
                 .containsEntry("LATEST_SCORECARD_LOOKUP_COUNT", "0")
+                .containsEntry("LATEST_CALCULATION_LOOKUP_COUNT", "0")
                 .containsEntry("PRODUCT_OVERRIDE_LOOKUP_COUNT", "0");
         verify(workflowConfigRepository, never())
                 .findByBorrowerTypeAndLoanProductAndIntakeSegmentAndActiveTrueOrderByVersionDesc(
@@ -493,6 +499,57 @@ class CanonicalApplicationConfigurationResolverTest {
         assertThat(r.reasonCodes()).contains(CanonicalResolutionFailureCode.AUTHORED_CALCULATION_NOT_PINNED.name());
         assertThat(r.configuration().calculationDefinitionPins())
                 .anyMatch(p -> "authored.dti".equals(p.parameterId()) && p.fallbackRequired());
+    }
+
+    @Test
+    void deferredSourceNotProvenGraphOperandDoesNotBlockCanonicalFreeze() {
+        Fixture fx = fullyPinned();
+        UUID graphId = UUID.randomUUID();
+        UUID nodeId = UUID.randomUUID();
+        CiPolicyRuleGraph graph = CiPolicyRuleGraph.builder()
+                .id(graphId).policyDocumentId(documentId).documentVersion(1).graphHash("h").build();
+        when(ruleGraphRepository.findByPolicyDocumentIdAndDocumentVersion(documentId, 1))
+                .thenReturn(Optional.of(graph));
+        when(ruleGraphNodeRepository.findByGraphIdOrderBySortOrderAsc(graphId)).thenReturn(List.of(
+                CiPolicyRuleGraphNode.builder()
+                        .id(nodeId).graphId(graphId).ruleKey("CM_BUREAU_ACCOUNT_SOLD_COUNT_LTE")
+                        .systemRuleId("CM_BUREAU_ACCOUNT_SOLD_COUNT_LTE")
+                        .metadata(Map.of("disposition", "DEFERRED_SOURCE_NOT_PROVEN"))
+                        .build()));
+        when(operandRepository.findByGraphId(graphId)).thenReturn(List.of(
+                CiPolicyRuleGraphOperand.builder()
+                        .id(UUID.randomUUID()).graphId(graphId).nodeId(nodeId)
+                        .operandPath("r.sold").originalToken("bureau.account_sold_count")
+                        .canonicalParameterId("bureau.account_sold_count").resolutionStatus("RESOLVED").build()));
+        CanonicalApplicationConfigurationResolution r = resolver.resolveFromCustomerCategory(categoryId);
+        assertThat(r.resolved()).isTrue();
+        assertThat(r.reasonCodes()).doesNotContain(CanonicalResolutionFailureCode.AUTHORED_CALCULATION_NOT_PINNED.name());
+        assertThat(r.configuration().calculationDefinitionPins())
+                .noneMatch(p -> "bureau.account_sold_count".equals(p.parameterId()) && p.fallbackRequired());
+    }
+
+    @Test
+    void sourceNotProvenParameterDoesNotFabricateOrRequireCalculationDefinition() {
+        Fixture fx = fullyPinned();
+        UUID graphId = UUID.randomUUID();
+        CiPolicyRuleGraph graph = CiPolicyRuleGraph.builder()
+                .id(graphId).policyDocumentId(documentId).documentVersion(1).graphHash("h").build();
+        when(ruleGraphRepository.findByPolicyDocumentIdAndDocumentVersion(documentId, 1))
+                .thenReturn(Optional.of(graph));
+        when(operandRepository.findByGraphId(graphId)).thenReturn(List.of(
+                CiPolicyRuleGraphOperand.builder()
+                        .id(UUID.randomUUID()).graphId(graphId).nodeId(UUID.randomUUID())
+                        .operandPath("r.sold").originalToken("bureau.account_sold_count")
+                        .canonicalParameterId("bureau.account_sold_count").resolutionStatus("RESOLVED").build()));
+        CanonicalApplicationConfigurationResolution r = resolver.resolve(fx.app);
+        assertThat(r.resolved()).isTrue();
+        assertThat(r.reasonCodes()).doesNotContain(CanonicalResolutionFailureCode.AUTHORED_CALCULATION_NOT_PINNED.name());
+        assertThat(r.configuration().calculationDefinitionPins())
+                .anyMatch(p -> "bureau.account_sold_count".equals(p.parameterId())
+                        && CanonicalCalculationPin.SOURCE_NOT_PROVEN.equals(p.calculationType())
+                        && p.calculationDefinitionId() == null
+                        && !p.fallbackRequired());
+        verify(calculationDefinitionRepository, never()).findByCanonicalParameterId("bureau.account_sold_count");
     }
 
     @Test

@@ -145,6 +145,26 @@ public final class PolicyExecutionReadiness {
     }
 
     /**
+     * Canonical freeze/preflight participation from graph-node metadata.
+     * Same deferred / ignored / deleted exclusions as {@link #isIncludedExecutableRule},
+     * but compound parent nodes stay included so their operands can pin.
+     */
+    public static boolean isCanonicalFreezeParticipatingMetadata(Map<String, Object> metadata) {
+        Map<String, Object> m = metadata == null ? Map.of() : metadata;
+        if (Boolean.TRUE.equals(m.get("deleted"))) return false;
+        if (Boolean.TRUE.equals(m.get("excludedFromActivation"))) return false;
+        String disposition = String.valueOf(m.getOrDefault("disposition", ""));
+        if ("IGNORED".equalsIgnoreCase(disposition)
+                || "DELETED".equalsIgnoreCase(disposition)
+                || "KEEP_AS_POLICY_REQUIREMENT".equalsIgnoreCase(disposition)
+                || "IGNORE_FOR_AUTOMATION".equalsIgnoreCase(disposition)
+                || "DEFERRED_SOURCE_NOT_PROVEN".equalsIgnoreCase(disposition)) {
+            return false;
+        }
+        return true;
+    }
+
+    /**
      * Genuine underwriting rule still on the policy — includes IGNORED / KEEP_AS.
      * Excludes classification-only, data-requirement, metric-adjustment, deleted, compound children.
      */

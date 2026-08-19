@@ -25,7 +25,10 @@ import com.los.core.creditintelligence.policystudio.parameters.execution.Executi
 import com.los.core.creditintelligence.policystudio.parameters.execution.ExecutionStatus;
 import com.los.core.creditintelligence.policystudio.runtime.CanonicalPolicyRuntime;
 import com.los.core.creditintelligence.policystudio.runtime.CanonicalRuleResult;
+import com.los.core.creditintelligence.policystudio.scorecard.PolicyVersionScorecardLinkage;
 import com.los.core.creditintelligence.policystudio.service.PolicyStudioOrchestrator;
+import com.los.core.model.entity.UnderwritingScorecard;
+import com.los.core.repository.UnderwritingScorecardRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -63,6 +66,7 @@ public class PolicyStudioTestExperienceService {
     private final StagingProspectSimulationService prospectSimulationService;
     private final CanonicalParameterExecutionService parameterExecution;
     private final CanonicalPolicyRuntime canonicalPolicyRuntime;
+    private final UnderwritingScorecardRepository scorecardRepository;
     private final PolicyMetricLineageService lineageService = new PolicyMetricLineageService();
     private CanonicalParameterRegistry registry() {
         return RuleOperandPresenter.registry();
@@ -76,11 +80,21 @@ public class PolicyStudioTestExperienceService {
             PolicyStudioOrchestrator orchestrator,
             StagingProspectSimulationService prospectSimulationService,
             CanonicalParameterExecutionService parameterExecution) {
+        this(properties, orchestrator, prospectSimulationService, parameterExecution, null);
+    }
+
+    public PolicyStudioTestExperienceService(
+            CreditIntelligenceProperties properties,
+            PolicyStudioOrchestrator orchestrator,
+            StagingProspectSimulationService prospectSimulationService,
+            CanonicalParameterExecutionService parameterExecution,
+            UnderwritingScorecardRepository scorecardRepository) {
         this.properties = properties;
         this.orchestrator = orchestrator;
         this.prospectSimulationService = prospectSimulationService;
         this.parameterExecution = parameterExecution;
         this.canonicalPolicyRuntime = new CanonicalPolicyRuntime(parameterExecution);
+        this.scorecardRepository = scorecardRepository;
     }
 
     public Map<String, Object> testContext(UUID documentId, String tenantHeader) {
@@ -127,9 +141,10 @@ public class PolicyStudioTestExperienceService {
         out.put("currentVsDraft", Map.of(
                 "available", true,
                 "description", "Shown after an Existing Application test using real legacyComparison output."));
-        out.put("scorecardCombined", Map.of(
-                "available", false,
-                "reason", "Policy-only test in this phase; scorecard convergence is next."));
+        Map<String, Object> scorecardIdentity = observationalScorecardIdentity(session);
+        scorecardIdentity.put("available", scorecardIdentity.get("scorecardId") != null);
+        scorecardIdentity.put("reason", "Observational linked identity; Policy Test does not execute the scorecard.");
+        out.put("scorecardCombined", scorecardIdentity);
         out.put("recentTests", recentByDocument.getOrDefault(documentId, List.of()));
         out.put("saveDraftUngated", true);
         return out;
@@ -885,6 +900,29 @@ public class PolicyStudioTestExperienceService {
                 "FAIL (hard reject) > material DATA_INSUFFICIENT > REFER/manual > PASS — "
                         + "reused from StagingProspectSimulationService.overallFromCounts");
         out.put("scorecardIncluded", false);
+        out.put("scorecardExecuted", false);
+        out.putAll(observationalScorecardIdentity(session));
+        return out;
+    }
+
+    private Map<String, Object> observationalScorecardIdentity(PolicyStudioSession session) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        UUID scorecardId = session == null || session.getDocument() == null
+                ? null : session.getDocument().getScorecardId();
+        Integer version = null;
+        String status = null;
+        String name = null;
+        if (scorecardId != null && scorecardRepository != null) {
+            UnderwritingScorecard card = scorecardRepository.findById(scorecardId).orElse(null);
+            if (card != null) {
+                version = card.getVersion();
+                status = card.getStatus();
+                name = card.getName();
+            }
+        }
+        PolicyVersionScorecardLinkage.stampObservationalIdentity(out, scorecardId, version);
+        out.put("scorecardStatus", status);
+        out.put("scorecardName", name);
         return out;
     }
 

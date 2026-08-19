@@ -11,6 +11,9 @@ import com.los.core.creditintelligence.policystudio.repository.CiPolicyDocumentR
 import com.los.core.creditintelligence.policystudio.repository.CiPolicyRuleGraphNodeRepository;
 import com.los.core.creditintelligence.policystudio.repository.CiPolicyRuleGraphOperandRepository;
 import com.los.core.creditintelligence.policystudio.repository.CiPolicyRuleGraphRepository;
+import com.los.core.creditintelligence.policystudio.scorecard.PolicyVersionScorecardLinkage;
+import com.los.core.model.entity.UnderwritingScorecard;
+import com.los.core.repository.UnderwritingScorecardRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
@@ -36,6 +39,7 @@ public class PolicyRuleGraphService {
     private final CiPolicyRuleGraphNodeRepository nodeRepository;
     private final CiPolicyRuleGraphOperandRepository operandRepository;
     private final CiPolicyDocumentRepository documentRepository;
+    private final UnderwritingScorecardRepository scorecardRepository;
     private final PolicyRuleGraphMaterializer materializer;
     private final ObjectProvider<DerivedCalculationDefinitionService> derivedCalculationDefinitionService;
 
@@ -76,6 +80,7 @@ public class PolicyRuleGraphService {
         Optional<CiPolicyRuleGraph> opt = latestGraph(policyDocumentId);
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("policyDocumentId", policyDocumentId);
+        out.putAll(observationalScorecardIdentity(policyDocumentId));
         if (opt.isEmpty()) {
             out.put("allowed", false);
             out.put("reason", "POLICY_GRAPH_NOT_MATERIALIZED");
@@ -93,6 +98,33 @@ public class PolicyRuleGraphService {
         }
         out.put("allowed", true);
         out.put("rules", loadPersistedAstRules(policyDocumentId));
+        return out;
+    }
+
+    /**
+     * Linked scorecard identity from {@code ci_policy_document.scorecard_id}.
+     * Does not execute the scorecard and does not look up latest/product scorecards.
+     */
+    public Map<String, Object> observationalScorecardIdentity(UUID policyDocumentId) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        CiPolicyDocument doc = policyDocumentId == null
+                ? null : documentRepository.findById(policyDocumentId).orElse(null);
+        UUID scorecardId = doc == null ? null : doc.getScorecardId();
+        Integer version = null;
+        String status = null;
+        String name = null;
+        if (scorecardId != null) {
+            Optional<UnderwritingScorecard> card = scorecardRepository.findById(scorecardId);
+            if (card.isPresent()) {
+                version = card.get().getVersion();
+                status = card.get().getStatus();
+                name = card.get().getName();
+            }
+        }
+        PolicyVersionScorecardLinkage.stampObservationalIdentity(out, scorecardId, version);
+        out.put("scorecardStatus", status);
+        out.put("scorecardName", name);
+        out.put("scorecardExecuted", false);
         return out;
     }
 

@@ -153,6 +153,7 @@ public class PolicyGraphPolicyTestService {
         out.put("authoringPersistedTestParity", true);
         out.put("usesCanonicalPolicyRuntime", true);
         out.put("usesCpes", true);
+        out.putAll(graphService.observationalScorecardIdentity(policyDocumentId));
         return out;
     }
 

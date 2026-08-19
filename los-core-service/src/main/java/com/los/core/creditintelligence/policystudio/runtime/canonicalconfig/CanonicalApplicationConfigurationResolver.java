@@ -4,6 +4,7 @@ import com.los.core.creditintelligence.bureau.domain.CiBureauReport;
 import com.los.core.creditintelligence.bureau.repository.CiBureauReportRepository;
 import com.los.core.creditintelligence.policystudio.domain.CiPolicyDocument;
 import com.los.core.creditintelligence.policystudio.graph.CiPolicyRuleGraph;
+import com.los.core.creditintelligence.policystudio.graph.CiPolicyRuleGraphNode;
 import com.los.core.creditintelligence.policystudio.graph.CiPolicyRuleGraphOperand;
 import com.los.core.creditintelligence.policystudio.lifecycle.ApplicationPolicyQueryFactory;
 import com.los.core.creditintelligence.policystudio.lifecycle.PolicyCanonicalLifecycleAuthority;
@@ -11,11 +12,13 @@ import com.los.core.creditintelligence.policystudio.lifecycle.domain.CiPolicyApp
 import com.los.core.creditintelligence.policystudio.lifecycle.repository.CiPolicyApplicabilityRepository;
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterDefinition;
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterRegistry;
+import com.los.core.creditintelligence.policystudio.parameters.PolicyExecutionReadiness;
 import com.los.core.creditintelligence.policystudio.parameters.derived.CiGacatDerivedCalculationDefinition;
 import com.los.core.creditintelligence.policystudio.parameters.derived.CiGacatDerivedCalculationDefinitionRepository;
 import com.los.core.creditintelligence.policystudio.parameters.derived.DerivedCalculationDefinitionService;
 import com.los.core.creditintelligence.policystudio.parameters.execution.BuiltInBureauMetricProducer;
 import com.los.core.creditintelligence.policystudio.repository.CiPolicyDocumentRepository;
+import com.los.core.creditintelligence.policystudio.repository.CiPolicyRuleGraphNodeRepository;
 import com.los.core.creditintelligence.policystudio.repository.CiPolicyRuleGraphOperandRepository;
 import com.los.core.creditintelligence.policystudio.repository.CiPolicyRuleGraphRepository;
 import com.los.core.creditintelligence.policystudio.scorecard.PolicyVersionScorecardLinkage;
@@ -66,6 +69,7 @@ public class CanonicalApplicationConfigurationResolver {
     private final CiPolicyDocumentRepository policyDocumentRepository;
     private final UnderwritingScorecardRepository scorecardRepository;
     private final CiPolicyRuleGraphRepository ruleGraphRepository;
+    private final CiPolicyRuleGraphNodeRepository ruleGraphNodeRepository;
     private final CiPolicyRuleGraphOperandRepository operandRepository;
     private final CiGacatDerivedCalculationDefinitionRepository calculationDefinitionRepository;
     private final CiBureauReportRepository bureauReportRepository;
@@ -147,6 +151,10 @@ public class CanonicalApplicationConfigurationResolver {
         }
         int authoredUnpinned = 0;
         for (CanonicalCalculationPin pin : calcPins) {
+            if (CanonicalCalculationPin.SOURCE_NOT_PROVEN.equals(pin.calculationType())
+                    || PolicyExecutionReadiness.isSourceNotProven(pin.parameterId())) {
+                continue;
+            }
             if (CanonicalCalculationPin.AUTHORED_EXPRESSION.equals(pin.calculationType())
                     && pin.calculationDefinitionId() == null) {
                 authoredUnpinned++;
@@ -341,6 +349,7 @@ public class CanonicalApplicationConfigurationResolver {
         counts.put("LATEST_WORKFLOW_LOOKUP_COUNT", 0);
         counts.put("LATEST_POLICY_LOOKUP_COUNT", 0);
         counts.put("LATEST_SCORECARD_LOOKUP_COUNT", 0);
+        counts.put("LATEST_CALCULATION_LOOKUP_COUNT", 0);
         counts.put("PRODUCT_OVERRIDE_LOOKUP_COUNT", 0);
         return counts;
     }
@@ -589,10 +598,22 @@ public class CanonicalApplicationConfigurationResolver {
             Optional<CiPolicyRuleGraph> graph = ruleGraphRepository
                     .findByPolicyDocumentIdAndDocumentVersion(document.getId(), document.getDocumentVersion());
             graph.ifPresent(g -> {
-                for (CiPolicyRuleGraphOperand op : operandRepository.findByGraphId(g.getId())) {
-                    if (op.getCanonicalParameterId() != null && !op.getCanonicalParameterId().isBlank()) {
-                        participating.add(op.getCanonicalParameterId().trim());
+                Map<UUID, CiPolicyRuleGraphNode> nodes = new LinkedHashMap<>();
+                for (CiPolicyRuleGraphNode n : ruleGraphNodeRepository.findByGraphIdOrderBySortOrderAsc(g.getId())) {
+                    if (n.getId() != null) {
+                        nodes.put(n.getId(), n);
                     }
+                }
+                for (CiPolicyRuleGraphOperand op : operandRepository.findByGraphId(g.getId())) {
+                    if (op.getCanonicalParameterId() == null || op.getCanonicalParameterId().isBlank()) {
+                        continue;
+                    }
+                    CiPolicyRuleGraphNode node = op.getNodeId() == null ? null : nodes.get(op.getNodeId());
+                    if (node != null
+                            && !PolicyExecutionReadiness.isCanonicalFreezeParticipatingMetadata(node.getMetadata())) {
+                        continue;
+                    }
+                    participating.add(op.getCanonicalParameterId().trim());
                 }
             });
         }
@@ -610,11 +631,22 @@ public class CanonicalApplicationConfigurationResolver {
         }
         outcomes.put("calculationPins", String.valueOf(pins.size()));
         provenance.put("calculationPinCount", String.valueOf(pins.size()));
-        provenance.put("calculationPinRule", "unique non-retired definition row or built-in producer; never latestFor");
+        provenance.put("calculationPinRule",
+                "participating graph operands + scorecard ids; unique non-retired definition or built-in; never latestFor; deferred SOURCE_NOT_PROVEN excluded");
         return List.copyOf(pins);
     }
 
     private CanonicalCalculationPin pinForParameter(String parameterId, List<String> reasons) {
+        if (PolicyExecutionReadiness.isSourceNotProven(parameterId)) {
+            return new CanonicalCalculationPin(
+                    parameterId,
+                    CanonicalCalculationPin.SOURCE_NOT_PROVEN,
+                    "GACAT_SOURCE_NOT_PROVEN",
+                    null,
+                    null,
+                    false,
+                    false);
+        }
         Optional<CanonicalParameterDefinition> defOpt = parameterLookup.apply(parameterId);
         String gacatType = defOpt.map(CanonicalParameterDefinition::type).orElse(null);
         boolean builtIn = BuiltInBureauMetricProducer.EMITTED_IDS.contains(parameterId);

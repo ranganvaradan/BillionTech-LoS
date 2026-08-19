@@ -21,6 +21,8 @@ public record CanonicalCalculationPin(
     public static final String AUTHORED_EXPRESSION = "AUTHORED_EXPRESSION";
     public static final String PROVIDER_DERIVED = "PROVIDER_DERIVED";
     public static final String RAW = "RAW";
+    /** GACAT SOURCE_NOT_PROVEN — retained on the policy, not executable, no definition to pin. */
+    public static final String SOURCE_NOT_PROVEN = "SOURCE_NOT_PROVEN";
 
     public Map<String, Object> toMap() {
         Map<String, Object> m = new LinkedHashMap<>();
