@@ -86,7 +86,7 @@ import {
   pinnedWorkflowDisplayFromCategoryHandoff,
   type PinnedWorkflowDisplay,
 } from '@/lib/workflow/pinnedWorkflowDisplay'
-import { activeCatalogHasSecuredProduct, matchingWorkflowsForProduct, uniqueActiveWorkflowLoanProducts, workflowLoanProductDisplayName } from '@/utils/workflowProducts'
+import { activeCatalogHasSecuredProduct, uniqueActiveWorkflowLoanProducts, workflowLoanProductDisplayName } from '@/utils/workflowProducts'
 import { hydrateIntakeFormFromApplication } from '@/lib/intake/hydrateIntakeFromApplication'
 import {
   applyHydratedIntakeDefaults,
@@ -244,23 +244,6 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
 
   const productsForType = productsForBorrowerType(activeWorkflows, form.borrowerType)
   const staffProductList = useMemo(() => uniqueActiveWorkflowLoanProducts(activeWorkflows), [activeWorkflows])
-  const intakeSegmentForWorkflow: 'BORROWER' | 'ANCHOR' =
-    isInvoiceDiscountingProduct(form.loanProduct) && form.invoiceOnboardingChoice === 'ANCHOR'
-      ? 'ANCHOR'
-      : 'BORROWER'
-  // Anchor product step hides borrower-type picker; workflows are COMPANY + ANCHOR segment.
-  const workflowBorrowerType =
-    intakeSegmentForWorkflow === 'ANCHOR' ? ANCHOR_BORROWER_TYPE : form.borrowerType
-  const workflowsForSelectedProduct = useMemo(
-    () =>
-      matchingWorkflowsForProduct(
-        activeWorkflows,
-        workflowBorrowerType,
-        form.loanProduct,
-        intakeSegmentForWorkflow,
-      ),
-    [activeWorkflows, workflowBorrowerType, form.loanProduct, intakeSegmentForWorkflow],
-  )
   const selectedWorkflow = workflowById(activeWorkflows, form.workflowId)
   const requiresItr = useMemo(
     () => workflowRequiresMandatoryItr(selectedWorkflow) || workflowHasStep(selectedWorkflow, 'ITR_RETURN_FORMS'),
