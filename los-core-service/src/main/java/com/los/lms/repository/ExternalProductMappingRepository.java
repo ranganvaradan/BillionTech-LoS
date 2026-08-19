@@ -13,7 +13,7 @@ public interface ExternalProductMappingRepository extends JpaRepository<External
 
     @Query("""
             SELECT m
-            FROM external_product_mapping m
+            FROM ExternalProductMapping m
             WHERE m.losProductCode = :losProductCode
               AND m.externalSystem = :externalSystem
               AND m.status = :status
@@ -29,7 +29,7 @@ public interface ExternalProductMappingRepository extends JpaRepository<External
 
     @Query("""
             SELECT m
-            FROM external_product_mapping m
+            FROM ExternalProductMapping m
             WHERE m.losProductCode = :losProductCode
               AND m.externalSystem = :externalSystem
               AND m.effectiveFrom <= :asOf
@@ -56,7 +56,7 @@ public interface ExternalProductMappingRepository extends JpaRepository<External
      */
     @Query("""
             SELECT m
-            FROM external_product_mapping m
+            FROM ExternalProductMapping m
             WHERE m.losProductCode = :losProductCode
               AND m.externalSystem = :externalSystem
               AND m.status = :activeStatus
