@@ -80,6 +80,8 @@ import {
 } from '@/components/intake/CoApplicantsSection'
 import { CoApplicantPortal } from '@/components/intake/CoApplicantPortal'
 import { CategorySelectionPanel } from '@/components/category/CategorySelectionPanel'
+import { categoryPinnedSelectionFromApplication } from '@/lib/category/categorySelectionPanelState'
+import type { CategoryPinnedSelection } from '@/lib/category/categorySelectionPanelState'
 import { PinnedWorkflowSummary } from '@/components/workflow/PinnedWorkflowSummary'
 import {
   pinnedWorkflowDisplayFromApplication,
@@ -209,6 +211,8 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
   const [gstAnalysisReportSuccess, setGstAnalysisReportSuccess] = useState(false)
   /** Category-governed apps: frozen workflow label from application pin (not active-workflow catalog). */
   const [pinnedWorkflowDisplay, setPinnedWorkflowDisplay] = useState<PinnedWorkflowDisplay | null>(null)
+  /** Persisted category pin — authoritative when revisiting Category step. */
+  const [categoryPinnedSelection, setCategoryPinnedSelection] = useState<CategoryPinnedSelection | null>(null)
 
   const resumeApplicationId =
     editApplicationId ?? (variant === 'borrower' ? searchParams.get('resume') : null)
@@ -527,6 +531,10 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
         const pinnedFromApp = pinnedWorkflowDisplayFromApplication(app)
         if (pinnedFromApp) {
           setPinnedWorkflowDisplay(pinnedFromApp)
+        }
+        const categoryPin = categoryPinnedSelectionFromApplication(app)
+        if (categoryPin) {
+          setCategoryPinnedSelection(categoryPin)
         }
         const h0 = hydrateIntakeFormFromApplication(app)
         let h = applyHydratedIntakeDefaults(h0, app, variant)
@@ -2072,6 +2080,7 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
             applicationId={applicationId}
             actor={user?.name || 'user'}
             actorRole={variant === 'staff' ? 'RM' : 'CUSTOMER'}
+            pinnedSelection={categoryPinnedSelection}
             onSelected={(result) => {
               const wf = result.selected?.workflowId
               if (wf)
@@ -2083,6 +2092,7 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
                   lmsProductCode: '',
                 }))
               if (result.selected) {
+                setCategoryPinnedSelection(result.selected)
                 const pinned = pinnedWorkflowDisplayFromCategoryHandoff(result.selected)
                 if (pinned) setPinnedWorkflowDisplay(pinned)
               }

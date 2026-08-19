@@ -93,6 +93,9 @@ export interface ApplicationResponse {
   selectedCustomerCategoryVersion?: number | null
   selectedCustomerCategoryDisplayName?: string | null
   categorySelectionState?: string | null
+  categorySelectionSource?: string | null
+  selectedPolicyApplicabilityId?: string | null
+  selectedPolicyDocumentId?: string | null
   status: ApplicationStatus
   personalInfo: Record<string, unknown> | null
   businessInfo: Record<string, unknown> | null

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   answerCategoryDisambiguation,
   autoSelectCategory,
@@ -8,11 +8,20 @@ import {
 } from '../../api/categorySelection'
 import { PinnedWorkflowSummary } from '../workflow/PinnedWorkflowSummary'
 import { pinnedWorkflowDisplayFromCategoryHandoff } from '@/lib/workflow/pinnedWorkflowDisplay'
+import {
+  buildCategorySelectedResult,
+  hasCategoryPin,
+  mergeCategoryEvaluateResult,
+  shouldPreservePinOnEvaluateError,
+  type CategoryPinnedSelection,
+} from '@/lib/category/categorySelectionPanelState'
 
 type Props = {
   applicationId: string
   actor?: string
   actorRole?: 'CUSTOMER' | 'RM' | 'SYSTEM'
+  /** Persisted application category pin — authoritative on revisit; never displaced by loading/error. */
+  pinnedSelection?: CategoryPinnedSelection | null
   /** Staging-only: evaluate DRAFT Categories without activating Day-1 seeds. */
   allowDraftSimulation?: boolean
   onSelected?: (result: EligibilityResult) => void
@@ -26,30 +35,88 @@ export function CategorySelectionPanel({
   applicationId,
   actor = 'user',
   actorRole = 'CUSTOMER',
+  pinnedSelection = null,
   allowDraftSimulation = false,
   onSelected,
 }: Props) {
-  const [result, setResult] = useState<EligibilityResult | null>(null)
+  const [result, setResult] = useState<EligibilityResult | null>(() =>
+    hasCategoryPin(pinnedSelection) ? buildCategorySelectedResult(pinnedSelection) : null,
+  )
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [backgroundRefresh, setBackgroundRefresh] = useState(false)
+  const requestGenerationRef = useRef(0)
+  const resultRef = useRef<EligibilityResult | null>(result)
+  const pinnedSelectionRef = useRef(pinnedSelection)
+
+  useEffect(() => {
+    resultRef.current = result
+  }, [result])
+
+  useEffect(() => {
+    pinnedSelectionRef.current = pinnedSelection
+  }, [pinnedSelection])
+
+  useEffect(() => {
+    if (!hasCategoryPin(pinnedSelection)) return
+    setResult((prev) => {
+      if (prev?.state === 'CATEGORY_SELECTED') return prev
+      return buildCategorySelectedResult(pinnedSelection)
+    })
+    setError(null)
+  }, [pinnedSelection])
 
   const refresh = useCallback(async () => {
-    setBusy(true)
+    const generation = ++requestGenerationRef.current
+    const pinKnown = hasCategoryPin(pinnedSelectionRef.current)
+    const hasPinnedDisplay =
+      pinKnown || resultRef.current?.state === 'CATEGORY_SELECTED'
+
+    if (!hasPinnedDisplay) {
+      setBusy(true)
+    } else {
+      setBackgroundRefresh(true)
+    }
     setError(null)
+
     try {
-      const r = await evaluateCategorySelection(applicationId, allowDraftSimulation)
-      setResult(r)
-      if (r.state === 'AUTO_SINGLE_MATCH') {
+      const incoming = await evaluateCategorySelection(applicationId, allowDraftSimulation)
+      if (generation !== requestGenerationRef.current) return
+
+      setResult((prev) => {
+        const merged = mergeCategoryEvaluateResult(prev, incoming, generation, requestGenerationRef.current)
+        return merged ?? prev
+      })
+
+      const effective = mergeCategoryEvaluateResult(
+        resultRef.current,
+        incoming,
+        generation,
+        requestGenerationRef.current,
+      )
+
+      if (incoming.state === 'AUTO_SINGLE_MATCH') {
         const selected = await autoSelectCategory(applicationId, actor, allowDraftSimulation)
+        if (generation !== requestGenerationRef.current) return
         setResult(selected)
         onSelected?.(selected)
-      } else if (r.state === 'CATEGORY_SELECTED') {
-        onSelected?.(r)
+      } else if (incoming.state === 'CATEGORY_SELECTED' || effective?.state === 'CATEGORY_SELECTED') {
+        onSelected?.(incoming.state === 'CATEGORY_SELECTED' ? incoming : effective!)
       }
     } catch (e) {
+      if (generation !== requestGenerationRef.current) return
+      if (
+        shouldPreservePinOnEvaluateError(pinnedSelectionRef.current, resultRef.current)
+      ) {
+        setError(null)
+        return
+      }
       setError(e instanceof Error ? e.message : 'Category evaluation failed')
     } finally {
-      setBusy(false)
+      if (generation === requestGenerationRef.current) {
+        setBusy(false)
+        setBackgroundRefresh(false)
+      }
     }
   }, [applicationId, allowDraftSimulation, actor, onSelected])
 
@@ -102,38 +169,54 @@ export function CategorySelectionPanel({
     }
   }
 
-  if (!result && busy) {
+  const showInitialLoading = !result && busy
+  const pinnedDisplay =
+    result?.state === 'CATEGORY_SELECTED' && result.selected
+      ? pinnedWorkflowDisplayFromCategoryHandoff(result.selected)
+      : null
+
+  if (showInitialLoading) {
     return <p className="text-sm text-slate-600">Checking lending propositions…</p>
   }
-  if (error) {
+
+  if (error && !pinnedDisplay) {
     return <p className="text-sm text-red-700">{error}</p>
   }
-  if (!result) {
+
+  if (!result && !pinnedDisplay) {
     return null
   }
 
-  if (result.state === 'CATEGORY_SELECTED' && result.selected) {
-    const pinnedDisplay = pinnedWorkflowDisplayFromCategoryHandoff(result.selected)
+  if (result?.state === 'CATEGORY_SELECTED' && result.selected) {
     return (
-      <div className="rounded border border-emerald-200 bg-emerald-50 p-4">
-        <h3 className="text-sm font-semibold text-emerald-900">Lending proposition selected</h3>
-        <p className="mt-1 text-sm text-emerald-800">
-          {result.selected.categoryDisplayName ?? result.selected.categoryCode} (v{result.selected.categoryVersion})
-        </p>
-        {pinnedDisplay ? (
-          <div className="mt-2">
-            <PinnedWorkflowSummary display={pinnedDisplay} tone="success" />
-          </div>
+      <div className="space-y-2">
+        {backgroundRefresh ? (
+          <p className="text-xs text-slate-500" aria-live="polite">
+            Refreshing lending proposition…
+          </p>
         ) : null}
-        <p className="mt-2 text-xs text-emerald-700">
-          Source: {result.selected.selectionSource}. Policy and Workflow versions locked for this
-          application. Underwriting has not been run.
-        </p>
+        {error ? <p className="text-xs text-amber-700">{error}</p> : null}
+        <div className="rounded border border-emerald-200 bg-emerald-50 p-4">
+          <h3 className="text-sm font-semibold text-emerald-900">Lending proposition selected</h3>
+          <p className="mt-1 text-sm text-emerald-800">
+            {result.selected.categoryDisplayName ?? result.selected.categoryCode} (v
+            {result.selected.categoryVersion})
+          </p>
+          {pinnedDisplay ? (
+            <div className="mt-2">
+              <PinnedWorkflowSummary display={pinnedDisplay} tone="success" />
+            </div>
+          ) : null}
+          <p className="mt-2 text-xs text-emerald-700">
+            Source: {result.selected.selectionSource}. Policy and Workflow versions locked for this
+            application. Underwriting has not been run.
+          </p>
+        </div>
       </div>
     )
   }
 
-  if (result.state === 'NO_ELIGIBLE_CATEGORY') {
+  if (result?.state === 'NO_ELIGIBLE_CATEGORY') {
     return (
       <div className="rounded border border-amber-200 bg-amber-50 p-4">
         <h3 className="text-sm font-semibold text-amber-900">No matching lending proposition</h3>
@@ -147,7 +230,7 @@ export function CategorySelectionPanel({
     )
   }
 
-  if (result.state === 'DISAMBIGUATION_REQUIRED' && result.nextQuestion) {
+  if (result?.state === 'DISAMBIGUATION_REQUIRED' && result.nextQuestion) {
     const q = result.nextQuestion
     return (
       <div className="space-y-3 rounded border border-slate-200 bg-white p-4">
@@ -170,12 +253,13 @@ export function CategorySelectionPanel({
     )
   }
 
-  if (result.state === 'EXPLICIT_PROPOSITION_SELECTION_REQUIRED') {
+  if (result?.state === 'EXPLICIT_PROPOSITION_SELECTION_REQUIRED') {
     const cards = result.propositions?.length ? result.propositions : result.eligible
     return (
       <div className="space-y-3">
         <h3 className="text-sm font-semibold text-slate-900">Choose a lending proposition</h3>
         <p className="text-xs text-slate-500">More than one option fits your application.</p>
+        {error ? <p className="text-sm text-red-700">{error}</p> : null}
         <div className="grid gap-3 md:grid-cols-2">
           {cards.map((p) => (
             <button

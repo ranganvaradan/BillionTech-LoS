@@ -27,4 +27,19 @@ describe('CategorySelectionPanel contract', () => {
     expect(panel).toMatch(/pinnedWorkflowDisplayFromCategoryHandoff/)
     expect(summary).toMatch(/Selected through Customer Category/)
   })
+
+  it('accepts persisted pin and preserves it on revisit', () => {
+    const panel = readFileSync(resolve(ROOT, 'components/category/CategorySelectionPanel.tsx'), 'utf8')
+    expect(panel).toMatch(/pinnedSelection/)
+    expect(panel).toMatch(/shouldPreservePinOnEvaluateError/)
+    expect(panel).toMatch(/mergeCategoryEvaluateResult/)
+    expect(panel).not.toMatch(/setResult\(null\)/)
+  })
+
+  it('wizard passes category pin into CategorySelectionPanel', () => {
+    const wizard = readFileSync(resolve(ROOT, 'components/intake/ApplicationIntakeWizard.tsx'), 'utf8')
+    expect(wizard).toMatch(/categoryPinnedSelection/)
+    expect(wizard).toMatch(/pinnedSelection=\{categoryPinnedSelection\}/)
+    expect(wizard).toMatch(/categoryPinnedSelectionFromApplication/)
+  })
 })

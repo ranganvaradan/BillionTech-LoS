@@ -54,6 +54,8 @@ public class ApplicationResponse {
     private UUID selectedPolicyApplicabilityId;
     private UUID selectedPolicyDocumentId;
     private String categorySelectionState;
+    /** RM_SELECTED / CUSTOMER_SELECTED / AUTO_SINGLE_ELIGIBLE — frozen at pin time. */
+    private String categorySelectionSource;
     private ApplicationStatus status;
     private Map<String, Object> personalInfo;
     private Map<String, Object> businessInfo;

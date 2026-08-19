@@ -549,6 +549,7 @@ public class LoanApplicationServiceImpl implements ILoanApplicationService {
                 .selectedPolicyApplicabilityId(app.getSelectedPolicyApplicabilityId())
                 .selectedPolicyDocumentId(app.getSelectedPolicyDocumentId())
                 .categorySelectionState(app.getCategorySelectionState())
+                .categorySelectionSource(app.getCategorySelectionSource())
                 .intakeOwner(app.getIntakeOwner())
                 .intakeCompletedStep(app.getIntakeCompletedStep())
                 .borrowerSentBackNotes(app.getBorrowerSentBackNotes())
