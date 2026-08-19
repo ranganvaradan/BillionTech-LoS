@@ -88,7 +88,10 @@ class LmsProductMappingP0Test {
                 java.util.UUID.randomUUID(),
                 2,
                 "TERM_LOAN",
-                "COMPANY");
+                "COMPANY",
+                null,
+                null,
+                "ENCORE");
         assertThat(res.toEvidenceMap().get("allowCanonicalAuthority")).isEqualTo(false);
         assertThat(res.toEvidenceMap().get("mappingSource"))
                 .isEqualTo(LmsProductMappingResolution.SOURCE_WORKFLOW);

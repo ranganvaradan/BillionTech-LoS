@@ -5,6 +5,10 @@ import {
   composeProductConfiguration,
   getGoldenProductConfiguration,
   getProductConfigurationOptions,
+  listExternalProductMappings,
+  listExternalProductSystems,
+  createExternalProductMapping,
+  patchExternalProductMappingStatus,
 } from '@/api/liveReadiness'
 import { ApiError } from '@/api/http'
 
@@ -26,6 +30,18 @@ export function ProductConfigurationPage() {
   const [scorecardId, setScorecardId] = useState('')
   const [assignmentRuleSetId, setAssignmentRuleSetId] = useState('')
   const [policyDocumentId, setPolicyDocumentId] = useState('')
+  const [externalProductSystems, setExternalProductSystems] = useState<string[]>([])
+  const [externalSystem, setExternalSystem] = useState<string>('')
+  const [mappings, setMappings] = useState<any[]>([])
+  const [mappingsBusy, setMappingsBusy] = useState(false)
+  const [mappingAsOf, setMappingAsOf] = useState(() => new Date().toISOString().slice(0, 10))
+
+  const [createExternalProductCode, setCreateExternalProductCode] = useState('')
+  const [createVersion, setCreateVersion] = useState<number>(1)
+  const [createStatus, setCreateStatus] = useState('INACTIVE')
+  const [createEffectiveFrom, setCreateEffectiveFrom] = useState(mappingAsOf)
+  const [createEffectiveTo, setCreateEffectiveTo] = useState('9999-12-31')
+
   const [result, setResult] = useState<Record<string, unknown> | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -43,6 +59,51 @@ export function ProductConfigurationPage() {
       })
       .catch((e) => setError(e instanceof ApiError ? e.message : 'Failed to load options'))
   }, [])
+
+  // external_product_mapping admin dropdown + catalogue loader for selected LOS Product.
+  useEffect(() => {
+    if (!loanProduct) return
+    setMappings([])
+    setExternalProductSystems([])
+    setExternalSystem('')
+    setCreateExternalProductCode('')
+    void (async () => {
+      try {
+        const systems = await listExternalProductSystems(loanProduct)
+        setExternalProductSystems(systems)
+        const preferred = systems[0] ?? ''
+        setExternalSystem(preferred)
+      } catch (e) {
+        // Non-fatal: mapping admin may be empty if catalogue isn't present yet.
+        setExternalProductSystems([])
+        setExternalSystem('')
+      }
+    })()
+  }, [loanProduct])
+
+  useEffect(() => {
+    if (!externalSystem) {
+      setMappings([])
+      return
+    }
+    setMappingsBusy(true)
+    void (async () => {
+      try {
+        const rows = await listExternalProductMappings({
+          losProductCode: loanProduct,
+          externalSystem,
+          asOf: mappingAsOf,
+        })
+        setMappings(rows)
+        const versionMax = rows.reduce((acc, r) => (Number(r.version ?? acc) > acc ? Number(r.version) : acc), 1)
+        setCreateVersion(Number.isFinite(versionMax) ? versionMax + 1 : 1)
+      } catch (e) {
+        setMappings([])
+      } finally {
+        setMappingsBusy(false)
+      }
+    })()
+  }, [loanProduct, externalSystem, mappingAsOf])
 
   const workflows = useMemo(
     () =>
@@ -82,12 +143,13 @@ export function ProductConfigurationPage() {
     setBusy(true)
     setError(null)
     try {
+      const canonicalMode = policyDocumentId.trim().length > 0
       const data = await composeProductConfiguration({
         borrowerType,
         loanProduct,
         intakeSegment,
         workflowId: workflowId || null,
-        liveRuleSetId: liveRuleSetId || null,
+        liveRuleSetId: canonicalMode ? null : liveRuleSetId || null,
         scorecardId: scorecardId || null,
         assignmentRuleSetId: assignmentRuleSetId || null,
         policyDocumentId: policyDocumentId || null,
@@ -129,6 +191,8 @@ export function ProductConfigurationPage() {
   const plp = asRecord(compose.plp)
   const policyStudio = asRecord(compose.policyStudio)
   const mismatchKeys = asList(result?.mismatchKeys)
+  const canonicalMode = policyDocumentId.trim().length > 0
+  const policyStudioNotProductionAuthority = Boolean(policyStudio?.notProductionAuthority)
 
   return (
     <div className="space-y-4" data-testid="product-configuration-page">
@@ -175,7 +239,9 @@ export function ProductConfigurationPage() {
       <section className="rounded-xl border border-slate-200 bg-white p-4">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Runtime Configuration</h2>
         <p className="mt-1 text-xs text-slate-500">
-          Labels below are production authorities. Policy Studio is governance / shadow only.
+          {canonicalMode
+            ? 'Canonical mode: Policy Studio is underwriting authority (frozen). Live Rule Set is legacy/historical only.'
+            : 'Legacy mode: Live Rule Set is underwriting authority. Policy Studio is publication metadata only.'}
         </p>
         <div className="mt-3 grid gap-3 sm:grid-cols-1 lg:grid-cols-2">
           <label className="text-sm">
@@ -194,11 +260,14 @@ export function ProductConfigurationPage() {
             </select>
           </label>
           <label className="text-sm">
-            <span className="text-slate-600">Runtime Rule Set (Live Underwriting)</span>
+            <span className="text-slate-600">
+              {canonicalMode ? 'Legacy Live Rule Set (non-authoritative)' : 'Runtime Rule Set (Live Underwriting)'}
+            </span>
             <select
               className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
               value={liveRuleSetId}
               onChange={(e) => setLiveRuleSetId(e.target.value)}
+              disabled={canonicalMode}
             >
               <option value="">— select —</option>
               {rules.map((r) => (
@@ -224,10 +293,10 @@ export function ProductConfigurationPage() {
             </select>
           </label>
           <label className="text-sm">
-            <span className="text-slate-600">Policy Studio Policy (Governance only / Shadow)</span>
+            <span className="text-slate-600">Policy Studio Policy (Underwriting Authority)</span>
             <input
               className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
-              placeholder="Optional UUID — not production authority"
+              placeholder="UUID (set to enable canonical Policy Studio underwriting mode)"
               value={policyDocumentId}
               onChange={(e) => setPolicyDocumentId(e.target.value)}
             />
@@ -273,6 +342,232 @@ export function ProductConfigurationPage() {
           Load golden Company Term Loan
         </button>
       </div>
+
+      <section className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">External Product Mapping (Admin)</h2>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <label className="text-sm">
+            <span className="text-slate-600">External system</span>
+            <select
+              className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+              value={externalSystem}
+              onChange={(e) => setExternalSystem(e.target.value)}
+              disabled={mappingsBusy || externalProductSystems.length === 0}
+            >
+              {externalProductSystems.length === 0 ? <option value="">— none —</option> : null}
+              {externalProductSystems.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="text-sm">
+            <span className="text-slate-600">Effective “as-of” date</span>
+            <input
+              type="date"
+              className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
+              value={mappingAsOf}
+              onChange={(e) => setMappingAsOf(e.target.value)}
+            />
+          </label>
+          <label className="text-sm">
+            <span className="text-slate-600">LOS Product</span>
+            <input
+              className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm bg-slate-50"
+              value={loanProduct}
+              disabled
+            />
+          </label>
+        </div>
+
+        <div className="rounded border border-slate-100 bg-slate-50 p-3 text-sm">
+          <div className="flex items-center justify-between gap-2">
+            <div className="font-semibold">Mappings</div>
+            <div className="text-xs text-slate-600">
+              {mappingsBusy ? 'Loading…' : `${String(mappings.length)} row(s)`}
+            </div>
+          </div>
+
+          {mappingsBusy ? null : mappings.length === 0 ? (
+            <div className="mt-2 text-xs text-slate-600">
+              No mappings found for the selected LOS Product + External System.
+            </div>
+          ) : (
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="text-xs text-slate-500">
+                    <th className="py-1 pr-3">Version</th>
+                    <th className="py-1 pr-3">External product code</th>
+                    <th className="py-1 pr-3">Effective period</th>
+                    <th className="py-1 pr-3">Status</th>
+                    <th className="py-1">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mappings.map((m) => {
+                    const status = String(m.status ?? '—')
+                    const activeToday = Boolean(m.activeToday)
+                    return (
+                      <tr key={String(m.id)} className="border-t border-slate-100 align-top">
+                        <td className="py-2 pr-3">
+                          <div className="font-medium">{String(m.version ?? '—')}</div>
+                          {activeToday ? <div className="text-xs text-emerald-700">Active (as-of)</div> : null}
+                        </td>
+                        <td className="py-2 pr-3">
+                          <div className="font-medium">{String(m.externalProductCode ?? '—')}</div>
+                        </td>
+                        <td className="py-2 pr-3 text-xs text-slate-700">
+                          {String(m.effectiveFrom ?? '—')} → {String(m.effectiveTo ?? '—')}
+                        </td>
+                        <td className="py-2 pr-3 text-xs">
+                          <span className={activeToday ? 'text-emerald-700' : 'text-slate-700'}>{status}</span>
+                        </td>
+                        <td className="py-2">
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              className="bt-btn bt-btn-sm bt-btn-secondary"
+                              disabled={activeToday || String(m.status ?? '').toUpperCase() === 'RETIRED'}
+                              onClick={async () => {
+                                try {
+                                  await patchExternalProductMappingStatus(String(m.id), 'ACTIVE')
+                                  const rows = await listExternalProductMappings({ losProductCode: loanProduct, externalSystem, asOf: mappingAsOf })
+                                  setMappings(rows)
+                                } catch (e) {
+                                  setError(e instanceof Error ? e.message : 'Activate failed')
+                                }
+                              }}
+                            >
+                              Activate
+                            </button>
+                            <button
+                              type="button"
+                              className="bt-btn bt-btn-sm bt-btn-secondary"
+                              disabled={String(m.status ?? '').toUpperCase() !== 'ACTIVE'}
+                              onClick={async () => {
+                                try {
+                                  await patchExternalProductMappingStatus(String(m.id), 'INACTIVE')
+                                  const rows = await listExternalProductMappings({ losProductCode: loanProduct, externalSystem, asOf: mappingAsOf })
+                                  setMappings(rows)
+                                } catch (e) {
+                                  setError(e instanceof Error ? e.message : 'Deactivate failed')
+                                }
+                              }}
+                            >
+                              Deactivate
+                            </button>
+                            <button
+                              type="button"
+                              className="bt-btn bt-btn-sm bt-btn-secondary"
+                              disabled={String(m.status ?? '').toUpperCase() === 'RETIRED'}
+                              onClick={async () => {
+                                try {
+                                  await patchExternalProductMappingStatus(String(m.id), 'RETIRED')
+                                  const rows = await listExternalProductMappings({ losProductCode: loanProduct, externalSystem, asOf: mappingAsOf })
+                                  setMappings(rows)
+                                } catch (e) {
+                                  setError(e instanceof Error ? e.message : 'Retire failed')
+                                }
+                              }}
+                            >
+                              Retire
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div className="rounded border border-slate-100 bg-white p-3">
+          <div className="font-semibold text-sm">Create new mapping version</div>
+          <div className="mt-2 grid gap-3 sm:grid-cols-2">
+            <label className="text-sm">
+              <span className="text-slate-600">External product code</span>
+              <input
+                className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
+                value={createExternalProductCode}
+                onChange={(e) => setCreateExternalProductCode(e.target.value)}
+                placeholder="e.g. EXTERNAL_CODE"
+              />
+            </label>
+            <label className="text-sm">
+              <span className="text-slate-600">Version</span>
+              <input
+                type="number"
+                className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
+                value={createVersion}
+                onChange={(e) => setCreateVersion(Number(e.target.value))}
+              />
+            </label>
+            <label className="text-sm">
+              <span className="text-slate-600">Status</span>
+              <select
+                className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
+                value={createStatus}
+                onChange={(e) => setCreateStatus(e.target.value)}
+              >
+                <option value="INACTIVE">INACTIVE</option>
+                <option value="ACTIVE">ACTIVE</option>
+              </select>
+            </label>
+            <label className="text-sm">
+              <span className="text-slate-600">Effective From</span>
+              <input
+                type="date"
+                className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
+                value={createEffectiveFrom}
+                onChange={(e) => setCreateEffectiveFrom(e.target.value)}
+              />
+            </label>
+            <label className="text-sm">
+              <span className="text-slate-600">Effective To</span>
+              <input
+                type="date"
+                className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
+                value={createEffectiveTo}
+                onChange={(e) => setCreateEffectiveTo(e.target.value)}
+              />
+            </label>
+            <div className="flex items-end">
+              <button
+                type="button"
+                className="bt-btn bt-btn-primary bt-btn-sm"
+                disabled={!externalSystem || !createExternalProductCode || !createEffectiveFrom || !createEffectiveTo}
+                onClick={async () => {
+                  try {
+                    await createExternalProductMapping({
+                      losProductCode: loanProduct,
+                      externalSystem,
+                      externalProductCode: createExternalProductCode,
+                      version: createVersion,
+                      status: createStatus,
+                      effectiveFrom: createEffectiveFrom,
+                      effectiveTo: createEffectiveTo,
+                    })
+                    const rows = await listExternalProductMappings({ losProductCode: loanProduct, externalSystem, asOf: mappingAsOf })
+                    setMappings(rows)
+                    setCreateExternalProductCode('')
+                  } catch (e) {
+                    setError(e instanceof Error ? e.message : 'Create mapping failed')
+                  }
+                }}
+              >
+                Create mapping
+              </button>
+            </div>
+          </div>
+          <div className="mt-2 text-xs text-slate-600">
+            Evidence rows are immutable: to change external product code / effective window, create a new version row.
+          </div>
+        </div>
+      </section>
 
       {result ? (
         <section
@@ -325,13 +620,17 @@ export function ProductConfigurationPage() {
               </div>
             </div>
             <div className="rounded border border-dashed border-slate-300 bg-white/60 px-3 py-2 text-sm">
-              <div className="text-xs font-semibold uppercase text-slate-500">Policy Studio (Governance only)</div>
+              <div className="text-xs font-semibold uppercase text-slate-500">
+                Policy Studio ({policyStudioNotProductionAuthority ? 'Governance only / non-authoritative' : 'Canonical underwriting authority'})
+              </div>
               <div className="font-medium">
                 {policyStudio.policyName
                   ? `${String(policyStudio.policyName)} ${String(policyStudio.policyVersion ?? '')}`
                   : 'Not linked'}
               </div>
-              <div className="text-xs text-amber-900">Not production authority until controlled publication</div>
+              <div className={policyStudioNotProductionAuthority ? 'text-xs text-amber-900' : 'text-xs text-emerald-900'}>
+                {policyStudioNotProductionAuthority ? 'Not production authority until controlled publication' : 'Underwriting authority (frozen)'}
+              </div>
             </div>
           </div>
 
@@ -361,6 +660,23 @@ export function ProductConfigurationPage() {
               <div>Entry: {String(lms.lmsEntry ?? '—')}</div>
               <div>Product code: {String(lms.lmsProductCode ?? '—')}</div>
               <div>Status: {String(lms.status ?? '—')}</div>
+              {lms.ready && lms.externalProductMappingId ? (
+                <div className="mt-2 space-y-1 text-xs text-slate-700">
+                  <div>
+                    External mapping: {String(lms.externalSystem ?? '—')} / code {String(lms.externalProductCode ?? '—')}
+                  </div>
+                  <div>
+                    Mapping v{String(lms.externalProductMappingVersion ?? '—')} · {String(lms.externalMappingEffectiveFrom ?? '—')} →{' '}
+                    {String(lms.externalMappingEffectiveTo ?? '—')}
+                  </div>
+                  <div>Mapping status: {String(lms.externalMappingStatus ?? '—')}</div>
+                </div>
+              ) : !lms.ready ? (
+                <div className="mt-2 space-y-1 text-xs text-rose-900">
+                  <div>Reason: {String(lms.reason ?? '—')}</div>
+                  <div>Reason code: {String(lms.reasonCode ?? '—')}</div>
+                </div>
+              ) : null}
             </div>
             <div className="rounded border border-white/70 bg-white/80 px-3 py-2 text-sm">
               <div className="text-xs font-semibold uppercase text-slate-500">PLP</div>

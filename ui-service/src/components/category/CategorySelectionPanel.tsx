@@ -6,6 +6,8 @@ import {
   selectCategory,
   type EligibilityResult,
 } from '../../api/categorySelection'
+import { PinnedWorkflowSummary } from '../workflow/PinnedWorkflowSummary'
+import { pinnedWorkflowDisplayFromCategoryHandoff } from '@/lib/workflow/pinnedWorkflowDisplay'
 
 type Props = {
   applicationId: string
@@ -111,13 +113,19 @@ export function CategorySelectionPanel({
   }
 
   if (result.state === 'CATEGORY_SELECTED' && result.selected) {
+    const pinnedDisplay = pinnedWorkflowDisplayFromCategoryHandoff(result.selected)
     return (
       <div className="rounded border border-emerald-200 bg-emerald-50 p-4">
         <h3 className="text-sm font-semibold text-emerald-900">Lending proposition selected</h3>
         <p className="mt-1 text-sm text-emerald-800">
-          {result.selected.categoryCode} (v{result.selected.categoryVersion})
+          {result.selected.categoryDisplayName ?? result.selected.categoryCode} (v{result.selected.categoryVersion})
         </p>
-        <p className="mt-1 text-xs text-emerald-700">
+        {pinnedDisplay ? (
+          <div className="mt-2">
+            <PinnedWorkflowSummary display={pinnedDisplay} tone="success" />
+          </div>
+        ) : null}
+        <p className="mt-2 text-xs text-emerald-700">
           Source: {result.selected.selectionSource}. Policy and Workflow versions locked for this
           application. Underwriting has not been run.
         </p>

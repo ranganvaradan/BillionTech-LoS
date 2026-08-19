@@ -337,7 +337,6 @@ export function collateralOverviewCopy(opts: {
 export const PROSPECT_DEMO_VISIBLE_TAB_IDS = [
   'scope',
   'rules',
-  'scorecard',
   'simulation',
   'lifecycle',
 ] as const

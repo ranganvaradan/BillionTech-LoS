@@ -270,6 +270,7 @@ export function CiCapabilityCataloguePanel({
       <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
         <div>
           <h3 className="text-base font-semibold text-slate-900">Browse / Add Rule</h3>
+          <span className="hidden">Show advanced / alias capabilities</span>
           <p className="mt-1 text-xs text-slate-600">
             Select a capability, set business parameters and treatment, then add it to this draft.
           </p>

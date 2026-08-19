@@ -51,14 +51,15 @@ public class ProductReadinessValidator {
             String policyVersionLabel) {
 
         Map<String, Object> out = new LinkedHashMap<>();
+        boolean canonicalMode = policyDocumentId != null;
         out.put("allowCanonicalAuthority", false);
-        out.put("productionAuthority", "LIVE_UW_PATH");
+        out.put("productionAuthority", canonicalMode ? "CANONICAL_STUDIO_POLICY_PATH" : "LIVE_UW_PATH");
         out.put("resolutionOrder", List.of(
                 "Application → Product dimensions",
                 "Workflow",
-                "Live Rule Set",
+                canonicalMode ? "Canonical Policy Studio Policy" : "Live Rule Set",
                 "Live Scorecard",
-                "Studio Policy publication metadata only"));
+                canonicalMode ? "Canonical underwriting policy (frozen)" : "Studio Policy publication metadata only"));
 
         Map<String, Object> refs = new LinkedHashMap<>();
         refs.put("borrowerType", borrowerType);
@@ -89,8 +90,11 @@ public class ProductReadinessValidator {
         refs.put("policyDocumentId", policyDocumentId);
         refs.put("policyVersion", policyVersionLabel);
         if (policyDocumentId != null) {
-            refs.put("policyStudioSourceOfTruth", "Policy Studio Policy — Governance only / Shadow");
-            refs.put("policyStudioNotProductionAuthority", true);
+            refs.put("policyStudioSourceOfTruth",
+                    canonicalMode
+                            ? "Policy Studio Policy — Canonical underwriting authority (frozen)"
+                            : "Policy Studio Policy — Governance only / Shadow");
+            refs.put("policyStudioNotProductionAuthority", !canonicalMode);
         }
         out.put("references", refs);
 
@@ -167,10 +171,10 @@ public class ProductReadinessValidator {
                 && scorecardRuntimeActive
                 && Boolean.TRUE.equals(out.get("versionReferencesResolvable"))
                 && workflow != null
-                && liveRuleSet != null;
+                && (canonicalMode || liveRuleSet != null);
 
-        // Without Live Rule Set, not runtime-ready (Studio is governance only)
-        if (liveRuleSet == null) {
+        // Without Live Rule Set, not runtime-ready in legacy-only mode.
+        if (!canonicalMode && liveRuleSet == null) {
             ready = false;
             gaps.add("No Live Rule Set selected — Policy Studio is governance/shadow only");
         }
@@ -258,19 +262,21 @@ public class ProductReadinessValidator {
             return row;
         }
 
-        // Gate-3: Product Config production readiness requires productionReady=true
+        if (provided.contains(parameterId)) {
+            row.put("classification", AVAILABLE_AUTOMATICALLY);
+            row.put("gap", null);
+            return row;
+        }
+
+        // Gate-3: If the workflow does not supply the required input, we still need production-ready executability.
+        // Note: canonical catalogue "productionReady" is not execution proof; Product Config readiness should primarily
+        // depend on whether the workflow supplies the required inputs (covered above).
         if (!Boolean.TRUE.equals(exec.get("productionReady"))) {
             row.put("classification", UNAVAILABLE);
             row.put("readiness", String.valueOf(exec.get("executionState")));
             row.put("gap", def.businessName()
                     + " is not productionReady (executionState=" + exec.get("executionState")
                     + ") — Policy Test may still evaluate it");
-            return row;
-        }
-
-        if (provided.contains(parameterId)) {
-            row.put("classification", AVAILABLE_AUTOMATICALLY);
-            row.put("gap", null);
             return row;
         }
         if ("obligation.ratio".equals(parameterId) || "application.proposed_edi".equals(parameterId)) {

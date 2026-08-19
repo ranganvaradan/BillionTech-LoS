@@ -62,7 +62,10 @@ class DecisionConfigurationSnapshotBuilderTest {
                         wfId,
                         2,
                         "TERM_LOAN",
-                        "COMPANY")));
+                        "COMPANY",
+                        null,
+                        null,
+                        "ENCORE")));
 
         MultiRuleEvalResult multi = new MultiRuleEvalResult(
                 List.of(new MultiRuleEvalResult.PerRuleEval(

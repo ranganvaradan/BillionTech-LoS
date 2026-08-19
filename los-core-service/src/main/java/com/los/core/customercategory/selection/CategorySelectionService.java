@@ -6,6 +6,7 @@ import com.los.core.exception.BusinessRuleException;
 import com.los.core.model.entity.LoanApplication;
 import com.los.core.model.entity.WorkflowConfig;
 import com.los.core.repository.LoanApplicationRepository;
+import com.los.core.repository.WorkflowConfigRepository;
 import com.los.core.service.workflow.WorkflowContentHash;
 import com.los.core.service.workflow.WorkflowResolutionSource;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +32,7 @@ public class CategorySelectionService {
 
     private final LoanApplicationRepository applicationRepository;
     private final CustomerCategoryRepository categoryRepository;
+    private final WorkflowConfigRepository workflowConfigRepository;
     private final CustomerCategoryEligibilityService eligibilityService;
     private final CategoryDisambiguationService disambiguationService;
     private final CategoryConfigurationPinValidator pinValidator;
@@ -328,17 +330,31 @@ public class CategorySelectionService {
     }
 
     private CategorySelectionDtos.SelectedApplicationConfiguration toHandoff(LoanApplication app) {
+        String workflowName = null;
+        if (app.getWorkflowId() != null) {
+            workflowName = workflowConfigRepository.findById(app.getWorkflowId())
+                    .map(WorkflowConfig::getName)
+                    .orElse(null);
+        }
+        String categoryDisplayName = app.getSelectedCustomerCategoryCode();
+        if (app.getSelectedCustomerCategoryId() != null) {
+            categoryDisplayName = categoryRepository.findById(app.getSelectedCustomerCategoryId())
+                    .map(CategoryPropositionConfig::customerFacingName)
+                    .orElse(categoryDisplayName);
+        }
         return new CategorySelectionDtos.SelectedApplicationConfiguration(
                 app.getId(),
                 app.getSelectedCustomerCategoryId(),
                 app.getSelectedCustomerCategoryCode(),
                 app.getSelectedCustomerCategoryVersion() != null
                         ? app.getSelectedCustomerCategoryVersion() : 0,
+                categoryDisplayName,
                 app.getSelectedPolicyApplicabilityId(),
                 app.getSelectedPolicyDocumentId(),
                 app.getSelectedPolicyVersionLabel(),
                 app.getWorkflowId(),
                 app.getWorkflowVersion(),
+                workflowName,
                 app.getCategorySelectionSource() != null
                         ? CategorySelectionSource.valueOf(app.getCategorySelectionSource())
                         : null,

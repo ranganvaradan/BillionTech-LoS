@@ -72,7 +72,7 @@ class CategorySelectionGoldensTest {
         CategoryConfigurationPinValidator pinValidator = new CategoryConfigurationPinValidator(
                 workflowConfigRepository, applicabilityRepository, policyDocumentRepository, scorecardRepository);
         selectionService = new CategorySelectionService(
-                applicationRepository, categoryRepository,
+                applicationRepository, categoryRepository, workflowConfigRepository,
                 eligibilityService, disambiguationService, pinValidator);
 
         lenient().when(categoryRepository.findByStatus(any())).thenAnswer(inv ->
@@ -421,6 +421,8 @@ class CategorySelectionGoldensTest {
         assertEquals(only.getId(), handoff.categoryId());
         assertEquals(policyA, handoff.policyApplicabilityId());
         assertEquals(wfStarter, handoff.workflowId());
+        assertEquals("Starter WF", handoff.workflowName());
+        assertEquals("Only", handoff.categoryDisplayName());
     }
 
     @Test

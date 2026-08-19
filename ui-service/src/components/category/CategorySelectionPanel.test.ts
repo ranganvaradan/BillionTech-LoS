@@ -1,8 +1,9 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-/**
- * UI contract smoke — Category selection panel must not expose Policy UUIDs in copy.
- */
+const ROOT = resolve(__dirname, '../..')
+
 describe('CategorySelectionPanel contract', () => {
   it('safe question catalogue id is FINANCIAL_DATA_ROUTE', () => {
     expect('FINANCIAL_DATA_ROUTE').toBe('FINANCIAL_DATA_ROUTE')
@@ -17,5 +18,13 @@ describe('CategorySelectionPanel contract', () => {
       'CATEGORY_SELECTED',
     ]
     expect(states).not.toContain('PRIORITY_WINNER')
+  })
+
+  it('shows pinned workflow summary after category selection', () => {
+    const panel = readFileSync(resolve(ROOT, 'components/category/CategorySelectionPanel.tsx'), 'utf8')
+    const summary = readFileSync(resolve(ROOT, 'components/workflow/PinnedWorkflowSummary.tsx'), 'utf8')
+    expect(panel).toMatch(/PinnedWorkflowSummary/)
+    expect(panel).toMatch(/pinnedWorkflowDisplayFromCategoryHandoff/)
+    expect(summary).toMatch(/Selected through Customer Category/)
   })
 })

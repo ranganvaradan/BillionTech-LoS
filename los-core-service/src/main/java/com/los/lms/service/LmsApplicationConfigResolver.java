@@ -33,6 +33,8 @@ public class LmsApplicationConfigResolver {
 
     private static final String DEFAULT_TENURE_UNIT = "Month";
     public static final String REASON_LMS_PRODUCT_MAPPING_MISSING = "LMS_PRODUCT_MAPPING_MISSING";
+    public static final String REASON_LMS_PRODUCT_MAPPING_AMBIGUOUS = "LMS_PRODUCT_MAPPING_AMBIGUOUS";
+    public static final String REASON_LMS_PRODUCT_MAPPING_NOT_EFFECTIVE = "LMS_PRODUCT_MAPPING_NOT_EFFECTIVE";
 
     private final ActiveWorkflowConfigService activeWorkflowConfigService;
     private final SubProgramMasterRepository subProgramMasterRepository;
@@ -58,6 +60,8 @@ public class LmsApplicationConfigResolver {
         if (app == null) {
             return Optional.empty();
         }
+
+        // A. Program-specific for invoice discounting.
         Optional<ProgramMaster> program = resolveProgramForApplication(app);
         if (program.isPresent()) {
             ProgramMaster p = program.get();
@@ -69,19 +73,39 @@ public class LmsApplicationConfigResolver {
                         null,
                         null,
                         app.getLoanProduct(),
-                        borrowerTypeName(app)));
+                        borrowerTypeName(app),
+                        null,
+                        null,
+                        "ENCORE"));
             }
         }
+
+        // B/C. Canonical ordinary product path uses application-pinned external mapping code.
         if (hasText(app.getLmsProductCode())) {
             Optional<WorkflowConfig> wf = activeWorkflowConfigService.findActiveForApplication(app);
+            boolean pinnedExternal = app.getExternalProductMappingId() != null;
             return Optional.of(new LmsProductMappingResolution(
                     app.getLmsProductCode().trim(),
-                    LmsProductMappingResolution.SOURCE_APPLICATION,
+                    pinnedExternal
+                            ? LmsProductMappingResolution.SOURCE_EXTERNAL_PINNED_APPLICATION
+                            : LmsProductMappingResolution.SOURCE_APPLICATION,
                     wf.map(WorkflowConfig::getId).orElse(app.getWorkflowId()),
                     wf.map(WorkflowConfig::getVersion).orElse(null),
                     app.getLoanProduct(),
-                    borrowerTypeName(app)));
+                    borrowerTypeName(app),
+                    app.getExternalProductMappingId(),
+                    app.getExternalProductMappingVersion(),
+                    "ENCORE"));
         }
+
+        // No app-pinned code present: fail-closed for Category-governed ordinary product paths.
+        boolean categoryGoverned = app.getWorkflowResolutionSource() != null
+                && "CATEGORY_SELECTION".equalsIgnoreCase(app.getWorkflowResolutionSource());
+        if (categoryGoverned) {
+            return Optional.empty();
+        }
+
+        // Legacy compatibility: allow workflow_configs.lms_product_code for non-Category governance.
         Optional<WorkflowConfig> wf = activeWorkflowConfigService.findActiveForApplication(app);
         if (wf.isPresent() && hasText(wf.get().getLmsProductCode())) {
             WorkflowConfig config = wf.get();
@@ -91,7 +115,10 @@ public class LmsApplicationConfigResolver {
                     config.getId(),
                     config.getVersion(),
                     app.getLoanProduct(),
-                    borrowerTypeName(app)));
+                    borrowerTypeName(app),
+                    null,
+                    null,
+                    "ENCORE"));
         }
         return Optional.empty();
     }

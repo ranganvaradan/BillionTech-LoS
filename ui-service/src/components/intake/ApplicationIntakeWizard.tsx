@@ -80,6 +80,12 @@ import {
 } from '@/components/intake/CoApplicantsSection'
 import { CoApplicantPortal } from '@/components/intake/CoApplicantPortal'
 import { CategorySelectionPanel } from '@/components/category/CategorySelectionPanel'
+import { PinnedWorkflowSummary } from '@/components/workflow/PinnedWorkflowSummary'
+import {
+  pinnedWorkflowDisplayFromApplication,
+  pinnedWorkflowDisplayFromCategoryHandoff,
+  type PinnedWorkflowDisplay,
+} from '@/lib/workflow/pinnedWorkflowDisplay'
 import { activeCatalogHasSecuredProduct, matchingWorkflowsForProduct, uniqueActiveWorkflowLoanProducts, workflowLoanProductDisplayName } from '@/utils/workflowProducts'
 import { hydrateIntakeFormFromApplication } from '@/lib/intake/hydrateIntakeFromApplication'
 import {
@@ -201,6 +207,8 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
   const [gstAnalysisError, setGstAnalysisError] = useState<string | null>(null)
   const [gstAnalysisBusy, setGstAnalysisBusy] = useState(false)
   const [gstAnalysisReportSuccess, setGstAnalysisReportSuccess] = useState(false)
+  /** Category-governed apps: frozen workflow label from application pin (not active-workflow catalog). */
+  const [pinnedWorkflowDisplay, setPinnedWorkflowDisplay] = useState<PinnedWorkflowDisplay | null>(null)
 
   const resumeApplicationId =
     editApplicationId ?? (variant === 'borrower' ? searchParams.get('resume') : null)
@@ -517,6 +525,10 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
           }
         }
         setResumedAppStatus(app.status)
+        const pinnedFromApp = pinnedWorkflowDisplayFromApplication(app)
+        if (pinnedFromApp) {
+          setPinnedWorkflowDisplay(pinnedFromApp)
+        }
         const h0 = hydrateIntakeFormFromApplication(app)
         let h = applyHydratedIntakeDefaults(h0, app, variant)
         try {
@@ -1489,6 +1501,10 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
                         ))}
                       </select>
                     </label>
+                  ) : pinnedWorkflowDisplay ? (
+                    <div className="mt-1.5">
+                      <PinnedWorkflowSummary display={pinnedWorkflowDisplay} />
+                    </div>
                   ) : selectedWorkflow ? (
                     <p className="mt-1.5 text-xs text-slate-500">
                       Workflow pinned by Customer Category:{' '}
@@ -1700,6 +1716,10 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
                         ))}
                       </select>
                     </label>
+                  ) : pinnedWorkflowDisplay ? (
+                    <div className="mt-1.5">
+                      <PinnedWorkflowSummary display={pinnedWorkflowDisplay} />
+                    </div>
                   ) : selectedWorkflow ? (
                     <p className="mt-1.5 text-xs text-slate-500">
                       Active workflow: <span className="font-medium text-slate-800">{selectedWorkflow.name}</span> (v
@@ -2073,6 +2093,10 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
             onSelected={(result) => {
               const wf = result.selected?.workflowId
               if (wf) setForm((f) => ({ ...f, workflowId: wf }))
+              if (result.selected) {
+                const pinned = pinnedWorkflowDisplayFromCategoryHandoff(result.selected)
+                if (pinned) setPinnedWorkflowDisplay(pinned)
+              }
             }}
           />
         </section>

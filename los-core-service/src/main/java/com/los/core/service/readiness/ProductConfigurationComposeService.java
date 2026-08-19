@@ -1,5 +1,6 @@
 package com.los.core.service.readiness;
 
+import com.los.core.exception.BusinessRuleException;
 import com.los.core.creditintelligence.policystudio.model.PolicyStudioSession;
 import com.los.core.creditintelligence.policystudio.service.PolicyStudioOrchestrator;
 import com.los.core.model.entity.AssignmentRuleSet;
@@ -15,11 +16,14 @@ import com.los.core.repository.UnderwritingScorecardRepository;
 import com.los.core.repository.WorkflowConfigRepository;
 import com.los.lms.service.LmsApplicationConfigResolver;
 import com.los.lms.service.LmsProductMappingResolution;
+import com.los.lms.service.ExternalProductMappingPinningService;
+import com.los.lms.repository.ExternalProductMappingRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -48,6 +52,8 @@ public class ProductConfigurationComposeService {
     private final PolicyRequiredParameterExtractor parameterExtractor;
     private final ProductRoutingConvergenceService routingConvergenceService;
     private final LmsApplicationConfigResolver lmsApplicationConfigResolver;
+    private final ExternalProductMappingPinningService externalProductMappingPinningService;
+    private final ExternalProductMappingRepository externalProductMappingRepository;
 
     @Autowired(required = false)
     private PolicyStudioOrchestrator policyStudioOrchestrator;
@@ -175,10 +181,17 @@ public class ProductConfigurationComposeService {
             pol.put("documentId", policyDocumentId.toString());
             pol.put("policyName", policyName);
             pol.put("policyVersion", policyVersion);
-            pol.put("authority", "GOVERNANCE_ONLY_SHADOW");
-            pol.put("sourceOfTruth", "Policy Studio Policy");
-            pol.put("label", "Policy Studio Policy — Governance only / Shadow");
-            pol.put("notProductionAuthority", true);
+            boolean canonicalMode = true;
+            pol.put("authority", "CANONICAL_UNDERWRITING_AUTHORITY");
+            pol.put("sourceOfTruth",
+                    canonicalMode
+                            ? "Policy Studio Policy — Canonical underwriting authority (frozen)"
+                            : "Policy Studio Policy");
+            pol.put("label",
+                    canonicalMode
+                            ? "Policy Studio Policy — Canonical underwriting authority"
+                            : "Policy Studio Policy — Governance only / Shadow");
+            pol.put("notProductionAuthority", !canonicalMode);
             compose.put("policyStudio", pol);
         } else {
             compose.put("policyStudio", null);
@@ -495,28 +508,45 @@ public class ProductConfigurationComposeService {
             lms.put("note", "No workflow selected — cannot resolve LMS product code");
             return lms;
         }
-        String code = workflow.getLmsProductCode();
-        boolean present = code != null && !code.isBlank();
-        lms.put("lmsEntry", present ? "YES" : "NO");
-        lms.put("lmsProductCode", present ? code.trim() : null);
-        lms.put("lmsTenureUnit", workflow.getLmsTenureUnit());
-        lms.put("status", present ? "Resolved" : "Missing");
-        lms.put("workflowId", workflow.getId() == null ? null : workflow.getId().toString());
-        lms.put("workflowVersion", workflow.getVersion());
-        lms.put("mappingSource", present ? LmsProductMappingResolution.SOURCE_WORKFLOW : null);
-        lms.put("openLoanAccountAuthority",
-                "APPLICATION_LMS_PRODUCT_CODE → WORKFLOW_LMS_PRODUCT_CODE → PROGRAM (invoice discounting)");
-        lms.put("note", "Same LMS product authority as live openLoanAccount — no temporary Encore product-code bypass");
+        String workflowCode = workflow.getLmsProductCode();
+        boolean workflowHasCode = workflowCode != null && !workflowCode.isBlank();
 
-        // Correlate with runtime resolver using a synthetic app bound to this workflow (no app override).
+        // Canonical ordinary path: resolve via external_product_mapping and pin onto a synthetic probe app.
         LoanApplication probe = LoanApplication.builder()
                 .workflowId(workflow.getId())
                 .loanProduct(loanProduct != null ? loanProduct : workflow.getLoanProduct())
                 .intakeSegment(parseSegment(intakeSegment))
                 .borrowerType(parseBorrower(borrowerType != null ? borrowerType : workflow.getBorrowerType()))
+                .workflowResolutionSource("CATEGORY_SELECTION")
                 .build();
+
+        LocalDate asOf = LocalDate.now(java.time.ZoneId.of("Asia/Kolkata"));
+        BusinessRuleException pinningError = null;
+        try {
+            externalProductMappingPinningService.pinEncoreMappingIfNeeded(probe);
+        } catch (BusinessRuleException e) {
+            pinningError = e;
+        }
+
         Optional<LmsProductMappingResolution> runtime =
                 lmsApplicationConfigResolver.resolveEncoreProductMapping(probe);
+
+        boolean present = runtime.isPresent() && pinningError == null;
+        lms.put("lmsEntry", present ? "YES" : "NO");
+        lms.put("lmsProductCode", present ? runtime.get().lmsProductCode() : null);
+        lms.put("lmsTenureUnit", workflow.getLmsTenureUnit());
+        lms.put("status", present ? "READY" : "NOT READY");
+        lms.put("ready", present);
+        if (!present && pinningError != null) {
+            lms.put("reasonCode", pinningError.getReason());
+            lms.put("reason", pinningError.getMessage());
+        }
+        lms.put("workflowId", workflow.getId() == null ? null : workflow.getId().toString());
+        lms.put("workflowVersion", workflow.getVersion());
+        lms.put("mappingSource", present ? runtime.get().mappingSource() : null);
+        lms.put("openLoanAccountAuthority", "LOS_PRODUCT → GOVERNED_EXTERNAL_PRODUCT_MAPPING → LMS handover payload");
+        lms.put("note", "Canonical LMS product authority is governed external mapping (pinned before openLoanAccount). Workflow LMS code is legacy correlation only.");
+
         Map<String, Object> openPreview = new LinkedHashMap<>();
         if (runtime.isPresent()) {
             openPreview.putAll(runtime.get().toEvidenceMap());
@@ -527,11 +557,30 @@ public class ProductConfigurationComposeService {
             openPreview.put("reason", LmsApplicationConfigResolver.REASON_LMS_PRODUCT_MAPPING_MISSING);
         }
         boolean match = Objects.equals(
-                present ? code.trim() : null,
+                workflowHasCode ? workflowCode.trim() : null,
                 runtime.map(LmsProductMappingResolution::lmsProductCode).orElse(null));
         openPreview.put("matchesProductConfigLms", match);
         lms.put("openLoanAccountResolution", openPreview);
         lms.put("productConfigMatchesOpenLoanAccount", match);
+
+        // Enrich readiness payload with explicit mapping evidence when pinned.
+        if (present) {
+            LmsProductMappingResolution res = runtime.get();
+            if (res.externalProductMappingId() != null) {
+                externalProductMappingRepository.findById(res.externalProductMappingId())
+                        .ifPresent(m -> {
+                            lms.put("externalProductMappingId", m.getId().toString());
+                            lms.put("externalProductMappingVersion", m.getVersion());
+                            lms.put("externalSystem", m.getExternalSystem());
+                            lms.put("externalProductCode", m.getExternalProductCode());
+                            lms.put("externalMappingStatus", m.getStatus());
+                            lms.put("externalMappingEffectiveFrom", m.getEffectiveFrom());
+                            lms.put("externalMappingEffectiveTo", m.getEffectiveTo());
+                            boolean effective = !asOf.isBefore(m.getEffectiveFrom()) && !asOf.isAfter(m.getEffectiveTo());
+                            lms.put("externalMappingEffectiveToday", effective);
+                        });
+            }
+        }
         return lms;
     }
 

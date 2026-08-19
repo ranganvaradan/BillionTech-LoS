@@ -303,9 +303,10 @@ public class PolicyLifecycleService {
                 if (life.get("replacesApplicabilityId") != null) {
                     bodyDurable.put("replacesApplicabilityId", life.get("replacesApplicabilityId"));
                 }
-                if (session.getDraftPackage() != null && session.getDraftPackage().getId() != null) {
-                    bodyDurable.put("draftPackageId", session.getDraftPackage().getId().toString());
-                }
+                // Session draft-package ids are in-memory / studio-only. They are not
+                // ci_policy_draft_package rows, so attaching them here trips
+                // ci_policy_applicability_draft_package_id_fkey and the whole durable
+                // catalogue handoff is deferred. Omit unless a future path persists the package first.
                 var draft = catalogueService.upsertDraft(session.getDocument().getTenantId(), bodyDurable);
                 catalogueService.transition(draft.getId(), PolicyBusinessLifecycleStatus.APPROVED,
                         PolicyCatalogueService.EVT_APPROVED,

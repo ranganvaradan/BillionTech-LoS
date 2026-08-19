@@ -4,9 +4,9 @@ export const OVERALL_READINESS_LABELS: Record<string, string> = {
   // GOLDEN-PARAMETER-TRUTH vocabulary (preferred)
   READY: 'Ready',
   NOT_READY: 'Not ready',
-  APPROVED_FOR_LIVE_USE: 'Ready',
+  APPROVED_FOR_LIVE_USE: 'Approved for live use',
   READY_TO_TEST: 'Ready',
-  CALCULATION_NEEDS_SETUP: 'Calculation not defined',
+  CALCULATION_NEEDS_SETUP: 'Calculation needs setup',
   CAN_CALCULATE_WHEN_DATA_AVAILABLE: 'Ready',
   NEEDS_MANUAL_INPUT: 'Needs manual input',
   NOT_YET_SUPPORTED: 'Not supported',
@@ -14,7 +14,7 @@ export const OVERALL_READINESS_LABELS: Record<string, string> = {
   DATA_SOURCE_REQUIRED: 'Source not integrated',
   // Legacy overall codes — never imply live certification
   PRODUCTION_READY: 'Listed — not certification',
-  RUNTIME_READY_NONPROD: 'Ready',
+  RUNTIME_READY_NONPROD: 'Ready to test',
   POLICY_TEST_ONLY: 'Ready',
   CATALOGUE_ONLY: 'Listed — setup incomplete',
   READINESS_UNKNOWN: 'Needs review',
@@ -41,7 +41,7 @@ export const PARAMETER_SUPPORT_BUSINESS_LABELS: Record<string, string> = {
   SUPPORTED_RAW: 'Provided directly',
   SUPPORTED_DERIVED: 'Calculated by BillionTech',
   PROVIDER_DOES_NOT_SUPPORT: 'Data not available from provider',
-  CALCULATION_NOT_IMPLEMENTED: 'Calculation not defined',
+  CALCULATION_NOT_IMPLEMENTED: 'Calculation needs setup',
   SOURCE_NOT_INTEGRATED: 'Data source not connected yet',
   NOT_APPLICABLE: 'Application or internal input',
 }

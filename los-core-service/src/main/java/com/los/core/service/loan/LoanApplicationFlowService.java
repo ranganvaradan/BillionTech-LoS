@@ -36,6 +36,7 @@ import com.los.core.service.workflow.coordinator.WorkflowExecutionCoordinator;
 import com.los.core.service.kfs.KfsPdfGenerationService;
 import com.los.core.service.kfs.KfsService;
 import com.los.lms.service.LmsService;
+import com.los.lms.service.ExternalProductMappingPinningService;
 import com.los.plp.service.PlpAnchorSanctionHookService;
 import com.los.plp.service.PlpSanctionSyncOrchestrator;
 import com.los.plp.support.PlpApplicationSyncFieldMerge;
@@ -94,6 +95,7 @@ public class LoanApplicationFlowService {
     private final CreditControlService creditControlService;
     private final LimitSizingService limitSizingService;
     private final UnderwritingEvaluationService underwritingEvaluationService;
+    private final ExternalProductMappingPinningService externalProductMappingPinningService;
     private final AssignmentRuleApplicationService assignmentRuleApplicationService;
     private final com.los.core.service.auth.BorrowerAccountProvisioningService borrowerAccountProvisioningService;
     private final com.los.core.service.loan.intake.ApplicationSubmitIdentityValidator applicationSubmitIdentityValidator;
@@ -1237,6 +1239,9 @@ public class LoanApplicationFlowService {
             if (sanctionParams != null) {
                 charges.putAll(sanctionParams);
             }
+            // Pin canonical LOS->Encore external product mapping before any openLoanAccount / retry logic.
+            // (Category-governed apps must not depend on workflow_configs.lms_product_code as long-term authority.)
+            externalProductMappingPinningService.pinEncoreMappingIfNeeded(app);
             lmsService.appendPreOpenEncoreSummaryForKfsIfEnabled(app, charges);
             kfs = kfsService.generateKfs(applicationId, charges);
             app.setStatus(ApplicationStatus.KFS_GENERATED);

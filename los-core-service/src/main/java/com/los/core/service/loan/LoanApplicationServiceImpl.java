@@ -1,5 +1,7 @@
 package com.los.core.service.loan;
 
+import com.los.core.customercategory.CustomerCategoryRepository;
+import com.los.core.customercategory.selection.CategoryPropositionConfig;
 import com.los.core.exception.BusinessRuleException;
 import com.los.core.exception.ResourceNotFoundException;
 import com.los.core.model.dto.request.CreateApplicationRequest;
@@ -57,6 +59,7 @@ public class LoanApplicationServiceImpl implements ILoanApplicationService {
     private final ApplicationInputChangeTracker applicationInputChangeTracker;
     private final WorkflowConfigRepository workflowConfigRepository;
     private final ApplicationWorkflowResolver applicationWorkflowResolver;
+    private final CustomerCategoryRepository customerCategoryRepository;
 
     private static final AtomicLong SEQUENCE = new AtomicLong(System.currentTimeMillis() % 100000);
     private static final Pattern EMAIL_RE = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
@@ -530,8 +533,12 @@ public class LoanApplicationServiceImpl implements ILoanApplicationService {
                 .intakeSegment(app.getIntakeSegment())
                 .workflowId(app.getWorkflowId())
                 .workflowVersion(app.getWorkflowVersion())
+                .workflowName(resolvePinnedWorkflowName(app))
                 .workflowResolutionSource(app.getWorkflowResolutionSource())
                 .selectedCustomerCategoryId(app.getSelectedCustomerCategoryId())
+                .selectedCustomerCategoryCode(app.getSelectedCustomerCategoryCode())
+                .selectedCustomerCategoryVersion(app.getSelectedCustomerCategoryVersion())
+                .selectedCustomerCategoryDisplayName(resolveSelectedCategoryDisplayName(app))
                 .selectedPolicyApplicabilityId(app.getSelectedPolicyApplicabilityId())
                 .selectedPolicyDocumentId(app.getSelectedPolicyDocumentId())
                 .categorySelectionState(app.getCategorySelectionState())
@@ -610,6 +617,25 @@ public class LoanApplicationServiceImpl implements ILoanApplicationService {
                 .updatedAt(app.getUpdatedAt())
                 .submittedAt(app.getSubmittedAt())
                 .build();
+    }
+
+    /** Exact workflow name for the pinned application.workflow_id — never latest/active catalog. */
+    private String resolvePinnedWorkflowName(LoanApplication app) {
+        if (app.getWorkflowId() == null) {
+            return null;
+        }
+        return workflowConfigRepository.findById(app.getWorkflowId())
+                .map(WorkflowConfig::getName)
+                .orElse(null);
+    }
+
+    private String resolveSelectedCategoryDisplayName(LoanApplication app) {
+        if (app.getSelectedCustomerCategoryId() == null) {
+            return null;
+        }
+        return customerCategoryRepository.findById(app.getSelectedCustomerCategoryId())
+                .map(CategoryPropositionConfig::customerFacingName)
+                .orElse(app.getSelectedCustomerCategoryCode());
     }
 
     private UUID resolveWorkflowBinding(

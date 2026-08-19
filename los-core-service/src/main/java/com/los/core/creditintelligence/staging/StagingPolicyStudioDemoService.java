@@ -1440,7 +1440,9 @@ public class StagingPolicyStudioDemoService {
     }
 
     public Map<String, Object> submitLifecycleReview(UUID documentId, Map<String, Object> body, String tenantHeader) {
-        Map<String, Object> result = requireLifecycle().submitForReview(requireSession(documentId, tenantHeader), body);
+        PolicyStudioSession session = requireSession(documentId, tenantHeader);
+        Map<String, Object> result = requireLifecycle().submitForReview(session, body);
+        persistLifecycleSession(session);
         Map<String, Object> view = sessionView(documentId, tenantHeader);
         view.put("lifecycle", result);
         view.put("message", result.get("message"));
@@ -1448,7 +1450,9 @@ public class StagingPolicyStudioDemoService {
     }
 
     public Map<String, Object> approveLifecyclePolicy(UUID documentId, Map<String, Object> body, String tenantHeader) {
-        Map<String, Object> result = requireLifecycle().approvePolicy(requireSession(documentId, tenantHeader), body);
+        PolicyStudioSession session = requireSession(documentId, tenantHeader);
+        Map<String, Object> result = requireLifecycle().approvePolicy(session, body);
+        persistLifecycleSession(session);
         Map<String, Object> view = sessionView(documentId, tenantHeader);
         view.put("lifecycle", result);
         view.put("message", result.get("message"));
@@ -1456,7 +1460,9 @@ public class StagingPolicyStudioDemoService {
     }
 
     public Map<String, Object> scheduleLifecyclePolicy(UUID documentId, Map<String, Object> body, String tenantHeader) {
-        Map<String, Object> result = requireLifecycle().schedulePolicy(requireSession(documentId, tenantHeader), body);
+        PolicyStudioSession session = requireSession(documentId, tenantHeader);
+        Map<String, Object> result = requireLifecycle().schedulePolicy(session, body);
+        persistLifecycleSession(session);
         Map<String, Object> view = sessionView(documentId, tenantHeader);
         view.put("lifecycle", result);
         view.put("message", result.get("message"));
@@ -1464,11 +1470,19 @@ public class StagingPolicyStudioDemoService {
     }
 
     public Map<String, Object> retireLifecyclePolicy(UUID documentId, Map<String, Object> body, String tenantHeader) {
-        Map<String, Object> result = requireLifecycle().retirePolicy(requireSession(documentId, tenantHeader), body);
+        PolicyStudioSession session = requireSession(documentId, tenantHeader);
+        Map<String, Object> result = requireLifecycle().retirePolicy(session, body);
+        persistLifecycleSession(session);
         Map<String, Object> view = sessionView(documentId, tenantHeader);
         view.put("lifecycle", result);
         view.put("message", result.get("message"));
         return view;
+    }
+
+    private void persistLifecycleSession(PolicyStudioSession session) {
+        if (session != null && session.getDocument() != null && session.getDocument().getId() != null) {
+            orchestrator.persistence().saveSessionSnapshot(session);
+        }
     }
 
     /**

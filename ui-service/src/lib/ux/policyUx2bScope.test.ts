@@ -17,7 +17,6 @@ describe('POLICY-UX-2B Scope experience', () => {
     expect([...PROSPECT_DEMO_VISIBLE_TAB_IDS]).toEqual([
       'scope',
       'rules',
-      'scorecard',
       'simulation',
       'lifecycle',
     ])

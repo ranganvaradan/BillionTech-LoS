@@ -102,11 +102,13 @@ public final class CategorySelectionDtos {
             UUID categoryId,
             String categoryCode,
             int categoryVersion,
+            String categoryDisplayName,
             UUID policyApplicabilityId,
             UUID policyDocumentId,
             String policyVersionLabel,
             UUID workflowId,
             Integer workflowVersion,
+            String workflowName,
             CategorySelectionSource selectionSource,
             Instant selectedAt,
             String selectedBy

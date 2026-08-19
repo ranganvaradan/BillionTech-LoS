@@ -6,6 +6,7 @@ import com.los.core.creditintelligence.policystudio.parameters.CanonicalParamete
 import com.los.core.creditintelligence.policystudio.parameters.CanonicalParameterRegistry;
 import com.los.core.creditintelligence.policystudio.parameters.GacatCatalogueAuthority;
 import com.los.core.creditintelligence.policystudio.parameters.GacatCatalogueRepository;
+import com.los.core.creditintelligence.policystudio.parameters.PolicyAuthorableParameterProjection;
 import com.los.core.creditintelligence.policystudio.parameters.PolicyStudioConvergencePresenter;
 import com.los.core.creditintelligence.policystudio.parameters.GacatSourceFamily;
 import com.los.core.creditintelligence.policystudio.sourceintegration.CanonicalSourceIntegrationAuthority;
@@ -176,6 +177,34 @@ public class DataParametersAdminService {
         return out;
     }
 
+    /**
+     * Data & Parameters surface filtered to the canonical Policy Studio authorable universe.
+     * This must use the same governed authority as Policy Studio Add Rule / Change Parameter.
+     */
+    public Map<String, Object> overview(boolean authorableOnly) {
+        if (!authorableOnly) return overview();
+        Map<String, Object> out = overview();
+        CanonicalParameterRegistry reg = registry();
+        List<CanonicalParameterDefinition> authorable = PolicyAuthorableParameterProjection.authorableOf(reg);
+
+        int raw = 0, derived = 0, manual = 0;
+        for (CanonicalParameterDefinition d : authorable) {
+            if (CanonicalParameterDefinition.RAW.equals(d.type())) raw++;
+            else if (CanonicalParameterDefinition.MANUAL.equals(d.type())) manual++;
+            else derived++;
+        }
+
+        if (out.get("totals") instanceof Map<?, ?> tm) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> totals = (Map<String, Object>) tm;
+            totals.put("registryCount", authorable.size());
+            totals.put("rawCount", raw);
+            totals.put("derivedCount", derived);
+            totals.put("manualCount", manual);
+        }
+        return out;
+    }
+
     public Map<String, Object> browseBySource(String source) {
         CanonicalParameterRegistry reg = registry();
         Map<String, Object> browse = reg.browseBySource(source);
@@ -184,6 +213,24 @@ public class DataParametersAdminService {
         browse.put("manual", enrichList(reg, browse.get("manual")));
         browse.put("allowCanonicalAuthority", false);
         browse.put("readModelOnly", true);
+        return browse;
+    }
+
+    public Map<String, Object> browseBySource(String source, boolean authorableOnly) {
+        if (!authorableOnly) return browseBySource(source);
+        Map<String, Object> browse = browseBySource(source);
+
+        List<Map<String, Object>> raw = filterAuthorableRows(asListOfMap(browse.get("raw")));
+        List<Map<String, Object>> derived = filterAuthorableRows(asListOfMap(browse.get("derived")));
+        List<Map<String, Object>> manual = filterAuthorableRows(asListOfMap(browse.get("manual")));
+
+        browse.put("raw", raw);
+        browse.put("derived", derived);
+        browse.put("manual", manual);
+        browse.put("rawCount", raw.size());
+        browse.put("derivedCount", derived.size());
+        browse.put("manualCount", manual.size());
+        browse.put("count", raw.size() + derived.size() + manual.size());
         return browse;
     }
 
@@ -199,12 +246,40 @@ public class DataParametersAdminService {
         return out;
     }
 
+    private static List<Map<String, Object>> asListOfMap(Object raw) {
+        if (!(raw instanceof List<?> list)) return List.of();
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Object o : list) {
+            if (!(o instanceof Map<?, ?> m)) continue;
+            @SuppressWarnings("unchecked")
+            Map<String, Object> row = new LinkedHashMap<>((Map<String, Object>) m);
+            out.add(row);
+        }
+        return out;
+    }
+
+    private static List<Map<String, Object>> filterAuthorableRows(List<Map<String, Object>> rows) {
+        if (rows == null || rows.isEmpty()) return List.of();
+        return rows.stream()
+                .filter(r -> PolicyAuthorableParameterProjection.isAuthorable(String.valueOf(r.get("id"))))
+                .toList();
+    }
+
     public Map<String, Object> search(String q) {
         CanonicalParameterRegistry reg = registry();
         Map<String, Object> search = reg.search(q);
         search.put("allowCanonicalAuthority", false);
         search.put("results", enrichList(reg, search.get("results")));
         search.put("dp1", true);
+        return search;
+    }
+
+    public Map<String, Object> search(String q, boolean authorableOnly) {
+        if (!authorableOnly) return search(q);
+        Map<String, Object> search = search(q);
+        List<Map<String, Object>> results = filterAuthorableRows(asListOfMap(search.get("results")));
+        search.put("results", results);
+        search.put("count", results.size());
         return search;
     }
 

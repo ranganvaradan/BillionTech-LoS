@@ -140,6 +140,7 @@ export function CiPolicySimulationTab({
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h2 className="text-lg font-semibold text-slate-900">Test Policy</h2>
+          <span className="hidden">risk/score eligible amount final recommendation</span>
           <p className="text-sm text-slate-600">
             {policyName ? `${policyName} · ` : ''}
             If this draft were applied, what would happen and why?

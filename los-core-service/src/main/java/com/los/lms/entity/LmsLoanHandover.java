@@ -31,6 +31,12 @@ public class LmsLoanHandover {
     @Column(name = "product_code")
     private String productCode;
 
+    @Column(name = "external_product_mapping_id")
+    private UUID externalProductMappingId;
+
+    @Column(name = "external_product_mapping_version")
+    private Integer externalProductMappingVersion;
+
     @Column(name = "sanctioned_amount", nullable = false)
     private BigDecimal sanctionedAmount;
 

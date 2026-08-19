@@ -41,10 +41,12 @@ export interface EligibilityResult {
     categoryId: string
     categoryCode: string
     categoryVersion: number
+    categoryDisplayName?: string
     policyDocumentId?: string
     policyVersionLabel?: string
     workflowId?: string
     workflowVersion?: number
+    workflowName?: string
     selectionSource?: string
   }
   diagnostics?: Record<string, unknown>

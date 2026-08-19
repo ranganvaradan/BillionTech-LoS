@@ -81,6 +81,14 @@ export interface ApplicationResponse {
   lmsProductCode?: string | null
   lmsTenureUnit?: string | null
   workflowId?: string | null
+  workflowVersion?: number | null
+  workflowName?: string | null
+  workflowResolutionSource?: string | null
+  selectedCustomerCategoryId?: string | null
+  selectedCustomerCategoryCode?: string | null
+  selectedCustomerCategoryVersion?: number | null
+  selectedCustomerCategoryDisplayName?: string | null
+  categorySelectionState?: string | null
   status: ApplicationStatus
   personalInfo: Record<string, unknown> | null
   businessInfo: Record<string, unknown> | null

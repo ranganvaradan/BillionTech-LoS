@@ -1000,6 +1000,8 @@ public class LmsService {
                 .build());
         handover.setBorrowerName(borrowerName);
         handover.setProductCode(encoreProductCode);
+        handover.setExternalProductMappingId(mapping.externalProductMappingId());
+        handover.setExternalProductMappingVersion(mapping.externalProductMappingVersion());
         handover.setSanctionedAmount(amount);
         handover.setInterestRate(rate);
         handover.setTenureMonths(tenure);

@@ -65,6 +65,20 @@ public class LoanApplication {
     @Column(name = "lms_product_code", length = 50)
     private String lmsProductCode;
 
+    /**
+     * Pinned canonical LOS product -> external system product mapping.
+     * Populated before sanction/open-account for Category-governed applications.
+     */
+    @Column(name = "external_product_mapping_id")
+    private UUID externalProductMappingId;
+
+    /**
+     * Pinned canonical LOS product -> external system mapping version.
+     * Used for retry/idempotency and audit evidence correlation.
+     */
+    @Column(name = "external_product_mapping_version")
+    private Integer externalProductMappingVersion;
+
     /** Encore tenure unit for this application (Day, Month, Week). */
     @Column(name = "lms_tenure_unit", length = 20)
     private String lmsTenureUnit;

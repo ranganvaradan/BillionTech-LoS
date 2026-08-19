@@ -13,11 +13,15 @@ public record LmsProductMappingResolution(
         UUID workflowId,
         Integer workflowVersion,
         String loanProduct,
-        String borrowerType
+        String borrowerType,
+        UUID externalProductMappingId,
+        Integer externalProductMappingVersion,
+        String externalSystem
 ) {
     public static final String SOURCE_PROGRAM = "PROGRAM_ENCORE_PRODUCT_CODE";
     public static final String SOURCE_APPLICATION = "APPLICATION_LMS_PRODUCT_CODE";
     public static final String SOURCE_WORKFLOW = "WORKFLOW_LMS_PRODUCT_CODE";
+    public static final String SOURCE_EXTERNAL_PINNED_APPLICATION = "APPLICATION_PINNED_EXTERNAL_PRODUCT_MAPPING";
 
     public Map<String, Object> toEvidenceMap() {
         Map<String, Object> m = new LinkedHashMap<>();
@@ -27,6 +31,9 @@ public record LmsProductMappingResolution(
         m.put("workflowVersion", workflowVersion);
         m.put("loanProduct", loanProduct);
         m.put("borrowerType", borrowerType);
+        m.put("externalProductMappingId", externalProductMappingId == null ? null : externalProductMappingId.toString());
+        m.put("externalProductMappingVersion", externalProductMappingVersion);
+        m.put("externalSystem", externalSystem);
         m.put("allowCanonicalAuthority", false);
         return m;
     }

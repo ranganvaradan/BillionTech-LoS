@@ -40,6 +40,13 @@ public class ExecutionSpineProducerBootstrap {
             "application.requested_amount",
             "kyc.quality",
             "gst.turnover.trailing_12m",
+            "gst.turnover.trailing_3m",
+            "gst.turnover.trailing_6m",
+            "gst.gstr1_gstr3b_turnover_variance",
+            "gst.return.missing_count_12m",
+            "gst.return.late_count_12m",
+            "gst.return.filing_status",
+            "gst.filing.timeliness_score",
             "bureau.total_monthly_obligation"
     );
 

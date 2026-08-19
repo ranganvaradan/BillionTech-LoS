@@ -35,8 +35,14 @@ public class ApplicationResponse {
     private String lmsTenureUnit;
     private UUID workflowId;
     private Integer workflowVersion;
+    /** Exact pinned workflow name — from application.workflow_id lookup, never latest/active catalog. */
+    private String workflowName;
     private String workflowResolutionSource;
     private UUID selectedCustomerCategoryId;
+    private String selectedCustomerCategoryCode;
+    private Integer selectedCustomerCategoryVersion;
+    /** Customer-facing category label at pin time (resolved from selected category entity). */
+    private String selectedCustomerCategoryDisplayName;
     private UUID selectedPolicyApplicabilityId;
     private UUID selectedPolicyDocumentId;
     private String categorySelectionState;

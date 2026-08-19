@@ -46,8 +46,9 @@ public class LiveReadinessController {
 
     @GetMapping("/data-parameters")
     @Operation(summary = "Administration → Data & Parameters overview")
-    public ResponseEntity<Map<String, Object>> dataParameters() {
-        return ResponseEntity.ok(dataParametersAdminService.overview());
+    public ResponseEntity<Map<String, Object>> dataParameters(
+            @RequestParam(required = false, defaultValue = "false") boolean authorableOnly) {
+        return ResponseEntity.ok(dataParametersAdminService.overview(authorableOnly));
     }
 
     @GetMapping("/parameter-capability-parity")
@@ -62,13 +63,17 @@ public class LiveReadinessController {
     }
 
     @GetMapping("/data-parameters/by-source")
-    public ResponseEntity<Map<String, Object>> bySource(@RequestParam String source) {
-        return ResponseEntity.ok(dataParametersAdminService.browseBySource(source));
+    public ResponseEntity<Map<String, Object>> bySource(
+            @RequestParam String source,
+            @RequestParam(required = false, defaultValue = "false") boolean authorableOnly) {
+        return ResponseEntity.ok(dataParametersAdminService.browseBySource(source, authorableOnly));
     }
 
     @GetMapping("/data-parameters/search")
-    public ResponseEntity<Map<String, Object>> search(@RequestParam(required = false) String q) {
-        return ResponseEntity.ok(dataParametersAdminService.search(q));
+    public ResponseEntity<Map<String, Object>> search(
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false, defaultValue = "false") boolean authorableOnly) {
+        return ResponseEntity.ok(dataParametersAdminService.search(q, authorableOnly));
     }
 
     @GetMapping("/data-parameters/{parameterId}")
