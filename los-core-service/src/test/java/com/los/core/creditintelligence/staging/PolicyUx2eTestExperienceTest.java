@@ -6,6 +6,7 @@ import com.los.core.creditintelligence.policystudio.parameters.execution.Canonic
 import com.los.core.creditintelligence.policystudio.parameters.execution.ExecutionSpineProducerBootstrap;
 import com.los.core.creditintelligence.policystudio.service.PolicyStudioOrchestrator;
 import com.los.core.creditintelligence.policystudio.service.PolicyTextExtractionService;
+import com.los.core.repository.UnderwritingScorecardRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -41,7 +42,8 @@ class PolicyUx2eTestExperienceTest {
         DerivedCalculationDefinitionService defs = mock(DerivedCalculationDefinitionService.class);
         when(defs.latestFor(any(), any())).thenReturn(Optional.empty());
         CanonicalParameterExecutionService spine = ExecutionSpineProducerBootstrap.standalone(defs);
-        testExperience = new PolicyStudioTestExperienceService(props, orch, sim, spine);
+        UnderwritingScorecardRepository scorecards = mock(UnderwritingScorecardRepository.class);
+        testExperience = new PolicyStudioTestExperienceService(props, orch, sim, spine, scorecards);
     }
 
     @Test

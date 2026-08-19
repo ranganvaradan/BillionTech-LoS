@@ -30,6 +30,7 @@ import com.los.core.creditintelligence.policystudio.service.PolicyStudioOrchestr
 import com.los.core.model.entity.UnderwritingScorecard;
 import com.los.core.repository.UnderwritingScorecardRepository;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -75,14 +76,7 @@ public class PolicyStudioTestExperienceService {
     /** Session-only recent tests (honest — not a new DB table). */
     private final ConcurrentHashMap<UUID, List<Map<String, Object>>> recentByDocument = new ConcurrentHashMap<>();
 
-    public PolicyStudioTestExperienceService(
-            CreditIntelligenceProperties properties,
-            PolicyStudioOrchestrator orchestrator,
-            StagingProspectSimulationService prospectSimulationService,
-            CanonicalParameterExecutionService parameterExecution) {
-        this(properties, orchestrator, prospectSimulationService, parameterExecution, null);
-    }
-
+    @Autowired
     public PolicyStudioTestExperienceService(
             CreditIntelligenceProperties properties,
             PolicyStudioOrchestrator orchestrator,
