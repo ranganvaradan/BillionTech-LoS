@@ -151,6 +151,12 @@ public class PolicyLifecycleService {
         if (body.get("policyType") != null) {
             life.put("policyType", String.valueOf(body.get("policyType")));
         }
+        if (body.get("replacesDocumentId") != null && !String.valueOf(body.get("replacesDocumentId")).isBlank()) {
+            life.put("replacesDocumentId", String.valueOf(body.get("replacesDocumentId")).trim());
+        }
+        if (body.get("replacesApplicabilityId") != null && !String.valueOf(body.get("replacesApplicabilityId")).isBlank()) {
+            life.put("replacesApplicabilityId", String.valueOf(body.get("replacesApplicabilityId")).trim());
+        }
         life.put("businessStatus", PolicyBusinessLifecycleStatus.DRAFT);
         life.put("updatedAt", Instant.now().toString());
         persistLifecycle(session, life);
@@ -291,6 +297,12 @@ public class PolicyLifecycleService {
                 bodyDurable.put("createdBy", life.get("createdBy"));
                 bodyDurable.put("reasonForChange", life.get("reasonForChange"));
                 bodyDurable.put("replacesVersion", life.get("replacesVersion"));
+                if (life.get("replacesDocumentId") != null) {
+                    bodyDurable.put("replacesDocumentId", life.get("replacesDocumentId"));
+                }
+                if (life.get("replacesApplicabilityId") != null) {
+                    bodyDurable.put("replacesApplicabilityId", life.get("replacesApplicabilityId"));
+                }
                 if (session.getDraftPackage() != null && session.getDraftPackage().getId() != null) {
                     bodyDurable.put("draftPackageId", session.getDraftPackage().getId().toString());
                 }
@@ -662,6 +674,7 @@ public class PolicyLifecycleService {
         newDoc.setProductScope(doc.getProductScope());
         newDoc.setLenderId(doc.getLenderId());
         newDoc.setLanguage(doc.getLanguage() == null ? "en" : doc.getLanguage());
+        newDoc.setScorecardId(doc.getScorecardId());
 
         PolicyStudioSession created = StructuredPolicySessionCloner.cloneSession(
                 source, newDoc, StructuredPolicySessionCloner.Mode.NEW_VERSION);
@@ -685,10 +698,7 @@ public class PolicyLifecycleService {
         life.remove("scheduledAt");
         life.remove("activatedAt");
         life.remove("readyToSchedule");
-        Map<String, Object> app = new LinkedHashMap<>(castMap(srcLife.get("applicability")));
-        app.remove("effectiveFrom");
-        app.remove("effectiveUntil");
-        life.put("applicability", app);
+        life.put("applicability", governedApplicabilityForClone(srcLife));
         persistLifecycle(created, life);
         orchestrator.persistence().saveSessionSnapshot(created);
         appendHistory(created, life, "DRAFT_CREATED_FROM_" + str(srcLife, "policyVersion", "?"));
@@ -962,6 +972,26 @@ public class PolicyLifecycleService {
             return "BANKING_POLICY";
         }
         return "CREDIT_POLICY";
+    }
+
+    /**
+     * Copy / new-version: keep the source policy's governed applicability dimensions.
+     * Effective dates are not copied — the successor must set its own non-overlapping window.
+     * Products are never re-inferred from name, source text, latest, or UI defaults.
+     */
+    public static Map<String, Object> governedApplicabilityForClone(Map<String, Object> srcLife) {
+        Map<String, Object> app = new LinkedHashMap<>();
+        Object raw = srcLife == null ? null : srcLife.get("applicability");
+        if (raw instanceof Map<?, ?> m) {
+            for (Map.Entry<?, ?> e : m.entrySet()) {
+                if (e.getKey() != null) {
+                    app.put(String.valueOf(e.getKey()), e.getValue());
+                }
+            }
+        }
+        app.remove("effectiveFrom");
+        app.remove("effectiveUntil");
+        return app;
     }
 
     private void mergeApplicability(Map<String, Object> life, Map<String, Object> body) {

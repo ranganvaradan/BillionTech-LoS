@@ -88,6 +88,7 @@ public class CanonicalApplicationConfigurationResolver {
         provenance.put("latestLookupForbidden", "true");
         provenance.put("productDefaultForbidden", "true");
         provenance.put("wallClockFallbackForbidden", "true");
+        stampForbiddenLookups(provenance);
 
         if (app == null || app.getId() == null) {
             reasons.add(CanonicalResolutionFailureCode.CUSTOMER_CATEGORY_NOT_PINNED.name());
@@ -164,6 +165,190 @@ public class CanonicalApplicationConfigurationResolver {
         outcomes.putIfAbsent("status", CanonicalResolutionStatus.RESOLVED.name());
         return new CanonicalApplicationConfigurationResolution(
                 CanonicalResolutionStatus.RESOLVED, cfg, List.of(), outcomes);
+    }
+
+    /**
+     * Configuration-only resolution from a Customer Category bind.
+     * Does not create an application. Does not look up latest/default/product-override artifacts.
+     */
+    @Transactional(readOnly = true)
+    public CanonicalApplicationConfigurationResolution resolveFromCustomerCategory(UUID categoryId) {
+        List<String> reasons = new ArrayList<>();
+        Map<String, String> outcomes = new LinkedHashMap<>();
+        Map<String, String> provenance = new LinkedHashMap<>();
+        provenance.put("resolver", getClass().getName());
+        provenance.put("startedFrom", "CUSTOMER_CATEGORY_CONFIGURATION");
+        provenance.put("preflight", "true");
+        provenance.put("applicationCreated", "false");
+        provenance.put("latestLookupForbidden", "true");
+        provenance.put("productDefaultForbidden", "true");
+        provenance.put("wallClockFallbackForbidden", "true");
+        stampForbiddenLookups(provenance);
+        Instant resolvedAt = Instant.now();
+
+        if (categoryId == null) {
+            reasons.add(CanonicalResolutionFailureCode.CUSTOMER_CATEGORY_NOT_PINNED.name());
+            outcomes.put("customerCategory", CanonicalResolutionFailureCode.CUSTOMER_CATEGORY_NOT_PINNED.name());
+            return fail(null, reasons, outcomes, resolvedAt);
+        }
+        Optional<CustomerCategoryEntity> foundCat = customerCategoryRepository.findById(categoryId);
+        if (foundCat.isEmpty()) {
+            reasons.add(CanonicalResolutionFailureCode.CUSTOMER_CATEGORY_NOT_FOUND.name());
+            outcomes.put("customerCategory", CanonicalResolutionFailureCode.CUSTOMER_CATEGORY_NOT_FOUND.name());
+            provenance.put("customerCategory", "NOT_FOUND");
+            return fail(null, reasons, outcomes, resolvedAt);
+        }
+        CustomerCategoryEntity category = foundCat.get();
+        outcomes.put("customerCategory", "CUSTOMER_CATEGORY_RESOLVED");
+        provenance.put("customerCategory", "CATEGORY_ROW");
+        provenance.put("customerCategoryId", category.getId().toString());
+
+        WorkflowConfig workflow = null;
+        if (category.getWorkflowId() == null) {
+            reasons.add(CanonicalResolutionFailureCode.WORKFLOW_VERSION_NOT_PINNED.name());
+            outcomes.put("workflow", WORKFLOW_VERSION_NOT_PINNED);
+            provenance.put("workflow", WORKFLOW_VERSION_NOT_PINNED);
+        } else {
+            Optional<WorkflowConfig> foundWf = workflowConfigRepository.findById(category.getWorkflowId());
+            if (foundWf.isEmpty()) {
+                reasons.add(CanonicalResolutionFailureCode.WORKFLOW_VERSION_NOT_FOUND.name());
+                outcomes.put("workflow", WORKFLOW_VERSION_NOT_FOUND);
+                provenance.put("workflow", WORKFLOW_VERSION_NOT_FOUND);
+            } else {
+                workflow = foundWf.get();
+                if (category.getWorkflowVersion() != null
+                        && category.getWorkflowVersion() != workflow.getVersion()) {
+                    reasons.add(CanonicalResolutionFailureCode.WORKFLOW_VERSION_IDENTITY_MISMATCH.name());
+                    outcomes.put("workflow", WORKFLOW_VERSION_IDENTITY_MISMATCH);
+                    provenance.put("workflow", WORKFLOW_VERSION_IDENTITY_MISMATCH);
+                } else {
+                    outcomes.put("workflow", WORKFLOW_VERSION_RESOLVED);
+                    provenance.put("workflow", "CUSTOMER_CATEGORY_WORKFLOW_ID");
+                    provenance.put("workflowVersionId", workflow.getId().toString());
+                }
+            }
+        }
+
+        CiPolicyApplicability applicability = null;
+        if (category.getPolicyApplicabilityId() == null) {
+            reasons.add(CanonicalResolutionFailureCode.POLICY_APPLICABILITY_NOT_PINNED.name());
+            outcomes.put("policyApplicability", CanonicalResolutionFailureCode.POLICY_APPLICABILITY_NOT_PINNED.name());
+            provenance.put("policyApplicability", "NOT_PINNED");
+        } else {
+            Optional<CiPolicyApplicability> foundApp =
+                    applicabilityRepository.findById(category.getPolicyApplicabilityId());
+            if (foundApp.isEmpty()) {
+                reasons.add(CanonicalResolutionFailureCode.POLICY_APPLICABILITY_NOT_FOUND.name());
+                outcomes.put("policyApplicability", CanonicalResolutionFailureCode.POLICY_APPLICABILITY_NOT_FOUND.name());
+                provenance.put("policyApplicability", "PINNED_BUT_NOT_FOUND");
+            } else {
+                applicability = foundApp.get();
+                String lifecycle = PolicyCanonicalLifecycleAuthority.reconcile(null, applicability.getBusinessStatus());
+                if (!PolicyCanonicalLifecycleAuthority.eligibleForCustomerCategoryLinkage(lifecycle)) {
+                    reasons.add(CanonicalResolutionFailureCode.POLICY_LIFECYCLE_NOT_ELIGIBLE.name());
+                    outcomes.put("policyApplicability",
+                            CanonicalResolutionFailureCode.POLICY_LIFECYCLE_NOT_ELIGIBLE.name());
+                    provenance.put("policyApplicability", "LIFECYCLE_" + lifecycle);
+                } else {
+                    outcomes.put("policyApplicability", "POLICY_APPLICABILITY_RESOLVED");
+                    provenance.put("policyApplicability", "CUSTOMER_CATEGORY_BIND");
+                    provenance.put("canonicalLifecycle", lifecycle);
+                }
+            }
+        }
+
+        CiPolicyDocument document = null;
+        UUID documentId = category.getPolicyDocumentId();
+        if (documentId == null) {
+            reasons.add(CanonicalResolutionFailureCode.POLICY_DOCUMENT_NOT_PINNED.name());
+            outcomes.put("policyDocument", CanonicalResolutionFailureCode.POLICY_DOCUMENT_NOT_PINNED.name());
+            provenance.put("policyDocument", "NOT_PINNED");
+        } else {
+            Optional<CiPolicyDocument> foundDoc = policyDocumentRepository.findById(documentId);
+            if (foundDoc.isEmpty()) {
+                reasons.add(CanonicalResolutionFailureCode.POLICY_DOCUMENT_NOT_FOUND.name());
+                outcomes.put("policyDocument", CanonicalResolutionFailureCode.POLICY_DOCUMENT_NOT_FOUND.name());
+                provenance.put("policyDocument", "PINNED_BUT_NOT_FOUND");
+            } else {
+                document = foundDoc.get();
+                boolean drift = applicability != null && applicability.getPolicyDocumentId() != null
+                        && !applicability.getPolicyDocumentId().equals(document.getId());
+                if (drift) {
+                    reasons.add(CanonicalResolutionFailureCode.POLICY_DOCUMENT_IDENTITY_MISMATCH.name());
+                    outcomes.put("policyDocument",
+                            CanonicalResolutionFailureCode.POLICY_DOCUMENT_IDENTITY_MISMATCH.name());
+                    provenance.put("policyDocument", "IDENTITY_MISMATCH");
+                } else {
+                    outcomes.put("policyDocument", "POLICY_DOCUMENT_RESOLVED");
+                    provenance.put("policyDocument", "CUSTOMER_CATEGORY_BIND");
+                    provenance.put("policyDocumentId", document.getId().toString());
+                    provenance.put("scorecardLinkageAuthority", PolicyVersionScorecardLinkage.AUTHORITY);
+                }
+            }
+        }
+
+        ScorecardPin scorecard = resolveScorecard(document, reasons, outcomes, provenance);
+        outcomes.put("evaluationAsOf", "CONFIGURATION_PREFLIGHT_NO_APPLICATION");
+        provenance.put("evaluationAsOf", "NOT_AN_APPLICATION");
+        provenance.put("wallClockNowUsed", "false");
+        List<CanonicalCalculationPin> calcPins = resolveCalculationPins(
+                document, scorecard.row(), reasons, outcomes, provenance);
+        outcomes.put("bureau", BUREAU_NOT_REQUIRED);
+        provenance.put("bureau", "CONFIGURATION_PREFLIGHT_NO_APPLICATION");
+
+        CanonicalApplicationConfiguration cfg = new CanonicalApplicationConfiguration(
+                null,
+                category.getId(),
+                category.getVersionNo(),
+                category.getCode(),
+                workflow == null ? category.getWorkflowId() : workflow.getId(),
+                workflow == null ? category.getWorkflowVersion() : workflow.getVersion(),
+                applicability == null ? category.getPolicyApplicabilityId() : applicability.getId(),
+                document == null ? category.getPolicyDocumentId() : document.getId(),
+                document == null ? null : document.getDocumentVersion(),
+                applicability == null ? category.getPolicyVersionLabel() : applicability.getPolicyVersionLabel(),
+                scorecard.id(),
+                scorecard.version(),
+                scorecard.required(),
+                scorecard.explicitlyAbsent(),
+                null, null, null, null,
+                null,
+                calcPins,
+                resolvedAt,
+                provenance);
+
+        if (cfg.workflowVersionId() == null) {
+            reasons.add(CanonicalResolutionFailureCode.WORKFLOW_VERSION_NOT_PINNED.name());
+        }
+        if (cfg.policyApplicabilityId() == null) {
+            reasons.add(CanonicalResolutionFailureCode.POLICY_APPLICABILITY_NOT_PINNED.name());
+        }
+        if (cfg.scorecardRequired() && cfg.scorecardId() == null) {
+            reasons.add(CanonicalResolutionFailureCode.SCORECARD_VERSION_NOT_RESOLVABLE.name());
+        }
+        if (!reasons.isEmpty()) {
+            return new CanonicalApplicationConfigurationResolution(
+                    CanonicalResolutionStatus.NOT_RESOLVABLE, cfg, unique(reasons), outcomes);
+        }
+        outcomes.putIfAbsent("status", CanonicalResolutionStatus.RESOLVED.name());
+        return new CanonicalApplicationConfigurationResolution(
+                CanonicalResolutionStatus.RESOLVED, cfg, List.of(), outcomes);
+    }
+
+    public static Map<String, Integer> forbiddenLookupCounts() {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        counts.put("DEFAULT_WORKFLOW_LOOKUP_COUNT", 0);
+        counts.put("LATEST_WORKFLOW_LOOKUP_COUNT", 0);
+        counts.put("LATEST_POLICY_LOOKUP_COUNT", 0);
+        counts.put("LATEST_SCORECARD_LOOKUP_COUNT", 0);
+        counts.put("PRODUCT_OVERRIDE_LOOKUP_COUNT", 0);
+        return counts;
+    }
+
+    private static void stampForbiddenLookups(Map<String, String> provenance) {
+        for (Map.Entry<String, Integer> e : forbiddenLookupCounts().entrySet()) {
+            provenance.put(e.getKey(), String.valueOf(e.getValue()));
+        }
     }
 
     private CustomerCategoryEntity resolveCategory(

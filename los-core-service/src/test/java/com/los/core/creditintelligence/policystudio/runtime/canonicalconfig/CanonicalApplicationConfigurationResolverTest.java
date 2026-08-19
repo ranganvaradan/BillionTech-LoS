@@ -201,6 +201,32 @@ class CanonicalApplicationConfigurationResolverTest {
     }
 
     @Test
+    void customerCategoryConfigurationPreflightResolvesPinsWithoutApplicationOrLatestLookups() {
+        Fixture fx = fullyPinned();
+        CanonicalApplicationConfigurationResolution r = resolver.resolveFromCustomerCategory(categoryId);
+        assertThat(r.resolved()).isTrue();
+        assertThat(r.configuration().applicationId()).isNull();
+        assertThat(r.configuration().customerCategoryId()).isEqualTo(categoryId);
+        assertThat(r.configuration().workflowVersionId()).isEqualTo(workflowId);
+        assertThat(r.configuration().policyApplicabilityId()).isEqualTo(applicabilityId);
+        assertThat(r.configuration().policyDocumentId()).isEqualTo(documentId);
+        assertThat(r.configuration().scorecardId()).isEqualTo(scorecardId);
+        assertThat(r.configuration().resolutionProvenance())
+                .containsEntry("startedFrom", "CUSTOMER_CATEGORY_CONFIGURATION")
+                .containsEntry("DEFAULT_WORKFLOW_LOOKUP_COUNT", "0")
+                .containsEntry("LATEST_WORKFLOW_LOOKUP_COUNT", "0")
+                .containsEntry("LATEST_POLICY_LOOKUP_COUNT", "0")
+                .containsEntry("LATEST_SCORECARD_LOOKUP_COUNT", "0")
+                .containsEntry("PRODUCT_OVERRIDE_LOOKUP_COUNT", "0");
+        verify(workflowConfigRepository, never())
+                .findByBorrowerTypeAndLoanProductAndIntakeSegmentAndActiveTrueOrderByVersionDesc(
+                        any(), any(), any());
+        verify(scorecardRepository, never())
+                .findByBorrowerTypeAndLoanProductAndActiveIsTrueOrderByPriorityDesc(any(), any());
+        verify(bureauReportRepository, never()).findByApplicationId(any());
+    }
+
+    @Test
     void noScorecardPolicyDistinguishedFromBrokenScorecardFk() {
         Fixture none = fullyPinned();
         none.document.setScorecardId(null);

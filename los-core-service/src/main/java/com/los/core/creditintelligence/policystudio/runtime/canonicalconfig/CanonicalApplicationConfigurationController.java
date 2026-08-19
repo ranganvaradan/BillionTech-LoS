@@ -79,7 +79,54 @@ public class CanonicalApplicationConfigurationController {
                 : workflowConfigRepository.findById(app.getWorkflowId()).orElse(null);
         out.put("existingApplicationClass", CanonicalApplicationPinClassifier.classify(
                 app, category, applicability, workflow).name());
+        out.putAll(CanonicalApplicationConfigurationResolver.forbiddenLookupCounts());
         return out;
+    }
+
+    /**
+     * Configuration resolution preflight from a Customer Category bind.
+     * Does not create an application. Does not underwrite or change live decision authority.
+     */
+    @GetMapping("/customer-categories/{categoryId}/canonical-configuration-preflight")
+    public Map<String, Object> categoryConfigurationPreflight(
+            @PathVariable UUID categoryId,
+            @RequestHeader(value = "X-Internal-Token", required = false) String token) {
+        assertInternalToken(token);
+        CanonicalApplicationConfigurationResolution resolution =
+                resolver.resolveFromCustomerCategory(categoryId);
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("preflight", true);
+        out.put("applicationCreated", false);
+        out.put("liveDecisionUnchanged", true);
+        out.put("canonicalRuntimeUsedForLiveDecision", false);
+        out.putAll(resolution.toMap());
+        out.putAll(CanonicalApplicationConfigurationResolver.forbiddenLookupCounts());
+        if (resolution.configuration() != null) {
+            CanonicalApplicationConfiguration cfg = resolution.configuration();
+            out.put("NEW_CUSTOMER_CATEGORY_ID", cfg.customerCategoryId() == null
+                    ? null : cfg.customerCategoryId().toString());
+            out.put("NEW_CUSTOMER_CATEGORY_VERSION", cfg.customerCategoryVersion());
+            out.put("RESOLVED_WORKFLOW_ID", cfg.workflowVersionId() == null
+                    ? null : cfg.workflowVersionId().toString());
+            out.put("RESOLVED_WORKFLOW_VERSION", cfg.workflowVersionNumber());
+            out.put("RESOLVED_POLICY_DOCUMENT_ID", cfg.policyDocumentId() == null
+                    ? null : cfg.policyDocumentId().toString());
+            out.put("RESOLVED_POLICY_VERSION", firstNonBlank(cfg.policyVersionLabel(),
+                    cfg.policyDocumentVersion() == null ? null : String.valueOf(cfg.policyDocumentVersion())));
+            out.put("RESOLVED_POLICY_APPLICABILITY_ID", cfg.policyApplicabilityId() == null
+                    ? null : cfg.policyApplicabilityId().toString());
+            out.put("RESOLVED_SCORECARD_ID", cfg.scorecardId() == null
+                    ? null : cfg.scorecardId().toString());
+            out.put("RESOLVED_SCORECARD_VERSION", cfg.scorecardVersion());
+        }
+        return out;
+    }
+
+    private static String firstNonBlank(String a, String b) {
+        if (a != null && !a.isBlank()) {
+            return a;
+        }
+        return b;
     }
 
     /**

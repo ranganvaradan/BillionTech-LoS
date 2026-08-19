@@ -284,6 +284,13 @@ public class StagingPolicyStudioDemoService {
                         "reingested", false,
                         "copiedFromDocumentId", sourceDocumentId.toString()));
         newDoc.setProductScope(doc.getProductScope());
+        newDoc.setLenderId(doc.getLenderId());
+        newDoc.setLanguage(doc.getLanguage() == null ? "en" : doc.getLanguage());
+        // Copy binds the same Scorecard identity on the new document FK only.
+        // Does not mutate underwriting_scorecards or the source policy version.
+        // Must be set before the first durable INSERT — later snapshot UPDATEs
+        // intentionally do not copy scorecardId (SCORECARD-LINKAGE-PROJECTION-INVARIANT).
+        newDoc.setScorecardId(doc.getScorecardId());
         PolicyStudioSession created = StructuredPolicySessionCloner.cloneSession(
                 source, newDoc, StructuredPolicySessionCloner.Mode.COPY);
         Map<String, Object> srcMeta = sessionMeta.getOrDefault(sourceDocumentId, Map.of());
@@ -292,9 +299,16 @@ public class StagingPolicyStudioDemoService {
             purgeStubClassificationRules(created);
         }
         if (lifecycleService != null) {
-            requireLifecycle().saveDraft(created, Map.of(
-                    "reasonForChange", "Copied from " + sourceName + " · " + sourceVersion,
-                    "policyName", newName));
+            Map<String, Object> draftBody = new LinkedHashMap<>();
+            draftBody.put("reasonForChange", "Copied from " + sourceName + " · " + sourceVersion);
+            draftBody.put("policyName", newName);
+            if (srcLife.get("policyType") != null) {
+                draftBody.put("policyType", srcLife.get("policyType"));
+            }
+            // Preserve source products/scope/borrower/amount. Do not re-infer from
+            // cloned source text (which can leak DIGILEAP / other catalogue names).
+            draftBody.put("applicability", PolicyLifecycleService.governedApplicabilityForClone(srcLife));
+            requireLifecycle().saveDraft(created, draftBody);
         }
         Map<String, Object> meta = new LinkedHashMap<>();
         meta.put("kind", "copy");
