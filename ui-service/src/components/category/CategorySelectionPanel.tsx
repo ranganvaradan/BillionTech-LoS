@@ -121,8 +121,9 @@ export function CategorySelectionPanel({
   }, [applicationId, allowDraftSimulation, actor, onSelected])
 
   useEffect(() => {
+    if (hasCategoryPin(pinnedSelection)) return
     void refresh()
-  }, [refresh])
+  }, [refresh, pinnedSelection])
 
   const onAnswer = async (questionId: string, answerValue: string) => {
     setBusy(true)

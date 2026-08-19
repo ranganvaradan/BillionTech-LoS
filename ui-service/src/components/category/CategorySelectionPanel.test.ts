@@ -36,6 +36,11 @@ describe('CategorySelectionPanel contract', () => {
     expect(panel).not.toMatch(/setResult\(null\)/)
   })
 
+  it('skips proposition evaluate when persisted pin is supplied', () => {
+    const panel = readFileSync(resolve(ROOT, 'components/category/CategorySelectionPanel.tsx'), 'utf8')
+    expect(panel).toMatch(/hasCategoryPin\(pinnedSelection\)\) return/)
+  })
+
   it('wizard passes category pin into CategorySelectionPanel', () => {
     const wizard = readFileSync(resolve(ROOT, 'components/intake/ApplicationIntakeWizard.tsx'), 'utf8')
     expect(wizard).toMatch(/categoryPinnedSelection/)
