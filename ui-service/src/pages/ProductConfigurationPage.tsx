@@ -11,6 +11,7 @@ import {
   patchExternalProductMappingStatus,
 } from '@/api/liveReadiness'
 import { ApiError } from '@/api/http'
+import { canonicalLosProductOption } from '@/lib/productConfiguration/losProductOption'
 
 function asList(v: unknown): unknown[] {
   return Array.isArray(v) ? v : []
@@ -56,7 +57,8 @@ export function ProductConfigurationPage() {
           setLoanProduct(String(golden.loanProduct))
         } else if (Array.isArray(data.products) && data.products.length > 0) {
           // Canonical product list comes from the backend (no free typing).
-          setLoanProduct(String(data.products[0]))
+          const first = canonicalLosProductOption(data.products[0])
+          if (first.code) setLoanProduct(first.code)
         }
         if (golden.workflowId) setWorkflowId(String(golden.workflowId))
         if (golden.liveRuleSetId) setLiveRuleSetId(String(golden.liveRuleSetId))
@@ -224,11 +226,14 @@ export function ProductConfigurationPage() {
               disabled={!options || !Array.isArray(options.products) || options.products.length === 0}
             >
               <option value="">— select —</option>
-              {asList(options?.products).map((p) => (
-                <option key={String(p)} value={String(p)}>
-                  {String(p)}
-                </option>
-              ))}
+              {asList(options?.products)
+                .map((p) => canonicalLosProductOption(p))
+                .filter((o) => Boolean(o.code))
+                .map((o) => (
+                  <option key={o.code} value={o.code}>
+                    {o.label}
+                  </option>
+                ))}
             </select>
           </label>
           <label className="text-sm">
@@ -394,11 +399,14 @@ export function ProductConfigurationPage() {
               disabled={!options || !Array.isArray(options.products) || options.products.length === 0}
             >
               <option value="">— select —</option>
-              {asList(options?.products).map((p) => (
-                <option key={String(p)} value={String(p)}>
-                  {String(p)}
-                </option>
-              ))}
+              {asList(options?.products)
+                .map((p) => canonicalLosProductOption(p))
+                .filter((o) => Boolean(o.code))
+                .map((o) => (
+                  <option key={o.code} value={o.code}>
+                    {o.label}
+                  </option>
+                ))}
             </select>
           </label>
         </div>
