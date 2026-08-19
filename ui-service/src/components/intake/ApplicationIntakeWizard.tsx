@@ -49,7 +49,6 @@ import {
   lmsTenureUnitLabel,
   tenureMagnitudeShortUnit,
 } from '@/catalog/lmsTenureUnits'
-import { LmsWorkflowConfigReadonly } from '@/components/intake/LmsWorkflowConfigReadonly'
 import { linkApplicationToProgram } from '@/api/plp'
 import { SelectAnchorProgramStep } from '@/components/intake/SelectAnchorProgramStep'
 import { LinkedAnchorProgramReadonly } from '@/components/intake/LinkedAnchorProgramReadonly'
@@ -1587,25 +1586,6 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
                   lmsTenureUnit={form.lmsTenureUnit}
                   onChange={(v) => setForm((f) => ({ ...f, tenureMonths: v }))}
                 />
-                {!isInvoiceDiscountingProduct(form.loanProduct) ? (
-                  pinnedWorkflowDisplay ? (
-                    <div className="block text-sm text-slate-700">
-                      <span className="mb-1 block text-xs font-medium text-slate-500">LMS product mapping</span>
-                      <p className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
-                        {form.externalProductMappingId?.trim()
-                          ? `External: ${form.externalSystem || '—'} → ${form.externalProductCode || '—'} · Mapping v${
-                              form.externalProductMappingVersion || '—'
-                            } · Governed by Product Configuration`
-                          : 'Pinned after Customer Category selection via Product Configuration.'}
-                      </p>
-                    </div>
-                  ) : (
-                    <LmsWorkflowConfigReadonly
-                      lmsProductCode={form.lmsProductCode}
-                      lmsTenureUnit={form.lmsTenureUnit}
-                    />
-                  )
-                ) : null}
                 {shouldCollectLoanPurposeField(selectedWorkflow, true) &&
                 !(
                   isInvoiceDiscountingProduct(form.loanProduct) && form.invoiceOnboardingChoice === 'ANCHOR'
@@ -1723,25 +1703,6 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
                   lmsTenureUnit={form.lmsTenureUnit}
                   onChange={(v) => setForm((f) => ({ ...f, tenureMonths: v }))}
                 />
-                {!isInvoiceDiscountingProduct(form.loanProduct) ? (
-                  pinnedWorkflowDisplay ? (
-                    <div className="block text-sm text-slate-700">
-                      <span className="mb-1 block text-xs font-medium text-slate-500">LMS product mapping</span>
-                      <p className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
-                        {form.externalProductMappingId?.trim()
-                          ? `External: ${form.externalSystem || '—'} → ${form.externalProductCode || '—'} · Mapping v${
-                              form.externalProductMappingVersion || '—'
-                            } · Governed by Product Configuration`
-                          : 'Pinned after Customer Category selection via Product Configuration.'}
-                      </p>
-                    </div>
-                  ) : (
-                    <LmsWorkflowConfigReadonly
-                      lmsProductCode={form.lmsProductCode}
-                      lmsTenureUnit={form.lmsTenureUnit}
-                    />
-                  )
-                ) : null}
                 {shouldCollectLoanPurposeField(selectedWorkflow, true) &&
                 !(
                   isInvoiceDiscountingProduct(form.loanProduct) && form.invoiceOnboardingChoice === 'ANCHOR'

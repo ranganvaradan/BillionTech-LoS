@@ -436,6 +436,27 @@ class CategorySelectionGoldensTest {
     }
 
     @Test
+    void nonExecutableWorkflowCategoryExcludedFromDiscovery() {
+        cat("STARTER_LOAN", "Starter Loan", policyA, wfStarter,
+                List.of(SafeDisambiguationCatalogue.OPT_FINANCIAL_STATEMENTS), true);
+        UUID wfInactive = UUID.randomUUID();
+        WorkflowConfig inactive = new WorkflowConfig();
+        inactive.setId(wfInactive);
+        inactive.setVersion(1);
+        inactive.setName("Superseded WF");
+        inactive.setActive(false);
+        workflows.put(wfInactive, inactive);
+        cat("VIKCAT001", "Vikasan Bureau", policyB, wfInactive,
+                List.of(SafeDisambiguationCatalogue.OPT_FINANCIAL_STATEMENTS), true);
+
+        LoanApplication a = app(new BigDecimal("300000"));
+        var eval = selectionService.evaluate(a.getId(), true);
+        assertTrue(eval.eligible().stream().noneMatch(e -> "VIKCAT001".equals(e.code())));
+        assertTrue(eval.eligible().stream().anyMatch(e -> "STARTER_LOAN".equals(e.code())));
+        assertEquals(CategorySelectionState.AUTO_SINGLE_MATCH, eval.state());
+    }
+
+    @Test
     void pinValidationFailure_writesNothing() {
         CustomerCategoryEntity only = cat("ONLY", "Only", policyA, wfStarter,
                 List.of(SafeDisambiguationCatalogue.OPT_FINANCIAL_STATEMENTS), true);

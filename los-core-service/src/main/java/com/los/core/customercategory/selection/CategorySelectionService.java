@@ -49,6 +49,7 @@ public class CategorySelectionService {
         Map<String, String> known = new LinkedHashMap<>(disambiguationService.priorAnswers(applicationId));
         // Apply prior answers to filter (save/resume)
         eligible = filterByPriorAnswers(eligible, known);
+        eligible = filterPinReady(app, eligible, allowDraftSimulation);
 
         return buildResult(app, ctx, eligible, known);
     }
@@ -65,6 +66,7 @@ public class CategorySelectionService {
         List<CustomerCategoryEntity> eligible = eligibilityService.findEligibleEntities(ctx);
         Map<String, String> known = new LinkedHashMap<>(disambiguationService.priorAnswers(applicationId));
         eligible = filterByPriorAnswers(eligible, known);
+        eligible = filterPinReady(app, eligible, allowDraftSimulation);
 
         eligible = disambiguationService.applyAnswer(
                 applicationId, eligible, req.questionId(), req.answerValue(),
@@ -281,6 +283,15 @@ public class CategorySelectionService {
                     CategoryPropositionConfig.displayOrder(c)));
         }
         return cards;
+    }
+
+    private List<CustomerCategoryEntity> filterPinReady(
+            LoanApplication app,
+            List<CustomerCategoryEntity> eligible,
+            boolean allowDraftSimulation) {
+        return eligible.stream()
+                .filter(c -> pinValidator.isPinReady(app, c, allowDraftSimulation))
+                .toList();
     }
 
     private List<CustomerCategoryEntity> filterByPriorAnswers(

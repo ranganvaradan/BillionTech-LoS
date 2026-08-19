@@ -44,7 +44,6 @@ export function CategorySelectionPanel({
   )
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [backgroundRefresh, setBackgroundRefresh] = useState(false)
   const requestGenerationRef = useRef(0)
   const resultRef = useRef<EligibilityResult | null>(result)
   const pinnedSelectionRef = useRef(pinnedSelection)
@@ -67,16 +66,11 @@ export function CategorySelectionPanel({
   }, [pinnedSelection])
 
   const refresh = useCallback(async () => {
-    const generation = ++requestGenerationRef.current
-    const pinKnown = hasCategoryPin(pinnedSelectionRef.current)
-    const hasPinnedDisplay =
-      pinKnown || resultRef.current?.state === 'CATEGORY_SELECTED'
+    if (hasCategoryPin(pinnedSelectionRef.current)) return
+    if (resultRef.current?.state === 'CATEGORY_SELECTED') return
 
-    if (!hasPinnedDisplay) {
-      setBusy(true)
-    } else {
-      setBackgroundRefresh(true)
-    }
+    const generation = ++requestGenerationRef.current
+    setBusy(true)
     setError(null)
 
     try {
@@ -88,26 +82,17 @@ export function CategorySelectionPanel({
         return merged ?? prev
       })
 
-      const effective = mergeCategoryEvaluateResult(
-        resultRef.current,
-        incoming,
-        generation,
-        requestGenerationRef.current,
-      )
-
       if (incoming.state === 'AUTO_SINGLE_MATCH') {
         const selected = await autoSelectCategory(applicationId, actor, allowDraftSimulation)
         if (generation !== requestGenerationRef.current) return
         setResult(selected)
         onSelected?.(selected)
-      } else if (incoming.state === 'CATEGORY_SELECTED' || effective?.state === 'CATEGORY_SELECTED') {
-        onSelected?.(incoming.state === 'CATEGORY_SELECTED' ? incoming : effective!)
+      } else if (incoming.state === 'CATEGORY_SELECTED') {
+        onSelected?.(incoming)
       }
     } catch (e) {
       if (generation !== requestGenerationRef.current) return
-      if (
-        shouldPreservePinOnEvaluateError(pinnedSelectionRef.current, resultRef.current)
-      ) {
+      if (shouldPreservePinOnEvaluateError(pinnedSelectionRef.current, resultRef.current)) {
         setError(null)
         return
       }
@@ -115,7 +100,6 @@ export function CategorySelectionPanel({
     } finally {
       if (generation === requestGenerationRef.current) {
         setBusy(false)
-        setBackgroundRefresh(false)
       }
     }
   }, [applicationId, allowDraftSimulation, actor, onSelected])
@@ -190,29 +174,21 @@ export function CategorySelectionPanel({
 
   if (result?.state === 'CATEGORY_SELECTED' && result.selected) {
     return (
-      <div className="space-y-2">
-        {backgroundRefresh ? (
-          <p className="text-xs text-slate-500" aria-live="polite">
-            Refreshing lending proposition…
-          </p>
+      <div className="rounded border border-emerald-200 bg-emerald-50 p-4">
+        <h3 className="text-sm font-semibold text-emerald-900">Lending proposition selected</h3>
+        <p className="mt-1 text-sm text-emerald-800">
+          {result.selected.categoryDisplayName ?? result.selected.categoryCode} (v
+          {result.selected.categoryVersion})
+        </p>
+        {pinnedDisplay ? (
+          <div className="mt-2">
+            <PinnedWorkflowSummary display={pinnedDisplay} tone="success" />
+          </div>
         ) : null}
-        {error ? <p className="text-xs text-amber-700">{error}</p> : null}
-        <div className="rounded border border-emerald-200 bg-emerald-50 p-4">
-          <h3 className="text-sm font-semibold text-emerald-900">Lending proposition selected</h3>
-          <p className="mt-1 text-sm text-emerald-800">
-            {result.selected.categoryDisplayName ?? result.selected.categoryCode} (v
-            {result.selected.categoryVersion})
-          </p>
-          {pinnedDisplay ? (
-            <div className="mt-2">
-              <PinnedWorkflowSummary display={pinnedDisplay} tone="success" />
-            </div>
-          ) : null}
-          <p className="mt-2 text-xs text-emerald-700">
-            Source: {result.selected.selectionSource}. Policy and Workflow versions locked for this
-            application. Underwriting has not been run.
-          </p>
-        </div>
+        <p className="mt-2 text-xs text-emerald-700">
+          Source: {result.selected.selectionSource}. Policy and Workflow versions locked for this
+          application. Underwriting has not been run.
+        </p>
       </div>
     )
   }

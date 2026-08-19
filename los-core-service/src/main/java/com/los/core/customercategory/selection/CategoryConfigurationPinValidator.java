@@ -132,6 +132,19 @@ public class CategoryConfigurationPinValidator {
                 && c.getWorkflowId() != null;
     }
 
+    /**
+     * Same gate as {@link #validate} — used by proposition discovery so selectable categories
+     * always match what selection can pin.
+     */
+    public boolean isPinReady(LoanApplication app, CustomerCategoryEntity chosen, boolean allowDraftSimulation) {
+        try {
+            validate(app, chosen, allowDraftSimulation);
+            return true;
+        } catch (BusinessRuleException ex) {
+            return false;
+        }
+    }
+
     private static BusinessRuleException fail(String message, String reason, Map<String, Object> ctx) {
         return new BusinessRuleException(message, reason, "category-selection", new LinkedHashMap<>(ctx));
     }
