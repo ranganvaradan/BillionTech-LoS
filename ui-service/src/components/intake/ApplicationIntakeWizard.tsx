@@ -385,13 +385,29 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
 
   useEffect(() => {
     if (!selectedWorkflow || isInvoiceDiscountingProduct(form.loanProduct)) return
-    // Derive LMS code from workflow config only — do not invent / hardcode Encore product codes.
+    // Category-governed apps: LMS product authority must come from pinned External Product Mapping,
+    // not from the (active/catalog) workflow.
+    if (pinnedWorkflowDisplay) {
+      setForm((f) => ({
+        ...f,
+        // Tenure unit is UI-helpful, but do not treat workflow lmsProductCode as authority.
+        lmsTenureUnit: selectedWorkflow.lmsTenureUnit?.trim() || DEFAULT_LMS_TENURE_UNIT,
+      }))
+      return
+    }
+    // Legacy/non-category: derive LMS code from workflow config only.
     setForm((f) => ({
       ...f,
       lmsProductCode: selectedWorkflow.lmsProductCode?.trim() || '',
       lmsTenureUnit: selectedWorkflow.lmsTenureUnit?.trim() || DEFAULT_LMS_TENURE_UNIT,
     }))
-  }, [selectedWorkflow?.id, selectedWorkflow?.lmsProductCode, selectedWorkflow?.lmsTenureUnit, form.loanProduct])
+  }, [
+    selectedWorkflow?.id,
+    selectedWorkflow?.lmsProductCode,
+    selectedWorkflow?.lmsTenureUnit,
+    form.loanProduct,
+    pinnedWorkflowDisplay,
+  ])
 
   const loadWorkflows = useCallback(async () => {
     setWorkflowsState('loading')
@@ -1482,38 +1498,13 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
                       </option>
                     ))}
                   </select>
-                  {mode === 'ADMIN_INTERNAL' &&
-                  workflowsForSelectedProduct.length > 1 &&
-                  !(isInvoiceDiscountingProduct(form.loanProduct) && form.invoiceOnboardingChoice === 'ANCHOR') ? (
-                    <label className="mt-2 block text-sm text-slate-700">
-                      <span className="mb-1 block text-xs font-medium text-slate-500">Workflow (admin / test) *</span>
-                      <select
-                        className="bt-input w-full text-slate-900 disabled:cursor-not-allowed disabled:bg-slate-50"
-                        value={form.workflowId}
-                        onChange={(e) => setForm((f) => ({ ...f, workflowId: e.target.value }))}
-                        disabled={workflowsState !== 'ok' || productLocked}
-                      >
-                        <option value="">— Select workflow —</option>
-                        {workflowsForSelectedProduct.map((w) => (
-                          <option key={w.id} value={w.id}>
-                            {w.name} (v{w.version})
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  ) : pinnedWorkflowDisplay ? (
+                  {pinnedWorkflowDisplay ? (
                     <div className="mt-1.5">
                       <PinnedWorkflowSummary display={pinnedWorkflowDisplay} />
                     </div>
-                  ) : selectedWorkflow ? (
-                    <p className="mt-1.5 text-xs text-slate-500">
-                      Workflow pinned by Customer Category:{' '}
-                      <span className="font-medium text-slate-800">{selectedWorkflow.name}</span> (v
-                      {selectedWorkflow.version})
-                    </p>
                   ) : (
                     <p className="mt-1.5 text-xs text-slate-500">
-                      Workflow Version is pinned after Customer Category selection — not chosen independently.
+                      Workflow version is pinned after Customer Category selection. Not chosen independently here.
                     </p>
                   )}
                 </label>
@@ -1606,10 +1597,23 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
                   onChange={(v) => setForm((f) => ({ ...f, tenureMonths: v }))}
                 />
                 {!isInvoiceDiscountingProduct(form.loanProduct) ? (
-                  <LmsWorkflowConfigReadonly
-                    lmsProductCode={form.lmsProductCode}
-                    lmsTenureUnit={form.lmsTenureUnit}
-                  />
+                  pinnedWorkflowDisplay ? (
+                    <div className="block text-sm text-slate-700">
+                      <span className="mb-1 block text-xs font-medium text-slate-500">LMS product mapping</span>
+                      <p className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
+                        {form.externalProductMappingId?.trim()
+                          ? `External: ${form.externalSystem || '—'} → ${form.externalProductCode || '—'} · Mapping v${
+                              form.externalProductMappingVersion || '—'
+                            } · Governed by Product Configuration`
+                          : 'Pinned after Customer Category selection via Product Configuration.'}
+                      </p>
+                    </div>
+                  ) : (
+                    <LmsWorkflowConfigReadonly
+                      lmsProductCode={form.lmsProductCode}
+                      lmsTenureUnit={form.lmsTenureUnit}
+                    />
+                  )
                 ) : null}
                 {shouldCollectLoanPurposeField(selectedWorkflow, true) &&
                 !(
@@ -1699,33 +1703,15 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
                       </option>
                     ))}
                   </select>
-                  {workflowsForSelectedProduct.length > 1 ? (
-                    <label className="mt-2 block text-sm text-slate-700">
-                      <span className="mb-1 block text-xs font-medium text-slate-500">Workflow *</span>
-                      <select
-                        className="bt-input w-full text-slate-900 disabled:cursor-not-allowed disabled:bg-slate-50"
-                        value={form.workflowId}
-                        onChange={(e) => setForm((f) => ({ ...f, workflowId: e.target.value }))}
-                        disabled={workflowsState !== 'ok' || productLocked}
-                      >
-                        <option value="">— Select workflow —</option>
-                        {workflowsForSelectedProduct.map((w) => (
-                          <option key={w.id} value={w.id}>
-                            {w.name} (v{w.version})
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  ) : pinnedWorkflowDisplay ? (
+                  {pinnedWorkflowDisplay ? (
                     <div className="mt-1.5">
                       <PinnedWorkflowSummary display={pinnedWorkflowDisplay} />
                     </div>
-                  ) : selectedWorkflow ? (
+                  ) : (
                     <p className="mt-1.5 text-xs text-slate-500">
-                      Active workflow: <span className="font-medium text-slate-800">{selectedWorkflow.name}</span> (v
-                      {selectedWorkflow.version})
+                      Workflow version is pinned after Customer Category selection. Not selectable independently here.
                     </p>
-                  ) : null}
+                  )}
                 </div>
                 <label className="block text-sm text-slate-700">
                   <span className="mb-1 block text-xs font-medium text-slate-500">Requested amount (INR) *</span>
@@ -1747,10 +1733,23 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
                   onChange={(v) => setForm((f) => ({ ...f, tenureMonths: v }))}
                 />
                 {!isInvoiceDiscountingProduct(form.loanProduct) ? (
-                  <LmsWorkflowConfigReadonly
-                    lmsProductCode={form.lmsProductCode}
-                    lmsTenureUnit={form.lmsTenureUnit}
-                  />
+                  pinnedWorkflowDisplay ? (
+                    <div className="block text-sm text-slate-700">
+                      <span className="mb-1 block text-xs font-medium text-slate-500">LMS product mapping</span>
+                      <p className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
+                        {form.externalProductMappingId?.trim()
+                          ? `External: ${form.externalSystem || '—'} → ${form.externalProductCode || '—'} · Mapping v${
+                              form.externalProductMappingVersion || '—'
+                            } · Governed by Product Configuration`
+                          : 'Pinned after Customer Category selection via Product Configuration.'}
+                      </p>
+                    </div>
+                  ) : (
+                    <LmsWorkflowConfigReadonly
+                      lmsProductCode={form.lmsProductCode}
+                      lmsTenureUnit={form.lmsTenureUnit}
+                    />
+                  )
                 ) : null}
                 {shouldCollectLoanPurposeField(selectedWorkflow, true) &&
                 !(
@@ -2092,7 +2091,14 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
             actorRole={variant === 'staff' ? 'RM' : 'CUSTOMER'}
             onSelected={(result) => {
               const wf = result.selected?.workflowId
-              if (wf) setForm((f) => ({ ...f, workflowId: wf }))
+              if (wf)
+                setForm((f) => ({
+                  ...f,
+                  workflowId: wf,
+                  // Category-governed apps: do not treat workflow lms_product_code as authority;
+                  // External Product Mapping pinning will populate the persisted value later.
+                  lmsProductCode: '',
+                }))
               if (result.selected) {
                 const pinned = pinnedWorkflowDisplayFromCategoryHandoff(result.selected)
                 if (pinned) setPinnedWorkflowDisplay(pinned)

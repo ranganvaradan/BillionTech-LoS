@@ -21,6 +21,14 @@ export interface IntakeFormState {
   lmsProductCode: string
   /** Encore tenure unit: Day, Month, Week. */
   lmsTenureUnit: string
+  /** Pinned External Product Mapping id (category-governed apps only; empty when not yet pinned). */
+  externalProductMappingId: string
+  /** Pinned External Product Mapping version (as string for UI display; empty when not yet pinned). */
+  externalProductMappingVersion: string
+  /** External system pinned by External Product Mapping (empty when not yet pinned). */
+  externalSystem: string
+  /** External product code pinned by External Product Mapping (empty when not yet pinned). */
+  externalProductCode: string
   /** Staff only: when loan product is invoice discounting, user must pick Borrower vs Anchor before continuing. */
   invoiceOnboardingChoice: '' | 'BORROWER' | 'ANCHOR'
   /** Invoice discounting borrower: selected PLP sub-program id */
@@ -138,6 +146,10 @@ export function createEmptyIntakeFormState(): IntakeFormState {
     tenureMonths: '',
     lmsProductCode: '',
     lmsTenureUnit: DEFAULT_LMS_TENURE_UNIT,
+    externalProductMappingId: '',
+    externalProductMappingVersion: '',
+    externalSystem: '',
+    externalProductCode: '',
     invoiceOnboardingChoice: '',
     selectedSubProgramId: '',
     dependencyVintagePercent: '',

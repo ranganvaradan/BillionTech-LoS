@@ -202,7 +202,8 @@ class ApplicationCanonicalWorkflowDisplayTest {
                 mock(com.los.core.service.loan.ApplicationInputChangeTracker.class),
                 workflowConfigRepository,
                 mock(com.los.core.service.workflow.ApplicationWorkflowResolver.class),
-                categoryRepository);
+                categoryRepository,
+                mock(com.los.lms.repository.ExternalProductMappingRepository.class));
         Method m = LoanApplicationServiceImpl.class.getDeclaredMethod("toResponse", LoanApplication.class);
         m.setAccessible(true);
         return (ApplicationResponse) m.invoke(applicationService, app);

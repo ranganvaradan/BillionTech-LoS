@@ -33,6 +33,14 @@ public class ApplicationResponse {
     private Integer tenureMonths;
     private String lmsProductCode;
     private String lmsTenureUnit;
+    /** Pinned canonical External Product Mapping (for Category-governed applications). */
+    private UUID externalProductMappingId;
+    /** Pinned canonical External Product Mapping version (for Category-governed applications). */
+    private Integer externalProductMappingVersion;
+    /** External system (from external_product_mapping row, if pinned). */
+    private String externalSystem;
+    /** External product code (from external_product_mapping row, if pinned). */
+    private String externalProductCode;
     private UUID workflowId;
     private Integer workflowVersion;
     /** Exact pinned workflow name — from application.workflow_id lookup, never latest/active catalog. */

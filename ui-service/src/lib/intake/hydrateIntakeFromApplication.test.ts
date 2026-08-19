@@ -107,4 +107,21 @@ describe('hydrateIntakeFormFromApplication', () => {
     )
     expect(form.panNumber).toBe('GLCC27052Z')
   })
+
+  it('clears draft workflow-derived lmsProductCode for category-governed apps when external mapping is not pinned', () => {
+    const form = hydrateIntakeFormFromApplication(
+      app({
+        workflowResolutionSource: 'CATEGORY_SELECTION',
+        categorySelectionState: 'CATEGORY_SELECTED',
+        lmsProductCode: 'VIKAS001',
+        lmsTenureUnit: 'MONTH',
+        externalProductMappingId: null,
+        externalProductMappingVersion: null,
+        externalSystem: null,
+        externalProductCode: null,
+      }),
+    )
+
+    expect(form.lmsProductCode).toBe('')
+  })
 })

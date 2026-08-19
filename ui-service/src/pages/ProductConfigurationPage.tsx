@@ -23,7 +23,7 @@ function asRecord(v: unknown): Record<string, unknown> {
 export function ProductConfigurationPage() {
   const [options, setOptions] = useState<Record<string, unknown> | null>(null)
   const [borrowerType, setBorrowerType] = useState('COMPANY')
-  const [loanProduct, setLoanProduct] = useState('TERM_LOAN')
+  const [loanProduct, setLoanProduct] = useState('')
   const [intakeSegment, setIntakeSegment] = useState('BORROWER')
   const [workflowId, setWorkflowId] = useState('')
   const [liveRuleSetId, setLiveRuleSetId] = useState('')
@@ -52,7 +52,12 @@ export function ProductConfigurationPage() {
         setOptions(data)
         const golden = asRecord(asRecord(data.goldenPreset).selection)
         if (golden.borrowerType) setBorrowerType(String(golden.borrowerType))
-        if (golden.loanProduct) setLoanProduct(String(golden.loanProduct))
+        if (golden.loanProduct) {
+          setLoanProduct(String(golden.loanProduct))
+        } else if (Array.isArray(data.products) && data.products.length > 0) {
+          // Canonical product list comes from the backend (no free typing).
+          setLoanProduct(String(data.products[0]))
+        }
         if (golden.workflowId) setWorkflowId(String(golden.workflowId))
         if (golden.liveRuleSetId) setLiveRuleSetId(String(golden.liveRuleSetId))
         if (golden.scorecardId) setScorecardId(String(golden.scorecardId))
@@ -63,6 +68,7 @@ export function ProductConfigurationPage() {
   // external_product_mapping admin dropdown + catalogue loader for selected LOS Product.
   useEffect(() => {
     if (!loanProduct) return
+    const prevExternalSystem = externalSystem
     setMappings([])
     setExternalProductSystems([])
     setExternalSystem('')
@@ -71,7 +77,7 @@ export function ProductConfigurationPage() {
       try {
         const systems = await listExternalProductSystems(loanProduct)
         setExternalProductSystems(systems)
-        const preferred = systems[0] ?? ''
+        const preferred = systems.includes(prevExternalSystem) ? prevExternalSystem : systems[0] ?? ''
         setExternalSystem(preferred)
       } catch (e) {
         // Non-fatal: mapping admin may be empty if catalogue isn't present yet.
@@ -211,11 +217,19 @@ export function ProductConfigurationPage() {
         <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <label className="text-sm">
             <span className="text-slate-600">Product</span>
-            <input
+            <select
               className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
               value={loanProduct}
               onChange={(e) => setLoanProduct(e.target.value)}
-            />
+              disabled={!options || !Array.isArray(options.products) || options.products.length === 0}
+            >
+              <option value="">— select —</option>
+              {asList(options?.products).map((p) => (
+                <option key={String(p)} value={String(p)}>
+                  {String(p)}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="text-sm">
             <span className="text-slate-600">Borrower type</span>
@@ -373,11 +387,19 @@ export function ProductConfigurationPage() {
           </label>
           <label className="text-sm">
             <span className="text-slate-600">LOS Product</span>
-            <input
-              className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm bg-slate-50"
+            <select
+              className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
               value={loanProduct}
-              disabled
-            />
+              onChange={(e) => setLoanProduct(e.target.value)}
+              disabled={!options || !Array.isArray(options.products) || options.products.length === 0}
+            >
+              <option value="">— select —</option>
+              {asList(options?.products).map((p) => (
+                <option key={String(p)} value={String(p)}>
+                  {String(p)}
+                </option>
+              ))}
+            </select>
           </label>
         </div>
 

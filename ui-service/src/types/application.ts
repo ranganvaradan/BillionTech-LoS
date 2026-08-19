@@ -80,6 +80,10 @@ export interface ApplicationResponse {
   tenureMonths: number | null
   lmsProductCode?: string | null
   lmsTenureUnit?: string | null
+  externalProductMappingId?: string | null
+  externalProductMappingVersion?: number | null
+  externalSystem?: string | null
+  externalProductCode?: string | null
   workflowId?: string | null
   workflowVersion?: number | null
   workflowName?: string | null

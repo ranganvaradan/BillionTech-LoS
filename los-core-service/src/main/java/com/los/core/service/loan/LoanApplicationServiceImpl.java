@@ -28,6 +28,8 @@ import com.los.core.service.loan.intake.IntakeMetadataEnricher;
 import com.los.core.service.underwriting.UnderwritingEvaluationService;
 import com.los.core.service.workflow.ApplicationConfigurationAuthority;
 import com.los.core.service.workflow.ApplicationWorkflowResolver;
+import com.los.lms.entity.ExternalProductMapping;
+import com.los.lms.repository.ExternalProductMappingRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -60,6 +62,7 @@ public class LoanApplicationServiceImpl implements ILoanApplicationService {
     private final WorkflowConfigRepository workflowConfigRepository;
     private final ApplicationWorkflowResolver applicationWorkflowResolver;
     private final CustomerCategoryRepository customerCategoryRepository;
+    private final ExternalProductMappingRepository externalProductMappingRepository;
 
     private static final AtomicLong SEQUENCE = new AtomicLong(System.currentTimeMillis() % 100000);
     private static final Pattern EMAIL_RE = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
@@ -524,6 +527,10 @@ public class LoanApplicationServiceImpl implements ILoanApplicationService {
     }
 
     private ApplicationResponse toResponse(LoanApplication app) {
+        ExternalProductMapping pinnedExternal =
+                app.getExternalProductMappingId() != null
+                        ? externalProductMappingRepository.findById(app.getExternalProductMappingId()).orElse(null)
+                        : null;
         return ApplicationResponse.builder()
                 .id(app.getId())
                 .applicationNumber(app.getApplicationNumber())
@@ -550,6 +557,10 @@ public class LoanApplicationServiceImpl implements ILoanApplicationService {
                 .tenureMonths(app.getTenureMonths())
                 .lmsProductCode(app.getLmsProductCode())
                 .lmsTenureUnit(app.getLmsTenureUnit())
+                .externalProductMappingId(app.getExternalProductMappingId())
+                .externalProductMappingVersion(app.getExternalProductMappingVersion())
+                .externalSystem(pinnedExternal != null ? pinnedExternal.getExternalSystem() : null)
+                .externalProductCode(pinnedExternal != null ? pinnedExternal.getExternalProductCode() : null)
                 .status(app.getStatus())
                 .personalInfo(app.getPersonalInfo())
                 .businessInfo(app.getBusinessInfo())

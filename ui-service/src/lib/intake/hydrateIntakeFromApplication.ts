@@ -31,6 +31,12 @@ export function hydrateIntakeFormFromApplication(
   const invoiceOnboardingChoice: IntakeFormState['invoiceOnboardingChoice'] =
     app.intakeSegment === 'ANCHOR' ? 'ANCHOR' : app.intakeSegment === 'BORROWER' ? 'BORROWER' : ''
 
+  // Category-governed lifecycle: external product mapping is pinned before openLoanAccount.
+  // If that pin isn't present yet, clear any draft workflow-derived LMS code for UI authority separation.
+  const categoryGoverned =
+    app.workflowResolutionSource === 'CATEGORY_SELECTION' || app.categorySelectionState === 'CATEGORY_SELECTED'
+  const externalMappingPinned = Boolean(app.externalProductMappingId)
+
   return {
     ...base,
     borrowerType: (app.borrowerType as IntakeFormState['borrowerType']) ?? base.borrowerType,
@@ -51,8 +57,14 @@ export function hydrateIntakeFormFromApplication(
       base.occupation,
     requestedAmount: app.requestedAmount != null ? String(app.requestedAmount) : base.requestedAmount,
     tenureMonths: app.tenureMonths != null ? String(app.tenureMonths) : base.tenureMonths,
-    lmsProductCode: app.lmsProductCode?.trim() || base.lmsProductCode,
+    lmsProductCode:
+      categoryGoverned && !externalMappingPinned ? '' : app.lmsProductCode?.trim() || base.lmsProductCode,
     lmsTenureUnit: app.lmsTenureUnit?.trim() || base.lmsTenureUnit,
+    externalProductMappingId: app.externalProductMappingId ?? base.externalProductMappingId,
+    externalProductMappingVersion:
+      app.externalProductMappingVersion != null ? String(app.externalProductMappingVersion) : base.externalProductMappingVersion,
+    externalSystem: app.externalSystem?.trim() || base.externalSystem,
+    externalProductCode: app.externalProductCode?.trim() || base.externalProductCode,
     fullName: str(pi, 'fullName') || base.fullName,
     mobile: str(pi, 'mobile') || base.mobile,
     email: str(pi, 'email') || base.email,
