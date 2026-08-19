@@ -11,16 +11,35 @@ import java.util.UUID;
 
 public interface ExternalProductMappingRepository extends JpaRepository<ExternalProductMapping, UUID> {
 
+    @Query("""
+            SELECT m
+            FROM external_product_mapping m
+            WHERE m.losProductCode = :losProductCode
+              AND m.externalSystem = :externalSystem
+              AND m.status = :status
+              AND m.effectiveFrom <= :asOf
+              AND m.effectiveTo >= :asOf
+            ORDER BY m.version DESC
+            """)
     List<ExternalProductMapping> findByLosProductCodeAndExternalSystemAndStatusAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
-            String losProductCode,
-            String externalSystem,
-            String status,
-            LocalDate asOf);
+            @Param("losProductCode") String losProductCode,
+            @Param("externalSystem") String externalSystem,
+            @Param("status") String status,
+            @Param("asOf") LocalDate asOf);
 
+    @Query("""
+            SELECT m
+            FROM external_product_mapping m
+            WHERE m.losProductCode = :losProductCode
+              AND m.externalSystem = :externalSystem
+              AND m.effectiveFrom <= :asOf
+              AND m.effectiveTo >= :asOf
+            ORDER BY m.version DESC
+            """)
     List<ExternalProductMapping> findByLosProductCodeAndExternalSystemAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
-            String losProductCode,
-            String externalSystem,
-            LocalDate asOf);
+            @Param("losProductCode") String losProductCode,
+            @Param("externalSystem") String externalSystem,
+            @Param("asOf") LocalDate asOf);
 
     List<ExternalProductMapping> findByLosProductCodeAndExternalSystemOrderByVersionDesc(
             String losProductCode,
