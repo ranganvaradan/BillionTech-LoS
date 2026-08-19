@@ -1338,9 +1338,14 @@ public class StagingDemoController {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
                     "Staging demo disabled (enable credit-intelligence.staging-demo or validation)");
         }
+    }
+
+    /** Blocks staging-demo mutations that could change business config while canonical live is active. */
+    private void assertStagingDemoMutationsAllowed() {
+        assertStagingDemoEnabled();
         if (properties.getCutover() != null && properties.getCutover().isAllowCanonicalAuthority()) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                    "allow-canonical-authority must remain false for staging demo");
+                    "Staging demo mutations blocked while canonical live authority is active");
         }
     }
 

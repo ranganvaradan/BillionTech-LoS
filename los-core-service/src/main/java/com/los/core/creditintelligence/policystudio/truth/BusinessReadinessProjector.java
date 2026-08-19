@@ -59,6 +59,13 @@ public final class BusinessReadinessProjector {
                         null);
             }
 
+            if (isDeferredSourceNotProven(def)) {
+                return readyMap(out, BusinessReadiness.NOT_READY,
+                        BusinessReadinessReason.DEFERRED_SOURCE_NOT_AVAILABLE,
+                        "DEFERRED — SOURCE NOT AVAILABLE",
+                        null);
+            }
+
             if ("MANUAL_INPUT".equals(paramClass) || "MANUAL".equalsIgnoreCase(mode)) {
                 return readyMap(out, BusinessReadiness.READY, BusinessReadinessReason.MANUAL_INPUT,
                         "Needs manual input", "Provide manual input");
@@ -226,11 +233,24 @@ public final class BusinessReadinessProjector {
         return switch (reason) {
             case MANUAL_INPUT -> "MANUAL_INPUT";
             case CALCULATION_NOT_DEFINED, CALCULATION_INVALID -> "CALCULATION_SETUP";
+            case DEFERRED_SOURCE_NOT_AVAILABLE -> "DEFERRED_SOURCE";
             case SOURCE_NOT_INTEGRATED, SOURCE_NOT_CONFIGURED, RAW_FIELD_NOT_AVAILABLE -> "SOURCE";
             case DEPENDENCY_NOT_READY -> "DEPENDENCY";
             case NOT_APPLICABLE, NOT_SUPPORTED -> "EXCLUDED";
             default -> "READY";
         };
+    }
+
+    private static boolean isDeferredSourceNotProven(CanonicalParameterDefinition def) {
+        if (def == null) {
+            return false;
+        }
+        String bind = def.existingImplementationBinding();
+        if ("SOURCE_NOT_PROVEN".equalsIgnoreCase(bind)) {
+            return true;
+        }
+        String treat = def.capability() == null ? null : def.capability().missingDataTreatment();
+        return treat != null && treat.toUpperCase(java.util.Locale.ROOT).contains("SOURCE_NOT_PROVEN");
     }
 
     public static String reasonLabel(BusinessReadinessReason r) {
@@ -246,6 +266,7 @@ public final class BusinessReadinessProjector {
             case NOT_SUPPORTED -> "Not supported";
             case NOT_APPLICABLE -> "Not applicable";
             case NOT_IN_CATALOGUE -> "Not in catalogue";
+            case DEFERRED_SOURCE_NOT_AVAILABLE -> "DEFERRED — SOURCE NOT AVAILABLE";
         };
     }
 
@@ -257,6 +278,7 @@ public final class BusinessReadinessProjector {
             case CALCULATION_NOT_DEFINED, CALCULATION_INVALID -> "Set up calculation";
             case DEPENDENCY_NOT_READY -> "Resolve dependencies";
             case MANUAL_INPUT -> "Provide manual input";
+            case DEFERRED_SOURCE_NOT_AVAILABLE -> null;
             default -> null;
         };
     }

@@ -22,8 +22,9 @@ function asList(v: unknown): unknown[] {
 type Mode = 'QUICK' | 'APPLICATION'
 
 /**
- * POLICY-UX-2E — Credit Manager Test experience (Quick / Existing Application).
- * Reuses draft evaluator; does not mutate applications or policy definitions.
+ * POLICY-UX-2E — Credit Manager Test experience (Quick Test / Application Test).
+ * Application Test is freeze-bound canonical evaluation. Quick Test is synthetic/manual.
+ * Does not mutate applications or policy definitions.
  */
 export function CiPolicySimulationTab({
   documentId,
@@ -47,6 +48,7 @@ export function CiPolicySimulationTab({
   const [loading, setLoading] = useState(true)
   const [testValues, setTestValues] = useState<Record<string, string>>({})
   const [appCode, setAppCode] = useState('')
+  const [appId, setAppId] = useState('')
   const [howOpen, setHowOpen] = useState<Record<string, boolean>>({})
 
   const load = async () => {
@@ -69,6 +71,10 @@ export function CiPolicySimulationTab({
       if (apps.length && !appCode) {
         setAppCode(String(asRecord(apps[0]).applicationCode ?? ''))
       }
+      const frozen = asList(data.frozenApplications)
+      if (frozen.length && !appId) {
+        setAppId(String(asRecord(frozen[0]).applicationId ?? ''))
+      }
     } catch (e) {
       onError(e instanceof ApiError ? e.message : 'Could not load Test context')
     } finally {
@@ -88,7 +94,7 @@ export function CiPolicySimulationTab({
     readiness.unresolvedForPolicyReadiness ?? readiness.unresolved ?? 0,
   )
   const needsAttention = asList(readiness.needsAttention).map(asRecord)
-  const apps = useMemo(() => asList(ctx?.applications).map(asRecord), [ctx])
+  const frozenApps = useMemo(() => asList(ctx?.frozenApplications).map(asRecord), [ctx])
   const recent = asList(result?.recentTests ?? ctx?.recentTests).map(asRecord)
   const summary = asRecord(result?.summary)
   const ruleResults = asList(result?.ruleResults).map(asRecord)
@@ -113,8 +119,9 @@ export function CiPolicySimulationTab({
         mode === 'QUICK'
           ? await runPolicyQuickTest(documentId, { testValues: values })
           : await runPolicyApplicationTest(documentId, {
-              applicationCode: appCode,
-              testValues: values,
+              applicationId: appId || undefined,
+              applicationCode: appId ? undefined : appCode,
+              testValues: appId ? undefined : values,
             })
       setResult(data)
     } catch (e) {
@@ -147,7 +154,7 @@ export function CiPolicySimulationTab({
         {(
           [
             ['QUICK', 'Quick Test'],
-            ['APPLICATION', 'Existing Application'],
+            ['APPLICATION', 'Application Test'],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -177,24 +184,39 @@ export function CiPolicySimulationTab({
       </div>
 
       {mode === 'APPLICATION' ? (
-        <CiSection title="Select application" description="Stored validation applications — read-only.">
+        <CiSection
+          title="Application Test"
+          description="Real frozen application context — exact freeze identity, no latest re-resolution."
+        >
+          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500" data-testid="test-evidence-kind">
+            Application Test · frozen canonical facts
+          </p>
           <select
             className="bt-input max-w-xl"
-            value={appCode}
-            onChange={(e) => setAppCode(e.target.value)}
+            value={appId}
+            onChange={(e) => setAppId(e.target.value)}
             data-testid="test-application-select"
           >
-            {apps.map((a) => (
-              <option key={String(a.applicationCode)} value={String(a.applicationCode)}>
-                {String(a.displayName ?? a.applicationCode)}
-                {a.product ? ` · ${String(a.product)}` : ''}
+            {frozenApps.length === 0 ? (
+              <option value="">No frozen applications for this policy</option>
+            ) : null}
+            {frozenApps.map((a) => (
+              <option key={String(a.applicationId)} value={String(a.applicationId)}>
+                {String(a.applicationNumber ?? a.applicationId)}
+                {a.evaluationAsOf ? ` · as-of ${String(a.evaluationAsOf)}` : ''}
               </option>
             ))}
           </select>
           <p className="mt-1 text-xs text-slate-500">{String(ctx?.applicationNote ?? '')}</p>
         </CiSection>
-      ) : null}
+      ) : (
+        <p className="text-xs font-medium uppercase tracking-wide text-slate-500" data-testid="test-evidence-kind">
+          Quick Test · synthetic / manual values
+        </p>
+      )}
 
+      {mode === 'QUICK' ? (
+      <>
       <CiSection
         title="Required parameters"
         description={`${Number(readiness.required ?? required.length)} required · ${Number(readiness.availableAutomatically ?? 0)} automatic · ${unresolvedForReadiness} unresolved`}
@@ -318,13 +340,15 @@ export function CiPolicySimulationTab({
           </div>
         </CiSection>
       ) : null}
+      </>
+      ) : null}
 
       <div className="flex flex-wrap items-center gap-2">
         <button
           type="button"
           className="bt-btn bt-btn-primary"
           data-testid="run-test"
-          disabled={busy || (mode === 'APPLICATION' && !appCode)}
+          disabled={busy || (mode === 'APPLICATION' && !appId)}
           onClick={() => void run()}
         >
           Run Test
@@ -381,7 +405,44 @@ export function CiPolicySimulationTab({
             </CiSection>
           ) : null}
 
-          <CiSection title="Hard Rules" description="Pass/fail per underwriting rule.">
+          {asList(result.parameterEvidence).length ? (
+            <CiSection
+              title="Parameter evidence"
+              description="Canonical parameter values and statuses from the frozen application package."
+            >
+              <div className="overflow-x-auto" data-testid="test-parameter-evidence">
+                <table className="min-w-full text-left text-xs">
+                  <thead className="text-slate-500">
+                    <tr>
+                      <th className="py-1 pr-2">Parameter</th>
+                      <th className="py-1 pr-2">Value</th>
+                      <th className="py-1 pr-2">Status</th>
+                      <th className="py-1 pr-2">Provenance</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {asList(result.parameterEvidence).map((raw, i) => {
+                      const p = asRecord(raw)
+                      return (
+                        <tr key={i} className="border-t border-slate-100">
+                          <td className="py-1 pr-2 font-mono text-[11px]">
+                            {String(p.parameterId ?? p.canonicalParameterId ?? '—')}
+                          </td>
+                          <td className="py-1 pr-2">{p.canonicalValue == null ? '—' : String(p.canonicalValue)}</td>
+                          <td className="py-1 pr-2">{String(p.canonicalStatus ?? p.status ?? '—')}</td>
+                          <td className="py-1 pr-2">
+                            {String(p.calculationAuthority ?? p.exactProducerPath ?? '—')}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </CiSection>
+          ) : null}
+
+          <CiSection title="Hard Rules" description="Participating underwriting rules and deferred non-participating rules.">
             <div className="space-y-3">
               {ruleResults.map((r, i) => (
                 <RuleResultCard
@@ -401,7 +462,7 @@ export function CiPolicySimulationTab({
           {asRecord(result.scorecard).outcome || asList(result.scorecardFactors).length || result.scorecardIncluded ? (
             <CiSection
               title="Scorecard"
-              description="Optional Policy-linked score — subordinate to hard rules / final Policy outcome."
+              description="Frozen Policy-linked scorecard — same CanonicalShadowScorecardExecutor as runtime."
             >
               <dl className="mb-3 grid gap-2 text-sm sm:grid-cols-3" data-testid="test-scorecard-summary">
                 <div>
@@ -412,7 +473,14 @@ export function CiPolicySimulationTab({
                 </div>
                 <div>
                   <dt className="text-slate-500">Scorecard outcome</dt>
-                  <dd className="font-medium">{String(asRecord(result.scorecard).outcome ?? '—')}</dd>
+                  <dd className="font-medium">
+                    {String(
+                      result.scorecardResult
+                        ?? asRecord(result.scorecard).bandOutcome
+                        ?? asRecord(result.scorecard).outcome
+                        ?? '—',
+                    )}
+                  </dd>
                 </div>
                 <div>
                   <dt className="text-slate-500">Mode</dt>
@@ -492,6 +560,10 @@ export function CiPolicySimulationTab({
               {'\n'}
               scorecardIncluded={String(result.scorecardIncluded ?? false)}
               {'\n'}
+              evidenceKind={String(result.evidenceKind ?? '')}
+              {'\n'}
+              freezeIdentityMatch={String(result.POLICY_TEST_FREEZE_IDENTITY_MATCH ?? '')}
+              {'\n'}
               applicationMutated={String(result.applicationMutated ?? false)}
               {'\n'}
               policyMutated={String(result.policyMutated ?? false)}
@@ -533,12 +605,23 @@ function RuleResultCard({
   const tone =
     result === 'PASS'
       ? 'border-emerald-200 bg-emerald-50'
-      : result === 'FAIL'
+      : result === 'FAIL' || result === 'REJECT'
         ? 'border-rose-200 bg-rose-50'
-        : 'border-amber-200 bg-amber-50'
+        : result === 'DEFERRED'
+          ? 'border-slate-200 bg-slate-50'
+          : 'border-amber-200 bg-amber-50'
 
   return (
-    <article className={`rounded-lg border px-3 py-3 ${tone}`} data-testid="rule-result-card">
+    <article
+      className={`rounded-lg border px-3 py-3 ${tone}`}
+      data-testid={
+        result === 'DEFERRED' ||
+        String(rule.disposition ?? '').toUpperCase().includes('DEFERRED_SOURCE') ||
+        Boolean(rule.deferred)
+          ? 'test-deferred-source-rule'
+          : 'rule-result-card'
+      }
+    >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <h4 className="text-sm font-semibold text-slate-900">{String(rule.ruleName)}</h4>
         <span className="text-xs font-bold uppercase tracking-wide text-slate-800">{result}</span>

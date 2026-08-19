@@ -13,13 +13,18 @@ describe('POLICY-UX-2E Test experience', () => {
     )
     expect(tab).toContain('Test Policy')
     expect(tab).toContain('Quick Test')
-    expect(tab).toContain('Existing Application')
+    expect(tab).toContain('Application Test')
+    expect(tab).toContain('frozen canonical facts')
+    expect(tab).toContain('synthetic / manual values')
     expect(tab).toContain('Historical / Batch (future)')
     expect(tab).toContain('Run Test')
     expect(tab).toContain('Simulated Decision')
     expect(tab).toContain('Test value only')
     expect(tab).toContain('Resolve parameter')
     expect(tab).toContain('data-testid="policy-test-experience"')
+    expect(tab).toContain('data-testid="test-parameter-evidence"')
+    expect(tab).toContain('data-testid="test-scorecard-summary"')
+    expect(tab).toContain('test-deferred-source-rule')
     expect(tab).not.toContain('VALIDATION_FIXTURES')
   })
 
@@ -28,7 +33,7 @@ describe('POLICY-UX-2E Test experience', () => {
     expect(api).toContain('/test/quick')
     expect(api).toContain('/test/application')
     expect(api).toContain('getPolicyTestContext')
-    expect(api).toContain('runPolicyQuickTest')
+    expect(api).toContain('applicationId')
   })
 
   it('shell remains Scope | Rules | Scorecard | Test | Versions and Save Draft ungated', () => {

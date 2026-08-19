@@ -28,6 +28,7 @@ import com.los.core.service.underwriting.ScorecardPolicyEngine;
 import com.los.core.service.underwriting.UnderwritingEvaluationService;
 import com.los.core.service.underwriting.UnderwritingRuleEngine;
 import com.los.core.creditintelligence.service.CreditIntelligenceFoundationService;
+import com.los.core.creditintelligence.policystudio.runtime.canonicallive.CanonicalLiveUnderwritingService;
 import com.los.core.service.flow.step.FlowStepType;
 import com.los.core.service.workflow.ActiveWorkflowConfigService;
 import com.los.core.service.workflow.intake.WorkflowIntakeValidator;
@@ -108,6 +109,7 @@ public class LoanApplicationFlowService {
     private final WelcomeOnboardingNotifier welcomeOnboardingNotifier;
     private final EsignSignedApplicationDocumentService esignSignedApplicationDocumentService;
     private final CreditIntelligenceFoundationService creditIntelligenceFoundationService;
+    private final CanonicalLiveUnderwritingService canonicalLiveUnderwritingService;
     /**
      * VKYC governance guard — blocks downstream flow steps (CAM review, sanction, eSign,
      * disbursement) until VKYC is auditor-approved when VKYC is configured and applicable
@@ -419,6 +421,11 @@ public class LoanApplicationFlowService {
             log.warn("Credit intelligence prepare ignored for {}: {}", applicationId, ciEx.getMessage());
         }
 
+        if (canonicalLiveUnderwritingService.isAuthoritativeFor(app)) {
+            return underwriteWithCanonicalAuthority(
+                    app, ctx, outcome, ciPrep, evaluatedByUserId, effBureau, applicationId);
+        }
+
         int creditScore = effBureau;
         MultiRuleEvalResult ruleMulti = underwritingRuleEngine.evaluateAll(app, ctx, outcome);
         boolean hardRuleTriggered = ruleMulti.perRule() != null
@@ -622,6 +629,125 @@ public class LoanApplicationFlowService {
                 underwritingSource, matchedRuleId, matchedRuleName, policyRecommendation, legacyMulti);
     }
 
+    /**
+     * W11.4 — Category-governed canonical live authority. No legacy engines; fail closed on missing freeze.
+     */
+    private Map<String, Object> underwriteWithCanonicalAuthority(
+            LoanApplication app,
+            EffectiveUnderwritingContext ctx,
+            String kycOutcome,
+            java.util.Optional<CreditIntelligenceFoundationService.PrepResult> ciPrep,
+            String evaluatedByUserId,
+            int creditScore,
+            UUID applicationId) {
+        CanonicalLiveUnderwritingService.LiveOutcome live =
+                canonicalLiveUnderwritingService.evaluateAuthoritative(applicationId);
+        MultiRuleEvalResult multi = live.multi();
+        String aggCredit = live.aggregateCreditDecision();
+        String policyRecommendation = live.policyRecommendation();
+        String underwritingSource = CanonicalLiveUnderwritingService.UNDERWRITING_SOURCE;
+        UUID matchedRuleId = live.scorecardId();
+        String matchedRuleName = "Canonical scorecard";
+        mergeUnderwritingMetaCanonical(app, live, ctx, kycOutcome);
+        log.info(
+                "Canonical live underwriting -> appId={}, decision={}, policy={}, scorecardId={}, riskScore={}, authority={}",
+                app.getId(),
+                aggCredit,
+                policyRecommendation,
+                live.scorecardId(),
+                live.riskScore(),
+                CanonicalLiveUnderwritingService.PRODUCTION_AUTHORITY);
+
+        if ("MANUAL_REVIEW".equals(aggCredit) || "DATA_INSUFFICIENT".equals(aggCredit)) {
+            app.setCreditDecision(aggCredit);
+            app.setCreditRiskScore(live.riskScore());
+            app = applicationRepository.save(app);
+            var prodEval = underwritingEvaluationService.recordCanonicalLive(
+                    app.getId(), live, ctx, evaluatedByUserId, app);
+            creditIntelligenceFoundationService.afterProduction(
+                    ciPrep.orElse(null), app, prodEval, multi, aggCredit);
+            assignmentRuleApplicationService.applyAfterUnderwriting(app, ctx);
+            app = applicationRepository.save(app);
+            auditService.logEvent(applicationId, "FLOW", "UNDERWRITING_MANUAL_REVIEW",
+                    null, Map.of("status", "UNDERWRITING"),
+                    Map.of("aggregate", aggCredit, "underwritingSource", underwritingSource,
+                            "productionAuthority", CanonicalLiveUnderwritingService.PRODUCTION_AUTHORITY),
+                    "Canonical policy/scorecard requires manual review or has insufficient data");
+            return buildUnderwriteResponse(
+                    app, aggCredit, live.riskScore(), creditScore,
+                    new ArrayList<>(multi.aggregateReasons()), List.of(), null,
+                    underwritingSource, matchedRuleId, matchedRuleName, policyRecommendation, multi);
+        }
+
+        if ("REJECTED".equals(aggCredit)) {
+            app.setCreditDecision("REJECTED");
+            app.setCreditRiskScore(live.riskScore());
+            app.setStatus(ApplicationStatus.REJECTED);
+            app = applicationRepository.save(app);
+            var prodEval = underwritingEvaluationService.recordCanonicalLive(
+                    app.getId(), live, ctx, evaluatedByUserId, app);
+            creditIntelligenceFoundationService.afterProduction(
+                    ciPrep.orElse(null), app, prodEval, multi, aggCredit);
+            assignmentRuleApplicationService.applyAfterUnderwriting(app, ctx);
+            app = applicationRepository.save(app);
+            auditService.logEvent(applicationId, "FLOW", "UNDERWRITING_COMPLETE",
+                    null, Map.of("status", "UNDERWRITING"),
+                    Map.of("status", app.getStatus().name(), "decision", "REJECTED",
+                            "underwritingSource", underwritingSource,
+                            "productionAuthority", CanonicalLiveUnderwritingService.PRODUCTION_AUTHORITY),
+                    "Credit decision: REJECTED (canonical live authority)");
+            return buildUnderwriteResponse(
+                    app, "REJECTED", live.riskScore(), creditScore,
+                    new ArrayList<>(multi.aggregateReasons()), List.of(), null,
+                    underwritingSource, matchedRuleId, matchedRuleName, policyRecommendation, multi);
+        }
+
+        if ("APPROVED".equals(aggCredit)) {
+            app.setCreditDecision("APPROVED");
+            app.setCreditRiskScore(live.riskScore());
+            app.setStatus(ApplicationStatus.UNDERWRITING_COMPLETED);
+            if (app.getInterestRate() != null) {
+                app.setApprovedRate(app.getInterestRate());
+            }
+            app.setSanctionedAmount(app.getRequestedAmount());
+            limitSizingService.applySanctionCapIfConfigured(app);
+            app = applicationRepository.save(app);
+            var prodEval = underwritingEvaluationService.recordCanonicalLive(
+                    app.getId(), live, ctx, evaluatedByUserId, app);
+            creditIntelligenceFoundationService.afterProduction(
+                    ciPrep.orElse(null), app, prodEval, multi, aggCredit);
+            assignmentRuleApplicationService.applyAfterUnderwriting(app, ctx);
+            app = applicationRepository.save(app);
+            creditAppraisalService.ensureCamForApplication(app);
+            app.setStatus(ApplicationStatus.CAM_READY);
+            app = applicationRepository.save(app);
+            auditService.logEvent(applicationId, "FLOW", "UNDERWRITING_COMPLETE",
+                    null, Map.of("status", "UNDERWRITING"),
+                    Map.of("status", "CAM_READY", "decision", "APPROVED",
+                            "underwritingSource", underwritingSource,
+                            "productionAuthority", CanonicalLiveUnderwritingService.PRODUCTION_AUTHORITY),
+                    "Credit approved — CAM generated (canonical live authority)");
+            return buildUnderwriteResponse(
+                    app, "APPROVED", live.riskScore(), creditScore,
+                    new ArrayList<>(), List.of(), null,
+                    underwritingSource, matchedRuleId, matchedRuleName, policyRecommendation, multi);
+        }
+
+        app.setCreditDecision(aggCredit);
+        app.setCreditRiskScore(live.riskScore());
+        app = applicationRepository.save(app);
+        var prodEval = underwritingEvaluationService.recordCanonicalLive(
+                app.getId(), live, ctx, evaluatedByUserId, app);
+        creditIntelligenceFoundationService.afterProduction(
+                ciPrep.orElse(null), app, prodEval, multi, aggCredit);
+        assignmentRuleApplicationService.applyAfterUnderwriting(app, ctx);
+        app = applicationRepository.save(app);
+        return buildUnderwriteResponse(
+                app, aggCredit, live.riskScore(), creditScore,
+                new ArrayList<>(multi.aggregateReasons()), List.of(), null,
+                underwritingSource, matchedRuleId, matchedRuleName, policyRecommendation, multi);
+    }
+
     @SuppressWarnings("unchecked")
     private void mergeUnderwritingMetaMulti(LoanApplication app, MultiRuleEvalResult multi, EffectiveUnderwritingContext ctx, String kycOutcome) {
         Map<String, Object> fi = app.getFinancialInfo() != null ? new HashMap<>(app.getFinancialInfo()) : new HashMap<>();
@@ -667,6 +793,36 @@ public class LoanApplicationFlowService {
             meta.put("limitSizingPolicy", policy);
             meta.put("scfLimitPolicy", policy);
         });
+    }
+
+    private void mergeUnderwritingMetaCanonical(
+            LoanApplication app,
+            CanonicalLiveUnderwritingService.LiveOutcome live,
+            EffectiveUnderwritingContext ctx,
+            String kycOutcome) {
+        Map<String, Object> fi = app.getFinancialInfo() != null ? new HashMap<>(app.getFinancialInfo()) : new HashMap<>();
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("source", CanonicalLiveUnderwritingService.UNDERWRITING_SOURCE);
+        meta.put("productionAuthority", CanonicalLiveUnderwritingService.PRODUCTION_AUTHORITY);
+        meta.put("kycOutcomeAtRun", kycOutcome);
+        meta.put("recommendation", live.policyRecommendation());
+        meta.put("aggregateCreditDecision", live.aggregateCreditDecision());
+        meta.put("canonicalDecision", live.evaluation().canonicalDecision());
+        meta.put("freezeIdentityHash", live.evaluation().identityHash());
+        meta.put("canonicalFreezePackage", CanonicalLiveUnderwritingService.freezeSummary(
+                live.evaluation().freeze(), live.evaluation().identityHash()));
+        meta.put("ruleCount", live.evaluation().participatingRuleCount());
+        meta.put("deferredRuleCount", live.evaluation().deferredRuleCount());
+        meta.put("decisionSources", Map.of(
+                "bureauScoreSource", ctx.bureauSource(),
+                "incomeSource", ctx.incomeSource(),
+                "kycSource", ctx.kycSource()
+        ));
+        meta.put("reasons", live.multi().aggregateReasons());
+        meta.put("updatedAt", Instant.now().toString());
+        attachLimitSizingPolicy(app, ctx, meta);
+        fi.put("underwritingMeta", meta);
+        app.setFinancialInfo(fi);
     }
 
     private void mergeUnderwritingMetaLegacy(LoanApplication app, ICreditDecisionService.CreditDecisionResult d) {

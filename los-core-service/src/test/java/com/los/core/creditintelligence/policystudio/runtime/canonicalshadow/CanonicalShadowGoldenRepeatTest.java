@@ -78,16 +78,15 @@ class CanonicalShadowGoldenRepeatTest {
         properties.getCanonicalShadow().setMode(CanonicalShadowMode.LEGACY_WITH_CANONICAL_SHADOW);
         CanonicalShadowScorecardExecutor scorecardExecutor = new CanonicalShadowScorecardExecutor(
                 scorecardRepository, cpes);
+        CanonicalObservationalEvaluationService observational = new CanonicalObservationalEvaluationService(
+                freezeRepository, contextFactory, scorecardExecutor, cpes,
+                graphRepository, nodeRepository, properties);
         service = new CanonicalShadowUnderwritingService(
                 properties,
                 freezeRepository,
                 evaluationRepository,
                 comparisonRepository,
-                contextFactory,
-                scorecardExecutor,
-                cpes,
-                graphRepository,
-                nodeRepository);
+                observational);
         lenient().when(evaluationRepository.findFirstByApplicationIdAndIdentityHashAndUnderwritingEvaluationIdIsNull(any(), any()))
                 .thenReturn(Optional.empty());
         Map<UUID, CanonicalShadowEvaluationEntity> saved = new ConcurrentHashMap<>();
@@ -152,24 +151,35 @@ class CanonicalShadowGoldenRepeatTest {
                 "ruleId", "score-gte",
                 "result", "PASS"));
         Map<String, Object> eq = CanonicalShadowComparator.policyTestEquivalence(
-                policyTestRules, shadowRules, false, true);
+                policyTestRules, shadowRules, true, true);
         assertThat(eq.get("RULE_PARTICIPATION_MISMATCH_COUNT")).isEqualTo(0);
         assertThat(eq.get("RULE_RESULT_MISMATCH_COUNT")).isEqualTo(0);
         assertThat(eq.get("PARAMETER_VALUE_MISMATCH_COUNT")).isEqualTo(0);
         assertThat(eq.get("FINAL_DECISION_MISMATCH_COUNT")).isEqualTo(0);
-        assertThat(eq.get("scorecardConvergenceGap")).isEqualTo(true);
+        assertThat(eq.get("scorecardConvergenceGap")).isEqualTo(false);
         assertThat(PolicyStudioTestExperienceService.ENGINE).contains("CanonicalPolicyRuntime");
+        assertThat(PolicyStudioTestExperienceService.APPLICATION_TEST_ENGINE)
+                .contains("CanonicalObservationalEvaluationService");
     }
 
     @Test
-    void scorecardConvergenceGapIsExplicitWhenPolicyTestLacksScorecard() {
+    void applicationBoundPolicyTestIncludesScorecard() {
+        Map<String, Object> eq = CanonicalShadowComparator.policyTestEquivalence(
+                List.of(), List.of(), true, true);
+        assertThat(eq.get("SCORECARD_RESULT_MISMATCH_COUNT")).isEqualTo(0);
+        assertThat(eq.get("SCORECARD_INPUT_MISMATCH_COUNT")).isEqualTo(0);
+        assertThat(eq.get("scorecardConvergenceGap")).isEqualTo(false);
+        assertThat(eq.get("policyTestScorecardAvailable")).isEqualTo(true);
+        assertThat(eq.get("shadowScorecardAvailable")).isEqualTo(true);
+    }
+
+    @Test
+    void quickTestStillLacksScorecardAndGapIsExplicit() {
         Map<String, Object> eq = CanonicalShadowComparator.policyTestEquivalence(
                 List.of(), List.of(), false, true);
         assertThat(eq.get("SCORECARD_RESULT_MISMATCH_COUNT")).isEqualTo(1);
-        assertThat(eq.get("SCORECARD_INPUT_MISMATCH_COUNT")).isEqualTo(1);
         assertThat(eq.get("scorecardConvergenceGap")).isEqualTo(true);
         assertThat(eq.get("policyTestScorecardAvailable")).isEqualTo(false);
-        assertThat(eq.get("shadowScorecardAvailable")).isEqualTo(true);
     }
 
     @Test

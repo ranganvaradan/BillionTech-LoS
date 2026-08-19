@@ -25,6 +25,15 @@ import com.los.core.creditintelligence.policystudio.parameters.execution.Executi
 import com.los.core.creditintelligence.policystudio.parameters.execution.ExecutionStatus;
 import com.los.core.creditintelligence.policystudio.runtime.CanonicalPolicyRuntime;
 import com.los.core.creditintelligence.policystudio.runtime.CanonicalRuleResult;
+import com.los.core.creditintelligence.policystudio.runtime.canonicalconfig.CanonicalApplicationConfiguration;
+import com.los.core.creditintelligence.policystudio.runtime.canonicalconfig.CanonicalApplicationConfigurationEntity;
+import com.los.core.creditintelligence.policystudio.runtime.canonicalconfig.CanonicalApplicationConfigurationRepository;
+import com.los.core.creditintelligence.policystudio.runtime.canonicalconfig.CanonicalResolutionStatus;
+import com.los.core.creditintelligence.policystudio.runtime.canonicalshadow.CanonicalObservationalEvaluation;
+import com.los.core.creditintelligence.policystudio.runtime.canonicalshadow.CanonicalObservationalEvaluationService;
+import com.los.core.creditintelligence.policystudio.runtime.canonicalshadow.CanonicalShadowUnderwritingService;
+import com.los.core.model.entity.LoanApplication;
+import com.los.core.repository.LoanApplicationRepository;
 import com.los.core.creditintelligence.policystudio.scorecard.PolicyVersionScorecardLinkage;
 import com.los.core.creditintelligence.policystudio.service.PolicyStudioOrchestrator;
 import com.los.core.model.entity.UnderwritingScorecard;
@@ -61,6 +70,10 @@ public class PolicyStudioTestExperienceService {
     public static final String BANNER = "TEST ONLY — NON-AUTHORITATIVE · DOES NOT CHANGE THE APPLICATION";
     public static final String ENGINE =
             "CanonicalPolicyRuntime ← PolicyDslInterpreterV1 + CPES (Wave-5 target semantics)";
+    public static final String APPLICATION_TEST_ENGINE =
+            CanonicalObservationalEvaluationService.SERVICE
+                    + " ← CanonicalPolicyRuntime + CanonicalShadowScorecardExecutor"
+                    + " + PolicyScorecardPrecedence (frozen package; observational)";
 
     private final CreditIntelligenceProperties properties;
     private final PolicyStudioOrchestrator orchestrator;
@@ -68,6 +81,9 @@ public class PolicyStudioTestExperienceService {
     private final CanonicalParameterExecutionService parameterExecution;
     private final CanonicalPolicyRuntime canonicalPolicyRuntime;
     private final UnderwritingScorecardRepository scorecardRepository;
+    private final CanonicalObservationalEvaluationService observationalEvaluation;
+    private final CanonicalApplicationConfigurationRepository freezeRepository;
+    private final LoanApplicationRepository loanApplicationRepository;
     private final PolicyMetricLineageService lineageService = new PolicyMetricLineageService();
     private CanonicalParameterRegistry registry() {
         return RuleOperandPresenter.registry();
@@ -82,13 +98,19 @@ public class PolicyStudioTestExperienceService {
             PolicyStudioOrchestrator orchestrator,
             StagingProspectSimulationService prospectSimulationService,
             CanonicalParameterExecutionService parameterExecution,
-            UnderwritingScorecardRepository scorecardRepository) {
+            UnderwritingScorecardRepository scorecardRepository,
+            CanonicalObservationalEvaluationService observationalEvaluation,
+            CanonicalApplicationConfigurationRepository freezeRepository,
+            LoanApplicationRepository loanApplicationRepository) {
         this.properties = properties;
         this.orchestrator = orchestrator;
         this.prospectSimulationService = prospectSimulationService;
         this.parameterExecution = parameterExecution;
         this.canonicalPolicyRuntime = new CanonicalPolicyRuntime(parameterExecution);
         this.scorecardRepository = scorecardRepository;
+        this.observationalEvaluation = observationalEvaluation;
+        this.freezeRepository = freezeRepository;
+        this.loanApplicationRepository = loanApplicationRepository;
     }
 
     public Map<String, Object> testContext(UUID documentId, String tenantHeader) {
@@ -116,9 +138,16 @@ public class PolicyStudioTestExperienceService {
         out.put("allowCanonicalAuthority", false);
         out.put("modes", List.of(
                 Map.of("id", "QUICK", "label", "Quick Test", "enabled", true,
-                        "description", "Enter values for this policy's parameters and run a draft test."),
-                Map.of("id", "APPLICATION", "label", "Existing Application", "enabled", true,
-                        "description", "Test the draft against a stored validation application (read-only)."),
+                        "evidenceKind", "SYNTHETIC_MANUAL",
+                        "description",
+                        "Synthetic/manual test context. Enter values for this policy's parameters. "
+                                + "Not equivalent to a frozen application."),
+                Map.of("id", "APPLICATION", "label", "Application Test", "enabled", true,
+                        "evidenceKind", "FROZEN_APPLICATION",
+                        "description",
+                        "Test against a real application's exact frozen canonical package "
+                                + "(policy, scorecard, bureau, calculation pins, evaluationAsOf). "
+                                + "Uses CanonicalPolicyRuntime — not a second evaluator."),
                 Map.of("id", "HISTORICAL_BATCH", "label", "Historical / Batch", "enabled", false,
                         "description", "Future — portfolio historical corpus is not wired into Policy Studio Test.",
                         "future", true)));
@@ -126,8 +155,11 @@ public class PolicyStudioTestExperienceService {
         out.put("ignoredRuleParameters", ignoredDiagnostics);
         out.put("readiness", readiness);
         out.put("applications", apps);
+        out.put("syntheticValidationFixtures", apps);
+        out.put("frozenApplications", listFrozenApplications(documentId));
         out.put("applicationNote",
-                "Uses existing safe validation applications. Live borrower staging search is not configured.");
+                "Application Test binds a real frozen application. Quick Test is synthetic/manual. "
+                        + "They are not equivalent evidence.");
         out.put("historicalBatch", Map.of(
                 "available", false,
                 "reason", "No Policy Studio historical corpus wired; do not fake batch results.",
@@ -137,7 +169,9 @@ public class PolicyStudioTestExperienceService {
                 "description", "Shown after an Existing Application test using real legacyComparison output."));
         Map<String, Object> scorecardIdentity = observationalScorecardIdentity(session);
         scorecardIdentity.put("available", scorecardIdentity.get("scorecardId") != null);
-        scorecardIdentity.put("reason", "Observational linked identity; Policy Test does not execute the scorecard.");
+        scorecardIdentity.put("reason",
+                "Application Test executes the frozen Policy-linked scorecard. "
+                        + "Quick Test does not execute the scorecard.");
         out.put("scorecardCombined", scorecardIdentity);
         out.put("recentTests", recentByDocument.getOrDefault(documentId, List.of()));
         out.put("saveDraftUngated", true);
@@ -212,6 +246,8 @@ public class PolicyStudioTestExperienceService {
         Map<String, Object> out = baseResult(session, documentId, "QUICK");
         out.put("testType", "QUICK");
         out.put("testTypeLabel", "Quick Test");
+        out.put("evidenceKind", "SYNTHETIC_MANUAL");
+        out.put("POLICY_TEST_APPLICATION_BOUND", false);
         out.put("valueProvenance", valueProvenance);
         out.put("executionSpineTrace", spine.trace());
         out.put("executionSpineUsed", true);
@@ -233,6 +269,10 @@ public class PolicyStudioTestExperienceService {
 
     public Map<String, Object> runApplicationTest(UUID documentId, Map<String, Object> body, String tenantHeader) {
         PolicyStudioSession session = requireSession(documentId, tenantHeader);
+        UUID applicationId = resolveBoundApplicationId(body);
+        if (applicationId != null) {
+            return runFrozenApplicationTest(session, documentId, applicationId, tenantHeader);
+        }
         String code = body == null || body.get("applicationCode") == null
                 ? "" : String.valueOf(body.get("applicationCode")).trim();
         if (code.isBlank()) {
@@ -330,7 +370,9 @@ public class PolicyStudioTestExperienceService {
 
         Map<String, Object> out = baseResult(session, documentId, "APPLICATION");
         out.put("testType", "APPLICATION");
-        out.put("testTypeLabel", "Existing Application");
+        out.put("testTypeLabel", "Synthetic validation fixture");
+        out.put("evidenceKind", "SYNTHETIC_VALIDATION_FIXTURE");
+        out.put("POLICY_TEST_APPLICATION_BOUND", false);
         out.put("applicationCode", app.applicationCode());
         out.put("applicationLabel", app.displayName());
         out.put("applicationMutated", false);
@@ -364,6 +406,289 @@ public class PolicyStudioTestExperienceService {
         remember(documentId, out);
         stampLifecycleTestEvidence(session, out);
         return out;
+    }
+
+    private UUID resolveBoundApplicationId(Map<String, Object> body) {
+        if (body == null) {
+            return null;
+        }
+        UUID fromId = parseUuid(body.get("applicationId"));
+        if (fromId != null) {
+            return fromId;
+        }
+        UUID fromCode = parseUuid(body.get("applicationCode"));
+        if (fromCode != null) {
+            return fromCode;
+        }
+        String number = body.get("applicationNumber") == null
+                ? "" : String.valueOf(body.get("applicationNumber")).trim();
+        if (number.isBlank() || loanApplicationRepository == null) {
+            return null;
+        }
+        return loanApplicationRepository.findByApplicationNumber(number)
+                .map(LoanApplication::getId)
+                .orElse(null);
+    }
+
+    private static UUID parseUuid(Object raw) {
+        if (raw == null) {
+            return null;
+        }
+        String s = String.valueOf(raw).trim();
+        if (s.length() != 36) {
+            return null;
+        }
+        try {
+            return UUID.fromString(s);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private List<Map<String, Object>> listFrozenApplications(UUID policyDocumentId) {
+        if (freezeRepository == null) {
+            return List.of();
+        }
+        List<CanonicalApplicationConfigurationEntity> rows =
+                freezeRepository.findTop50ByStatusOrderByCreatedAtDesc(CanonicalResolutionStatus.RESOLVED.name());
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (CanonicalApplicationConfigurationEntity row : rows) {
+            CanonicalApplicationConfiguration freeze = CanonicalApplicationConfiguration.fromMap(row.getPackageJson());
+            if (freeze == null || freeze.applicationId() == null) {
+                continue;
+            }
+            if (policyDocumentId != null && freeze.policyDocumentId() != null
+                    && !policyDocumentId.equals(freeze.policyDocumentId())) {
+                continue;
+            }
+            Map<String, Object> item = new LinkedHashMap<>();
+            item.put("applicationId", freeze.applicationId().toString());
+            LoanApplication app = loanApplicationRepository == null
+                    ? null : loanApplicationRepository.findById(freeze.applicationId()).orElse(null);
+            item.put("applicationNumber", app == null ? null : app.getApplicationNumber());
+            item.put("status", app == null || app.getStatus() == null ? null : app.getStatus().name());
+            item.put("identityHash", row.getIdentityHash());
+            item.put("evaluationAsOf", freeze.evaluationAsOf() == null ? null : freeze.evaluationAsOf().toString());
+            item.put("policyDocumentId", freeze.policyDocumentId() == null ? null : freeze.policyDocumentId().toString());
+            item.put("scorecardId", freeze.scorecardId() == null ? null : freeze.scorecardId().toString());
+            item.put("scorecardVersion", freeze.scorecardVersion());
+            item.put("bureauReportId", freeze.bureauReportId() == null ? null : freeze.bureauReportId().toString());
+            item.put("freezeRowId", row.getId() == null ? null : row.getId().toString());
+            out.add(item);
+        }
+        return out;
+    }
+
+    private Map<String, Object> runFrozenApplicationTest(
+            PolicyStudioSession session, UUID documentId, UUID applicationId, String tenantHeader) {
+        if (observationalEvaluation == null) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Canonical observational evaluation is not available");
+        }
+        CanonicalObservationalEvaluation ev = observationalEvaluation.evaluate(applicationId);
+        if (!"COMPLETED".equals(ev.status())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Frozen canonical configuration is not executable: "
+                            + String.join(", ", ev.reasonCodes()));
+        }
+        CanonicalApplicationConfiguration freeze = ev.freeze();
+        boolean identityMatch = freeze != null && freeze.policyDocumentId() != null
+                && freeze.policyDocumentId().equals(documentId);
+
+        LoanApplication app = loanApplicationRepository == null
+                ? null : loanApplicationRepository.findById(applicationId).orElse(null);
+
+        List<Map<String, Object>> ruleResults = new ArrayList<>();
+        int passed = 0, failed = 0, deferred = 0, insufficient = 0, participating = 0;
+        boolean accountSoldExecuted = false;
+        boolean accountSoldPass = false;
+        for (Map<String, Object> row : ev.ruleEvidence()) {
+            Map<String, Object> face = presentCanonicalRule(row);
+            ruleResults.add(face);
+            boolean participates = Boolean.TRUE.equals(row.get("participates"));
+            String result = String.valueOf(row.getOrDefault("result", ""));
+            String ruleId = String.valueOf(row.getOrDefault("ruleId", ""));
+            boolean accountSold = ruleId.toUpperCase(Locale.ROOT).contains("ACCOUNT_SOLD");
+            if (!participates) {
+                deferred++;
+                if (accountSold) {
+                    accountSoldExecuted = false;
+                    accountSoldPass = "PASS".equalsIgnoreCase(result);
+                }
+                continue;
+            }
+            participating++;
+            switch (result) {
+                case "PASS" -> passed++;
+                case "FAIL" -> failed++;
+                default -> insufficient++;
+            }
+        }
+
+        String policyCode = ev.policy() == null || ev.policy().overall() == null
+                ? "DATA_INSUFFICIENT" : ev.policy().overall().name();
+        String scorecardCode = ev.scorecardEvidence() == null
+                ? null : String.valueOf(ev.scorecardEvidence().getOrDefault("bandOutcome",
+                ev.scorecardEvidence().get("outcome")));
+        String finalCode = ev.canonicalDecision() == null ? policyCode : ev.canonicalDecision();
+        String policyLabel = decisionDisplay(policyCode);
+        String finalLabel = decisionDisplay(finalCode);
+
+        Map<String, Object> scorecard = new LinkedHashMap<>(ev.scorecardEvidence() == null
+                ? Map.of() : ev.scorecardEvidence());
+        List<Map<String, Object>> factors = new ArrayList<>();
+        Object rawFactors = scorecard.get("parameterResults");
+        if (!(rawFactors instanceof List<?>)) {
+            rawFactors = scorecard.get("factorEvidence");
+        }
+        if (rawFactors instanceof List<?> list) {
+            for (Object o : list) {
+                if (o instanceof Map<?, ?> m) {
+                    factors.add(presentCanonicalFactor(m));
+                }
+            }
+        }
+
+        Map<String, Object> out = baseResult(session, documentId, "APPLICATION");
+        out.put("testType", "APPLICATION");
+        out.put("testTypeLabel", "Application Test");
+        out.put("evidenceKind", "FROZEN_APPLICATION");
+        out.put("POLICY_TEST_APPLICATION_BOUND", true);
+        out.put("POLICY_TEST_FREEZE_IDENTITY_MATCH", identityMatch);
+        out.put("evaluationEngine", APPLICATION_TEST_ENGINE);
+        out.put("decisionPrecedence", CanonicalShadowUnderwritingService.AGGREGATION_AUTHORITY);
+        out.put("applicationId", applicationId.toString());
+        out.put("applicationNumber", app == null ? null : app.getApplicationNumber());
+        out.put("applicationLabel", app == null ? applicationId.toString() : app.getApplicationNumber());
+        out.put("applicationMutated", false);
+        out.put("policyMutated", false);
+        out.put("canonicalRuntimeUsedForLiveDecision", false);
+        out.put("identityHash", ev.identityHash());
+        out.put("freezeRowId", ev.freezeRowId() == null ? null : ev.freezeRowId().toString());
+        out.put("evaluationAsOf", freeze == null || freeze.evaluationAsOf() == null
+                ? null : freeze.evaluationAsOf().toString());
+        out.put("bureauReportId", freeze == null || freeze.bureauReportId() == null
+                ? null : freeze.bureauReportId().toString());
+        out.putAll(ev.lookupCounts());
+        out.put("parameterEvidence", ev.parameterEvidence());
+        out.put("ruleResults", ruleResults);
+        out.put("participatingRuleCount", participating);
+        out.put("deferredRuleCount", deferred);
+        out.put("POLICY_TEST_ACCOUNT_SOLD_EXECUTED", accountSoldExecuted);
+        out.put("ACCOUNT_SOLD_TREATED_AS_PASS", accountSoldPass);
+        out.put("summary", Map.of(
+                "passed", passed,
+                "failed", failed,
+                "needsManualInput", 0,
+                "couldNotEvaluate", insufficient,
+                "deferred", deferred,
+                "total", ruleResults.size()));
+        out.put("simulatedDecisionCode", finalCode);
+        out.put("simulatedDecision", finalLabel);
+        out.put("policyResult", policyCode);
+        out.put("policyResultLabel", policyLabel);
+        out.put("scorecardResult", scorecardCode);
+        out.put("canonicalFinalDecision", finalCode);
+        out.put("canonicalDecisionReason", ev.aggregation() == null
+                ? List.of() : ev.aggregation().reasonCodes());
+        out.put("scorecardIncluded", true);
+        out.put("scorecardExecuted", true);
+        out.put("scorecard", scorecard);
+        out.put("scorecardFactors", factors);
+        out.put("scorecardId", freeze == null || freeze.scorecardId() == null
+                ? scorecard.get("scorecardId") : freeze.scorecardId().toString());
+        out.put("scorecardVersion", freeze == null ? scorecard.get("scorecardVersion") : freeze.scorecardVersion());
+        out.put("aggregation", ev.aggregationMap());
+        remember(documentId, out);
+        stampLifecycleTestEvidence(session, out);
+        return out;
+    }
+
+    private static Map<String, Object> presentCanonicalRule(Map<String, Object> row) {
+        Map<String, Object> face = new LinkedHashMap<>();
+        String ruleId = String.valueOf(row.getOrDefault("ruleId", ""));
+        boolean participates = Boolean.TRUE.equals(row.get("participates"));
+        String result = String.valueOf(row.getOrDefault("result", "DATA_INSUFFICIENT"));
+        boolean deferred = Boolean.TRUE.equals(row.get("deferred"))
+                || "DEFERRED_SOURCE_NOT_PROVEN".equalsIgnoreCase(String.valueOf(row.getOrDefault("disposition", "")));
+        String resultCode = participates ? result
+                : (deferred ? "DEFERRED_SOURCE_NOT_PROVEN" : "NON_PARTICIPATING");
+        face.put("systemRuleId", ruleId);
+        face.put("ruleName", ruleId);
+        face.put("ruleKey", ruleId);
+        face.put("participates", participates);
+        face.put("deferred", deferred || !participates);
+        face.put("resultCode", resultCode);
+        face.put("result", decisionDisplay(resultCode));
+        face.put("canonicalResult", result);
+        face.put("operator", row.get("operator"));
+        face.put("threshold", row.get("threshold"));
+        face.put("parameterIds", row.get("parameterIds"));
+        face.put("parameterValues", row.get("parameterValues"));
+        face.put("conditionMatched", "PASS".equals(result));
+        face.put("businessResult", result);
+        face.put("decisionContribution", row.get("onTrue"));
+        face.put("onTrue", row.get("onTrue"));
+        face.put("onFalse", row.get("onFalse"));
+        face.put("why", row.get("reason"));
+        face.put("policyCondition", (row.get("operator") == null ? "" : row.get("operator") + " ")
+                + (row.get("threshold") == null ? "" : String.valueOf(row.get("threshold"))));
+        face.put("treatment", participates ? "PARTICIPATING" : "DEFERRED_NON_PARTICIPATING");
+        List<Map<String, Object>> actuals = new ArrayList<>();
+        Object ids = row.get("parameterIds");
+        if (ids instanceof List<?> list) {
+            for (Object id : list) {
+                Map<String, Object> a = new LinkedHashMap<>();
+                a.put("label", id);
+                a.put("value", row.get("parameterValues"));
+                a.put("displayValue", row.get("parameterValues") == null ? "—" : String.valueOf(row.get("parameterValues")));
+                a.put("unresolved", !participates || "DATA_INSUFFICIENT".equals(result));
+                actuals.add(a);
+            }
+        }
+        face.put("actuals", actuals);
+        return face;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> presentCanonicalFactor(Map<?, ?> raw) {
+        Map<String, Object> f = new LinkedHashMap<>();
+        f.put("parameter", raw.get("parameter"));
+        f.put("canonicalParameterId", raw.get("canonicalParameterId") == null
+                ? raw.get("parameter") : raw.get("canonicalParameterId"));
+        f.put("value", raw.get("valueUsed") == null ? raw.get("value") : raw.get("valueUsed"));
+        f.put("rawValue", raw.get("valueUsed") == null ? raw.get("value") : raw.get("valueUsed"));
+        f.put("status", raw.get("dataState") == null ? raw.get("canonicalStatus") : raw.get("dataState"));
+        f.put("canonicalStatus", raw.get("canonicalStatus"));
+        f.put("rawWeight", raw.get("rawWeight"));
+        f.put("weight", raw.get("rawWeight"));
+        f.put("normalizedWeight", raw.get("normalizedWeight"));
+        f.put("bandPointsEarned", raw.get("pointsEarned") == null ? raw.get("bandPointsEarned") : raw.get("pointsEarned"));
+        f.put("factorScore", raw.get("pointsEarned"));
+        f.put("contribution", raw.get("contribution"));
+        f.put("missingDataBehaviour", raw.get("missingDataPolicy") == null
+                ? raw.get("dataState") : raw.get("missingDataPolicy"));
+        f.put("required", raw.get("required"));
+        if (raw.get("execution") instanceof Map<?, ?> ex) {
+            f.put("provenance", ((Map<String, Object>) ex).get("provenance"));
+        }
+        return f;
+    }
+
+    static String decisionDisplay(String code) {
+        if (code == null || code.isBlank()) {
+            return "DATA INSUFFICIENT";
+        }
+        String n = code.trim().toUpperCase(Locale.ROOT).replace(' ', '_');
+        return switch (n) {
+            case "APPROVE", "APPROVED" -> "APPROVE";
+            case "REJECT", "REJECTED", "FAIL" -> "REJECT";
+            case "REFER", "MANUAL_REVIEW" -> "REFER";
+            case "PASS" -> "PASS";
+            case "DEFERRED_SOURCE_NOT_PROVEN", "NON_PARTICIPATING" -> "DEFERRED";
+            case "DATA_INSUFFICIENT" -> "DATA INSUFFICIENT";
+            default -> n.replace('_', ' ');
+        };
     }
 
     // ─── Required parameters ───────────────────────────────────────────────

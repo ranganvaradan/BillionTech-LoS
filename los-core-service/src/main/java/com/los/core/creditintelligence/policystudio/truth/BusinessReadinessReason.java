@@ -15,5 +15,7 @@ public enum BusinessReadinessReason {
     MANUAL_INPUT,
     NOT_SUPPORTED,
     NOT_APPLICABLE,
-    NOT_IN_CATALOGUE
+    NOT_IN_CATALOGUE,
+    /** GACAT SOURCE_NOT_PROVEN — governed deferral, not a configuration error. */
+    DEFERRED_SOURCE_NOT_AVAILABLE
 }

@@ -1,21 +1,11 @@
 package com.los.core.creditintelligence.policystudio.runtime.canonicalshadow;
 
 import com.los.core.creditintelligence.config.CreditIntelligenceProperties;
-import com.los.core.creditintelligence.policystudio.graph.CiPolicyRuleGraph;
-import com.los.core.creditintelligence.policystudio.graph.CiPolicyRuleGraphNode;
-import com.los.core.creditintelligence.policystudio.parameters.execution.CanonicalParameterExecutionService;
-import com.los.core.creditintelligence.policystudio.parameters.execution.EvaluationContext;
-import com.los.core.creditintelligence.policystudio.repository.CiPolicyRuleGraphNodeRepository;
-import com.los.core.creditintelligence.policystudio.repository.CiPolicyRuleGraphRepository;
-import com.los.core.creditintelligence.policystudio.runtime.CanonicalPolicyResult;
-import com.los.core.creditintelligence.policystudio.runtime.CanonicalPolicyRuntime;
-import com.los.core.creditintelligence.policystudio.runtime.CanonicalRuleResult;
-import com.los.core.creditintelligence.policystudio.runtime.canonicalconfig.CanonicalApplicationConfiguration;
 import com.los.core.creditintelligence.policystudio.runtime.canonicalconfig.CanonicalApplicationConfigurationEntity;
 import com.los.core.creditintelligence.policystudio.runtime.canonicalconfig.CanonicalApplicationConfigurationRepository;
 import com.los.core.creditintelligence.policystudio.runtime.canonicalconfig.CanonicalResolutionStatus;
+import com.los.core.creditintelligence.policystudio.runtime.canonicallive.CanonicalLiveUnderwritingService;
 import com.los.core.creditintelligence.policystudio.runtime.ownership.FinalUnderwritingDecision;
-import com.los.core.creditintelligence.policystudio.runtime.ownership.PolicyScorecardPrecedence;
 import com.los.core.model.entity.LoanApplication;
 import com.los.core.model.entity.UnderwritingEvaluation;
 import com.los.core.service.underwriting.MultiRuleEvalResult;
@@ -51,11 +41,7 @@ public class CanonicalShadowUnderwritingService {
     private final CanonicalApplicationConfigurationRepository freezeRepository;
     private final CanonicalShadowEvaluationRepository evaluationRepository;
     private final CanonicalShadowComparisonRepository comparisonRepository;
-    private final CanonicalShadowContextFactory contextFactory;
-    private final CanonicalShadowScorecardExecutor scorecardExecutor;
-    private final CanonicalParameterExecutionService cpes;
-    private final CiPolicyRuleGraphRepository graphRepository;
-    private final CiPolicyRuleGraphNodeRepository nodeRepository;
+    private final CanonicalObservationalEvaluationService observationalEvaluation;
 
     public boolean isEnabledFor(LoanApplication app) {
         CreditIntelligenceProperties.CanonicalShadow cfg = properties.getCanonicalShadow();
@@ -95,6 +81,11 @@ public class CanonicalShadowUnderwritingService {
             UnderwritingEvaluation productionEval,
             MultiRuleEvalResult multi,
             String productionOutcome) {
+        if (isCanonicalLiveProduction(productionEval)) {
+            log.debug("canonical shadow skipped — live authority already CANONICAL_LIVE app={}",
+                    app == null ? null : app.getId());
+            return;
+        }
         try {
             runAndPersist(app, productionEval, multi, productionOutcome, false);
         } catch (Exception ex) {
@@ -148,98 +139,28 @@ public class CanonicalShadowUnderwritingService {
                     List.of(), List.of(), Map.of(), Map.of(), Map.of(),
                     captureLegacy(productionEval, multi, productionOutcome));
         }
-        CanonicalApplicationConfiguration freeze =
-                CanonicalApplicationConfiguration.fromMap(freezeRow.get().getPackageJson());
         String hash = freezeRow.get().getIdentityHash();
         Optional<CanonicalShadowEvaluationEntity> existing = existing(productionEval, app.getId(), hash);
         if (existing.isPresent()) {
             return existing.get();
         }
-        if (freeze == null || freeze.evaluationAsOf() == null) {
-            return persistTerminal(app, productionEval, freezeRow.get().getId(), hash,
-                    "NOT_EXECUTABLE", CanonicalShadowDecision.NOT_EXECUTABLE,
-                    List.of(CanonicalShadowFailureCode.EVALUATION_AS_OF_MISSING.name()),
-                    List.of(), List.of(), Map.of(), Map.of(), Map.of(),
-                    captureLegacy(productionEval, multi, productionOutcome));
-        }
-        if (freeze.policyDocumentId() == null || freeze.policyDocumentVersion() == null) {
-            return persistTerminal(app, productionEval, freezeRow.get().getId(), hash,
-                    "NOT_EXECUTABLE", CanonicalShadowDecision.NOT_EXECUTABLE,
-                    List.of(CanonicalShadowFailureCode.POLICY_GRAPH_NOT_PINNED.name()),
-                    List.of(), List.of(), Map.of(), Map.of(), Map.of(),
-                    captureLegacy(productionEval, multi, productionOutcome));
-        }
 
-        Optional<CiPolicyRuleGraph> graph = graphRepository.findByPolicyDocumentIdAndDocumentVersion(
-                freeze.policyDocumentId(), freeze.policyDocumentVersion());
-        if (graph.isEmpty()) {
-            return persistTerminal(app, productionEval, freezeRow.get().getId(), hash,
-                    "NOT_EXECUTABLE", CanonicalShadowDecision.NOT_EXECUTABLE,
-                    List.of(CanonicalShadowFailureCode.POLICY_NOT_EXECUTABLE.name()),
-                    List.of(), List.of(), Map.of(), Map.of(), Map.of(),
-                    captureLegacy(productionEval, multi, productionOutcome));
+        CanonicalObservationalEvaluation ev = observationalEvaluation.evaluateFreeze(freezeRow.get());
+        CanonicalShadowDecision decision;
+        try {
+            decision = CanonicalShadowDecision.valueOf(ev.canonicalDecision() == null
+                    ? CanonicalShadowDecision.NOT_EXECUTABLE.name() : ev.canonicalDecision());
+        } catch (Exception e) {
+            decision = CanonicalShadowDecision.NOT_EXECUTABLE;
         }
-
-        EvaluationContext spine = contextFactory.build(freeze, properties.getDefaultTenantId());
-        List<CiPolicyRuleGraphNode> nodes = nodeRepository.findByGraphIdOrderBySortOrderAsc(graph.get().getId());
-        List<CanonicalPolicyRuntime.RuleSpec> specs = new ArrayList<>();
-        List<Map<String, Object>> ruleEvidence = new ArrayList<>();
-        CanonicalPolicyRuntime runtime = new CanonicalPolicyRuntime(cpes);
-        for (CiPolicyRuleGraphNode node : nodes) {
-            boolean participates = participates(node);
-            Map<String, Object> expr = node.getExpression() == null ? Map.of() : node.getExpression();
-            CanonicalPolicyRuntime.RuleSpec spec = new CanonicalPolicyRuntime.RuleSpec(
-                    node.getRuleKey() == null ? node.getId().toString() : node.getRuleKey(),
-                    node.getContentHash(),
-                    expr,
-                    node.getOnMissing());
-            CanonicalRuleResult rr = participates
-                    ? runtime.evaluateRule(spec, spine, freeze.evaluationAsOf())
-                    : skipped(node, freeze);
-            if (participates) {
-                specs.add(spec);
-            }
-            ruleEvidence.add(ruleRow(node, participates, rr, expr));
-        }
-
-        CanonicalPolicyResult policy = runtime.evaluate(new CanonicalPolicyRuntime.PolicyRequest(
-                freeze.policyDocumentId().toString(),
-                String.valueOf(freeze.policyDocumentVersion()),
-                specs,
-                spine,
-                freeze.evaluationAsOf()));
-
-        List<Map<String, Object>> parameterEvidence =
-                CanonicalShadowParameterEvidence.rows(policy, freeze, spine, cpes);
-        Map<String, Object> scorecard = scorecardExecutor.execute(freeze, spine);
-        boolean scorecardBroken = Boolean.FALSE.equals(scorecard.get("executable"))
-                && freeze.scorecardId() != null
-                && !Boolean.TRUE.equals(scorecard.get("scorecardExplicitlyAbsent"));
-        if (scorecardBroken) {
-            return persistTerminal(app, productionEval, freezeRow.get().getId(), hash,
-                    "NOT_EXECUTABLE", CanonicalShadowDecision.NOT_EXECUTABLE,
-                    List.of(String.valueOf(scorecard.getOrDefault("reason",
-                            CanonicalShadowFailureCode.SCORECARD_NOT_EXECUTABLE.name()))),
-                    parameterEvidence, ruleEvidence, scorecard, policy.toMap(),
-                    Map.of("authority", AGGREGATION_AUTHORITY, "service", SERVICE),
-                    captureLegacy(productionEval, multi, productionOutcome));
-        }
-
-        FinalUnderwritingDecision.FinalOutcome band = bandOf(scorecard);
-        var prec = PolicyScorecardPrecedence.combine(policy, band, null);
-        CanonicalShadowDecision decision = mapDecision(prec.outcome());
-        Map<String, Object> aggregation = new LinkedHashMap<>();
-        aggregation.put("authority", AGGREGATION_AUTHORITY);
+        Map<String, Object> policyMap = ev.policy() == null ? Map.of() : ev.policy().toMap();
+        Map<String, Object> aggregation = ev.aggregationMap();
         aggregation.put("service", SERVICE);
-        aggregation.put("precedence", prec.ruleApplied());
-        aggregation.put("reasonCodes", prec.reasonCodes());
-        aggregation.put("canonicalRuntimeUsedForLiveDecision", false);
-        aggregation.put("liveDecisionAuthorityUnchanged", true);
 
         CanonicalShadowEvaluationEntity saved = persistTerminal(
                 app, productionEval, freezeRow.get().getId(), hash,
-                "COMPLETED", decision, List.of(),
-                parameterEvidence, ruleEvidence, scorecard, policy.toMap(), aggregation,
+                ev.status(), decision, ev.reasonCodes(),
+                ev.parameterEvidence(), ev.ruleEvidence(), ev.scorecardEvidence(), policyMap, aggregation,
                 captureLegacy(productionEval, multi, productionOutcome));
         return saved;
     }
@@ -306,9 +227,9 @@ public class CanonicalShadowUnderwritingService {
                 .mismatchCounts(mapOf(compared.get("mismatchCounts")))
                 .mismatches(listOfMaps(compared.get("mismatches")))
                 .policyTestEquivalence(Map.of(
-                        "note", "Computed in unit tests against Policy Studio Test; live inspect may be empty.",
-                        "policyTestScorecardAvailable", false,
-                        "scorecardConvergenceGap", true))
+                        "note", "Policy Studio Application Test uses CanonicalObservationalEvaluationService.",
+                        "policyTestScorecardAvailable", true,
+                        "scorecardConvergenceGap", false))
                 .legacyEvidence(legacy)
                 .build();
         comparisonRepository.save(cmp);
@@ -375,60 +296,6 @@ public class CanonicalShadowUnderwritingService {
         return src != null && "LEGACY".equalsIgnoreCase(String.valueOf(src.get("underwritingSource")));
     }
 
-    private static Map<String, Object> ruleRow(
-            CiPolicyRuleGraphNode node, boolean participates, CanonicalRuleResult rr, Map<String, Object> expr) {
-        Map<String, Object> row = new LinkedHashMap<>();
-        row.put("ruleId", node.getRuleKey());
-        row.put("ruleVersion", node.getContentHash());
-        row.put("ruleState", node.getRuleType());
-        row.put("participates", participates);
-        row.put("operands", rr.canonicalParameterIds());
-        row.put("parameterIds", rr.canonicalParameterIds());
-        row.put("operator", rr.operator());
-        row.put("threshold", rr.expectedOrThreshold());
-        row.put("parameterValues", rr.actualExecution() == null ? null : rr.actualExecution().value());
-        row.put("result", rr.result() == null ? null : rr.result().name());
-        row.put("reason", rr.reason());
-        row.put("missingDataStatus", rr.result() == CanonicalRuleResult.RuleOutcome.DATA_INSUFFICIENT
-                ? "MISSING" : "OK");
-        row.put("onTrue", node.getOnTrue());
-        row.put("onFalse", node.getOnFalse());
-        row.put("onMissing", node.getOnMissing());
-        row.put("expressionPresent", expr != null && !expr.isEmpty());
-        return row;
-    }
-
-    private static CanonicalRuleResult skipped(CiPolicyRuleGraphNode node, CanonicalApplicationConfiguration freeze) {
-        return new CanonicalRuleResult(
-                node.getRuleKey(),
-                node.getContentHash(),
-                List.of(),
-                null,
-                null,
-                null,
-                CanonicalRuleResult.RuleOutcome.DATA_INSUFFICIENT,
-                freeze.evaluationAsOf(),
-                "NON_PARTICIPATING",
-                Map.of("participates", false),
-                List.of());
-    }
-
-    static boolean participates(CiPolicyRuleGraphNode node) {
-        return com.los.core.creditintelligence.policystudio.graph.PolicyGraphParticipation.participates(node);
-    }
-
-    private static FinalUnderwritingDecision.FinalOutcome bandOf(Map<String, Object> scorecard) {
-        Object raw = scorecard.get("bandOutcome");
-        if (raw == null) {
-            return FinalUnderwritingDecision.FinalOutcome.REFER;
-        }
-        try {
-            return FinalUnderwritingDecision.FinalOutcome.valueOf(String.valueOf(raw));
-        } catch (Exception e) {
-            return FinalUnderwritingDecision.FinalOutcome.REFER;
-        }
-    }
-
     static CanonicalShadowDecision mapDecision(FinalUnderwritingDecision.FinalOutcome outcome) {
         if (outcome == null) {
             return CanonicalShadowDecision.NOT_EXECUTABLE;
@@ -459,6 +326,14 @@ public class CanonicalShadowUnderwritingService {
 
     private static boolean notEmpty(List<String> list) {
         return list != null && !list.isEmpty();
+    }
+
+    static boolean isCanonicalLiveProduction(UnderwritingEvaluation productionEval) {
+        if (productionEval == null || productionEval.getSelectedSourceJson() == null) {
+            return false;
+        }
+        Object authority = productionEval.getSelectedSourceJson().get("productionAuthority");
+        return CanonicalLiveUnderwritingService.PRODUCTION_AUTHORITY.equals(String.valueOf(authority));
     }
 
     @SuppressWarnings("unchecked")

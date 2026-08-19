@@ -15,4 +15,6 @@ public interface CanonicalApplicationConfigurationRepository
             UUID applicationId, String status);
 
     List<CanonicalApplicationConfigurationEntity> findByApplicationIdOrderByCreatedAtDesc(UUID applicationId);
+
+    List<CanonicalApplicationConfigurationEntity> findTop50ByStatusOrderByCreatedAtDesc(String status);
 }

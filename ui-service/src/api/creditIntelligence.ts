@@ -447,6 +447,8 @@ export type PolicyTestContext = Record<string, unknown> & {
   ignoredRuleParameters?: Array<Record<string, unknown>>
   readiness?: Record<string, unknown>
   applications?: Array<Record<string, unknown>>
+  frozenApplications?: Array<Record<string, unknown>>
+  applicationNote?: string
   recentTests?: Array<Record<string, unknown>>
   historicalBatch?: Record<string, unknown>
 }
@@ -482,7 +484,9 @@ export async function runPolicyQuickTest(
 export async function runPolicyApplicationTest(
   documentId: string,
   body: {
-    applicationCode: string
+    applicationId?: string
+    applicationCode?: string
+    applicationNumber?: string
     testValues?: Record<string, unknown>
     reviewer?: string
   },

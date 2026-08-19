@@ -6,6 +6,9 @@ import com.los.core.creditintelligence.policystudio.parameters.execution.Canonic
 import com.los.core.creditintelligence.policystudio.parameters.execution.ExecutionSpineProducerBootstrap;
 import com.los.core.creditintelligence.policystudio.service.PolicyStudioOrchestrator;
 import com.los.core.creditintelligence.policystudio.service.PolicyTextExtractionService;
+import com.los.core.creditintelligence.policystudio.runtime.canonicalconfig.CanonicalApplicationConfigurationRepository;
+import com.los.core.creditintelligence.policystudio.runtime.canonicalshadow.CanonicalObservationalEvaluationService;
+import com.los.core.repository.LoanApplicationRepository;
 import com.los.core.repository.UnderwritingScorecardRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -43,7 +46,11 @@ class PolicyUx2eTestExperienceTest {
         when(defs.latestFor(any(), any())).thenReturn(Optional.empty());
         CanonicalParameterExecutionService spine = ExecutionSpineProducerBootstrap.standalone(defs);
         UnderwritingScorecardRepository scorecards = mock(UnderwritingScorecardRepository.class);
-        testExperience = new PolicyStudioTestExperienceService(props, orch, sim, spine, scorecards);
+        CanonicalObservationalEvaluationService observational = mock(CanonicalObservationalEvaluationService.class);
+        CanonicalApplicationConfigurationRepository freezeRepo = mock(CanonicalApplicationConfigurationRepository.class);
+        LoanApplicationRepository loans = mock(LoanApplicationRepository.class);
+        testExperience = new PolicyStudioTestExperienceService(
+                props, orch, sim, spine, scorecards, observational, freezeRepo, loans);
     }
 
     @Test

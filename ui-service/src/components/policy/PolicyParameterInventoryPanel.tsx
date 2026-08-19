@@ -84,6 +84,7 @@ export function PolicyParameterInventoryPanel({ documentId }: { documentId: stri
   })
   const unresolved = unresolvedTokens(rows)
   const needsSetup = rows.filter((r) =>
+    r.businessReadinessReason !== 'DEFERRED_SOURCE_NOT_AVAILABLE' &&
     requiresCalculationSetupAction(
       {
         primaryStatus: r.primaryStatus,

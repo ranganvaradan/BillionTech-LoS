@@ -49,6 +49,9 @@ export function requiresCalculationSetupAction(
   if (reason === 'CALCULATION_NOT_DEFINED' || reason === 'CALCULATION_INVALID') {
     return true
   }
+  if (reason === 'DEFERRED_SOURCE_NOT_AVAILABLE') {
+    return false
+  }
   const next = String(extras?.nextAction ?? truth?.nextAction ?? '')
   if (next === SETUP_CALCULATION_ACTION) {
     return true

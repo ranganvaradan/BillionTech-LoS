@@ -1,5 +1,7 @@
 package com.los.core.service.underwriting;
 
+import com.los.core.creditintelligence.policystudio.runtime.canonicallive.CanonicalLiveUnderwritingService;
+import com.los.core.creditintelligence.policystudio.runtime.canonicalshadow.CanonicalObservationalEvaluation;
 import com.los.core.model.entity.LoanApplication;
 import com.los.core.model.entity.UnderwritingEvaluation;
 import com.los.core.repository.UnderwritingEvaluationRepository;
@@ -121,6 +123,93 @@ public class UnderwritingEvaluationService {
                 .scorecardId(scorecardId)
                 .scorecardVersion(scorecardVersion)
                 .scorecardEvidenceJson(evidence)
+                .parameterResultsJson(parameterResults != null ? parameterResults : List.of())
+                .decisionSnapshotJson(decisionSnapshot)
+                .evaluatedBy(evaluatedBy)
+                .build();
+        return repository.save(e);
+    }
+
+    /**
+     * W11.4 — persist authoritative canonical live evaluation with frozen identity snapshot.
+     */
+    @Transactional
+    public UnderwritingEvaluation recordCanonicalLive(
+            UUID applicationId,
+            CanonicalLiveUnderwritingService.LiveOutcome live,
+            EffectiveUnderwritingContext ctx,
+            String evaluatedBy,
+            LoanApplication application) {
+        CanonicalObservationalEvaluation ev = live.evaluation();
+        MultiRuleEvalResult multi = live.multi();
+        UUID scorecardId = live.scorecardId();
+        Integer scorecardVersion = live.scorecardVersion();
+        List<Map<String, Object>> parameterResults = live.parameterResults();
+        Map<String, Object> scorecardEvidence = ev.scorecardEvidence() == null
+                ? Map.of() : new LinkedHashMap<>(ev.scorecardEvidence());
+
+        List<Map<String, Object>> rules = multi.perRule().stream()
+                .map(this::perRuleToMap)
+                .collect(Collectors.toList());
+        Map<String, Object> src = new LinkedHashMap<>();
+        src.put("bureauScoreSource", ctx.bureauSource());
+        src.put("incomeSource", ctx.incomeSource());
+        src.put("kycSource", ctx.kycSource());
+        src.put("productionAuthority", CanonicalLiveUnderwritingService.PRODUCTION_AUTHORITY);
+        src.put("underwritingSource", CanonicalLiveUnderwritingService.UNDERWRITING_SOURCE);
+        src.put("allowCanonicalAuthority", true);
+        src.put("canonicalRuntimeUsedForLiveDecision", true);
+        src.put("evaluationEngine", ev.lookupCounts() == null
+                ? CanonicalLiveUnderwritingService.SERVICE
+                : "CanonicalObservationalEvaluationService");
+        src.put("scorecardId", scorecardId == null ? null : scorecardId.toString());
+        src.put("scorecardVersion", scorecardVersion);
+        src.put("scorecardEvidence", scorecardEvidence);
+        src.put("freezeIdentityHash", ev.identityHash());
+        src.put("freezeRowId", ev.freezeRowId() == null ? null : ev.freezeRowId().toString());
+        src.put("lookupCounts", ev.lookupCounts());
+        if (ev.freeze() != null) {
+            src.put("customerCategoryId", ev.freeze().customerCategoryId() == null
+                    ? null : ev.freeze().customerCategoryId().toString());
+            src.put("customerCategoryVersion", ev.freeze().customerCategoryVersion());
+            src.put("policyDocumentId", ev.freeze().policyDocumentId() == null
+                    ? null : ev.freeze().policyDocumentId().toString());
+            src.put("policyDocumentVersion", ev.freeze().policyDocumentVersion());
+            src.put("policyApplicabilityId", ev.freeze().policyApplicabilityId() == null
+                    ? null : ev.freeze().policyApplicabilityId().toString());
+            src.put("bureauReportId", ev.freeze().bureauReportId() == null
+                    ? null : ev.freeze().bureauReportId().toString());
+            src.put("evaluationAsOf", ev.freeze().evaluationAsOf() == null
+                    ? null : ev.freeze().evaluationAsOf().toString());
+        }
+        if (application != null) {
+            src.put("applicationId", application.getId() == null ? applicationId.toString()
+                    : application.getId().toString());
+            src.put("workflowId", application.getWorkflowId() == null ? null
+                    : application.getWorkflowId().toString());
+            src.put("borrowerType", application.getBorrowerType());
+            src.put("loanProduct", application.getLoanProduct());
+            src.put("applicationNumber", application.getApplicationNumber());
+        }
+        Map<String, Object> eff = new HashMap<>();
+        eff.putAll(ctx.toMap());
+        Map<String, Object> decisionSnapshot = snapshotBuilder.buildCanonicalLive(
+                application, live, ctx, evaluatedBy);
+        src.put("decisionConfigurationSnapshot", decisionSnapshot);
+        src.put("snapshotImmutable", true);
+        src.put("canonicalFreezePackage", CanonicalLiveUnderwritingService.freezeSummary(
+                ev.freeze(), ev.identityHash()));
+        UnderwritingEvaluation e = UnderwritingEvaluation.builder()
+                .applicationId(applicationId)
+                .evaluatedAt(Instant.now())
+                .aggregateDecision(multi.aggregateCreditDecision())
+                .aggregateScore(multi.aggregateRiskScore())
+                .effectiveValuesJson(eff)
+                .ruleResultsJson(rules)
+                .selectedSourceJson(new HashMap<>(src))
+                .scorecardId(scorecardId)
+                .scorecardVersion(scorecardVersion)
+                .scorecardEvidenceJson(scorecardEvidence.isEmpty() ? null : scorecardEvidence)
                 .parameterResultsJson(parameterResults != null ? parameterResults : List.of())
                 .decisionSnapshotJson(decisionSnapshot)
                 .evaluatedBy(evaluatedBy)
