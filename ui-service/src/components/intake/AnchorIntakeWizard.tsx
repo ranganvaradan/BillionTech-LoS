@@ -49,7 +49,7 @@ import { BORROWER_TYPE_LABELS } from '@/catalog/borrowerTypes'
 import { ANCHOR_BORROWER_TYPE } from '@/lib/intake/anchorIntakeConstants'
 import { ensureCitiesLoadedForStateName, ensureGeoStatesLoaded } from '@/lib/intake/masterGeoClientCache'
 import { validateIntakeLocation } from '@/lib/intake/intakeValidation'
-import { configuredKycStepNames } from '@/lib/workflow/kycStepIntakeCatalog'
+import { configuredKycStepNames, stepNameFromWorkflowStep } from '@/lib/workflow/kycStepIntakeCatalog'
 import {
   resolveWorkflowAllowedStates,
   validateWorkflowCustomFields,
@@ -115,18 +115,43 @@ function parseIdentitySchema(
   workflow: WorkflowConfigResponse | null,
   borrowerType: BorrowerType,
 ): IdentityFieldDef[] {
-  const configuredSteps = new Set(configuredKycStepNames(workflow?.steps ?? []))
+  const steps = workflow?.steps ?? []
+  const configuredSteps = new Set(configuredKycStepNames(steps))
+  const isStepMandatory = (stepName: string): boolean => {
+    const row = steps.find((s) => stepNameFromWorkflowStep(s as Record<string, unknown>) === stepName) as
+      | Record<string, unknown>
+      | undefined
+    return row ? row.mandatory !== false : true
+  }
   const filterByWorkflowSteps = (fields: IdentityFieldDef[]) => {
     if (!isWorkflowDrivenIntake(workflow) || configuredSteps.size === 0) return fields
-    return fields.filter((field) => {
-      if (field.key === 'entityPan') return configuredSteps.has('PAN_VERIFY')
-      if (field.key === 'gstin') return configuredSteps.has('GSTIN_VERIFY')
-      if (field.key === 'cin') return configuredSteps.has('CIN_MCA21')
-      if (field.key === 'bankAccountNumber' || field.key === 'ifscCode' || field.key === 'accountHolderName') {
-        return configuredSteps.has('BANK_PENNY_DROP')
-      }
-      return true
-    })
+    return fields
+      .filter((field) => {
+        if (field.key === 'entityPan') return configuredSteps.has('PAN_VERIFY')
+        if (field.key === 'gstin') return configuredSteps.has('GSTIN_VERIFY')
+        if (field.key === 'cin') return configuredSteps.has('CIN_MCA21')
+        if (field.key === 'bankAccountNumber' || field.key === 'ifscCode' || field.key === 'accountHolderName') {
+          return configuredSteps.has('BANK_PENNY_DROP')
+        }
+        return true
+      })
+      .map((field) => {
+        // The workflow's own step config is authoritative on required-ness once it drives intake —
+        // a field the workflow includes must be required unless that step is explicitly optional,
+        // otherwise the wizard lets the RM submit and the backend rejects with a missing-field error.
+        if (field.key === 'gstin') return { ...field, required: isStepMandatory('GSTIN_VERIFY') }
+        if (field.key === 'entityPan') return { ...field, required: isStepMandatory('PAN_VERIFY') }
+        if (field.key === 'cin' && configuredSteps.has('CIN_MCA21')) {
+          return { ...field, required: isStepMandatory('CIN_MCA21') }
+        }
+        if (
+          (field.key === 'bankAccountNumber' || field.key === 'ifscCode' || field.key === 'accountHolderName') &&
+          configuredSteps.has('BANK_PENNY_DROP')
+        ) {
+          return { ...field, required: isStepMandatory('BANK_PENNY_DROP') }
+        }
+        return field
+      })
   }
   const raw = workflow?.intakeIdentitySchema
   if (!Array.isArray(raw) || raw.length === 0) {
