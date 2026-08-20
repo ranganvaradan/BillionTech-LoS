@@ -34,6 +34,20 @@ class LiveReadinessServicesTest {
     }
 
     @Test
+    void dataParameters_overviewAuthorableOnly_sourceCardsReconcileWithHeadlineTotal() {
+        Map<String, Object> overview = dataParams.overview(true);
+        Map<?, ?> totals = (Map<?, ?>) overview.get("totals");
+        int headline = ((Number) totals.get("registryCount")).intValue();
+
+        List<?> bySource = (List<?>) overview.get("bySourceSummary");
+        int sumOfCards = bySource.stream()
+                .mapToInt(row -> ((Number) ((Map<?, ?>) row).get("count")).intValue())
+                .sum();
+
+        assertThat(sumOfCards).isEqualTo(headline);
+    }
+
+    @Test
     void bureauPull_providesBureauScore() {
         Set<String> ids = WorkflowParameterProvidesCatalog.parametersProvidedByWorkflow(
                 List.of(Map.of("step", "PAN_VERIFY"), Map.of("step", "BUREAU_PULL")),

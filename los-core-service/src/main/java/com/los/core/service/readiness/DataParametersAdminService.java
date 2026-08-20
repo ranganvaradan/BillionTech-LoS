@@ -121,8 +121,8 @@ public class DataParametersAdminService {
                 GacatCatalogueAuthority.AUTHORITY_JAVA_SEED_TEST_ONLY.equals(reg.authority()));
         out.put("sources", reg.sources());
         out.put("catalogue", reg.catalogueView());
-        out.put("bySourceSummary", bySourceSummary(reg));
-        out.put("sourceCapabilitySummary", sourceCapabilitySummary(reg));
+        out.put("bySourceSummary", bySourceSummary(reg, false));
+        out.put("sourceCapabilitySummary", sourceCapabilitySummary(reg, false));
         out.put("gapsManual", gapsManual(reg));
         out.put("workflowProvides", WorkflowParameterProvidesCatalog.catalogueView());
         out.put("totals", totals(reg));
@@ -202,6 +202,8 @@ public class DataParametersAdminService {
             totals.put("derivedCount", derived);
             totals.put("manualCount", manual);
         }
+        out.put("bySourceSummary", bySourceSummary(reg, true));
+        out.put("sourceCapabilitySummary", sourceCapabilitySummary(reg, true));
         return out;
     }
 
@@ -305,15 +307,11 @@ public class DataParametersAdminService {
         return out;
     }
 
-    private List<Map<String, Object>> bySourceSummary(CanonicalParameterRegistry reg) {
+    private List<Map<String, Object>> bySourceSummary(CanonicalParameterRegistry reg, boolean authorableOnly) {
         List<Map<String, Object>> rows = new ArrayList<>();
         DataParametersCapabilitySemantics.LenderSourceSubscriptionProbe probe = subscriptionProbe();
         for (String source : reg.sources()) {
-            Map<String, Object> browse = reg.browseBySource(source);
-            int count = browse.get("count") instanceof Number n ? n.intValue() : 0;
-            if (count == 0 && ("Customer / Borrower".equals(source) || "Manual Input".equals(source))) {
-                // still show empty families for discovery honesty
-            }
+            Map<String, Object> browse = browseBySourceForSummary(reg, source, authorableOnly);
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("source", source);
             row.put("rawCount", browse.get("rawCount"));
@@ -323,6 +321,7 @@ public class DataParametersAdminService {
             row.put("count", browse.get("count"));
             List<CanonicalParameterDefinition> familyParams = reg.all().stream()
                     .filter(d -> GacatSourceFamily.sameFamily(source, d.evaluatedFrom()))
+                    .filter(d -> !authorableOnly || PolicyAuthorableParameterProjection.isAuthorable(d))
                     .toList();
             Map<String, Object> capSummary = DataParametersCapabilitySemantics.sourceFamilySummary(
                     source, familyParams, probe);
@@ -337,13 +336,41 @@ public class DataParametersAdminService {
         return rows;
     }
 
+    /**
+     * Same shape as {@link CanonicalParameterRegistry#browseBySource(String)}, filtered to the
+     * Policy Studio authorable universe (GOLDEN-POLICY-CONFIGURATION-TRUTH-AUDIT-1) when requested,
+     * with liveCount recomputed against the filtered rows so ready/not-ready always sums to count.
+     */
+    private Map<String, Object> browseBySourceForSummary(
+            CanonicalParameterRegistry reg, String source, boolean authorableOnly) {
+        Map<String, Object> full = reg.browseBySource(source);
+        if (!authorableOnly) return full;
+        List<Map<String, Object>> raw = filterAuthorableRows(asListOfMap(full.get("raw")));
+        List<Map<String, Object>> derived = filterAuthorableRows(asListOfMap(full.get("derived")));
+        List<Map<String, Object>> manual = filterAuthorableRows(asListOfMap(full.get("manual")));
+        Map<String, Object> out = new LinkedHashMap<>(full);
+        out.put("raw", raw);
+        out.put("derived", derived);
+        out.put("manual", manual);
+        out.put("rawCount", raw.size());
+        out.put("derivedCount", derived.size());
+        out.put("manualCount", manual.size());
+        out.put("count", raw.size() + derived.size() + manual.size());
+        long live = raw.stream().filter(r -> Boolean.TRUE.equals(r.get("productionReady"))).count()
+                + derived.stream().filter(r -> Boolean.TRUE.equals(r.get("productionReady"))).count()
+                + manual.stream().filter(r -> Boolean.TRUE.equals(r.get("productionReady"))).count();
+        out.put("liveCount", live);
+        return out;
+    }
+
     /** Source-level capability glance for lender UX (section I). */
-    private List<Map<String, Object>> sourceCapabilitySummary(CanonicalParameterRegistry reg) {
+    private List<Map<String, Object>> sourceCapabilitySummary(CanonicalParameterRegistry reg, boolean authorableOnly) {
         DataParametersCapabilitySemantics.LenderSourceSubscriptionProbe probe = subscriptionProbe();
         List<Map<String, Object>> rows = new ArrayList<>();
         for (String source : reg.sources()) {
             List<CanonicalParameterDefinition> familyParams = reg.all().stream()
                     .filter(d -> GacatSourceFamily.sameFamily(source, d.evaluatedFrom()))
+                    .filter(d -> !authorableOnly || PolicyAuthorableParameterProjection.isAuthorable(d))
                     .toList();
             if (familyParams.isEmpty()) continue;
             rows.add(DataParametersCapabilitySemantics.sourceFamilySummary(source, familyParams, probe));
