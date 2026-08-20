@@ -34,6 +34,8 @@ public final class ApplicationConfigurationAuthority {
             "WORKFLOW_ID_NOT_PERMITTED_ON_ORDINARY_INTAKE";
     public static final String WORKFLOW_PIN_IMMUTABLE = "WORKFLOW_PIN_IMMUTABLE";
     public static final String CONFIGURATION_NOT_READY = "CONFIGURATION_NOT_READY";
+    public static final String LMS_FIELD_NOT_PERMITTED_ON_CATEGORY_GOVERNED_APP =
+            "LMS_FIELD_NOT_PERMITTED_ON_CATEGORY_GOVERNED_APP";
 
     private static final Set<String> CONTROLLED_EXPLICIT_WORKFLOW_ROLES = Set.of(
             "ADMIN", "ADMINISTRATOR", "PLATFORM_ADMIN", "SYSTEM", "TEST");
@@ -112,6 +114,32 @@ public final class ApplicationConfigurationAuthority {
                 WORKFLOW_ID_NOT_PERMITTED_ON_ORDINARY_INTAKE,
                 "UPDATE_APPLICATION",
                 Map.of("workflowId", requestedWorkflowId.toString()));
+    }
+
+    /**
+     * Category-governed applications resolve lmsProductCode/lmsTenureUnit from the canonical
+     * {@code external_product_mapping} pin (LMS-PRODUCT-MAPPING-P0) — never an independent
+     * user input once Category governance applies (mirrors {@link #assertWorkflowIdUpdateAllowed}).
+     */
+    public static boolean isCategoryGoverned(LoanApplication app) {
+        return app != null
+                && app.getWorkflowResolutionSource() != null
+                && WorkflowResolutionSource.CATEGORY_SELECTION.name()
+                        .equalsIgnoreCase(app.getWorkflowResolutionSource());
+    }
+
+    public static void assertLmsFieldUpdateAllowed(LoanApplication app, String fieldName) {
+        if (!isCategoryGoverned(app)) {
+            return;
+        }
+        throw new BusinessRuleException(
+                "Category-governed applications resolve " + fieldName
+                        + " from the canonical external product mapping pin; it cannot be set directly.",
+                LMS_FIELD_NOT_PERMITTED_ON_CATEGORY_GOVERNED_APP,
+                "UPDATE_APPLICATION",
+                Map.of(
+                        "applicationId", app.getId() != null ? app.getId().toString() : "",
+                        "field", fieldName));
     }
 
     public static void assertReadyForSubmit(LoanApplication app) {

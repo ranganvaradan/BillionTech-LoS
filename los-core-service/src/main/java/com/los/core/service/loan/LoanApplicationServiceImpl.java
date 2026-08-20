@@ -313,9 +313,11 @@ public class LoanApplicationServiceImpl implements ILoanApplicationService {
         if (request.getRequestedAmount() != null) app.setRequestedAmount(request.getRequestedAmount());
         if (request.getTenureMonths() != null) app.setTenureMonths(request.getTenureMonths());
         if (request.getLmsProductCode() != null && !isInvoiceDiscountingProduct(app.getLoanProduct())) {
+            ApplicationConfigurationAuthority.assertLmsFieldUpdateAllowed(app, "lmsProductCode");
             app.setLmsProductCode(blankToNull(request.getLmsProductCode()));
         }
         if (request.getLmsTenureUnit() != null && !isInvoiceDiscountingProduct(app.getLoanProduct())) {
+            ApplicationConfigurationAuthority.assertLmsFieldUpdateAllowed(app, "lmsTenureUnit");
             app.setLmsTenureUnit(blankToNull(request.getLmsTenureUnit()));
         }
         if (request.getWorkflowId() != null) {

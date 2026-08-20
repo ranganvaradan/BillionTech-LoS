@@ -6,6 +6,7 @@ import com.los.core.model.entity.LoanApplication;
 import com.los.core.model.entity.WorkflowConfig;
 import com.los.core.repository.LoanApplicationRepository;
 import com.los.core.service.workflow.ActiveWorkflowConfigService;
+import com.los.core.service.workflow.ApplicationWorkflowResolver;
 import com.los.core.service.flow.step.StepExecutionRecordingService;
 import com.los.core.service.flow.step.StepResult;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +32,7 @@ public class WorkflowExecutionCoordinator {
     private final ActiveWorkflowConfigService activeWorkflowConfigService;
     private final StepExecutionRecordingService stepExecutionRecordingService;
     private final WorkflowResolutionOptions workflowResolutionOptions;
+    private final ApplicationWorkflowResolver applicationWorkflowResolver;
     @Value("${los.workflow.step-validation-strict:false}")
     private boolean stepValidationStrict;
 
@@ -55,6 +57,12 @@ public class WorkflowExecutionCoordinator {
         if (!WorkflowFlowStepOrderResolver.isPostSanctionFlowStep(flowStepType)
                 && app.getWorkflowId() == null) {
             throw com.los.core.service.workflow.ApplicationConfigurationAuthority.notPinned(app);
+        }
+        if (!WorkflowFlowStepOrderResolver.isPostSanctionFlowStep(flowStepType)
+                && app.getWorkflowId() != null) {
+            // P1: refuse to execute a flow step against a pinned Workflow Version whose content
+            // was mutated after resolve — immutable-published-version invariant.
+            applicationWorkflowResolver.resolveForExecution(app);
         }
         assertFlowStepAllowedIfStrict(app, flowStepType);
         return stepExecutionRecordingService.executeWithRecording(flowStepType, applicationId, context);

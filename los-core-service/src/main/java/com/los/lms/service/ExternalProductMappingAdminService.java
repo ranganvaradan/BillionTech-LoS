@@ -5,6 +5,7 @@ import com.los.lms.entity.ExternalProductMapping;
 import com.los.lms.repository.ExternalProductMappingRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -20,6 +21,11 @@ public class ExternalProductMappingAdminService {
 
     // Kept as a semantic constant (external system itself is configured per mapping row).
     private static final String ACTIVE_STATUS = "ACTIVE";
+
+    // Database-level backstop for the same rule enforced by findActiveOverlapping below
+    // (see V153__external_product_mapping_overlap_exclusion.sql) — closes the TOCTOU race
+    // where two concurrent admin requests could both pass the app-level SELECT check.
+    private static final String OVERLAP_EXCLUSION_CONSTRAINT = "excl_external_product_mapping_active_no_overlap";
 
     private final ExternalProductMappingRepository externalProductMappingRepository;
 
@@ -116,7 +122,12 @@ public class ExternalProductMappingAdminService {
                 .metadataJson(req.metadataJson())
                 .build();
 
-        return externalProductMappingRepository.save(entity);
+        try {
+            return externalProductMappingRepository.save(entity);
+        } catch (DataIntegrityViolationException e) {
+            throw translateOverlapViolation(e, req.losProductCode(), req.externalSystem(),
+                    "CREATE_EXTERNAL_PRODUCT_MAPPING");
+        }
     }
 
     public ExternalProductMapping patchStatus(UUID mappingId, String newStatus) {
@@ -160,8 +171,36 @@ public class ExternalProductMappingAdminService {
         }
 
         existing.setStatus(status);
-        existing = externalProductMappingRepository.save(existing);
+        try {
+            existing = externalProductMappingRepository.save(existing);
+        } catch (DataIntegrityViolationException e) {
+            throw translateOverlapViolation(e, existing.getLosProductCode(), existing.getExternalSystem(),
+                    "PATCH_EXTERNAL_PRODUCT_MAPPING_STATUS");
+        }
         return existing;
+    }
+
+    /**
+     * Translates the database-level exclusion-constraint violation (the TOCTOU backstop for
+     * the app-level findActiveOverlapping check above) into the same business error the app-level
+     * check throws. Any other integrity violation is rethrown unchanged.
+     */
+    private BusinessRuleException translateOverlapViolation(
+            DataIntegrityViolationException e, String losProductCode, String externalSystem, String action) {
+        String detail = String.valueOf(e.getMostSpecificCause() != null
+                ? e.getMostSpecificCause().getMessage() : e.getMessage());
+        if (!detail.contains(OVERLAP_EXCLUSION_CONSTRAINT)) {
+            throw e;
+        }
+        log.warn("[EXTERNAL-PRODUCT-MAPPING] Overlap exclusion constraint caught a concurrent activation race "
+                        + "losProductCode={} externalSystem={}", losProductCode, externalSystem);
+        return new BusinessRuleException(
+                "Overlapping ACTIVE/effective mappings are not allowed for the same (los_product_code, external_system).",
+                "LMS_PRODUCT_MAPPING_AMBIGUOUS_ACTIVE_OVERLAP",
+                action,
+                java.util.Map.of(
+                        "losProductCode", losProductCode,
+                        "externalSystem", externalSystem));
     }
 
     private static String normalizeStatus(String status) {

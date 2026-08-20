@@ -234,7 +234,6 @@ public class CategoryWorkflowBindService {
         }
 
         boolean eligible = "ACTIVE".equals(cfg.resolvedPublicationStatus())
-                || "SUPERSEDED".equals(cfg.resolvedPublicationStatus())
                 || cfg.isActive();
         checks.add(new CustomerCategoryDtos.ActivationCheck(
                 "WORKFLOW_ELIGIBLE",

@@ -77,6 +77,28 @@ class ApplicationConfigurationAuthorityCutoverTest {
     }
 
     @Test
+    void lmsFieldsCannotBeSetDirectlyOnCategoryGovernedApp() {
+        LoanApplication categoryGoverned = new LoanApplication();
+        categoryGoverned.setId(UUID.randomUUID());
+        categoryGoverned.setWorkflowResolutionSource(WorkflowResolutionSource.CATEGORY_SELECTION.name());
+        assertTrue(ApplicationConfigurationAuthority.isCategoryGoverned(categoryGoverned));
+        BusinessRuleException ex = assertThrows(BusinessRuleException.class, () ->
+                ApplicationConfigurationAuthority.assertLmsFieldUpdateAllowed(categoryGoverned, "lmsProductCode"));
+        assertEquals(ApplicationConfigurationAuthority.LMS_FIELD_NOT_PERMITTED_ON_CATEGORY_GOVERNED_APP, ex.getReason());
+
+        LoanApplication legacy = new LoanApplication();
+        legacy.setId(UUID.randomUUID());
+        legacy.setWorkflowId(UUID.randomUUID());
+        legacy.setWorkflowResolutionSource(WorkflowResolutionSource.EXPLICIT.name());
+        assertFalse(ApplicationConfigurationAuthority.isCategoryGoverned(legacy));
+        ApplicationConfigurationAuthority.assertLmsFieldUpdateAllowed(legacy, "lmsProductCode");
+
+        LoanApplication noSourceYet = new LoanApplication();
+        noSourceYet.setId(UUID.randomUUID());
+        ApplicationConfigurationAuthority.assertLmsFieldUpdateAllowed(noSourceYet, "lmsTenureUnit");
+    }
+
+    @Test
     void resolverSourceDoesNotDiscoverDefault() throws Exception {
         Path resolver = Path.of("src/main/java/com/los/core/service/workflow/ApplicationWorkflowResolver.java");
         String src = Files.readString(resolver);

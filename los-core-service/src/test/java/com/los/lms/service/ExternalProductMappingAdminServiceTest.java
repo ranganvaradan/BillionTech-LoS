@@ -8,6 +8,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -157,6 +158,50 @@ class ExternalProductMappingAdminServiceTest {
 
         assertEquals("LMS_PRODUCT_MAPPING_AMBIGUOUS_ACTIVE_OVERLAP", ex.getReason());
         verify(externalProductMappingRepository, never()).save(existing);
+    }
+
+    @Test
+    void createMapping_concurrentRaceCaughtByDbExclusionConstraint_isTranslatedToBusinessRuleException() {
+        // The app-level findActiveOverlapping SELECT passes (simulating a concurrent second
+        // request winning the race), but the database-level exclusion constraint added in
+        // V153__external_product_mapping_overlap_exclusion.sql rejects the INSERT.
+        LocalDate from = LocalDate.now().minusDays(10);
+        LocalDate to = LocalDate.now().plusDays(10);
+
+        when(externalProductMappingRepository.findActiveOverlapping(
+                        eq("TERM_LOAN"), eq("ENCORE"), eq("ACTIVE"), eq(from), eq(to), isNull()))
+                .thenReturn(List.of());
+        when(externalProductMappingRepository.save(any(ExternalProductMapping.class)))
+                .thenThrow(new DataIntegrityViolationException(
+                        "insert failed",
+                        new RuntimeException(
+                                "ERROR: conflicting key value violates exclusion constraint "
+                                        + "\"excl_external_product_mapping_active_no_overlap\"")));
+
+        BusinessRuleException ex = assertThrows(BusinessRuleException.class, () -> service.createMapping(
+                new ExternalProductMappingAdminService.CreateMappingRequest(
+                        "TERM_LOAN", "ENCORE", "CODE_NEW", 2, "ACTIVE", from, to, Map.of())));
+
+        assertEquals("LMS_PRODUCT_MAPPING_AMBIGUOUS_ACTIVE_OVERLAP", ex.getReason());
+    }
+
+    @Test
+    void createMapping_unrelatedIntegrityViolation_isNotSwallowed() {
+        LocalDate from = LocalDate.now().minusDays(10);
+        LocalDate to = LocalDate.now().plusDays(10);
+
+        when(externalProductMappingRepository.findActiveOverlapping(
+                        eq("TERM_LOAN"), eq("ENCORE"), eq("ACTIVE"), eq(from), eq(to), isNull()))
+                .thenReturn(List.of());
+        DataIntegrityViolationException unrelated = new DataIntegrityViolationException(
+                "insert failed", new RuntimeException("ERROR: null value in column \"external_product_code\""));
+        when(externalProductMappingRepository.save(any(ExternalProductMapping.class)))
+                .thenThrow(unrelated);
+
+        DataIntegrityViolationException thrown = assertThrows(DataIntegrityViolationException.class,
+                () -> service.createMapping(new ExternalProductMappingAdminService.CreateMappingRequest(
+                        "TERM_LOAN", "ENCORE", "CODE_NEW", 2, "ACTIVE", from, to, Map.of())));
+        assertSame(unrelated, thrown);
     }
 
     @Test

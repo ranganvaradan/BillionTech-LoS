@@ -9,6 +9,9 @@ import com.los.core.service.flow.step.FlowStepType;
 import com.los.core.service.flow.step.StepExecutionRecordingService;
 import com.los.core.service.flow.step.StepResult;
 import com.los.core.service.workflow.ActiveWorkflowConfigService;
+import com.los.core.service.workflow.ApplicationWorkflowResolver;
+import com.los.core.service.workflow.ResolvedWorkflowVersion;
+import com.los.core.service.workflow.WorkflowResolutionSource;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -36,6 +39,8 @@ class WorkflowExecutionCoordinatorTest {
     private ActiveWorkflowConfigService activeWorkflowConfigService;
     @Mock
     private StepExecutionRecordingService stepExecutionRecordingService;
+    @Mock
+    private ApplicationWorkflowResolver applicationWorkflowResolver;
 
     private LoanApplication app;
     private UUID id;
@@ -124,6 +129,31 @@ class WorkflowExecutionCoordinatorTest {
     }
 
     @Test
+    void mutatedPinnedWorkflow_blocksStepExecution() {
+        when(applicationWorkflowResolver.resolveForExecution(app))
+                .thenThrow(new BusinessRuleException(
+                        "mutated", ApplicationWorkflowResolver.WORKFLOW_VERSION_MUTATED,
+                        "EXECUTE_WORKFLOW_STEP", Map.of()));
+        WorkflowExecutionCoordinator c = newWorkflowCoordinator(false, WorkflowResolutionOptions.defaults());
+        BusinessRuleException ex = assertThrows(BusinessRuleException.class, () ->
+                c.executeFlowStepForApplication(id, FlowStepType.KYC_WORKFLOW, Map.of()));
+        assertEquals(ApplicationWorkflowResolver.WORKFLOW_VERSION_MUTATED, ex.getReason());
+    }
+
+    @Test
+    void unmutatedPinnedWorkflow_stepExecutionProceeds() {
+        when(applicationWorkflowResolver.resolveForExecution(app)).thenReturn(
+                new ResolvedWorkflowVersion(app.getWorkflowId(), 1, WorkflowResolutionSource.CATEGORY_SELECTION,
+                        null, "hash", false, null));
+        when(stepExecutionRecordingService.executeWithRecording(
+                eq(FlowStepType.KYC_WORKFLOW), eq(id), anyMap()))
+                .thenReturn(StepResult.ok(Map.of("allPassed", true)));
+        WorkflowExecutionCoordinator c = newWorkflowCoordinator(false, WorkflowResolutionOptions.defaults());
+        StepResult r = c.executeFlowStepForApplication(id, FlowStepType.KYC_WORKFLOW, Map.of());
+        assertEquals(true, r.output().get("allPassed"));
+    }
+
+    @Test
     void unpinnedApplication_resolvedOrderIsEmpty() {
         app.setWorkflowId(null);
         when(activeWorkflowConfigService.findActiveForApplication(any(LoanApplication.class)))
@@ -134,7 +164,8 @@ class WorkflowExecutionCoordinatorTest {
 
     private WorkflowExecutionCoordinator newWorkflowCoordinator(boolean strict, WorkflowResolutionOptions options) {
         WorkflowExecutionCoordinator c = new WorkflowExecutionCoordinator(
-                loanApplicationRepository, activeWorkflowConfigService, stepExecutionRecordingService, options);
+                loanApplicationRepository, activeWorkflowConfigService, stepExecutionRecordingService, options,
+                applicationWorkflowResolver);
         ReflectionTestUtils.setField(c, "stepValidationStrict", strict);
         return c;
     }

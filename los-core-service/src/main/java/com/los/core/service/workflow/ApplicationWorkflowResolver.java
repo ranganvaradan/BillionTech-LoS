@@ -31,6 +31,9 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class ApplicationWorkflowResolver {
 
+    /** Mirrors {@link com.los.core.customercategory.CategoryWorkflowBindService#WORKFLOW_VERSION_MUTATED}. */
+    public static final String WORKFLOW_VERSION_MUTATED = "WORKFLOW_VERSION_MUTATED";
+
     private final LoanApplicationRepository loanApplicationRepository;
     private final WorkflowConfigRepository workflowConfigRepository;
     private final AuditService auditService;
@@ -70,6 +73,31 @@ public class ApplicationWorkflowResolver {
     @Transactional(readOnly = true)
     public WorkflowConfig requireConfig(LoanApplication app) {
         return resolveForApplication(app).config();
+    }
+
+    /**
+     * Like {@link #resolveForApplication(LoanApplication)}, but fails closed (P1) instead of
+     * merely logging when the pinned Workflow Version's content has mutated since resolve —
+     * i.e. someone edited a supposedly-immutable published Workflow Version row in place.
+     * Use this at execution/progression boundaries (running or advancing a flow step); plain
+     * display/read paths should keep using {@link #resolveForApplication(LoanApplication)} so a
+     * mutated-but-inert application can still be inspected.
+     */
+    @Transactional(readOnly = true)
+    public ResolvedWorkflowVersion resolveForExecution(LoanApplication app) {
+        ResolvedWorkflowVersion resolved = resolveForApplication(app);
+        if (resolved.definitionMutatedSinceResolve()) {
+            throw new BusinessRuleException(
+                    "Pinned Workflow Version content changed after Category linked it "
+                            + "(P1: immutable Workflow versions) — cannot execute against a mutated definition",
+                    WORKFLOW_VERSION_MUTATED,
+                    "EXECUTE_WORKFLOW_STEP",
+                    Map.of(
+                            "applicationId", app.getId().toString(),
+                            "workflowId", resolved.workflowId().toString(),
+                            "storedContentHash", resolved.contentHash()));
+        }
+        return resolved;
     }
 
     @Transactional(readOnly = true)

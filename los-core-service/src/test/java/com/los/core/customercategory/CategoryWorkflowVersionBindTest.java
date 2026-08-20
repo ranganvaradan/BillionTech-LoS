@@ -371,6 +371,12 @@ class CategoryWorkflowVersionBindTest {
                 "WORKFLOW_APPLICABILITY_COMPATIBLE".equals(c.code()) && c.ok()));
         assertTrue(ready.checks().stream().noneMatch(c ->
                 c.detail() != null && c.detail().contains("WORKFLOW_NOT_ACTIVE")));
+        // Bound workflow version is SUPERSEDED — WORKFLOW_ELIGIBLE must fail so the Category
+        // cannot be activated while pinned to a version that is no longer selectable/executable
+        // (a Category activated here would become a permanently-excluded "ghost").
+        assertTrue(ready.checks().stream().anyMatch(c ->
+                "WORKFLOW_ELIGIBLE".equals(c.code()) && !c.ok()
+                        && c.detail() != null && c.detail().contains("SUPERSEDED")));
     }
 
     @Test
