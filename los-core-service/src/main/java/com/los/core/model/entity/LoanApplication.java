@@ -84,6 +84,29 @@ public class LoanApplication {
     private String lmsTenureUnit;
 
     /**
+     * Repayment/installment frequency shown on KFS and sanction documents (Day, Week, Month).
+     * Derived from {@code lmsTenureUnit} at intake — not independently selectable, since the
+     * actual EMI cadence is determined by the Encore product/tenure-unit combination.
+     */
+    @Column(name = "repayment_frequency", length = 20)
+    private String repaymentFrequency;
+
+    /**
+     * Credit Vintage — NEW / EXISTING_CUSTOMER / EXISTING_CUSTOMER_OF_GROUP. RM-selected at
+     * intake; participates in Customer Category discovery/eligibility matching. Immutable once
+     * a Customer Category is pinned (see ApplicationConfigurationAuthority.assertCreditVintageUpdateAllowed).
+     */
+    @Column(name = "credit_vintage", length = 40)
+    private String creditVintage;
+
+    /**
+     * Own Book vs Colending — captured at sanction time. Drives external_product_mapping
+     * resolution for the ordinary Encore-mapped LMS handover path.
+     */
+    @Column(name = "book_type", length = 20)
+    private String bookType;
+
+    /**
      * Resolved Workflow Version identity ({@code workflow_configs.id}).
      * Once set, orchestration must use this Version only (W1).
      */

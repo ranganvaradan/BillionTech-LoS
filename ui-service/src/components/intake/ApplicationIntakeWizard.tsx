@@ -118,6 +118,7 @@ import {
   resolveOccupationOptions,
 } from '@/lib/intake/intakeOptionCatalogs'
 import { IntakeTenureField } from '@/components/intake/IntakeTenureField'
+import { IntakeRepaymentFrequencyField } from '@/components/intake/IntakeRepaymentFrequencyField'
 import type { WorkflowConfigResponse } from '@/types/workflow'
 import type { BorrowerType } from '@/types/createApplication'
 import type { ApplicationStatus } from '@/types/application'
@@ -1547,7 +1548,24 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
                         ))}
                       </select>
                     </label>
-                    <div className="hidden sm:block" aria-hidden />
+                    <label className="block text-sm text-slate-700">
+                      <span className="mb-1 block text-xs font-medium text-slate-500">Credit Vintage *</span>
+                      <select
+                        className="bt-input w-full text-slate-900"
+                        value={form.creditVintage}
+                        onChange={(e) =>
+                          setForm((f) => ({
+                            ...f,
+                            creditVintage: e.target.value as IntakeFormState['creditVintage'],
+                          }))
+                        }
+                      >
+                        <option value="">Select credit vintage</option>
+                        <option value="NEW">New</option>
+                        <option value="EXISTING_CUSTOMER">Existing Customer</option>
+                        <option value="EXISTING_CUSTOMER_OF_GROUP">Existing Customer of Group</option>
+                      </select>
+                    </label>
                     {variant === 'staff' &&
                     productsForType.length > 0 &&
                     !activeCatalogHasSecuredProduct(activeWorkflows, form.borrowerType) &&
@@ -1586,6 +1604,7 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
                   lmsTenureUnit={form.lmsTenureUnit}
                   onChange={(v) => setForm((f) => ({ ...f, tenureMonths: v }))}
                 />
+                <IntakeRepaymentFrequencyField lmsTenureUnit={form.lmsTenureUnit} />
                 {shouldCollectLoanPurposeField(selectedWorkflow, true) &&
                 !(
                   isInvoiceDiscountingProduct(form.loanProduct) && form.invoiceOnboardingChoice === 'ANCHOR'
@@ -1652,6 +1671,24 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
                     ))}
                   </select>
                 </label>
+                <label className="block text-sm text-slate-700">
+                  <span className="mb-1 block text-xs font-medium text-slate-500">Credit Vintage *</span>
+                  <select
+                    className="bt-input w-full text-slate-900"
+                    value={form.creditVintage}
+                    onChange={(e) =>
+                      setForm((f) => ({
+                        ...f,
+                        creditVintage: e.target.value as IntakeFormState['creditVintage'],
+                      }))
+                    }
+                  >
+                    <option value="">Select credit vintage</option>
+                    <option value="NEW">New</option>
+                    <option value="EXISTING_CUSTOMER">Existing Customer</option>
+                    <option value="EXISTING_CUSTOMER_OF_GROUP">Existing Customer of Group</option>
+                  </select>
+                </label>
                 <div className="text-sm text-slate-700">
                   <span className="mb-1 block text-xs font-medium text-slate-500">Loan product *</span>
                   <select
@@ -1703,6 +1740,7 @@ export function ApplicationIntakeWizard({ mode, variant, editApplicationId }: Ap
                   lmsTenureUnit={form.lmsTenureUnit}
                   onChange={(v) => setForm((f) => ({ ...f, tenureMonths: v }))}
                 />
+                <IntakeRepaymentFrequencyField lmsTenureUnit={form.lmsTenureUnit} />
                 {shouldCollectLoanPurposeField(selectedWorkflow, true) &&
                 !(
                   isInvoiceDiscountingProduct(form.loanProduct) && form.invoiceOnboardingChoice === 'ANCHOR'

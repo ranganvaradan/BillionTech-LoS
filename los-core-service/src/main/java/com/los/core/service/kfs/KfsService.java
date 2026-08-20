@@ -123,6 +123,9 @@ public class KfsService {
         }
         charges.put("lmsTenureUnit", lmsTenureUnit);
         charges.put("installmentLabel", installmentLabelFor(lmsTenureUnit));
+        charges.put("repaymentFrequency", app.getRepaymentFrequency() != null && !app.getRepaymentFrequency().isBlank()
+                ? app.getRepaymentFrequency()
+                : capitalizeTenureUnit(lmsTenureUnit));
 
         if (edi && !hasStoredRepaymentSchedule(charges, encore)) {
             List<Map<String, Object>> computed = EdiKfsComputedScheduleBuilder.buildRawSchedule(
@@ -593,6 +596,18 @@ public class KfsService {
             case "day" -> "EDI";
             case "week" -> "EWI";
             default -> "EMI";
+        };
+    }
+
+    private static String capitalizeTenureUnit(String unit) {
+        if (unit == null || unit.isBlank()) {
+            return "Month";
+        }
+        return switch (unit.trim().toLowerCase()) {
+            case "day" -> "Day";
+            case "week" -> "Week";
+            case "month" -> "Month";
+            default -> unit.trim();
         };
     }
 }

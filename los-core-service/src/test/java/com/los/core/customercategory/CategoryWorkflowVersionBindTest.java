@@ -115,7 +115,7 @@ class CategoryWorkflowVersionBindTest {
                 new BigDecimal("20000"), new BigDecimal("500000"),
                 null, null, null, null,
                 null, null, null, null, null,
-                workflowId, workflowVersion);
+                workflowId, workflowVersion, null);
     }
 
     @Test
@@ -166,7 +166,7 @@ class CategoryWorkflowVersionBindTest {
                 new BigDecimal("20000"), new BigDecimal("500000"),
                 null, null, null, null,
                 null, null, appId, docId, "v1",
-                wfId, 1), actor);
+                wfId, 1, null), actor);
 
         assertEquals("LINKED", res.policyLinkageStatus());
         assertEquals(appId, res.policyApplicabilityId());
@@ -280,7 +280,7 @@ class CategoryWorkflowVersionBindTest {
                 new BigDecimal("20000"), new BigDecimal("500000"),
                 null, null, null, "rebind",
                 null, null, null, null, null,
-                wfId2, 1), actor);
+                wfId2, 1, null), actor);
 
         assertEquals(wfId2, res.workflowId());
         assertEquals("Alt Journey", res.workflowName());

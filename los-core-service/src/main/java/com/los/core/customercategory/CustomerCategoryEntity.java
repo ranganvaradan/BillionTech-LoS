@@ -49,6 +49,14 @@ public class CustomerCategoryEntity {
     @Column(name = "intake_segment", nullable = false, length = 32)
     private String intakeSegment;
 
+    /**
+     * Credit Vintage — NEW / EXISTING_CUSTOMER / EXISTING_CUSTOMER_OF_GROUP, or ANY (wildcard).
+     * A scoping dimension parallel to borrowerType/loanProduct/intakeSegment.
+     */
+    @Column(name = "credit_vintage", nullable = false, length = 40)
+    @Builder.Default
+    private String creditVintage = MatchWildcard.ANY;
+
     @Column(name = "min_amount", precision = 15, scale = 2)
     private BigDecimal minAmount;
 

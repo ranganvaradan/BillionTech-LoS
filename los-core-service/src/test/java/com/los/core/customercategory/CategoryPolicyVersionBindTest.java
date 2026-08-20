@@ -367,7 +367,7 @@ class CategoryPolicyVersionBindTest {
                 e.getMinAmount(), e.getMaxAmount(),
                 null, null, null, null,
                 null, null, appId, docId, "v1",
-                wfId, 1), actor);
+                wfId, 1, null), actor);
         assertEquals("LINKED", saved.policyLinkageStatus());
         assertEquals(appId, saved.policyApplicabilityId());
         assertEquals(1, e.getWorkflowVersion());

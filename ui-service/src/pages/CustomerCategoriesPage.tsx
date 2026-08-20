@@ -165,6 +165,7 @@ export function CustomerCategoriesPage() {
   const [borrowerType, setBorrowerType] = useState(ANY_TOKEN)
   const [loanProduct, setLoanProduct] = useState(ANY_TOKEN)
   const [intakeSegment, setIntakeSegment] = useState(ANY_TOKEN)
+  const [creditVintage, setCreditVintage] = useState(ANY_TOKEN)
   const [minAmount, setMinAmount] = useState('')
   const [maxAmount, setMaxAmount] = useState('')
   /** Transitional — retained only when already present on selected category. */
@@ -331,6 +332,7 @@ export function CustomerCategoriesPage() {
     setBorrowerType(r.entityType || r.borrowerType || ANY_TOKEN)
     setLoanProduct(r.loanProduct || ANY_TOKEN)
     setIntakeSegment(r.customerRole || r.intakeSegment || ANY_TOKEN)
+    setCreditVintage(r.creditVintage || ANY_TOKEN)
     setMinAmount(r.minAmount != null ? String(r.minAmount) : '')
     setMaxAmount(r.maxAmount != null ? String(r.maxAmount) : '')
     setPolicySetId(r.policySetId ?? null)
@@ -356,6 +358,7 @@ export function CustomerCategoriesPage() {
     setBorrowerType(ANY_TOKEN)
     setLoanProduct(ANY_TOKEN)
     setIntakeSegment(ANY_TOKEN)
+    setCreditVintage(ANY_TOKEN)
     setMinAmount('')
     setMaxAmount('')
     setPolicySetId(null)
@@ -385,6 +388,7 @@ export function CustomerCategoriesPage() {
       loanProduct: toApiMatchValue(loanProduct),
       customerRole,
       intakeSegment: customerRole,
+      creditVintage: toApiMatchValue(creditVintage),
       minAmount: parseOptionalAmount(minAmount),
       maxAmount: parseOptionalAmount(maxAmount),
       effectiveFrom: fromLocalInput(effectiveFrom),
@@ -883,6 +887,19 @@ export function CustomerCategoriesPage() {
                             {o.label}
                           </option>
                         ))}
+                      </select>
+                    </FormField>
+                    <FormField label="Credit Vintage">
+                      <select
+                        className="bt-input"
+                        value={creditVintage}
+                        onChange={(e) => setCreditVintage(e.target.value)}
+                        disabled={!editable}
+                      >
+                        <option value={ANY_TOKEN}>Any</option>
+                        <option value="NEW">New</option>
+                        <option value="EXISTING_CUSTOMER">Existing Customer</option>
+                        <option value="EXISTING_CUSTOMER_OF_GROUP">Existing Customer of Group</option>
                       </select>
                     </FormField>
                     <FormField label="Min amount (inclusive)" hint="Blank = unbounded below">

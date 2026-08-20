@@ -160,11 +160,14 @@ public class LoanApplicationServiceImpl implements ILoanApplicationService {
                 .borrowerType(request.getBorrowerType())
                 .loanProduct(request.getLoanProduct())
                 .intakeSegment(segment)
+                .creditVintage(blankToNull(request.getCreditVintage()))
                 .workflowId(workflowId)
                 .requestedAmount(request.getRequestedAmount())
                 .tenureMonths(request.getTenureMonths())
                 .lmsProductCode(resolveApplicationLmsProductCode(request.getLoanProduct(), request.getLmsProductCode()))
                 .lmsTenureUnit(resolveApplicationLmsTenureUnit(request.getLoanProduct(), request.getLmsTenureUnit()))
+                .repaymentFrequency(resolveApplicationRepaymentFrequency(
+                        request.getLoanProduct(), request.getLmsTenureUnit(), request.getRepaymentFrequency()))
                 .personalInfo(personal)
                 .businessInfo(ApplicantIdentityResolver.canonicaliseBusinessInfo(request.getBusinessInfo()))
                 .financialInfo(request.getFinancialInfo())
@@ -319,9 +322,14 @@ public class LoanApplicationServiceImpl implements ILoanApplicationService {
         if (request.getLmsTenureUnit() != null && !isInvoiceDiscountingProduct(app.getLoanProduct())) {
             ApplicationConfigurationAuthority.assertLmsFieldUpdateAllowed(app, "lmsTenureUnit");
             app.setLmsTenureUnit(blankToNull(request.getLmsTenureUnit()));
+            app.setRepaymentFrequency(capitalizeTenureUnit(app.getLmsTenureUnit()));
         }
         if (request.getWorkflowId() != null) {
             ApplicationConfigurationAuthority.assertWorkflowIdUpdateAllowed(app, request.getWorkflowId());
+        }
+        if (request.getCreditVintage() != null) {
+            ApplicationConfigurationAuthority.assertCreditVintageUpdateAllowed(app, request.getCreditVintage());
+            app.setCreditVintage(blankToNull(request.getCreditVintage()));
         }
         if (request.getPersonalInfo() != null) {
             app.setPersonalInfo(ApplicantIdentityResolver.canonicalisePersonalInfo(
@@ -699,6 +707,31 @@ public class LoanApplicationServiceImpl implements ILoanApplicationService {
             return null;
         }
         return blankToNull(lmsTenureUnit);
+    }
+
+    /**
+     * Repayment Frequency is derived from the tenure unit, not independently selectable — the
+     * actual EMI cadence is determined by the Encore product/tenure-unit combination.
+     */
+    private static String resolveApplicationRepaymentFrequency(
+            String loanProduct, String lmsTenureUnit, String requestedRepaymentFrequency) {
+        if (isInvoiceDiscountingProduct(loanProduct)) {
+            return null;
+        }
+        String explicit = blankToNull(requestedRepaymentFrequency);
+        return explicit != null ? explicit : capitalizeTenureUnit(lmsTenureUnit);
+    }
+
+    private static String capitalizeTenureUnit(String unit) {
+        if (unit == null || unit.isBlank()) {
+            return "Month";
+        }
+        return switch (unit.trim().toLowerCase()) {
+            case "day" -> "Day";
+            case "week" -> "Week";
+            case "month" -> "Month";
+            default -> unit.trim();
+        };
     }
 
     private static String blankToNull(String value) {

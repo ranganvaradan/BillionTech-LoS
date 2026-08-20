@@ -191,10 +191,12 @@ public class CustomerCategoryController {
             @RequestParam(required = false) String borrowerType,
             @RequestParam(required = false) String loanProduct,
             @RequestParam(required = false) String customerRole,
-            @RequestParam(required = false) String intakeSegment) {
+            @RequestParam(required = false) String intakeSegment,
+            @RequestParam(required = false) String creditVintage) {
         String et = entityType != null ? entityType : borrowerType;
         String role = customerRole != null ? customerRole : intakeSegment;
-        return ResponseEntity.ok(workflowBindService.listEligibleWorkflows(et, loanProduct, role));
+        String vintage = creditVintage != null ? creditVintage : MatchWildcard.ANY;
+        return ResponseEntity.ok(workflowBindService.listEligibleWorkflows(et, loanProduct, role, vintage));
     }
 
     @GetMapping("/meta/policy-scope-compatibility-report")

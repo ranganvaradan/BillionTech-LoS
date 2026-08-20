@@ -15,6 +15,8 @@ public final class CategorySelectionDtos {
             String customerRole,
             String entityType,
             String loanProduct,
+            /** NEW / EXISTING_CUSTOMER / EXISTING_CUSTOMER_OF_GROUP, or null if not captured on the application. */
+            String creditVintage,
             BigDecimal requestedAmount,
             Instant asOf,
             UUID subProgramId,

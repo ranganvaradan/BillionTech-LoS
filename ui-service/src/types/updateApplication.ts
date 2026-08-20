@@ -6,6 +6,7 @@ export interface UpdateApplicationRequest {
   tenureMonths?: number | null
   lmsProductCode?: string | null
   lmsTenureUnit?: string | null
+  creditVintage?: string | null
   workflowId?: string | null
   personalInfo?: Record<string, unknown> | null
   businessInfo?: Record<string, unknown> | null

@@ -89,7 +89,9 @@ public class EdiKfsTemplateContextBuilder {
         int amountWords = loanRounded.intValue();
         String loanAmtText = IndianAmountInWords.convert(amountWords);
 
-        String repaymentFrequency = capitalizeTenureUnit(tenureUnit);
+        String repaymentFrequency = app.getRepaymentFrequency() != null && !app.getRepaymentFrequency().isBlank()
+                ? app.getRepaymentFrequency()
+                : capitalizeTenureUnit(tenureUnit);
 
         return new EdiKfsTemplateContext(
                 currentDate,

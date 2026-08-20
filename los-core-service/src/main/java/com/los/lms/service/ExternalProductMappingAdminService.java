@@ -32,6 +32,17 @@ public class ExternalProductMappingAdminService {
     public List<ExternalProductMapping> listMappings(
             String losProductCode,
             String externalSystem) {
+        return listMappings(losProductCode, externalSystem, null);
+    }
+
+    /**
+     * @param bookType optional filter (OWN_BOOK / COLENDING); null/blank lists across both —
+     *                 admin visibility should show the full picture, not just one book type.
+     */
+    public List<ExternalProductMapping> listMappings(
+            String losProductCode,
+            String externalSystem,
+            String bookType) {
         if (losProductCode == null || losProductCode.isBlank()) {
             throw new BusinessRuleException(
                     "losProductCode is required",
@@ -39,19 +50,28 @@ public class ExternalProductMappingAdminService {
                     "LIST_EXTERNAL_PRODUCT_MAPPINGS",
                     java.util.Map.of("losProductCode", losProductCode));
         }
+        List<ExternalProductMapping> rows;
         if (externalSystem == null || externalSystem.isBlank()) {
-            return externalProductMappingRepository.findByLosProductCodeOrderByExternalSystemAscVersionDesc(
+            rows = externalProductMappingRepository.findByLosProductCodeOrderByExternalSystemAscVersionDesc(
                     losProductCode.trim());
+        } else {
+            rows = externalProductMappingRepository
+                    .findByLosProductCodeAndExternalSystemOrderByVersionDesc(
+                            losProductCode.trim(),
+                            externalSystem.trim());
         }
-        return externalProductMappingRepository
-                .findByLosProductCodeAndExternalSystemOrderByVersionDesc(
-                        losProductCode.trim(),
-                        externalSystem.trim());
+        if (bookType == null || bookType.isBlank()) {
+            return rows;
+        }
+        String normalized = bookType.trim();
+        return rows.stream().filter(m -> normalized.equalsIgnoreCase(m.getBookType())).toList();
     }
 
     public ExternalProductMapping createMapping(CreateMappingRequest req) {
         requireNotBlank(req.losProductCode(), "losProductCode");
         requireNotBlank(req.externalSystem(), "externalSystem");
+        requireNotBlank(req.bookType(), "bookType");
+        String bookType = normalizeBookType(req.bookType());
         requireNotBlank(req.externalProductCode(), "externalProductCode");
         if (req.version() == null) {
             throw new BusinessRuleException(
@@ -90,6 +110,7 @@ public class ExternalProductMappingAdminService {
             List<ExternalProductMapping> overlaps = externalProductMappingRepository.findActiveOverlapping(
                     req.losProductCode().trim(),
                     req.externalSystem().trim(),
+                    bookType,
                     ACTIVE_STATUS,
                     req.effectiveFrom(),
                     req.effectiveTo(),
@@ -99,12 +120,14 @@ public class ExternalProductMappingAdminService {
                         .max(Comparator.comparingInt(ExternalProductMapping::getVersion))
                         .orElse(null);
                 throw new BusinessRuleException(
-                        "Overlapping ACTIVE/effective mappings are not allowed for the same (los_product_code, external_system).",
+                        "Overlapping ACTIVE/effective mappings are not allowed for the same "
+                                + "(los_product_code, external_system, book_type).",
                         "LMS_PRODUCT_MAPPING_AMBIGUOUS_ACTIVE_OVERLAP",
                         "CREATE_EXTERNAL_PRODUCT_MAPPING",
                         java.util.Map.of(
                                 "losProductCode", req.losProductCode(),
                                 "externalSystem", req.externalSystem(),
+                                "bookType", bookType,
                                 "effectiveFrom", req.effectiveFrom().toString(),
                                 "effectiveTo", req.effectiveTo().toString(),
                                 "topCandidateVersion", top == null ? null : top.getVersion()));
@@ -114,6 +137,7 @@ public class ExternalProductMappingAdminService {
         ExternalProductMapping entity = ExternalProductMapping.builder()
                 .losProductCode(req.losProductCode().trim())
                 .externalSystem(req.externalSystem().trim())
+                .bookType(bookType)
                 .externalProductCode(req.externalProductCode().trim())
                 .version(req.version())
                 .status(status)
@@ -154,6 +178,7 @@ public class ExternalProductMappingAdminService {
             List<ExternalProductMapping> overlaps = externalProductMappingRepository.findActiveOverlapping(
                     existing.getLosProductCode(),
                     existing.getExternalSystem(),
+                    existing.getBookType(),
                     ACTIVE_STATUS,
                     existing.getEffectiveFrom(),
                     existing.getEffectiveTo(),
@@ -203,6 +228,20 @@ public class ExternalProductMappingAdminService {
                         "externalSystem", externalSystem));
     }
 
+    private static final java.util.Set<String> VALID_BOOK_TYPES = java.util.Set.of("OWN_BOOK", "COLENDING");
+
+    private static String normalizeBookType(String bookType) {
+        String normalized = bookType.trim().toUpperCase();
+        if (!VALID_BOOK_TYPES.contains(normalized)) {
+            throw new BusinessRuleException(
+                    "bookType must be one of " + VALID_BOOK_TYPES,
+                    "INVALID_ARGUMENT",
+                    "VALIDATE_EXTERNAL_PRODUCT_MAPPING",
+                    java.util.Map.of("bookType", bookType));
+        }
+        return normalized;
+    }
+
     private static String normalizeStatus(String status) {
         String s = status == null ? "" : status.trim().toUpperCase();
         if (s.isBlank()) {
@@ -218,13 +257,15 @@ public class ExternalProductMappingAdminService {
                     fieldName + " is required",
                     "INVALID_ARGUMENT",
                     "VALIDATE_EXTERNAL_PRODUCT_MAPPING",
-                    java.util.Map.of(fieldName, value));
+                    java.util.Collections.singletonMap(fieldName, value));
         }
     }
 
     public record CreateMappingRequest(
             String losProductCode,
             String externalSystem,
+            /** OWN_BOOK or COLENDING — required, no wildcard. */
+            String bookType,
             String externalProductCode,
             Integer version,
             String status,

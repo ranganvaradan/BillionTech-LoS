@@ -71,8 +71,8 @@ public class ExternalProductMappingPinningService {
 
         List<ExternalProductMapping> effectiveActive =
                 externalProductMappingRepository
-                        .findByLosProductCodeAndExternalSystemAndStatusAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
-                                app.getLoanProduct(), EXTERNAL_SYSTEM_ENCORE, ACTIVE_STATUS, asOf);
+                        .findByLosProductCodeAndExternalSystemAndBookTypeAndStatusAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
+                                app.getLoanProduct(), EXTERNAL_SYSTEM_ENCORE, app.getBookType(), ACTIVE_STATUS, asOf);
 
         if (effectiveActive.size() > 1) {
             throw ambiguous(app, asOf, effectiveActive);
@@ -86,8 +86,8 @@ public class ExternalProductMappingPinningService {
         // No active effective mapping: differentiate "missing" vs "not effective (inactive/expired)".
         List<ExternalProductMapping> effectiveAnyStatus =
                 externalProductMappingRepository
-                        .findByLosProductCodeAndExternalSystemAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
-                                app.getLoanProduct(), EXTERNAL_SYSTEM_ENCORE, asOf);
+                        .findByLosProductCodeAndExternalSystemAndBookTypeAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
+                                app.getLoanProduct(), EXTERNAL_SYSTEM_ENCORE, app.getBookType(), asOf);
 
         if (!effectiveAnyStatus.isEmpty()) {
             // There are mappings covering the date but none are ACTIVE.
@@ -98,7 +98,10 @@ public class ExternalProductMappingPinningService {
         List<ExternalProductMapping> anyMappingsForProductSystem =
                 externalProductMappingRepository
                         .findByLosProductCodeAndExternalSystemOrderByVersionDesc(
-                                app.getLoanProduct(), EXTERNAL_SYSTEM_ENCORE);
+                                app.getLoanProduct(), EXTERNAL_SYSTEM_ENCORE)
+                        .stream()
+                        .filter(m -> app.getBookType() == null || app.getBookType().equalsIgnoreCase(m.getBookType()))
+                        .toList();
 
         if (!anyMappingsForProductSystem.isEmpty()) {
             // Mappings exist but none are effective for the as-of date.

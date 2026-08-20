@@ -110,7 +110,9 @@ public final class CustomerCategoryDtos {
             /** W2 — exact Workflow Version id ({@code workflow_configs.id}). Independent of Policy. */
             UUID workflowId,
             /** Optional — must match {@code workflow_configs.version} when supplied. */
-            Integer workflowVersion
+            Integer workflowVersion,
+            /** Credit Vintage scoping dimension: NEW, EXISTING_CUSTOMER, EXISTING_CUSTOMER_OF_GROUP, or ANY. Optional — defaults to ANY when omitted. */
+            String creditVintage
     ) {
         /** Transitional 12-arg constructor — aliases / Policy / Workflow bind null. */
         public CategoryRequest(
@@ -128,7 +130,7 @@ public final class CustomerCategoryDtos {
                 String reasonForChange) {
             this(code, name, description, borrowerType, loanProduct, intakeSegment,
                     minAmount, maxAmount, policySetId, effectiveFrom, effectiveUntil, reasonForChange,
-                    null, null, null, null, null, null, null);
+                    null, null, null, null, null, null, null, null);
         }
 
         /** STEP-1 14-arg constructor — Policy / Workflow bind null. */
@@ -149,7 +151,7 @@ public final class CustomerCategoryDtos {
                 String customerRole) {
             this(code, name, description, borrowerType, loanProduct, intakeSegment,
                     minAmount, maxAmount, policySetId, effectiveFrom, effectiveUntil, reasonForChange,
-                    entityType, customerRole, null, null, null, null, null);
+                    entityType, customerRole, null, null, null, null, null, null);
         }
 
         /** STEP-2 Policy bind constructor — Workflow null. */
@@ -174,7 +176,7 @@ public final class CustomerCategoryDtos {
             this(code, name, description, borrowerType, loanProduct, intakeSegment,
                     minAmount, maxAmount, policySetId, effectiveFrom, effectiveUntil, reasonForChange,
                     entityType, customerRole, policyApplicabilityId, policyDocumentId, policyVersionLabel,
-                    null, null);
+                    null, null, null);
         }
     }
 
@@ -233,7 +235,9 @@ public final class CustomerCategoryDtos {
             String workflowContentHash,
             String workflowName,
             /** LINKED | WORKFLOW_LINKAGE_REQUIRED */
-            String workflowLinkageStatus
+            String workflowLinkageStatus,
+            /** Credit Vintage scoping dimension: NEW, EXISTING_CUSTOMER, EXISTING_CUSTOMER_OF_GROUP, or ANY. */
+            String creditVintage
     ) {}
 
     /**

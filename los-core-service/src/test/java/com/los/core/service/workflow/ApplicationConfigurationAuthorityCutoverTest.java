@@ -77,6 +77,21 @@ class ApplicationConfigurationAuthorityCutoverTest {
     }
 
     @Test
+    void creditVintageCannotBeChangedAfterCategoryPinned() {
+        LoanApplication pinned = new LoanApplication();
+        pinned.setId(UUID.randomUUID());
+        pinned.setSelectedCustomerCategoryId(UUID.randomUUID());
+        pinned.setCreditVintage("NEW");
+        BusinessRuleException ex = assertThrows(BusinessRuleException.class, () ->
+                ApplicationConfigurationAuthority.assertCreditVintageUpdateAllowed(pinned, "EXISTING_CUSTOMER"));
+        assertEquals(ApplicationConfigurationAuthority.CREDIT_VINTAGE_PIN_IMMUTABLE, ex.getReason());
+
+        LoanApplication unpinned = new LoanApplication();
+        unpinned.setId(UUID.randomUUID());
+        ApplicationConfigurationAuthority.assertCreditVintageUpdateAllowed(unpinned, "EXISTING_CUSTOMER");
+    }
+
+    @Test
     void lmsFieldsCannotBeSetDirectlyOnCategoryGovernedApp() {
         LoanApplication categoryGoverned = new LoanApplication();
         categoryGoverned.setId(UUID.randomUUID());

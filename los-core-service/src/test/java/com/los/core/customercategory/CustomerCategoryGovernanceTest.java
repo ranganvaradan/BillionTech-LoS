@@ -89,7 +89,7 @@ class CustomerCategoryGovernanceTest {
                     id, ver != null ? ver : 1, "wf-hash", "Gov Journey", true);
         });
         lenient().doNothing().when(workflowBindService).requireCompatible(
-                any(), any(), any(), any());
+                any(), any(), any(), any(), any());
         lenient().doAnswer(inv -> {
             CustomerCategoryEntity e = inv.getArgument(0);
             CategoryWorkflowBindService.ResolvedWorkflowBind b = inv.getArgument(1);
@@ -328,7 +328,7 @@ class CustomerCategoryGovernanceTest {
                 new BigDecimal("50000"), new BigDecimal("50000000"),
                 psId, null, null, null,
                 null, null, policyAppId, policyDocId, "v1",
-                workflowId, 1);
+                workflowId, 1, null);
     }
 
     private static UnderwritingRuleSet rs(UUID id, String bt, String lp) {

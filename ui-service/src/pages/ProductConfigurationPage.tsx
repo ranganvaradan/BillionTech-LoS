@@ -33,11 +33,13 @@ export function ProductConfigurationPage() {
   const [policyDocumentId, setPolicyDocumentId] = useState('')
   const [externalProductSystems, setExternalProductSystems] = useState<string[]>([])
   const [externalSystem, setExternalSystem] = useState<string>('')
+  const [bookTypeFilter, setBookTypeFilter] = useState<string>('')
   const [mappings, setMappings] = useState<any[]>([])
   const [mappingsBusy, setMappingsBusy] = useState(false)
   const [mappingAsOf, setMappingAsOf] = useState(() => new Date().toISOString().slice(0, 10))
 
   const [createExternalProductCode, setCreateExternalProductCode] = useState('')
+  const [createBookType, setCreateBookType] = useState('OWN_BOOK')
   const [createVersion, setCreateVersion] = useState<number>(1)
   const [createStatus, setCreateStatus] = useState('INACTIVE')
   const [createEffectiveFrom, setCreateEffectiveFrom] = useState(mappingAsOf)
@@ -105,6 +107,7 @@ export function ProductConfigurationPage() {
         const rows = await listExternalProductMappings({
           losProductCode: loanProduct,
           externalSystem,
+          bookType: bookTypeFilter || undefined,
           asOf: mappingAsOf,
         })
         setMappings(rows)
@@ -116,7 +119,7 @@ export function ProductConfigurationPage() {
         setMappingsBusy(false)
       }
     })()
-  }, [loanProduct, externalSystem, mappingAsOf])
+  }, [loanProduct, externalSystem, bookTypeFilter, mappingAsOf])
 
   const workflows = useMemo(
     () =>
@@ -366,7 +369,7 @@ export function ProductConfigurationPage() {
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 space-y-3">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">External Product Mapping (Admin)</h2>
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-4">
           <label className="text-sm">
             <span className="text-slate-600">External system</span>
             <select
@@ -381,6 +384,19 @@ export function ProductConfigurationPage() {
                   {s}
                 </option>
               ))}
+            </select>
+          </label>
+          <label className="text-sm">
+            <span className="text-slate-600">Book type</span>
+            <select
+              className="mt-1 w-full rounded border border-slate-300 px-3 py-2"
+              value={bookTypeFilter}
+              onChange={(e) => setBookTypeFilter(e.target.value)}
+              disabled={mappingsBusy}
+            >
+              <option value="">All</option>
+              <option value="OWN_BOOK">Own Book</option>
+              <option value="COLENDING">Colending</option>
             </select>
           </label>
           <label className="text-sm">
@@ -428,6 +444,7 @@ export function ProductConfigurationPage() {
                 <thead>
                   <tr className="text-xs text-slate-500">
                     <th className="py-1 pr-3">Version</th>
+                    <th className="py-1 pr-3">Book type</th>
                     <th className="py-1 pr-3">External product code</th>
                     <th className="py-1 pr-3">Effective period</th>
                     <th className="py-1 pr-3">Status</th>
@@ -443,6 +460,9 @@ export function ProductConfigurationPage() {
                         <td className="py-2 pr-3">
                           <div className="font-medium">{String(m.version ?? '—')}</div>
                           {activeToday ? <div className="text-xs text-emerald-700">Active (as-of)</div> : null}
+                        </td>
+                        <td className="py-2 pr-3">
+                          <span className="text-xs">{String(m.bookType ?? '—')}</span>
                         </td>
                         <td className="py-2 pr-3">
                           <div className="font-medium">{String(m.externalProductCode ?? '—')}</div>
@@ -462,7 +482,7 @@ export function ProductConfigurationPage() {
                               onClick={async () => {
                                 try {
                                   await patchExternalProductMappingStatus(String(m.id), 'ACTIVE')
-                                  const rows = await listExternalProductMappings({ losProductCode: loanProduct, externalSystem, asOf: mappingAsOf })
+                                  const rows = await listExternalProductMappings({ losProductCode: loanProduct, externalSystem, bookType: bookTypeFilter || undefined, asOf: mappingAsOf })
                                   setMappings(rows)
                                 } catch (e) {
                                   setError(e instanceof Error ? e.message : 'Activate failed')
@@ -478,7 +498,7 @@ export function ProductConfigurationPage() {
                               onClick={async () => {
                                 try {
                                   await patchExternalProductMappingStatus(String(m.id), 'INACTIVE')
-                                  const rows = await listExternalProductMappings({ losProductCode: loanProduct, externalSystem, asOf: mappingAsOf })
+                                  const rows = await listExternalProductMappings({ losProductCode: loanProduct, externalSystem, bookType: bookTypeFilter || undefined, asOf: mappingAsOf })
                                   setMappings(rows)
                                 } catch (e) {
                                   setError(e instanceof Error ? e.message : 'Deactivate failed')
@@ -494,7 +514,7 @@ export function ProductConfigurationPage() {
                               onClick={async () => {
                                 try {
                                   await patchExternalProductMappingStatus(String(m.id), 'RETIRED')
-                                  const rows = await listExternalProductMappings({ losProductCode: loanProduct, externalSystem, asOf: mappingAsOf })
+                                  const rows = await listExternalProductMappings({ losProductCode: loanProduct, externalSystem, bookType: bookTypeFilter || undefined, asOf: mappingAsOf })
                                   setMappings(rows)
                                 } catch (e) {
                                   setError(e instanceof Error ? e.message : 'Retire failed')
@@ -536,6 +556,17 @@ export function ProductConfigurationPage() {
               />
             </label>
             <label className="text-sm">
+              <span className="text-slate-600">Book type *</span>
+              <select
+                className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
+                value={createBookType}
+                onChange={(e) => setCreateBookType(e.target.value)}
+              >
+                <option value="OWN_BOOK">Own Book</option>
+                <option value="COLENDING">Colending</option>
+              </select>
+            </label>
+            <label className="text-sm">
               <span className="text-slate-600">Status</span>
               <select
                 className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm"
@@ -574,13 +605,14 @@ export function ProductConfigurationPage() {
                     await createExternalProductMapping({
                       losProductCode: loanProduct,
                       externalSystem,
+                      bookType: createBookType,
                       externalProductCode: createExternalProductCode,
                       version: createVersion,
                       status: createStatus,
                       effectiveFrom: createEffectiveFrom,
                       effectiveTo: createEffectiveTo,
                     })
-                    const rows = await listExternalProductMappings({ losProductCode: loanProduct, externalSystem, asOf: mappingAsOf })
+                    const rows = await listExternalProductMappings({ losProductCode: loanProduct, externalSystem, bookType: bookTypeFilter || undefined, asOf: mappingAsOf })
                     setMappings(rows)
                     setCreateExternalProductCode('')
                   } catch (e) {

@@ -161,6 +161,7 @@ class LmsProductMappingE2ECertificationTest {
                 .workflowResolutionSource("CATEGORY_SELECTION")
                 .categorySelectedAt(Instant.parse("2026-01-01T10:00:00Z"))
                 .intakeSegment(IntakeSegment.BORROWER)
+                .bookType("OWN_BOOK")
                 .build();
     }
 
@@ -174,8 +175,8 @@ class LmsProductMappingE2ECertificationTest {
 
         LoanApplication app = baseCategoryGovernedBusinessTermApp("BT-E2E-1");
 
-        when(externalProductMappingRepository.findByLosProductCodeAndExternalSystemAndStatusAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
-                eq(StandardLoanProduct.BUSINESS_TERM_LOAN), eq("ENCORE"), eq("ACTIVE"), any(LocalDate.class)))
+        when(externalProductMappingRepository.findByLosProductCodeAndExternalSystemAndBookTypeAndStatusAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
+                eq(StandardLoanProduct.BUSINESS_TERM_LOAN), eq("ENCORE"), eq("OWN_BOOK"), eq("ACTIVE"), any(LocalDate.class)))
                 .thenReturn(List.of(ExternalProductMapping.builder()
                         .id(mappingId)
                         .losProductCode(StandardLoanProduct.BUSINESS_TERM_LOAN)
@@ -261,8 +262,8 @@ class LmsProductMappingE2ECertificationTest {
         ExternalProductMappingPinningService pinning = pinningService();
         pinning.pinEncoreMappingIfNeeded(app); // should be a no-op for invoice-discounting
 
-        verify(externalProductMappingRepository, never()).findByLosProductCodeAndExternalSystemAndStatusAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
-                anyString(), anyString(), anyString(), any(LocalDate.class));
+        verify(externalProductMappingRepository, never()).findByLosProductCodeAndExternalSystemAndBookTypeAndStatusAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
+                anyString(), anyString(), any(), anyString(), any(LocalDate.class));
 
         LmsService lmsService = buildLmsService();
 
@@ -296,11 +297,11 @@ class LmsProductMappingE2ECertificationTest {
     void MISSING_MAPPING_failClosed_noLmsRequestSent() {
         LoanApplication app = baseCategoryGovernedBusinessTermApp("BT-E2E-MISSING-1");
 
-        when(externalProductMappingRepository.findByLosProductCodeAndExternalSystemAndStatusAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
-                eq(StandardLoanProduct.BUSINESS_TERM_LOAN), eq("ENCORE"), eq("ACTIVE"), any(LocalDate.class)))
+        when(externalProductMappingRepository.findByLosProductCodeAndExternalSystemAndBookTypeAndStatusAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
+                eq(StandardLoanProduct.BUSINESS_TERM_LOAN), eq("ENCORE"), eq("OWN_BOOK"), eq("ACTIVE"), any(LocalDate.class)))
                 .thenReturn(List.of());
-        when(externalProductMappingRepository.findByLosProductCodeAndExternalSystemAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
-                eq(StandardLoanProduct.BUSINESS_TERM_LOAN), eq("ENCORE"), any(LocalDate.class)))
+        when(externalProductMappingRepository.findByLosProductCodeAndExternalSystemAndBookTypeAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
+                eq(StandardLoanProduct.BUSINESS_TERM_LOAN), eq("ENCORE"), eq("OWN_BOOK"), any(LocalDate.class)))
                 .thenReturn(List.of());
         when(externalProductMappingRepository.findByLosProductCodeAndExternalSystemOrderByVersionDesc(
                 eq(StandardLoanProduct.BUSINESS_TERM_LOAN), eq("ENCORE")))
@@ -339,8 +340,8 @@ class LmsProductMappingE2ECertificationTest {
                 .effectiveTo(LocalDate.of(2027, 1, 1))
                 .build();
 
-        when(externalProductMappingRepository.findByLosProductCodeAndExternalSystemAndStatusAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
-                eq(StandardLoanProduct.BUSINESS_TERM_LOAN), eq("ENCORE"), eq("ACTIVE"), any(LocalDate.class)))
+        when(externalProductMappingRepository.findByLosProductCodeAndExternalSystemAndBookTypeAndStatusAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
+                eq(StandardLoanProduct.BUSINESS_TERM_LOAN), eq("ENCORE"), eq("OWN_BOOK"), eq("ACTIVE"), any(LocalDate.class)))
                 .thenReturn(List.of(m2, m1));
 
         ExternalProductMappingPinningService pinning = pinningService();
@@ -354,13 +355,13 @@ class LmsProductMappingE2ECertificationTest {
     void EXPIRED_NOT_EFFECTIVE_failClosed_noLmsRequestSent() {
         LoanApplication app = baseCategoryGovernedBusinessTermApp("BT-E2E-EXPIRED-1");
 
-        when(externalProductMappingRepository.findByLosProductCodeAndExternalSystemAndStatusAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
-                eq(StandardLoanProduct.BUSINESS_TERM_LOAN), eq("ENCORE"), eq("ACTIVE"), any(LocalDate.class)))
+        when(externalProductMappingRepository.findByLosProductCodeAndExternalSystemAndBookTypeAndStatusAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
+                eq(StandardLoanProduct.BUSINESS_TERM_LOAN), eq("ENCORE"), eq("OWN_BOOK"), eq("ACTIVE"), any(LocalDate.class)))
                 .thenReturn(List.of());
 
         // Coverage within effective date is empty
-        when(externalProductMappingRepository.findByLosProductCodeAndExternalSystemAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
-                eq(StandardLoanProduct.BUSINESS_TERM_LOAN), eq("ENCORE"), any(LocalDate.class)))
+        when(externalProductMappingRepository.findByLosProductCodeAndExternalSystemAndBookTypeAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
+                eq(StandardLoanProduct.BUSINESS_TERM_LOAN), eq("ENCORE"), eq("OWN_BOOK"), any(LocalDate.class)))
                 .thenReturn(List.of());
 
         // But mappings exist for the product/system (expired/not covering)
@@ -370,6 +371,7 @@ class LmsProductMappingE2ECertificationTest {
                         .id(UUID.randomUUID())
                         .losProductCode(StandardLoanProduct.BUSINESS_TERM_LOAN)
                         .externalSystem("ENCORE")
+                        .bookType("OWN_BOOK")
                         .externalProductCode("CODE_EXPIRED")
                         .version(1)
                         .status("ACTIVE")
@@ -397,8 +399,8 @@ class LmsProductMappingE2ECertificationTest {
         String productCodeV2 = "BT_ENCORE_CODE_V2";
 
         // First pin -> version 1
-        when(externalProductMappingRepository.findByLosProductCodeAndExternalSystemAndStatusAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
-                eq(StandardLoanProduct.BUSINESS_TERM_LOAN), eq("ENCORE"), eq("ACTIVE"), any(LocalDate.class)))
+        when(externalProductMappingRepository.findByLosProductCodeAndExternalSystemAndBookTypeAndStatusAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
+                eq(StandardLoanProduct.BUSINESS_TERM_LOAN), eq("ENCORE"), eq("OWN_BOOK"), eq("ACTIVE"), any(LocalDate.class)))
                 .thenReturn(List.of(ExternalProductMapping.builder()
                         .id(mappingIdV1)
                         .losProductCode(StandardLoanProduct.BUSINESS_TERM_LOAN)
@@ -459,8 +461,8 @@ class LmsProductMappingE2ECertificationTest {
         assertEquals(productCodeV1, firstNode.get("productCode").asText());
 
         // Now "new mapping version exists" in isolated test data, but app pin must not change.
-        when(externalProductMappingRepository.findByLosProductCodeAndExternalSystemAndStatusAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
-                eq(StandardLoanProduct.BUSINESS_TERM_LOAN), eq("ENCORE"), eq("ACTIVE"), any(LocalDate.class)))
+        when(externalProductMappingRepository.findByLosProductCodeAndExternalSystemAndBookTypeAndStatusAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
+                eq(StandardLoanProduct.BUSINESS_TERM_LOAN), eq("ENCORE"), eq("OWN_BOOK"), eq("ACTIVE"), any(LocalDate.class)))
                 .thenReturn(List.of(ExternalProductMapping.builder()
                         .id(mappingIdV2)
                         .losProductCode(StandardLoanProduct.BUSINESS_TERM_LOAN)
@@ -484,8 +486,8 @@ class LmsProductMappingE2ECertificationTest {
         assertEquals(pinnedBeforeRetry, app.getLmsProductCode());
 
         verify(externalProductMappingRepository,
-                times(1)).findByLosProductCodeAndExternalSystemAndStatusAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
-                eq(StandardLoanProduct.BUSINESS_TERM_LOAN), eq("ENCORE"), eq("ACTIVE"), any(LocalDate.class));
+                times(1)).findByLosProductCodeAndExternalSystemAndBookTypeAndStatusAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
+                eq(StandardLoanProduct.BUSINESS_TERM_LOAN), eq("ENCORE"), eq("OWN_BOOK"), eq("ACTIVE"), any(LocalDate.class));
 
         // Retry createLmsAccountOnSanction: must skip openLoanAccount since handover already exists.
         lmsService.createLmsAccountOnSanction(app);

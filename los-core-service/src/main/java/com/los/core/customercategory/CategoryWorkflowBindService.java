@@ -117,10 +117,11 @@ public class CategoryWorkflowBindService {
             String customerRole,
             String entityType,
             String loanProduct,
+            String creditVintage,
             UUID workflowId) {
         WorkflowConfig cfg = requireWorkflow(workflowId);
         CategoryWorkflowCompatibility.Result r =
-                CategoryWorkflowCompatibility.evaluate(customerRole, entityType, loanProduct, cfg);
+                CategoryWorkflowCompatibility.evaluate(customerRole, entityType, loanProduct, creditVintage, cfg);
         if (!r.compatible()) {
             throw CustomerCategoryValidator.biz(
                     "Workflow is incompatible with Customer Category: " + String.join(", ", r.reasons()),
@@ -140,12 +141,13 @@ public class CategoryWorkflowBindService {
     public List<CustomerCategoryDtos.EligibleWorkflowView> listEligibleWorkflows(
             String entityType,
             String loanProduct,
-            String customerRole) {
+            String customerRole,
+            String creditVintage) {
         List<WorkflowConfig> all = workflowConfigRepository.findAll();
         List<CustomerCategoryDtos.EligibleWorkflowView> out = new ArrayList<>();
         for (WorkflowConfig cfg : all) {
             CategoryWorkflowCompatibility.Result compat =
-                    CategoryWorkflowCompatibility.evaluate(customerRole, entityType, loanProduct, cfg);
+                    CategoryWorkflowCompatibility.evaluate(customerRole, entityType, loanProduct, creditVintage, cfg);
             List<String> notes = new ArrayList<>();
             for (var c : compat.checks()) {
                 if (!c.ok()) {

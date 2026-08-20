@@ -61,6 +61,7 @@ export function SanctionKfsSection({
   const [conditions, setConditions] = useState<string>('')
   const [remarks, setRemarks] = useState<string>('')
   const [approvedBy, setApprovedBy] = useState<string>('')
+  const [bookType, setBookType] = useState<'' | 'OWN_BOOK' | 'COLENDING'>('')
   const [busy, setBusy] = useState(false)
   const [kfsLoad, setKfsLoad] = useState(false)
   const [camStatusLine, setCamStatusLine] = useState<string | null>(null)
@@ -195,6 +196,9 @@ export function SanctionKfsSection({
         body.processingFee = fee || undefined
       } else if (tenure) {
         body.tenureMonths = parseInt(tenure, 10)
+      }
+      if (!isAnchor && !isIdBorrower) {
+        body.bookType = bookType
       }
       await sanctionApplicationFlow(applicationId, body)
       await onRefetch()
@@ -407,6 +411,20 @@ export function SanctionKfsSection({
                     inputMode="decimal"
                   />
                 </label>
+                {!isIdBorrower ? (
+                  <label className="text-xs font-medium text-slate-600">
+                    Own Book / Colending *
+                    <select
+                      className="mt-0.5 w-full rounded border border-slate-200 p-2 text-sm"
+                      value={bookType}
+                      onChange={(e) => setBookType(e.target.value as typeof bookType)}
+                    >
+                      <option value="">Select book type</option>
+                      <option value="OWN_BOOK">Own Book</option>
+                      <option value="COLENDING">Colending</option>
+                    </select>
+                  </label>
+                ) : null}
               </>
             ) : null}
           </div>
@@ -439,7 +457,7 @@ export function SanctionKfsSection({
           <div className="mt-4 flex flex-wrap gap-2">
             <button
               type="button"
-              disabled={busy}
+              disabled={busy || (!isAnchor && !isIdBorrower && !bookType)}
               onClick={() => void onApprove()}
               className="rounded-md bg-indigo-700 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
             >

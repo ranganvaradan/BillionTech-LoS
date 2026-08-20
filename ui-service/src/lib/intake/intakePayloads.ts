@@ -5,6 +5,7 @@ import type { IntakeFormState, IntakeMode } from './intakeTypes'
 import { isBusinessBorrowerType } from './intakeTypes'
 import type { SessionUser } from '@/auth/types'
 import { isInvoiceDiscountingProduct } from '@/catalog/loanProducts'
+import { repaymentFrequencyForTenureUnit } from '@/catalog/lmsTenureUnits'
 import {
   labelForLoanPurpose,
   labelForOccupation,
@@ -21,6 +22,7 @@ function appendLmsConfigToCreate(s: IntakeFormState, payload: CreateApplicationR
     ...withProduct,
     ...(code ? { lmsProductCode: code } : {}),
     ...(unit ? { lmsTenureUnit: unit } : {}),
+    ...(unit ? { repaymentFrequency: repaymentFrequencyForTenureUnit(unit) } : {}),
   }
 }
 
@@ -151,9 +153,18 @@ export function buildIntakeCreateRequest(s: IntakeFormState, mode: IntakeMode, s
       if (s.businessState.trim()) bi.state = s.businessState.trim()
       if (s.businessPincode.replace(/\D/g, '').length === 6) bi.pincode = s.businessPincode.replace(/\D/g, '')
       appendInvoiceVintageFields(s, bi)
-      return withInvoiceBorrowerSegment(s, appendLmsConfigToCreate(s, { ...base, personalInfo: pi, businessInfo: Object.keys(bi).length ? bi : base.businessInfo }))
+      return withInvoiceBorrowerSegment(s, appendLmsConfigToCreate(s, {
+        ...base,
+        personalInfo: pi,
+        businessInfo: Object.keys(bi).length ? bi : base.businessInfo,
+        ...(s.creditVintage ? { creditVintage: s.creditVintage } : {}),
+      }))
     }
-    return withInvoiceBorrowerSegment(s, appendLmsConfigToCreate(s, { ...base, personalInfo: pi }))
+    return withInvoiceBorrowerSegment(s, appendLmsConfigToCreate(s, {
+      ...base,
+      personalInfo: pi,
+      ...(s.creditVintage ? { creditVintage: s.creditVintage } : {}),
+    }))
   }
 
   const phone = primaryPhone(s)
@@ -219,6 +230,7 @@ export function buildIntakeCreateRequest(s: IntakeFormState, mode: IntakeMode, s
     personalInfo: personal,
   }
   if (tenure != null) payload.tenureMonths = tenure
+  if (s.creditVintage) payload.creditVintage = s.creditVintage
   if (Object.keys(business).length) payload.businessInfo = business
   return withInvoiceBorrowerSegment(s, appendLmsConfigToCreate(s, payload))
 }

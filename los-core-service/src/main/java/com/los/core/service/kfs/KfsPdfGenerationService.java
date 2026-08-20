@@ -392,7 +392,7 @@ public class KfsPdfGenerationService {
                 ? kfs.getInterestRate().toPlainString() + "% (reducing balance)" : "N/A");
         addRow(table, "Tenure", kfs.getTenureMonths() + " " + tenureUnitSuffix(kfs));
         addRow(table, installmentLabel(kfs) + " Amount", formatCurrency(kfs.getEmiAmount()));
-        addRow(table, "Repayment Frequency", "Monthly");
+        addRow(table, "Repayment Frequency", repaymentFrequency(kfs));
         addRow(table, "Interest Computation", "Daily reducing balance");
 
         return table;
@@ -615,6 +615,16 @@ public class KfsPdfGenerationService {
             }
         }
         return "EMI";
+    }
+
+    private static String repaymentFrequency(KfsDocument kfs) {
+        if (kfs.getAdditionalTerms() != null) {
+            Object frequency = kfs.getAdditionalTerms().get("repaymentFrequency");
+            if (frequency != null && !String.valueOf(frequency).isBlank()) {
+                return String.valueOf(frequency).trim();
+            }
+        }
+        return "Monthly";
     }
 
     private static String tenureUnitSuffix(KfsDocument kfs) {

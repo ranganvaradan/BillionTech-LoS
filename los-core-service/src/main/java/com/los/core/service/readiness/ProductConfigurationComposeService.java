@@ -516,12 +516,16 @@ public class ProductConfigurationComposeService {
         boolean workflowHasCode = workflowCode != null && !workflowCode.isBlank();
 
         // Canonical ordinary path: resolve via external_product_mapping and pin onto a synthetic probe app.
+        // book_type is required on external_product_mapping; default this readiness preview to
+        // OWN_BOOK (the implicit default everywhere else pre-colending) so it reflects the common
+        // case. Colending readiness is checked separately below as a lightweight boolean.
         LoanApplication probe = LoanApplication.builder()
                 .workflowId(workflow.getId())
                 .loanProduct(loanProduct != null ? loanProduct : workflow.getLoanProduct())
                 .intakeSegment(parseSegment(intakeSegment))
                 .borrowerType(parseBorrower(borrowerType != null ? borrowerType : workflow.getBorrowerType()))
                 .workflowResolutionSource("CATEGORY_SELECTION")
+                .bookType("OWN_BOOK")
                 .build();
 
         LocalDate asOf = LocalDate.now(java.time.ZoneId.of("Asia/Kolkata"));
@@ -530,6 +534,22 @@ public class ProductConfigurationComposeService {
             externalProductMappingPinningService.pinEncoreMappingIfNeeded(probe);
         } catch (BusinessRuleException e) {
             pinningError = e;
+        }
+
+        LoanApplication colendingProbe = LoanApplication.builder()
+                .workflowId(workflow.getId())
+                .loanProduct(loanProduct != null ? loanProduct : workflow.getLoanProduct())
+                .intakeSegment(parseSegment(intakeSegment))
+                .borrowerType(parseBorrower(borrowerType != null ? borrowerType : workflow.getBorrowerType()))
+                .workflowResolutionSource("CATEGORY_SELECTION")
+                .bookType("COLENDING")
+                .build();
+        boolean colendingReady;
+        try {
+            externalProductMappingPinningService.pinEncoreMappingIfNeeded(colendingProbe);
+            colendingReady = true;
+        } catch (BusinessRuleException e) {
+            colendingReady = false;
         }
 
         Optional<LmsProductMappingResolution> runtime =
@@ -547,6 +567,7 @@ public class ProductConfigurationComposeService {
         }
         lms.put("workflowId", workflow.getId() == null ? null : workflow.getId().toString());
         lms.put("workflowVersion", workflow.getVersion());
+        lms.put("colendingReady", colendingReady);
         lms.put("mappingSource", present ? runtime.get().mappingSource() : null);
         lms.put("openLoanAccountAuthority", "LOS_PRODUCT → GOVERNED_EXTERNAL_PRODUCT_MAPPING → LMS handover payload");
         lms.put("note", "Canonical LMS product authority is governed external mapping (pinned before openLoanAccount). Workflow LMS code is legacy correlation only.");

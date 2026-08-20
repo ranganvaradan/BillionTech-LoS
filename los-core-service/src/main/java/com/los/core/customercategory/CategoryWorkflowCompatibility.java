@@ -20,6 +20,7 @@ public final class CategoryWorkflowCompatibility {
     public static final String ENTITY_TYPE_NOT_COVERED = "ENTITY_TYPE_NOT_COVERED";
     public static final String PRODUCT_NOT_COVERED = "PRODUCT_NOT_COVERED";
     public static final String CUSTOMER_ROLE_NOT_COVERED = "CUSTOMER_ROLE_NOT_COVERED";
+    public static final String CREDIT_VINTAGE_NOT_COVERED = "CREDIT_VINTAGE_NOT_COVERED";
     public static final String WORKFLOW_NOT_ACTIVE = "WORKFLOW_NOT_ACTIVE";
 
     private CategoryWorkflowCompatibility() {}
@@ -38,10 +39,12 @@ public final class CategoryWorkflowCompatibility {
         String role = category.getIntakeSegment();
         String entity = category.getBorrowerType();
         String product = category.getLoanProduct();
-        return evaluate(role, entity, product, wf);
+        String creditVintage = category.getCreditVintage();
+        return evaluate(role, entity, product, creditVintage, wf);
     }
 
-    public static Result evaluate(String customerRole, String entityType, String loanProduct, WorkflowConfig wf) {
+    public static Result evaluate(
+            String customerRole, String entityType, String loanProduct, String creditVintage, WorkflowConfig wf) {
         List<Check> checks = new ArrayList<>();
         List<String> reasons = new ArrayList<>();
 
@@ -90,6 +93,17 @@ public final class CategoryWorkflowCompatibility {
                         : "Category=" + customerRole + " Workflow=" + wf.getIntakeSegment()));
         if (!roleOk) {
             reasons.add(CUSTOMER_ROLE_NOT_COVERED);
+        }
+
+        boolean vintageOk = wf != null && equalsNorm(creditVintage, wf.getCreditVintage());
+        checks.add(new Check(
+                CREDIT_VINTAGE_NOT_COVERED,
+                "Credit Vintage matches Workflow",
+                vintageOk,
+                wf == null ? "Missing"
+                        : "Category=" + creditVintage + " Workflow=" + wf.getCreditVintage()));
+        if (!vintageOk) {
+            reasons.add(CREDIT_VINTAGE_NOT_COVERED);
         }
 
         boolean compatible = reasons.isEmpty();

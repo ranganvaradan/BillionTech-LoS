@@ -29,6 +29,30 @@ class ExternalProductMappingAdminServiceTest {
     private ExternalProductMappingAdminService service;
 
     @Test
+    void createMapping_missingBookType_isRejected() {
+        LocalDate from = LocalDate.now().minusDays(10);
+        LocalDate to = LocalDate.now().plusDays(10);
+
+        BusinessRuleException ex = assertThrows(BusinessRuleException.class, () -> service.createMapping(
+                new ExternalProductMappingAdminService.CreateMappingRequest(
+                        "TERM_LOAN", "ENCORE", null, "CODE_NEW", 2, "ACTIVE", from, to, Map.of())));
+        assertEquals("INVALID_ARGUMENT", ex.getReason());
+        verify(externalProductMappingRepository, never()).save(any());
+    }
+
+    @Test
+    void createMapping_invalidBookType_isRejected() {
+        LocalDate from = LocalDate.now().minusDays(10);
+        LocalDate to = LocalDate.now().plusDays(10);
+
+        BusinessRuleException ex = assertThrows(BusinessRuleException.class, () -> service.createMapping(
+                new ExternalProductMappingAdminService.CreateMappingRequest(
+                        "TERM_LOAN", "ENCORE", "PARTNER_FUNDED", "CODE_NEW", 2, "ACTIVE", from, to, Map.of())));
+        assertEquals("INVALID_ARGUMENT", ex.getReason());
+        verify(externalProductMappingRepository, never()).save(any());
+    }
+
+    @Test
     void createMapping_activeOverlap_isRejectedFailClosed() {
         LocalDate from = LocalDate.now().minusDays(10);
         LocalDate to = LocalDate.now().plusDays(10);
@@ -37,6 +61,7 @@ class ExternalProductMappingAdminServiceTest {
                 .id(UUID.randomUUID())
                 .losProductCode("TERM_LOAN")
                 .externalSystem("ENCORE")
+                .bookType("OWN_BOOK")
                 .externalProductCode("CODE_OLD")
                 .version(1)
                 .status("ACTIVE")
@@ -47,6 +72,7 @@ class ExternalProductMappingAdminServiceTest {
         when(externalProductMappingRepository.findActiveOverlapping(
                         eq("TERM_LOAN"),
                         eq("ENCORE"),
+                        eq("OWN_BOOK"),
                         eq("ACTIVE"),
                         eq(from),
                         eq(to),
@@ -57,6 +83,7 @@ class ExternalProductMappingAdminServiceTest {
                 new ExternalProductMappingAdminService.CreateMappingRequest(
                         "TERM_LOAN",
                         "ENCORE",
+                        "OWN_BOOK",
                         "CODE_NEW",
                         2,
                         "ACTIVE",
@@ -75,6 +102,7 @@ class ExternalProductMappingAdminServiceTest {
         when(externalProductMappingRepository.findActiveOverlapping(
                         eq("TERM_LOAN"),
                         eq("ENCORE"),
+                        eq("OWN_BOOK"),
                         eq("ACTIVE"),
                         eq(from),
                         eq(to),
@@ -85,6 +113,7 @@ class ExternalProductMappingAdminServiceTest {
                 .id(UUID.randomUUID())
                 .losProductCode("TERM_LOAN")
                 .externalSystem("ENCORE")
+                .bookType("OWN_BOOK")
                 .externalProductCode("CODE_NEW")
                 .version(2)
                 .status("ACTIVE")
@@ -100,6 +129,7 @@ class ExternalProductMappingAdminServiceTest {
                 new ExternalProductMappingAdminService.CreateMappingRequest(
                         "TERM_LOAN",
                         "ENCORE",
+                        "OWN_BOOK",
                         "CODE_NEW",
                         2,
                         "ACTIVE",
@@ -123,6 +153,7 @@ class ExternalProductMappingAdminServiceTest {
                 .id(mappingId)
                 .losProductCode("TERM_LOAN")
                 .externalSystem("ENCORE")
+                .bookType("OWN_BOOK")
                 .externalProductCode("CODE_OLD")
                 .version(1)
                 .status("INACTIVE")
@@ -137,6 +168,7 @@ class ExternalProductMappingAdminServiceTest {
                 .id(UUID.randomUUID())
                 .losProductCode("TERM_LOAN")
                 .externalSystem("ENCORE")
+                .bookType("OWN_BOOK")
                 .externalProductCode("CODE_X")
                 .version(2)
                 .status("ACTIVE")
@@ -147,6 +179,7 @@ class ExternalProductMappingAdminServiceTest {
         when(externalProductMappingRepository.findActiveOverlapping(
                         eq("TERM_LOAN"),
                         eq("ENCORE"),
+                        eq("OWN_BOOK"),
                         eq("ACTIVE"),
                         eq(from),
                         eq(to),
@@ -169,7 +202,7 @@ class ExternalProductMappingAdminServiceTest {
         LocalDate to = LocalDate.now().plusDays(10);
 
         when(externalProductMappingRepository.findActiveOverlapping(
-                        eq("TERM_LOAN"), eq("ENCORE"), eq("ACTIVE"), eq(from), eq(to), isNull()))
+                        eq("TERM_LOAN"), eq("ENCORE"), eq("OWN_BOOK"), eq("ACTIVE"), eq(from), eq(to), isNull()))
                 .thenReturn(List.of());
         when(externalProductMappingRepository.save(any(ExternalProductMapping.class)))
                 .thenThrow(new DataIntegrityViolationException(
@@ -180,7 +213,7 @@ class ExternalProductMappingAdminServiceTest {
 
         BusinessRuleException ex = assertThrows(BusinessRuleException.class, () -> service.createMapping(
                 new ExternalProductMappingAdminService.CreateMappingRequest(
-                        "TERM_LOAN", "ENCORE", "CODE_NEW", 2, "ACTIVE", from, to, Map.of())));
+                        "TERM_LOAN", "ENCORE", "OWN_BOOK", "CODE_NEW", 2, "ACTIVE", from, to, Map.of())));
 
         assertEquals("LMS_PRODUCT_MAPPING_AMBIGUOUS_ACTIVE_OVERLAP", ex.getReason());
     }
@@ -191,7 +224,7 @@ class ExternalProductMappingAdminServiceTest {
         LocalDate to = LocalDate.now().plusDays(10);
 
         when(externalProductMappingRepository.findActiveOverlapping(
-                        eq("TERM_LOAN"), eq("ENCORE"), eq("ACTIVE"), eq(from), eq(to), isNull()))
+                        eq("TERM_LOAN"), eq("ENCORE"), eq("OWN_BOOK"), eq("ACTIVE"), eq(from), eq(to), isNull()))
                 .thenReturn(List.of());
         DataIntegrityViolationException unrelated = new DataIntegrityViolationException(
                 "insert failed", new RuntimeException("ERROR: null value in column \"external_product_code\""));
@@ -200,7 +233,7 @@ class ExternalProductMappingAdminServiceTest {
 
         DataIntegrityViolationException thrown = assertThrows(DataIntegrityViolationException.class,
                 () -> service.createMapping(new ExternalProductMappingAdminService.CreateMappingRequest(
-                        "TERM_LOAN", "ENCORE", "CODE_NEW", 2, "ACTIVE", from, to, Map.of())));
+                        "TERM_LOAN", "ENCORE", "OWN_BOOK", "CODE_NEW", 2, "ACTIVE", from, to, Map.of())));
         assertSame(unrelated, thrown);
     }
 

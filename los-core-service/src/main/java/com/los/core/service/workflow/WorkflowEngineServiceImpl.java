@@ -1,6 +1,7 @@
 package com.los.core.service.workflow;
 
 import com.los.core.audit.AdminConfigAuditSupport;
+import com.los.core.customercategory.MatchWildcard;
 import com.los.core.exception.BusinessRuleException;
 import com.los.core.exception.ResourceNotFoundException;
 import com.los.core.model.dto.request.WorkflowConfigRequest;
@@ -49,6 +50,7 @@ public class WorkflowEngineServiceImpl implements IWorkflowEngineService {
                 .lmsProductCode(resolveWorkflowLmsProductCode(request))
                 .lmsTenureUnit(resolveWorkflowLmsTenureUnit(request))
                 .intakeSegment(intakeSeg)
+                .creditVintage(resolveWorkflowCreditVintage(request))
                 .intakeIdentitySchema(request.getIntakeIdentitySchema())
                 .intakeConfig(resolveIntakeConfigForCreate(request))
                 .bureauEnabled(request.getBureauEnabled() == null || request.getBureauEnabled())
@@ -129,6 +131,7 @@ public class WorkflowEngineServiceImpl implements IWorkflowEngineService {
                 .lmsProductCode(source.getLmsProductCode())
                 .lmsTenureUnit(source.getLmsTenureUnit())
                 .intakeSegment(source.getIntakeSegment())
+                .creditVintage(source.getCreditVintage())
                 .intakeIdentitySchema(source.getIntakeIdentitySchema())
                 .intakeConfig(source.getIntakeConfig())
                 .bureauEnabled(source.isBureauEnabled())
@@ -410,6 +413,13 @@ public class WorkflowEngineServiceImpl implements IWorkflowEngineService {
         return "Month";
     }
 
+    private static String resolveWorkflowCreditVintage(WorkflowConfigRequest request) {
+        if (request.getCreditVintage() != null && !request.getCreditVintage().isBlank()) {
+            return request.getCreditVintage().trim().toUpperCase(java.util.Locale.ROOT);
+        }
+        return MatchWildcard.ANY;
+    }
+
     private static String blankToNull(String value) {
         if (value == null || value.isBlank()) {
             return null;
@@ -480,6 +490,7 @@ public class WorkflowEngineServiceImpl implements IWorkflowEngineService {
                 .lmsProductCode(config.getLmsProductCode())
                 .lmsTenureUnit(config.getLmsTenureUnit())
                 .intakeSegment(config.getIntakeSegment())
+                .creditVintage(config.getCreditVintage())
                 .intakeIdentitySchema(config.getIntakeIdentitySchema())
                 .intakeConfig(config.getIntakeConfig())
                 .bureauEnabled(config.isBureauEnabled())
@@ -519,6 +530,9 @@ public class WorkflowEngineServiceImpl implements IWorkflowEngineService {
         }
         if (request.getIntakeSegment() != null) {
             config.setIntakeSegment(request.getIntakeSegment().name());
+        }
+        if (request.getCreditVintage() != null) {
+            config.setCreditVintage(resolveWorkflowCreditVintage(request));
         }
         if (request.getIntakeIdentitySchema() != null) {
             config.setIntakeIdentitySchema(request.getIntakeIdentitySchema());

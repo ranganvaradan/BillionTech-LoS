@@ -13,6 +13,8 @@ export function isBusinessBorrowerType(bt: BorrowerType): boolean {
 export interface IntakeFormState {
   borrowerType: BorrowerType
   loanProduct: string
+  /** Credit Vintage: NEW, EXISTING_CUSTOMER, or EXISTING_CUSTOMER_OF_GROUP. RM-selected. */
+  creditVintage: '' | 'NEW' | 'EXISTING_CUSTOMER' | 'EXISTING_CUSTOMER_OF_GROUP'
   workflowId: string
   customFieldValues: Record<string, string | boolean>
   requestedAmount: string
@@ -140,6 +142,7 @@ export function createEmptyIntakeFormState(): IntakeFormState {
   return {
     borrowerType: 'INDIVIDUAL',
     loanProduct: '',
+    creditVintage: '',
     workflowId: '',
     customFieldValues: {},
     requestedAmount: '',

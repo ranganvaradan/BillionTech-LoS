@@ -86,6 +86,7 @@ public class CustomerCategoryEligibilityService {
                 role,
                 entity,
                 app.getLoanProduct(),
+                app.getCreditVintage(),
                 app.getRequestedAmount(),
                 Instant.now(),
                 app.getSubProgramId(),
@@ -143,6 +144,9 @@ public class CustomerCategoryEligibilityService {
             return false;
         }
         if (!dimMatch(c.getLoanProduct(), ctx.loanProduct())) {
+            return false;
+        }
+        if (!dimMatch(c.getCreditVintage(), ctx.creditVintage())) {
             return false;
         }
         if (!amountMatch(c.getMinAmount(), c.getMaxAmount(), ctx.requestedAmount())) {

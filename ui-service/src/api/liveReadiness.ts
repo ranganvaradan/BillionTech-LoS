@@ -59,13 +59,15 @@ export async function getGoldenProductConfiguration(): Promise<Record<string, un
 export async function listExternalProductMappings(params: {
   losProductCode: string
   externalSystem?: string
+  bookType?: string
   asOf?: string
 }): Promise<any[]> {
-  const { losProductCode, externalSystem, asOf } = params
+  const { losProductCode, externalSystem, bookType, asOf } = params
   const { data: res } = await http.get(`${BASE}/external-product-mappings`, {
     params: {
       losProductCode,
       externalSystem: externalSystem || undefined,
+      bookType: bookType || undefined,
       asOf: asOf || undefined,
     },
   })
@@ -82,6 +84,7 @@ export async function listExternalProductSystems(losProductCode: string): Promis
 export async function createExternalProductMapping(req: {
   losProductCode: string
   externalSystem: string
+  bookType: string
   externalProductCode: string
   version: number
   status?: string

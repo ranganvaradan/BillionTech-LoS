@@ -1,5 +1,6 @@
 package com.los.core.model.entity;
 
+import com.los.core.customercategory.MatchWildcard;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
@@ -45,6 +46,15 @@ public class WorkflowConfig {
     @Column(name = "intake_segment", nullable = false, length = 20)
     @Builder.Default
     private String intakeSegment = "BORROWER";
+
+    /**
+     * Credit Vintage — NEW / EXISTING_CUSTOMER / EXISTING_CUSTOMER_OF_GROUP, or ANY (wildcard).
+     * Cross-checked against the bound Category's own creditVintage at admin bind time
+     * (see CategoryWorkflowCompatibility).
+     */
+    @Column(name = "credit_vintage", nullable = false, length = 40)
+    @Builder.Default
+    private String creditVintage = MatchWildcard.ANY;
 
     /**
      * Optional JSON array of field definitions for anchor identity intake (key, label, required, visible, inputType).

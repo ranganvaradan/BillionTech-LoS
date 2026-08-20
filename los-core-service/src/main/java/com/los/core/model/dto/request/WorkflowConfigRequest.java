@@ -30,6 +30,13 @@ public class WorkflowConfigRequest {
     /** Defaults to {@link IntakeSegment#BORROWER} when omitted. */
     private IntakeSegment intakeSegment;
 
+    /**
+     * Credit Vintage — NEW / EXISTING_CUSTOMER / EXISTING_CUSTOMER_OF_GROUP, or ANY (wildcard).
+     * Cross-checked against a bound Category's own creditVintage at admin bind time. Defaults
+     * to ANY when omitted.
+     */
+    private String creditVintage;
+
     /** Optional anchor identity step field definitions (JSON array). */
     private List<Map<String, Object>> intakeIdentitySchema;
 

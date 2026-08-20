@@ -1177,6 +1177,8 @@ public class LoanApplicationFlowService {
                 ? sanctionParams.get("remarks").toString() : null;
         String approvedBy = sanctionParams != null && sanctionParams.get("approvedBy") != null
                 ? sanctionParams.get("approvedBy").toString() : null;
+        String bookType = sanctionParams != null && sanctionParams.get("bookType") != null
+                ? sanctionParams.get("bookType").toString().trim().toUpperCase() : null;
 
         boolean anchorTermsEsign = anchorFlow && InvoiceDiscountingApplicationRules.requiresProgramTermsEsign(app);
         if (!anchorTermsEsign) {
@@ -1195,6 +1197,7 @@ public class LoanApplicationFlowService {
                 .conditionsText(conditions)
                 .remarks(remarks)
                 .approvedBy(approvedBy)
+                .bookType(bookType)
                 .build();
         sanctionRecordRepository.save(rec);
 
@@ -1239,6 +1242,19 @@ public class LoanApplicationFlowService {
             if (sanctionParams != null) {
                 charges.putAll(sanctionParams);
             }
+            // Own Book vs Colending drives external_product_mapping resolution (book_type is part
+            // of its resolution key) — required here since only this ordinary Encore-mapped path
+            // pins that mapping; anchor/ID-borrower flows never reach this branch.
+            if (bookType == null || bookType.isBlank()
+                    || !(bookType.equals("OWN_BOOK") || bookType.equals("COLENDING"))) {
+                throw new BusinessRuleException(
+                        "bookType (OWN_BOOK or COLENDING) is required at sanction for this application.",
+                        "SANCTION_BOOK_TYPE_REQUIRED",
+                        "SANCTION",
+                        Map.of("applicationId", applicationId.toString(), "bookType", bookType == null ? "" : bookType));
+            }
+            app.setBookType(bookType);
+            app = applicationRepository.save(app);
             // Pin canonical LOS->Encore external product mapping before any openLoanAccount / retry logic.
             // (Category-governed apps must not depend on workflow_configs.lms_product_code as long-term authority.)
             externalProductMappingPinningService.pinEncoreMappingIfNeeded(app);

@@ -19,6 +19,7 @@ public class WorkflowConfigResponse {
     private String lmsProductCode;
     private String lmsTenureUnit;
     private String intakeSegment;
+    private String creditVintage;
     private List<Map<String, Object>> intakeIdentitySchema;
     private Map<String, Object> intakeConfig;
     private boolean bureauEnabled;

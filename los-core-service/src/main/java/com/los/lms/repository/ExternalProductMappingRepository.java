@@ -16,14 +16,16 @@ public interface ExternalProductMappingRepository extends JpaRepository<External
             FROM ExternalProductMapping m
             WHERE m.losProductCode = :losProductCode
               AND m.externalSystem = :externalSystem
+              AND m.bookType = :bookType
               AND m.status = :status
               AND m.effectiveFrom <= :asOf
               AND m.effectiveTo >= :asOf
             ORDER BY m.version DESC
             """)
-    List<ExternalProductMapping> findByLosProductCodeAndExternalSystemAndStatusAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
+    List<ExternalProductMapping> findByLosProductCodeAndExternalSystemAndBookTypeAndStatusAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
             @Param("losProductCode") String losProductCode,
             @Param("externalSystem") String externalSystem,
+            @Param("bookType") String bookType,
             @Param("status") String status,
             @Param("asOf") LocalDate asOf);
 
@@ -32,13 +34,15 @@ public interface ExternalProductMappingRepository extends JpaRepository<External
             FROM ExternalProductMapping m
             WHERE m.losProductCode = :losProductCode
               AND m.externalSystem = :externalSystem
+              AND m.bookType = :bookType
               AND m.effectiveFrom <= :asOf
               AND m.effectiveTo >= :asOf
             ORDER BY m.version DESC
             """)
-    List<ExternalProductMapping> findByLosProductCodeAndExternalSystemAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
+    List<ExternalProductMapping> findByLosProductCodeAndExternalSystemAndBookTypeAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
             @Param("losProductCode") String losProductCode,
             @Param("externalSystem") String externalSystem,
+            @Param("bookType") String bookType,
             @Param("asOf") LocalDate asOf);
 
     List<ExternalProductMapping> findByLosProductCodeAndExternalSystemOrderByVersionDesc(
@@ -59,6 +63,7 @@ public interface ExternalProductMappingRepository extends JpaRepository<External
             FROM ExternalProductMapping m
             WHERE m.losProductCode = :losProductCode
               AND m.externalSystem = :externalSystem
+              AND m.bookType = :bookType
               AND m.status = :activeStatus
               AND m.effectiveFrom <= :effectiveTo
               AND m.effectiveTo >= :effectiveFrom
@@ -68,6 +73,7 @@ public interface ExternalProductMappingRepository extends JpaRepository<External
     List<ExternalProductMapping> findActiveOverlapping(
             @Param("losProductCode") String losProductCode,
             @Param("externalSystem") String externalSystem,
+            @Param("bookType") String bookType,
             @Param("activeStatus") String activeStatus,
             @Param("effectiveFrom") LocalDate effectiveFrom,
             @Param("effectiveTo") LocalDate effectiveTo,

@@ -45,6 +45,10 @@ public class SanctionRecord {
     @Column(name = "approved_by", length = 200)
     private String approvedBy;
 
+    /** Own Book vs Colending — audit copy of the value captured at sanction. */
+    @Column(name = "book_type", length = 20)
+    private String bookType;
+
     @Column(name = "sanction_pdf_path", length = 500)
     private String sanctionPdfPath;
 

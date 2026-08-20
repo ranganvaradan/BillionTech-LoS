@@ -122,6 +122,8 @@ export interface WorkflowConfigResponse {
   lmsTenureUnit?: string | null
   /** Omitted in older API payloads — treat as BORROWER. */
   intakeSegment?: WorkflowIntakeSegment | null
+  /** NEW / EXISTING_CUSTOMER / EXISTING_CUSTOMER_OF_GROUP, or ANY (wildcard). Omitted in older payloads — treat as ANY. */
+  creditVintage?: string | null
   intakeIdentitySchema?: Record<string, unknown>[] | null
   intakeConfig?: WorkflowIntakeConfig | null
   bureauEnabled?: boolean
@@ -146,6 +148,7 @@ export interface WorkflowConfigRequest {
   lmsProductCode?: string
   lmsTenureUnit?: string
   intakeSegment?: WorkflowIntakeSegment
+  creditVintage?: string
   intakeIdentitySchema?: Record<string, unknown>[]
   intakeConfig?: WorkflowIntakeConfig
   bureauEnabled?: boolean

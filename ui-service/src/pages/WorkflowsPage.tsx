@@ -97,6 +97,7 @@ export function WorkflowsPage() {
   const [lmsProductCode, setLmsProductCode] = useState('')
   const [lmsTenureUnit, setLmsTenureUnit] = useState(DEFAULT_LMS_TENURE_UNIT)
   const [intakeSegment, setIntakeSegment] = useState<WorkflowIntakeSegment>('BORROWER')
+  const [creditVintage, setCreditVintage] = useState('ANY')
   const [bureauEnabled, setBureauEnabled] = useState(true)
   const [autoPullBureauAfterKycSuccess, setAutoPullBureauAfterKycSuccess] = useState(true)
   const [intakeIdentitySchemaJson, setIntakeIdentitySchemaJson] = useState('[]')
@@ -248,6 +249,7 @@ export function WorkflowsPage() {
     setLmsProductCode('')
     setLmsTenureUnit(DEFAULT_LMS_TENURE_UNIT)
     setIntakeSegment('BORROWER')
+    setCreditVintage('ANY')
     setBureauEnabled(true)
     setAutoPullBureauAfterKycSuccess(true)
     setIntakeIdentitySchemaJson('[]')
@@ -277,6 +279,7 @@ export function WorkflowsPage() {
     setLmsProductCode(w.lmsProductCode?.trim() || '')
     setLmsTenureUnit(w.lmsTenureUnit?.trim() || DEFAULT_LMS_TENURE_UNIT)
     setIntakeSegment(w.intakeSegment === 'ANCHOR' ? 'ANCHOR' : 'BORROWER')
+    setCreditVintage(w.creditVintage?.trim() || 'ANY')
     setBureauEnabled(w.bureauEnabled !== false)
     setAutoPullBureauAfterKycSuccess(w.autoPullBureauAfterKycSuccess !== false)
     setIntakeIdentitySchemaJson(JSON.stringify(w.intakeIdentitySchema ?? [], null, 2))
@@ -369,6 +372,7 @@ export function WorkflowsPage() {
       lmsProductCode: workflowUsesPlpLmsConfig(loanProduct, intakeSegment) ? undefined : (lmsProductCode.trim() || undefined),
       lmsTenureUnit: workflowUsesPlpLmsConfig(loanProduct, intakeSegment) ? undefined : lmsTenureUnit.trim() || DEFAULT_LMS_TENURE_UNIT,
       intakeSegment,
+      creditVintage: creditVintage.trim() || 'ANY',
       bureauEnabled,
       autoPullBureauAfterKycSuccess,
       intakeIdentitySchema,
@@ -732,6 +736,19 @@ export function WorkflowsPage() {
                       >
                         <option value="BORROWER">Borrower</option>
                         <option value="ANCHOR">Anchor</option>
+                      </select>
+                    </label>
+                    <label className="block text-sm text-slate-700">
+                      <span className="mb-1 block text-xs font-medium text-slate-500">Credit Vintage</span>
+                      <select
+                        className="bt-input w-full"
+                        value={creditVintage}
+                        onChange={(e) => setCreditVintage(e.target.value)}
+                      >
+                        <option value="ANY">Any</option>
+                        <option value="NEW">New</option>
+                        <option value="EXISTING_CUSTOMER">Existing Customer</option>
+                        <option value="EXISTING_CUSTOMER_OF_GROUP">Existing Customer of Group</option>
                       </select>
                     </label>
                     {!isCreating && selected ? (

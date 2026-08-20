@@ -53,6 +53,8 @@ export interface CustomerCategory {
   entityType?: string
   /** Canonical Customer Role (design lock); mirrors intakeSegment during compatibility. */
   customerRole?: string
+  /** NEW / EXISTING_CUSTOMER / EXISTING_CUSTOMER_OF_GROUP, or ANY (wildcard). */
+  creditVintage?: string
   minAmount: number | null
   maxAmount: number | null
   /** Transitional internal package id — optional; not required for new Categories. */
@@ -115,6 +117,7 @@ export interface CategoryRequest {
   intakeSegment?: string
   entityType?: string
   customerRole?: string
+  creditVintage?: string
   minAmount?: number | null
   maxAmount?: number | null
   /** Transitional — optional; not required for new Categories. */

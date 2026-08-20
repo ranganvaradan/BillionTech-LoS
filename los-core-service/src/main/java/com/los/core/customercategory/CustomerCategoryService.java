@@ -160,6 +160,7 @@ public class CustomerCategoryService {
         String product = validator.normalizeLoanProduct(req.loanProduct());
         String intake = validator.normalizeIntakeSegment(
                 CreditTerminologyCompatibility.resolveCustomerRoleForStorage(req.customerRole(), req.intakeSegment()));
+        String creditVintage = normalizeCreditVintage(req.creditVintage());
         validator.validateAmountRange(req.minAmount(), req.maxAmount());
         validator.validateEffectiveDates(req.effectiveFrom(), req.effectiveUntil());
 
@@ -177,7 +178,7 @@ public class CustomerCategoryService {
         CategoryWorkflowBindService.ResolvedWorkflowBind workflowBind = null;
         if (req.workflowId() != null) {
             workflowBind = workflowBindService.resolveBind(req.workflowId(), req.workflowVersion());
-            workflowBindService.requireCompatible(intake, borrower, product, req.workflowId());
+            workflowBindService.requireCompatible(intake, borrower, product, creditVintage, req.workflowId());
         }
 
         UUID transitionalPsId = null;
@@ -198,6 +199,7 @@ public class CustomerCategoryService {
                 .borrowerType(borrower)
                 .loanProduct(product)
                 .intakeSegment(intake)
+                .creditVintage(creditVintage)
                 .minAmount(req.minAmount())
                 .maxAmount(req.maxAmount())
                 .policySetId(transitionalPsId)
@@ -279,6 +281,9 @@ public class CustomerCategoryService {
         if (resolvedRole != null) {
             e.setIntakeSegment(validator.normalizeIntakeSegment(resolvedRole));
         }
+        if (req.creditVintage() != null) {
+            e.setCreditVintage(normalizeCreditVintage(req.creditVintage()));
+        }
         e.setMinAmount(req.minAmount());
         e.setMaxAmount(req.maxAmount());
         validator.validateAmountRange(e.getMinAmount(), e.getMaxAmount());
@@ -296,7 +301,8 @@ public class CustomerCategoryService {
             CategoryWorkflowBindService.ResolvedWorkflowBind wb = workflowBindService.resolveBind(
                     req.workflowId(), req.workflowVersion());
             workflowBindService.requireCompatible(
-                    e.getIntakeSegment(), e.getBorrowerType(), e.getLoanProduct(), req.workflowId());
+                    e.getIntakeSegment(), e.getBorrowerType(), e.getLoanProduct(), e.getCreditVintage(),
+                    req.workflowId());
             workflowBindService.applyBind(e, wb);
         }
         Instant from = req.effectiveFrom() != null ? req.effectiveFrom() : e.getEffectiveFrom();
@@ -689,7 +695,8 @@ public class CustomerCategoryService {
                 e.getWorkflowVersion(),
                 e.getWorkflowContentHash(),
                 e.getWorkflowName(),
-                CategoryWorkflowBindService.linkageStatus(e));
+                CategoryWorkflowBindService.linkageStatus(e),
+                e.getCreditVintage());
     }
 
     private String policyDisplayName(CustomerCategoryEntity e) {
@@ -777,7 +784,17 @@ public class CustomerCategoryService {
                 && (e.getMaxAmount() == null || req.maxAmount().compareTo(e.getMaxAmount()) != 0)) {
             return true;
         }
+        if (req.creditVintage() != null && !req.creditVintage().equalsIgnoreCase(e.getCreditVintage())
+                && !(MatchWildcard.isAny(req.creditVintage()) && MatchWildcard.isAny(e.getCreditVintage()))) {
+            return true;
+        }
         return false;
+    }
+
+    private static String normalizeCreditVintage(String creditVintage) {
+        return creditVintage == null || creditVintage.isBlank()
+                ? MatchWildcard.ANY
+                : creditVintage.trim().toUpperCase(Locale.ROOT);
     }
 
     /**

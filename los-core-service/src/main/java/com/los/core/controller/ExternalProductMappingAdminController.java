@@ -27,6 +27,7 @@ public class ExternalProductMappingAdminController {
             UUID id,
             String losProductCode,
             String externalSystem,
+            String bookType,
             String externalProductCode,
             Integer version,
             String status,
@@ -40,10 +41,11 @@ public class ExternalProductMappingAdminController {
     public ResponseEntity<List<ExternalProductMappingView>> list(
             @RequestParam String losProductCode,
             @RequestParam(required = false) String externalSystem,
+            @RequestParam(required = false) String bookType,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf) {
 
         LocalDate date = asOf == null ? LocalDate.now() : asOf;
-        List<ExternalProductMapping> rows = adminService.listMappings(losProductCode, externalSystem)
+        List<ExternalProductMapping> rows = adminService.listMappings(losProductCode, externalSystem, bookType)
                 .stream()
                 .sorted(Comparator.comparing(ExternalProductMapping::getVersion).reversed())
                 .toList();
@@ -88,6 +90,7 @@ public class ExternalProductMappingAdminController {
                 r.getId(),
                 r.getLosProductCode(),
                 r.getExternalSystem(),
+                r.getBookType(),
                 r.getExternalProductCode(),
                 r.getVersion(),
                 r.getStatus(),

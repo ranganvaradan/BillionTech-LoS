@@ -36,6 +36,7 @@ public final class ApplicationConfigurationAuthority {
     public static final String CONFIGURATION_NOT_READY = "CONFIGURATION_NOT_READY";
     public static final String LMS_FIELD_NOT_PERMITTED_ON_CATEGORY_GOVERNED_APP =
             "LMS_FIELD_NOT_PERMITTED_ON_CATEGORY_GOVERNED_APP";
+    public static final String CREDIT_VINTAGE_PIN_IMMUTABLE = "CREDIT_VINTAGE_PIN_IMMUTABLE";
 
     private static final Set<String> CONTROLLED_EXPLICIT_WORKFLOW_ROLES = Set.of(
             "ADMIN", "ADMINISTRATOR", "PLATFORM_ADMIN", "SYSTEM", "TEST");
@@ -114,6 +115,28 @@ public final class ApplicationConfigurationAuthority {
                 WORKFLOW_ID_NOT_PERMITTED_ON_ORDINARY_INTAKE,
                 "UPDATE_APPLICATION",
                 Map.of("workflowId", requestedWorkflowId.toString()));
+    }
+
+    /**
+     * Credit Vintage drove which Customer Category was pinned — changing it after the fact
+     * would leave the application governed by a Category chosen for a different vintage.
+     * Fail closed on update, mirroring {@link #assertWorkflowIdUpdateAllowed}.
+     */
+    public static void assertCreditVintageUpdateAllowed(LoanApplication app, String requestedCreditVintage) {
+        if (requestedCreditVintage == null) {
+            return;
+        }
+        boolean categoryPinned = app.getSelectedCustomerCategoryId() != null;
+        if (categoryPinned) {
+            throw new BusinessRuleException(
+                    "Credit Vintage cannot be changed after Customer Category is pinned",
+                    CREDIT_VINTAGE_PIN_IMMUTABLE,
+                    "UPDATE_APPLICATION",
+                    Map.of(
+                            "applicationId", app.getId() != null ? app.getId().toString() : "",
+                            "existingCreditVintage", app.getCreditVintage() != null ? app.getCreditVintage() : "",
+                            "requestedCreditVintage", requestedCreditVintage));
+        }
     }
 
     /**

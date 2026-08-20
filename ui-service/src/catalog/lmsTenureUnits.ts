@@ -40,6 +40,18 @@ export function installmentPaymentLabel(unit: string | null | undefined): string
   return 'EMI'
 }
 
+/**
+ * Repayment Frequency shown next to Tenure — derived from the tenure unit, not independently
+ * selectable, since the actual EMI cadence is determined by the Encore product/tenure-unit
+ * combination.
+ */
+export function repaymentFrequencyForTenureUnit(unit: string | null | undefined): string {
+  const u = (unit || DEFAULT_LMS_TENURE_UNIT).trim().toLowerCase()
+  if (u === 'day') return 'Day'
+  if (u === 'week') return 'Week'
+  return 'Month'
+}
+
 /** True when LMS workflow fields should be hidden (invoice discounting uses PLP program config). */
 export function workflowUsesPlpLmsConfig(loanProduct: string, intakeSegment?: string | null): boolean {
   return loanProduct === 'BUSINESS_WC_INVOICE_DISCOUNTING' || intakeSegment === 'ANCHOR'

@@ -17,6 +17,8 @@ public class UpdateApplicationRequest {
 
     private String lmsTenureUnit;
 
+    private String creditVintage;
+
     private UUID workflowId;
 
     private Map<String, Object> personalInfo;

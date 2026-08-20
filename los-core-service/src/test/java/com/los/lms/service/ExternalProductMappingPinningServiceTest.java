@@ -47,9 +47,10 @@ class ExternalProductMappingPinningServiceTest {
         assertEquals("LEGACY_CODE", app.getLmsProductCode());
         assertNull(app.getExternalProductMappingId());
         verify(externalProductMappingRepository, never())
-                .findByLosProductCodeAndExternalSystemAndStatusAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
+                .findByLosProductCodeAndExternalSystemAndBookTypeAndStatusAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
                         org.mockito.ArgumentMatchers.anyString(),
                         org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.any(),
                         org.mockito.ArgumentMatchers.anyString(),
                         org.mockito.ArgumentMatchers.any(LocalDate.class));
     }
@@ -63,9 +64,10 @@ class ExternalProductMappingPinningServiceTest {
 
         service.pinEncoreMappingIfNeeded(app);
 
-        verify(externalProductMappingRepository, never()).findByLosProductCodeAndExternalSystemAndStatusAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
+        verify(externalProductMappingRepository, never()).findByLosProductCodeAndExternalSystemAndBookTypeAndStatusAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
                 org.mockito.ArgumentMatchers.anyString(),
                 org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.anyString(),
                 org.mockito.ArgumentMatchers.any(LocalDate.class));
     }
@@ -76,20 +78,23 @@ class ExternalProductMappingPinningServiceTest {
                 .applicationNumber("APP-1")
                 .loanProduct(StandardLoanProduct.TERM_LOAN)
                 .categorySelectedAt(Instant.now())
+                .bookType("OWN_BOOK")
                 .build();
 
         LocalDate asOf = LocalDate.now();
         when(externalProductMappingRepository
-                .findByLosProductCodeAndExternalSystemAndStatusAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
+                .findByLosProductCodeAndExternalSystemAndBookTypeAndStatusAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
                         org.mockito.ArgumentMatchers.eq(StandardLoanProduct.TERM_LOAN),
                         org.mockito.ArgumentMatchers.eq("ENCORE"),
+                        org.mockito.ArgumentMatchers.eq("OWN_BOOK"),
                         org.mockito.ArgumentMatchers.eq("ACTIVE"),
                         org.mockito.ArgumentMatchers.any(LocalDate.class)))
                 .thenReturn(List.of());
         when(externalProductMappingRepository
-                .findByLosProductCodeAndExternalSystemAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
+                .findByLosProductCodeAndExternalSystemAndBookTypeAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
                         org.mockito.ArgumentMatchers.eq(StandardLoanProduct.TERM_LOAN),
                         org.mockito.ArgumentMatchers.eq("ENCORE"),
+                        org.mockito.ArgumentMatchers.eq("OWN_BOOK"),
                         org.mockito.ArgumentMatchers.any(LocalDate.class)))
                 .thenReturn(List.of());
 
@@ -109,12 +114,14 @@ class ExternalProductMappingPinningServiceTest {
                 .applicationNumber("APP-2")
                 .loanProduct(StandardLoanProduct.TERM_LOAN)
                 .categorySelectedAt(Instant.now())
+                .bookType("OWN_BOOK")
                 .build();
 
         when(externalProductMappingRepository
-                .findByLosProductCodeAndExternalSystemAndStatusAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
+                .findByLosProductCodeAndExternalSystemAndBookTypeAndStatusAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
                         org.mockito.ArgumentMatchers.anyString(),
                         org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.any(),
                         org.mockito.ArgumentMatchers.eq("ACTIVE"),
                         org.mockito.ArgumentMatchers.any(LocalDate.class)))
                 .thenReturn(List.of());
@@ -123,6 +130,7 @@ class ExternalProductMappingPinningServiceTest {
                 .id(UUID.randomUUID())
                 .losProductCode(StandardLoanProduct.TERM_LOAN)
                 .externalSystem("ENCORE")
+                .bookType("OWN_BOOK")
                 .externalProductCode("CODE_X")
                 .version(1)
                 .status("INACTIVE")
@@ -131,9 +139,10 @@ class ExternalProductMappingPinningServiceTest {
                 .build();
 
         when(externalProductMappingRepository
-                .findByLosProductCodeAndExternalSystemAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
+                .findByLosProductCodeAndExternalSystemAndBookTypeAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
                         org.mockito.ArgumentMatchers.anyString(),
                         org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.any(),
                         org.mockito.ArgumentMatchers.any(LocalDate.class)))
                 .thenReturn(List.of(anyStatusCovering));
 
@@ -147,12 +156,14 @@ class ExternalProductMappingPinningServiceTest {
                 .applicationNumber("APP-3")
                 .loanProduct(StandardLoanProduct.TERM_LOAN)
                 .categorySelectedAt(Instant.now())
+                .bookType("OWN_BOOK")
                 .build();
 
         ExternalProductMapping m1 = ExternalProductMapping.builder()
                 .id(UUID.randomUUID())
                 .losProductCode(StandardLoanProduct.TERM_LOAN)
                 .externalSystem("ENCORE")
+                .bookType("OWN_BOOK")
                 .externalProductCode("CODE_1")
                 .version(1)
                 .status("ACTIVE")
@@ -164,6 +175,7 @@ class ExternalProductMappingPinningServiceTest {
                 .id(UUID.randomUUID())
                 .losProductCode(StandardLoanProduct.TERM_LOAN)
                 .externalSystem("ENCORE")
+                .bookType("OWN_BOOK")
                 .externalProductCode("CODE_1")
                 .version(2)
                 .status("ACTIVE")
@@ -172,9 +184,10 @@ class ExternalProductMappingPinningServiceTest {
                 .build();
 
         when(externalProductMappingRepository
-                .findByLosProductCodeAndExternalSystemAndStatusAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
+                .findByLosProductCodeAndExternalSystemAndBookTypeAndStatusAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
                         org.mockito.ArgumentMatchers.anyString(),
                         org.mockito.ArgumentMatchers.anyString(),
+                        org.mockito.ArgumentMatchers.any(),
                         org.mockito.ArgumentMatchers.eq("ACTIVE"),
                         org.mockito.ArgumentMatchers.any(LocalDate.class)))
                 .thenReturn(List.of(m2, m1));
@@ -189,12 +202,14 @@ class ExternalProductMappingPinningServiceTest {
                 .applicationNumber("APP-4")
                 .loanProduct(StandardLoanProduct.TERM_LOAN)
                 .categorySelectedAt(Instant.now())
+                .bookType("OWN_BOOK")
                 .build();
 
         ExternalProductMapping mapping = ExternalProductMapping.builder()
                 .id(UUID.randomUUID())
                 .losProductCode(StandardLoanProduct.TERM_LOAN)
                 .externalSystem("ENCORE")
+                .bookType("OWN_BOOK")
                 .externalProductCode("PINNED_CODE")
                 .version(7)
                 .status("ACTIVE")
@@ -203,9 +218,10 @@ class ExternalProductMappingPinningServiceTest {
                 .build();
 
         when(externalProductMappingRepository
-                .findByLosProductCodeAndExternalSystemAndStatusAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
+                .findByLosProductCodeAndExternalSystemAndBookTypeAndStatusAndEffectiveFromLessThanEqualAndEffectiveToGreaterThanEqualOrderByVersionDesc(
                         org.mockito.ArgumentMatchers.eq(StandardLoanProduct.TERM_LOAN),
                         org.mockito.ArgumentMatchers.eq("ENCORE"),
+                        org.mockito.ArgumentMatchers.eq("OWN_BOOK"),
                         org.mockito.ArgumentMatchers.eq("ACTIVE"),
                         org.mockito.ArgumentMatchers.any(LocalDate.class)))
                 .thenReturn(List.of(mapping));

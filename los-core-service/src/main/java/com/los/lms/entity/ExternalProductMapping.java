@@ -38,6 +38,14 @@ public class ExternalProductMapping {
     @Column(name = "external_system", nullable = false, length = 30)
     private String externalSystem;
 
+    /**
+     * Own Book vs Colending routing classification — captured at sanction. Required, no
+     * wildcard: OWN_BOOK or COLENDING. Part of the resolution key alongside losProductCode/
+     * externalSystem.
+     */
+    @Column(name = "book_type", nullable = false, length = 20)
+    private String bookType;
+
     @Column(name = "external_product_code", nullable = false, length = 100)
     private String externalProductCode;
 

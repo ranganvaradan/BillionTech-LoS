@@ -23,6 +23,12 @@ public class CreateApplicationRequest {
     /** Defaults to {@link IntakeSegment#BORROWER} when omitted. */
     private IntakeSegment intakeSegment;
 
+    /**
+     * Credit Vintage — NEW / EXISTING_CUSTOMER / EXISTING_CUSTOMER_OF_GROUP. RM-selected at
+     * intake; participates in Customer Category discovery/eligibility matching.
+     */
+    private String creditVintage;
+
     @Positive(message = "Requested amount must be positive")
     private BigDecimal requestedAmount;
 
@@ -33,6 +39,12 @@ public class CreateApplicationRequest {
 
     /** Encore tenure unit (optional; falls back to active workflow default). */
     private String lmsTenureUnit;
+
+    /**
+     * Repayment/installment frequency for display on KFS and sanction documents.
+     * Derived from lmsTenureUnit at intake if omitted — not independently selectable.
+     */
+    private String repaymentFrequency;
 
     /**
      * Controlled ADMIN / MIGRATION / TEST only (Option B).

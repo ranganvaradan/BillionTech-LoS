@@ -19,6 +19,8 @@ export interface CreateApplicationRequest {
   tenureMonths?: number | null
   lmsProductCode?: string | null
   lmsTenureUnit?: string | null
+  repaymentFrequency?: string | null
+  creditVintage?: string | null
   personalInfo?: Record<string, unknown> | null
   businessInfo?: Record<string, unknown> | null
   financialInfo?: Record<string, unknown> | null
