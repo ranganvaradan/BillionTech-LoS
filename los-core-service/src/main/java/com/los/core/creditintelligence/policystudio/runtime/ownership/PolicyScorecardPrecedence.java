@@ -15,6 +15,7 @@ import java.util.Map;
  * Policy FAIL → cannot APPROVE from score
  * Policy DI → cannot silently score into APPROVE
  * Policy PASS → scorecard may APPROVE/REFER/REJECT by band
+ * Policy PASS + no scorecard configured → hard-rule-only policy stands on its own (APPROVE)
  * Manual override → explicit layer on top
  * </pre>
  */
@@ -32,6 +33,20 @@ public final class PolicyScorecardPrecedence {
             CanonicalPolicyResult policy,
             FinalUnderwritingDecision.FinalOutcome scorecardBandOutcome,
             ManualOverrideRecord override) {
+        return combine(policy, scorecardBandOutcome, override, false);
+    }
+
+    /**
+     * @param scorecardExplicitlyAbsent true when the policy is deliberately hard-rule-only
+     *      (no scorecard linked) — as opposed to a scorecard being configured but unable to
+     *      produce a band. Only changes behavior when the Policy itself PASSes: a hard-rule-only
+     *      policy that passes stands on its own (APPROVE) instead of defaulting to REFER.
+     */
+    public static PrecedenceResult combine(
+            CanonicalPolicyResult policy,
+            FinalUnderwritingDecision.FinalOutcome scorecardBandOutcome,
+            ManualOverrideRecord override,
+            boolean scorecardExplicitlyAbsent) {
 
         List<String> reasons = new ArrayList<>();
         if (policy == null) {
@@ -63,6 +78,10 @@ public final class PolicyScorecardPrecedence {
                 combined = fromPolicy;
                 reasons.add("POLICY_INSUFFICIENT_OR_REFER");
             }
+        } else if (scorecardExplicitlyAbsent) {
+            // Policy PASS, no scorecard configured — hard-rule-only policy stands on its own.
+            combined = FinalUnderwritingDecision.FinalOutcome.APPROVE;
+            reasons.add("POLICY_PASS_NO_SCORECARD_HARD_RULES_ONLY");
         } else {
             // Policy PASS
             combined = scorecardBandOutcome == null
@@ -104,6 +123,7 @@ public final class PolicyScorecardPrecedence {
         m.put("policyFailBlocksApprove", true);
         m.put("policyDiBlocksSilentScoreApprove", true);
         m.put("policyPassDefersToScorecardBand", true);
+        m.put("policyPassNoScorecardApproves", true);
         m.put("manualOverrideExplicit", true);
         m.put("workflowNeverApproves", true);
         return m;

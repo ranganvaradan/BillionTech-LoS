@@ -135,7 +135,8 @@ public class CanonicalObservationalEvaluationService {
         }
 
         FinalUnderwritingDecision.FinalOutcome band = bandOf(scorecard);
-        var prec = PolicyScorecardPrecedence.combine(policy, band, null);
+        boolean scorecardExplicitlyAbsent = Boolean.TRUE.equals(scorecard.get("scorecardExplicitlyAbsent"));
+        var prec = PolicyScorecardPrecedence.combine(policy, band, null, scorecardExplicitlyAbsent);
         CanonicalShadowDecision decision = CanonicalShadowUnderwritingService.mapDecision(prec.outcome());
         return new CanonicalObservationalEvaluation(
                 "COMPLETED",

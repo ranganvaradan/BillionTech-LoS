@@ -118,6 +118,22 @@ class EquifaxProviderAvailabilityP03Test {
     }
 
     @Test
+    void case2b_simulationEnabled_usesConfiguredFixtureContent() {
+        // Confirms EQUIFAX_SIMULATION=true (no fixture key needed) parses the real
+        // classpath fixture rather than falling back to the hardcoded synthetic response —
+        // pins the specific score so a future fixture swap is a deliberate, visible change.
+        clearCredentials();
+        integrationProperties.getEquifax().setSimulation(true);
+
+        IBureauProvider.BureauPullResult r = provider.pullReport(Map.of(
+                "name", "Test", "panNumber", "ABCDE1234F"));
+
+        assertThat(r.success()).isTrue();
+        assertThat(r.creditScore()).isEqualTo(808);
+        assertThat(r.reportData().get("simulated")).isEqualTo(true);
+    }
+
+    @Test
     void case3_credentialsConfigured_providerSuccess_providerProvenance() throws Exception {
         configureCredentials();
         String xml = loadSampleXml();

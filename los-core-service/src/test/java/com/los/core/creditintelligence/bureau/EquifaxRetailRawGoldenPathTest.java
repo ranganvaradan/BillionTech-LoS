@@ -156,7 +156,7 @@ class EquifaxRetailRawGoldenPathTest {
     void goldenPcsFixture_extractNormalizeMaterializeProducer() throws Exception {
         String xml;
         try (var in = getClass().getClassLoader()
-                .getResourceAsStream("simulated/equifax-sample-inquiry-response.xml")) {
+                .getResourceAsStream("provider-fixtures/equifax/equifax_golden_pipeline_fixture.xml")) {
             assertThat(in).isNotNull();
             xml = new String(in.readAllBytes(), StandardCharsets.UTF_8);
         }
@@ -348,7 +348,7 @@ class EquifaxRetailRawGoldenPathTest {
     void missingXmlTagIsNotZero_explicitSummaryZeroIsPreserved() throws Exception {
         String xml;
         try (var in = getClass().getClassLoader()
-                .getResourceAsStream("simulated/equifax-sample-inquiry-response.xml")) {
+                .getResourceAsStream("provider-fixtures/equifax/equifax_golden_pipeline_fixture.xml")) {
             xml = new String(in.readAllBytes(), StandardCharsets.UTF_8);
         }
         Map<String, Object> reportData = EquifaxBureauAccountExtractor.enrichFromXml(xml, Map.of());

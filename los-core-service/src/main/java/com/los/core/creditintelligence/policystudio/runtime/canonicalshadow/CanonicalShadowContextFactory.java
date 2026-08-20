@@ -14,6 +14,7 @@ import com.los.core.creditintelligence.policystudio.parameters.execution.Canonic
 import com.los.core.creditintelligence.policystudio.parameters.execution.EvaluationContext;
 import com.los.core.creditintelligence.policystudio.parameters.execution.EvaluationMode;
 import com.los.core.creditintelligence.policystudio.parameters.execution.PersistedDerivedMetricSpine;
+import com.los.core.creditintelligence.policystudio.parameters.manualoverride.ManualParameterOverrideSpine;
 import com.los.core.creditintelligence.policystudio.runtime.canonicalconfig.CanonicalApplicationConfiguration;
 import com.los.core.creditintelligence.policystudio.runtime.canonicalconfig.CanonicalCalculationPin;
 import lombok.RequiredArgsConstructor;
@@ -40,6 +41,7 @@ public class CanonicalShadowContextFactory {
     private final CiBureauReportSummaryRepository reportSummaryRepository;
     private final CiBureauScoringElementRepository scoringElementRepository;
     private final PersistedDerivedMetricSpine persistedDerivedMetricSpine;
+    private final ManualParameterOverrideSpine manualParameterOverrideSpine;
 
     public EvaluationContext build(CanonicalApplicationConfiguration freeze, UUID tenantId) {
         if (freeze == null || freeze.evaluationAsOf() == null) {
@@ -85,6 +87,7 @@ public class CanonicalShadowContextFactory {
         });
         // Bind last so provenance extras cannot overwrite persisted derived maps.
         persistedDerivedMetricSpine.bindExactReport(b, freeze.bureauReportId());
+        manualParameterOverrideSpine.bindExactApplication(b, freeze.applicationId());
         return b.build();
     }
 

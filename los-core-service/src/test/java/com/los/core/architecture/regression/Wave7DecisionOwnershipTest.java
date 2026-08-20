@@ -6,6 +6,7 @@ import com.los.core.creditintelligence.policystudio.parameters.execution.Evaluat
 import com.los.core.creditintelligence.policystudio.parameters.execution.EvaluationMode;
 import com.los.core.creditintelligence.policystudio.parameters.execution.ExecutionCapabilityAuthority;
 import com.los.core.creditintelligence.policystudio.parameters.execution.ExecutionSpineProducerBootstrap;
+import com.los.core.creditintelligence.policystudio.runtime.CanonicalPolicyResult;
 import com.los.core.creditintelligence.policystudio.runtime.CanonicalPolicyRuntime;
 import com.los.core.creditintelligence.policystudio.runtime.PolicyOverlapInventory;
 import com.los.core.creditintelligence.policystudio.runtime.PolicyRuntimeShadowParity;
@@ -142,6 +143,46 @@ class Wave7DecisionOwnershipTest {
                         Map.of("normalizedPercent", 85), true),
                 Map.of(), Map.of(), null);
         assertThat(d.finalOutcome()).isEqualTo(FinalUnderwritingDecision.FinalOutcome.APPROVE);
+    }
+
+    @Test
+    void policyPassNoScorecard_approvesWithoutForcedHumanReview() {
+        CanonicalPolicyResult policy = new CanonicalPolicyResult(
+                "pol", "1", "v1", ASOF, CanonicalPolicyResult.OverallOutcome.PASS,
+                List.of(), List.of(), List.of(), List.of(), Map.of(), Map.of());
+        var prec = PolicyScorecardPrecedence.combine(policy, null, null, true);
+        assertThat(prec.outcome()).isEqualTo(FinalUnderwritingDecision.FinalOutcome.APPROVE);
+        assertThat(prec.reasonCodes()).contains("POLICY_PASS_NO_SCORECARD_HARD_RULES_ONLY");
+    }
+
+    @Test
+    void policyFailNoScorecard_stillRejects() {
+        CanonicalPolicyResult policy = new CanonicalPolicyResult(
+                "pol", "1", "v1", ASOF, CanonicalPolicyResult.OverallOutcome.FAIL,
+                List.of(), List.of("r1"), List.of(), List.of(), Map.of(), Map.of());
+        var prec = PolicyScorecardPrecedence.combine(policy, null, null, true);
+        assertThat(prec.outcome()).isEqualTo(FinalUnderwritingDecision.FinalOutcome.REJECT);
+        assertThat(prec.reasonCodes()).anyMatch(r -> r.contains("POLICY_FAIL"));
+    }
+
+    @Test
+    void policyDataInsufficientNoScorecard_staysDataInsufficient() {
+        CanonicalPolicyResult policy = new CanonicalPolicyResult(
+                "pol", "1", "v1", ASOF, CanonicalPolicyResult.OverallOutcome.DATA_INSUFFICIENT,
+                List.of(), List.of(), List.of("r1"), List.of(), Map.of(), Map.of());
+        var prec = PolicyScorecardPrecedence.combine(policy, null, null, true);
+        assertThat(prec.outcome()).isEqualTo(FinalUnderwritingDecision.FinalOutcome.DATA_INSUFFICIENT);
+    }
+
+    @Test
+    void policyPassScorecardPresent_absentFlagFalse_preservesExistingBandDeference() {
+        CanonicalPolicyResult policy = new CanonicalPolicyResult(
+                "pol", "1", "v1", ASOF, CanonicalPolicyResult.OverallOutcome.PASS,
+                List.of(), List.of(), List.of(), List.of(), Map.of(), Map.of());
+        var prec = PolicyScorecardPrecedence.combine(
+                policy, FinalUnderwritingDecision.FinalOutcome.REFER, null, false);
+        assertThat(prec.outcome()).isEqualTo(FinalUnderwritingDecision.FinalOutcome.REFER);
+        assertThat(prec.reasonCodes()).contains("POLICY_PASS_SCORECARD_BAND");
     }
 
     @Test

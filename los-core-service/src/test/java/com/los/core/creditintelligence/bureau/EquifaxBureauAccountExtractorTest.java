@@ -92,7 +92,7 @@ class EquifaxBureauAccountExtractorTest {
     void extractsFullSimulatedPcsFixture() throws Exception {
         String xml;
         try (var in = getClass().getClassLoader()
-                .getResourceAsStream("simulated/equifax-sample-inquiry-response.xml")) {
+                .getResourceAsStream("provider-fixtures/equifax/equifax_golden_pipeline_fixture.xml")) {
             assertNotNull(in, "classpath simulated Equifax fixture missing");
             xml = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
         }

@@ -1,6 +1,7 @@
 package com.los.core.creditintelligence.policystudio.parameters.execution;
 
 import com.los.core.creditintelligence.bureau.service.BureauMetricService;
+import com.los.core.creditintelligence.policystudio.parameters.manualoverride.ManualParameterOverrideSpine;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -99,6 +100,16 @@ public final class BuiltInBureauMetricProducer implements ParameterProducer {
                     persistedProvenance(ctx, canonicalParameterId));
         }
         @SuppressWarnings("unchecked")
+        Map<String, Object> manualOverrides =
+                ctx.entities().get(ManualParameterOverrideSpine.MANUAL_PARAMETER_OVERRIDES)
+                        instanceof Map<?, ?> m ? (Map<String, Object>) m : Map.of();
+        if (manualOverrides.containsKey(canonicalParameterId) && manualOverrides.get(canonicalParameterId) != null) {
+            return valueResult(canonicalParameterId, manualOverrides.get(canonicalParameterId),
+                    "entities." + ManualParameterOverrideSpine.MANUAL_PARAMETER_OVERRIDES,
+                    ManualParameterOverrideSpine.SOURCE_MANUAL_PARAMETER_OVERRIDE,
+                    manualOverrideProvenance(ctx, canonicalParameterId));
+        }
+        @SuppressWarnings("unchecked")
         Map<String, Object> statuses = ctx.entities().get(PersistedDerivedMetricSpine.PRECOMPUTED_METRIC_STATUSES)
                 instanceof Map<?, ?> m ? (Map<String, Object>) m : Map.of();
         if (statuses.containsKey(canonicalParameterId)) {
@@ -170,6 +181,16 @@ public final class BuiltInBureauMetricProducer implements ParameterProducer {
                 .provenance(prov)
                 .exactProducerPath(PRODUCER_ID + " ← " + path + "[" + id + "] (metricCode==" + id + ")")
                 .build();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> manualOverrideProvenance(EvaluationContext ctx, String id) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        Object raw = ctx.entities().get(ManualParameterOverrideSpine.MANUAL_PARAMETER_OVERRIDE_PROVENANCE);
+        if (raw instanceof Map<?, ?> m && m.get(id) instanceof Map<?, ?> row) {
+            out.putAll((Map<String, Object>) row);
+        }
+        return out;
     }
 
     @SuppressWarnings("unchecked")
