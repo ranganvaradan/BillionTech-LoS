@@ -24,7 +24,7 @@ class CustomerCategoryPolicyScopeCompatibilityTest {
         return new CustomerCategoryPolicyScopeCompatibility.CategoryScope(
                 "BORROWER", "INDIVIDUAL", "BUSINESS_TERM_LOAN",
                 new BigDecimal("20000"), new BigDecimal("500000"),
-                null, null);
+                null, null, "ANY");
     }
 
     private static CiPolicyApplicability basePolicy(String name) {
@@ -100,6 +100,35 @@ class CustomerCategoryPolicyScopeCompatibilityTest {
     }
 
     @Test
+    void categoryWithSpecificCreditVintage_matchesPolicyWithNoVintageMetadata() {
+        // Most Policies have no Credit Vintage metadata at all today — must be treated as
+        // unconstrained (ANY), not a hard fail, mirroring the missingPolicyCustomerRoleColumn case.
+        var cat = new CustomerCategoryPolicyScopeCompatibility.CategoryScope(
+                "BORROWER", "INDIVIDUAL", "BUSINESS_TERM_LOAN",
+                new BigDecimal("20000"), new BigDecimal("500000"),
+                null, null, "EXISTING_CUSTOMER");
+        var r = CustomerCategoryPolicyScopeCompatibility.evaluate(cat, basePolicy("NoVintage"));
+        assertTrue(r.compatible());
+        assertFalse(r.reasons().contains(CustomerCategoryPolicyScopeCompatibility.CREDIT_VINTAGE_NOT_COVERED));
+    }
+
+    @Test
+    void categoryWithSpecificCreditVintage_notInPolicyVintageScope_incompatible() {
+        var cat = new CustomerCategoryPolicyScopeCompatibility.CategoryScope(
+                "BORROWER", "INDIVIDUAL", "BUSINESS_TERM_LOAN",
+                new BigDecimal("20000"), new BigDecimal("500000"),
+                null, null, "NEW");
+        CiPolicyApplicability p = basePolicy("VintageScoped");
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("creditVintages", List.of("EXISTING_CUSTOMER"));
+        p.setMetadata(meta);
+        var r = CustomerCategoryPolicyScopeCompatibility.evaluate(cat, p);
+        assertFalse(r.compatible());
+        assertEquals(CustomerCategoryPolicyScopeCompatibility.STATUS_INCOMPATIBLE, r.status());
+        assertTrue(r.reasons().contains(CustomerCategoryPolicyScopeCompatibility.CREDIT_VINTAGE_NOT_COVERED));
+    }
+
+    @Test
     void wrongEntityType_incompatible() {
         CiPolicyApplicability p = basePolicy("Entity");
         p.setBorrowerTypes(List.of("COMPANY"));
@@ -156,7 +185,7 @@ class CustomerCategoryPolicyScopeCompatibilityTest {
                 "BORROWER", "INDIVIDUAL", "BUSINESS_TERM_LOAN",
                 new BigDecimal("20000"), new BigDecimal("500000"),
                 Instant.parse("2026-01-01T00:00:00Z"),
-                Instant.parse("2027-12-31T00:00:00Z"));
+                Instant.parse("2027-12-31T00:00:00Z"), "ANY");
         CiPolicyApplicability p = basePolicy("ShortEff");
         p.setEffectiveFrom(LocalDate.of(2026, 1, 1));
         p.setEffectiveUntil(LocalDate.of(2026, 6, 30));
@@ -170,7 +199,7 @@ class CustomerCategoryPolicyScopeCompatibilityTest {
                 "BORROWER", "INDIVIDUAL", "BUSINESS_TERM_LOAN",
                 new BigDecimal("20000"), new BigDecimal("500000"),
                 Instant.parse("2026-01-01T00:00:00Z"),
-                null);
+                null, "ANY");
         CiPolicyApplicability p = basePolicy("Ends");
         p.setEffectiveFrom(LocalDate.of(2026, 1, 1));
         p.setEffectiveUntil(LocalDate.of(2027, 1, 1));
@@ -210,7 +239,7 @@ class CustomerCategoryPolicyScopeCompatibilityTest {
     @Test
     void emptyCategoryContext_doesNotThrow_andNeedsContext() {
         var empty = new CustomerCategoryPolicyScopeCompatibility.CategoryScope(
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null);
         var r = CustomerCategoryPolicyScopeCompatibility.evaluate(empty, basePolicy("Unfiltered"));
         assertEquals(CustomerCategoryPolicyScopeCompatibility.STATUS_NEEDS_CONTEXT, r.status());
         assertFalse(r.compatible());

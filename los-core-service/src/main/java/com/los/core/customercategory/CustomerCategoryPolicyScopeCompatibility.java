@@ -30,6 +30,7 @@ public final class CustomerCategoryPolicyScopeCompatibility {
     public static final String PRODUCT_NOT_COVERED = "PRODUCT_NOT_COVERED";
     public static final String AMOUNT_RANGE_NOT_COVERED = "AMOUNT_RANGE_NOT_COVERED";
     public static final String EFFECTIVE_PERIOD_NOT_COVERED = "EFFECTIVE_PERIOD_NOT_COVERED";
+    public static final String CREDIT_VINTAGE_NOT_COVERED = "CREDIT_VINTAGE_NOT_COVERED";
     public static final String ADDITIONAL_SCOPE_CONTEXT_REQUIRED = "ADDITIONAL_SCOPE_CONTEXT_REQUIRED";
 
     private CustomerCategoryPolicyScopeCompatibility() {}
@@ -41,11 +42,12 @@ public final class CustomerCategoryPolicyScopeCompatibility {
             BigDecimal minAmount,
             BigDecimal maxAmount,
             Instant effectiveFrom,
-            Instant effectiveUntil
+            Instant effectiveUntil,
+            String creditVintage
     ) {
         public static CategoryScope fromEntity(CustomerCategoryEntity e) {
             if (e == null) {
-                return new CategoryScope(null, null, null, null, null, null, null);
+                return new CategoryScope(null, null, null, null, null, null, null, null);
             }
             return new CategoryScope(
                     e.getIntakeSegment(),
@@ -54,7 +56,8 @@ public final class CustomerCategoryPolicyScopeCompatibility {
                     e.getMinAmount(),
                     e.getMaxAmount(),
                     e.getEffectiveFrom(),
-                    e.getEffectiveUntil());
+                    e.getEffectiveUntil(),
+                    e.getCreditVintage());
         }
     }
 
@@ -180,6 +183,39 @@ public final class CustomerCategoryPolicyScopeCompatibility {
         }
         checks.add(new ScopeCheck("product", "Loan Product coverage", productOk, productDetail));
 
+        // --- Credit Vintage ---
+        // Policy Studio has no first-class Credit Vintage column yet — same as Customer Role,
+        // treat an absent policy-side value as unconstrained (ANY) rather than a hard fail.
+        List<String> policyVintages = extractOptionalStringList(policy, "creditVintages", "creditVintage");
+        evidence.put("policyCreditVintages", policyVintages.isEmpty() ? List.of("ANY") : policyVintages);
+        evidence.put("categoryCreditVintage",
+                category.creditVintage() == null || category.creditVintage().isBlank()
+                        ? "ANY" : category.creditVintage());
+        boolean vintageOk;
+        String vintageDetail;
+        if (category.creditVintage() == null || category.creditVintage().isBlank()
+                || MatchWildcard.isAny(category.creditVintage())) {
+            vintageOk = true;
+            vintageDetail = "Category Credit Vintage is ANY / unset — no specific vintage to cover";
+        } else if (policyVintages.isEmpty()) {
+            vintageOk = true;
+            vintageDetail = "Policy has no Credit Vintage metadata — treated as unconstrained (ANY)";
+        } else if (policyVintages.stream().anyMatch(v -> MatchWildcard.isAny(v) || "ALL".equalsIgnoreCase(v))) {
+            vintageOk = true;
+            vintageDetail = "Policy Credit Vintage scope is ANY/ALL";
+        } else {
+            String want = tokenKey(category.creditVintage());
+            vintageOk = policyVintages.stream().anyMatch(v -> tokenKey(v).equals(want));
+            vintageDetail = vintageOk
+                    ? "Category Credit Vintage covered by Policy metadata Vintage list"
+                    : "Category Credit Vintage " + category.creditVintage()
+                    + " not in Policy Credit Vintage scope " + policyVintages;
+            if (!vintageOk) {
+                reasons.add(CREDIT_VINTAGE_NOT_COVERED);
+            }
+        }
+        checks.add(new ScopeCheck("creditVintage", "Credit Vintage coverage", vintageOk, vintageDetail));
+
         // --- Amount (full coverage required) ---
         BigDecimal pMin = policy.getMinLoanAmount();
         BigDecimal pMax = policy.getMaxLoanAmount();
@@ -286,7 +322,7 @@ public final class CustomerCategoryPolicyScopeCompatibility {
         }
         checks.add(new ScopeCheck("additionalScope", "Additional Policy scope context", additionalOk, additionalDetail));
 
-        boolean hardFail = !(roleOk && entityOk && productOk && amountOk && periodOk);
+        boolean hardFail = !(roleOk && entityOk && productOk && vintageOk && amountOk && periodOk);
         String status;
         if (hardFail) {
             status = STATUS_INCOMPATIBLE;

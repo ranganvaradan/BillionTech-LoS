@@ -316,20 +316,29 @@ public class LoanApplicationServiceImpl implements ILoanApplicationService {
         if (request.getRequestedAmount() != null) app.setRequestedAmount(request.getRequestedAmount());
         if (request.getTenureMonths() != null) app.setTenureMonths(request.getTenureMonths());
         if (request.getLmsProductCode() != null && !isInvoiceDiscountingProduct(app.getLoanProduct())) {
-            ApplicationConfigurationAuthority.assertLmsFieldUpdateAllowed(app, "lmsProductCode");
-            app.setLmsProductCode(blankToNull(request.getLmsProductCode()));
+            String normalizedLmsProductCode = blankToNull(request.getLmsProductCode());
+            if (!java.util.Objects.equals(normalizedLmsProductCode, app.getLmsProductCode())) {
+                ApplicationConfigurationAuthority.assertLmsFieldUpdateAllowed(app, "lmsProductCode");
+                app.setLmsProductCode(normalizedLmsProductCode);
+            }
         }
         if (request.getLmsTenureUnit() != null && !isInvoiceDiscountingProduct(app.getLoanProduct())) {
-            ApplicationConfigurationAuthority.assertLmsFieldUpdateAllowed(app, "lmsTenureUnit");
-            app.setLmsTenureUnit(blankToNull(request.getLmsTenureUnit()));
-            app.setRepaymentFrequency(capitalizeTenureUnit(app.getLmsTenureUnit()));
+            String normalizedLmsTenureUnit = blankToNull(request.getLmsTenureUnit());
+            if (!java.util.Objects.equals(normalizedLmsTenureUnit, app.getLmsTenureUnit())) {
+                ApplicationConfigurationAuthority.assertLmsFieldUpdateAllowed(app, "lmsTenureUnit");
+                app.setLmsTenureUnit(normalizedLmsTenureUnit);
+                app.setRepaymentFrequency(capitalizeTenureUnit(app.getLmsTenureUnit()));
+            }
         }
-        if (request.getWorkflowId() != null) {
+        if (request.getWorkflowId() != null && !request.getWorkflowId().equals(app.getWorkflowId())) {
             ApplicationConfigurationAuthority.assertWorkflowIdUpdateAllowed(app, request.getWorkflowId());
         }
         if (request.getCreditVintage() != null) {
-            ApplicationConfigurationAuthority.assertCreditVintageUpdateAllowed(app, request.getCreditVintage());
-            app.setCreditVintage(blankToNull(request.getCreditVintage()));
+            String normalizedCreditVintage = blankToNull(request.getCreditVintage());
+            if (!java.util.Objects.equals(normalizedCreditVintage, app.getCreditVintage())) {
+                ApplicationConfigurationAuthority.assertCreditVintageUpdateAllowed(app, request.getCreditVintage());
+                app.setCreditVintage(normalizedCreditVintage);
+            }
         }
         if (request.getPersonalInfo() != null) {
             app.setPersonalInfo(ApplicantIdentityResolver.canonicalisePersonalInfo(

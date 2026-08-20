@@ -177,11 +177,13 @@ public class CustomerCategoryController {
             @RequestParam(required = false) BigDecimal minAmount,
             @RequestParam(required = false) BigDecimal maxAmount,
             @RequestParam(required = false) Instant effectiveFrom,
-            @RequestParam(required = false) Instant effectiveUntil) {
+            @RequestParam(required = false) Instant effectiveUntil,
+            @RequestParam(required = false) String creditVintage) {
         String et = entityType != null ? entityType : borrowerType;
         String role = customerRole != null ? customerRole : intakeSegment;
+        String vintage = creditVintage != null ? creditVintage : MatchWildcard.ANY;
         return ResponseEntity.ok(policyBindService.listEligiblePolicies(
-                et, loanProduct, role, minAmount, maxAmount, effectiveFrom, effectiveUntil));
+                et, loanProduct, role, minAmount, maxAmount, effectiveFrom, effectiveUntil, vintage));
     }
 
     @GetMapping("/meta/eligible-workflows")

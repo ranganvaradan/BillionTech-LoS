@@ -122,7 +122,15 @@ public final class CategoryWorkflowCompatibility {
                 summary);
     }
 
+    /**
+     * ANY on either side is a wildcard (mirrors {@link com.los.core.customercategory.selection
+     * .CustomerCategoryEligibilityService}'s dimMatch semantics) — otherwise exact match.
+     * Every existing Workflow defaults to creditVintage=ANY (V155 backfill), so without this,
+     * every Category scoped to a specific vintage would be reported incompatible with every
+     * Workflow in the system.
+     */
     private static boolean equalsNorm(String a, String b) {
+        if (MatchWildcard.isAny(a) || MatchWildcard.isAny(b)) return true;
         if (a == null || b == null) return false;
         return a.trim().equalsIgnoreCase(b.trim());
     }

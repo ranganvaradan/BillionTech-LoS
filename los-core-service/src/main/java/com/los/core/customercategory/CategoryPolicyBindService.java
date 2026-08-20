@@ -156,11 +156,13 @@ public class CategoryPolicyBindService {
             BigDecimal minAmount,
             BigDecimal maxAmount,
             java.time.Instant effectiveFrom,
-            java.time.Instant effectiveUntil) {
+            java.time.Instant effectiveUntil,
+            String creditVintage) {
         UUID tenant = defaultTenantId();
         List<Map<String, Object>> rows = policyCatalogueService.listCatalogue(tenant);
         var catScope = new CustomerCategoryPolicyScopeCompatibility.CategoryScope(
-                customerRole, entityType, loanProduct, minAmount, maxAmount, effectiveFrom, effectiveUntil);
+                customerRole, entityType, loanProduct, minAmount, maxAmount, effectiveFrom, effectiveUntil,
+                creditVintage);
         List<CustomerCategoryDtos.EligiblePolicyView> out = new ArrayList<>();
         for (Map<String, Object> row : rows) {
             try {
@@ -173,7 +175,7 @@ public class CategoryPolicyBindService {
         return out;
     }
 
-    /** Backward-compatible overload (no effective dates). */
+    /** Backward-compatible overload (no effective dates / credit vintage). */
     @Transactional(readOnly = true)
     public List<CustomerCategoryDtos.EligiblePolicyView> listEligiblePolicies(
             String entityType,
@@ -181,7 +183,7 @@ public class CategoryPolicyBindService {
             String customerRole,
             BigDecimal minAmount,
             BigDecimal maxAmount) {
-        return listEligiblePolicies(entityType, loanProduct, customerRole, minAmount, maxAmount, null, null);
+        return listEligiblePolicies(entityType, loanProduct, customerRole, minAmount, maxAmount, null, null, null);
     }
 
     private CustomerCategoryDtos.EligiblePolicyView toPickerView(

@@ -175,6 +175,28 @@ class CategoryWorkflowVersionBindTest {
     }
 
     @Test
+    void categoryWithSpecificCreditVintage_matchesWorkflowDefaultAnyVintage() {
+        // compatibleWorkflow() leaves creditVintage at its builder default (ANY) — every
+        // pre-existing Workflow is in this state (V155 backfill). A Category scoped to a
+        // specific vintage must still be able to bind to it.
+        when(workflowConfigRepository.findById(wfId)).thenReturn(Optional.of(compatibleWorkflow(wfId)));
+        when(categoryRepository.findByCodeAndVersionNo("CC_VINTAGE", 1)).thenReturn(Optional.empty());
+        when(categoryRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        CategoryResponse res = categoryService.createDraft(new CategoryRequest(
+                "CC_VINTAGE", "Existing Customer Category", null,
+                "INDIVIDUAL", "BUSINESS_TERM_LOAN", "BORROWER",
+                new BigDecimal("20000"), new BigDecimal("500000"),
+                null, null, null, null,
+                null, null, null, null, null,
+                wfId, null, "EXISTING_CUSTOMER"), actor);
+
+        assertEquals("LINKED", res.workflowLinkageStatus());
+        assertEquals(wfId, res.workflowId());
+        assertEquals("EXISTING_CUSTOMER", res.creditVintage());
+    }
+
+    @Test
     void invalidWorkflowBlocked() {
         when(workflowConfigRepository.findById(any())).thenReturn(Optional.empty());
         when(categoryRepository.findByCodeAndVersionNo(any(), eq(1))).thenReturn(Optional.empty());

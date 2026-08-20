@@ -171,7 +171,7 @@ public class CustomerCategoryService {
             policyBindService.requireScopeCompatible(
                     new CustomerCategoryPolicyScopeCompatibility.CategoryScope(
                             intake, borrower, product, req.minAmount(), req.maxAmount(),
-                            req.effectiveFrom(), req.effectiveUntil()),
+                            req.effectiveFrom(), req.effectiveUntil(), creditVintage),
                     req.policyApplicabilityId());
         }
 
@@ -818,7 +818,7 @@ public class CustomerCategoryService {
         policyBindService.requireScopeCompatible(
                 new CustomerCategoryPolicyScopeCompatibility.CategoryScope(
                         e.getIntakeSegment(), e.getBorrowerType(), e.getLoanProduct(),
-                        e.getMinAmount(), e.getMaxAmount(), from, until),
+                        e.getMinAmount(), e.getMaxAmount(), from, until, e.getCreditVintage()),
                 policyApplicabilityId);
         policyBindService.applyBind(e, bind);
     }
