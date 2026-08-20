@@ -40,6 +40,11 @@ import {
 import { IndiaStateCityPincodeFields } from '@/components/intake/IndiaStateCityPincodeFields'
 import { IntakeDocumentUploadList } from '@/components/intake/IntakeDocumentUploadList'
 import { WorkflowCustomIntakeFields } from '@/components/intake/WorkflowCustomIntakeFields'
+import { CategorySelectionPanel } from '@/components/category/CategorySelectionPanel'
+import {
+  categoryPinnedSelectionFromApplication,
+  type CategoryPinnedSelection,
+} from '@/lib/category/categorySelectionPanelState'
 import { BORROWER_TYPE_LABELS } from '@/catalog/borrowerTypes'
 import { ANCHOR_BORROWER_TYPE } from '@/lib/intake/anchorIntakeConstants'
 import { ensureCitiesLoadedForStateName, ensureGeoStatesLoaded } from '@/lib/intake/masterGeoClientCache'
@@ -59,7 +64,15 @@ import type { WorkflowConfigResponse } from '@/types/workflow'
 import type { BorrowerType } from '@/types/createApplication'
 import type { ApplicationStatus } from '@/types/application'
 
-const STEP_LABELS = ['Product & request', 'Corporate', 'Documents', 'Identity', 'Consent', 'Review'] as const
+const STEP_LABELS = [
+  'Product & request',
+  'Corporate',
+  'Customer Category',
+  'Documents',
+  'Identity',
+  'Consent',
+  'Review',
+] as const
 
 const IDENTITY_KEYS = new Set([
   'entityPan',
@@ -208,6 +221,8 @@ export function AnchorIntakeWizard({
   const [resumeError, setResumeError] = useState<string | null>(null)
   const [resumeLoaded, setResumeLoaded] = useState(false)
   const [resumedAppStatus, setResumedAppStatus] = useState<ApplicationStatus | null>(null)
+  /** Persisted category pin — authoritative when revisiting the Customer Category step. */
+  const [categoryPinnedSelection, setCategoryPinnedSelection] = useState<CategoryPinnedSelection | null>(null)
 
   const anchorProducts = useMemo(
     () => productsForIntakeSegment(activeWorkflows, 'ANCHOR', ANCHOR_BORROWER_TYPE),
@@ -319,6 +334,7 @@ export function AnchorIntakeWizard({
           return
         }
         setResumedAppStatus(app.status)
+        setCategoryPinnedSelection(categoryPinnedSelectionFromApplication(app))
         let h = hydrateAnchorFormFromApplication(app)
         try {
           const docs = await listDocuments(app.id)
@@ -390,8 +406,8 @@ export function AnchorIntakeWizard({
   }, [])
 
   useEffect(() => {
-    // Documents is now step 2 (before Identity); sync uploads once the application exists.
-    if (applicationId && step >= 2) void syncDocumentsFromServer(applicationId)
+    // Documents is step 3 (after Customer Category, before Identity); sync uploads once the application exists.
+    if (applicationId && step >= 3) void syncDocumentsFromServer(applicationId)
   }, [applicationId, step, syncDocumentsFromServer])
 
   function validateStep0(): string | null {
@@ -512,6 +528,14 @@ export function AnchorIntakeWizard({
       return
     }
     if (step === 2) {
+      if (!form.workflowId.trim()) {
+        setError('Select a lending proposition before continuing.')
+        return
+      }
+      setStep(3)
+      return
+    }
+    if (step === 3) {
       if (isWorkflowDrivenIntake(selectedWorkflow)) {
         const intakeSlice = { ...createEmptyIntakeFormState(), ...form } as IntakeFormState
         const missing = missingRequiredWorkflowDocuments(intakeSlice, selectedWorkflow, form.borrowerType)
@@ -524,10 +548,10 @@ export function AnchorIntakeWizard({
           setDocWarning(`Recommended uploads still missing: ${miss.join(', ')}. You can continue or go back to upload.`)
         }
       }
-      setStep(3)
+      setStep(4)
       return
     }
-    if (step === 3) {
+    if (step === 4) {
       const v = validateStep2()
       if (v) {
         setError(v)
@@ -537,7 +561,7 @@ export function AnchorIntakeWizard({
       setBusy(true)
       try {
         await updateApplication(applicationId, buildAnchorIdentityUpdate(form))
-        setStep(4)
+        setStep(5)
       } catch (err) {
         setError(err instanceof ApiError ? err.message : 'Could not save identity details.')
       } finally {
@@ -545,7 +569,7 @@ export function AnchorIntakeWizard({
       }
       return
     }
-    if (step === 4) {
+    if (step === 5) {
       const intakeSlice = {
         ...createEmptyIntakeFormState(),
         ...form,
@@ -559,7 +583,7 @@ export function AnchorIntakeWizard({
       setBusy(true)
       try {
         await updateApplication(applicationId, buildAnchorConsentUpdate(form, user))
-        setStep(5)
+        setStep(6)
       } catch (err) {
         setError(err instanceof ApiError ? err.message : 'Could not save consents.')
       } finally {
@@ -861,6 +885,26 @@ export function AnchorIntakeWizard({
 
       {step === 2 && applicationId ? (
         <section className={intakeStepSectionClass}>
+          <h2 className="bt-card-title">Customer Category</h2>
+          <p className="text-xs text-slate-600">
+            Category selection pins the exact Workflow Version and Policy Document for this application.
+          </p>
+          <CategorySelectionPanel
+            applicationId={applicationId}
+            actor={user?.name || 'user'}
+            actorRole="RM"
+            pinnedSelection={categoryPinnedSelection}
+            onSelected={(result) => {
+              const wf = result.selected?.workflowId
+              if (wf) setForm((f) => ({ ...f, workflowId: wf }))
+              if (result.selected) setCategoryPinnedSelection(result.selected)
+            }}
+          />
+        </section>
+      ) : null}
+
+      {step === 3 && applicationId ? (
+        <section className={intakeStepSectionClass}>
           <h2 className="bt-card-title">Documents</h2>
           {docWarning ? <p className="bt-alert bt-alert-warning">{docWarning}</p> : null}
           <p className="text-sm text-slate-600">
@@ -875,7 +919,7 @@ export function AnchorIntakeWizard({
         </section>
       ) : null}
 
-      {step === 3 ? (
+      {step === 4 ? (
         <section className={intakeStepSectionClass}>
           <h2 className="bt-card-title">Identity &amp; bank</h2>
           <p className="text-xs text-slate-600">
@@ -901,7 +945,7 @@ export function AnchorIntakeWizard({
         </section>
       ) : null}
 
-      {step === 4 ? (
+      {step === 5 ? (
         <section className={intakeStepSectionClass}>
           <h2 className="bt-card-title">Consents</h2>
           <p className="text-xs text-slate-600">{consentHelper(staffIntakeMode)}</p>
@@ -948,7 +992,7 @@ export function AnchorIntakeWizard({
         </section>
       ) : null}
 
-      {step === 5 && applicationId ? (
+      {step === 6 && applicationId ? (
         <section className={intakeStepSectionClass}>
           <h2 className="bt-card-title">Review &amp; submit</h2>
           <div className="grid gap-3 text-sm sm:grid-cols-2">
@@ -979,12 +1023,16 @@ export function AnchorIntakeWizard({
             Back
           </button>
         ) : null}
-        {step < 5 ? (
+        {step < 6 ? (
           <button
             type="button"
             className={intakePrimaryButtonClass}
             onClick={() => void handleNext()}
-            disabled={busy || (step === 2 && !applicationId)}
+            disabled={
+              busy ||
+              (step === 2 && !form.workflowId.trim()) ||
+              (step === 3 && !applicationId)
+            }
           >
             {busy ? 'Saving…' : 'Continue'}
           </button>
